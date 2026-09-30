@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background">#FF0E1116</color>
+    <color name="accent">#FF3DA5F4</color>
+    <color name="banner_start">#FF1B2A41</color>
+    <color name="banner_end">#FF0E1116</color>
+</resources>
