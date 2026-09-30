@@ -87,7 +87,7 @@ private fun ItemGrid(
     val aspect = aspectFor(items)
     val gridState = rememberLazyGridState()
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(if (aspect < 1f) 170.dp else 280.dp),
+        columns = GridCells.Adaptive(if (aspect < 1f) 170.dp else 240.dp),
         state = gridState,
         modifier = modifier.focusRestorer(),
         contentPadding = PaddingValues(horizontal = 48.dp, vertical = 16.dp),

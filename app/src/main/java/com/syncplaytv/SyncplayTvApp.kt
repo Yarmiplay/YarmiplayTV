@@ -14,6 +14,7 @@ import com.syncplaytv.player.MpvOptions
 import com.syncplaytv.player.MpvPlayer
 import com.syncplaytv.sync.PlaylistController
 import com.syncplaytv.sync.SyncController
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,7 +38,10 @@ class SyncplayTvApp : Application() {
 
 /** Process-wide singletons (one mpv instance, one Syncplay connection, one media source). */
 class AppContainer(app: Application) {
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Main.immediate +
+            CoroutineExceptionHandler { _, e -> Log.e("AppContainer", "Background task failed", e) },
+    )
     val settingsStore = SettingsStore(app)
 
     private val initial: AppSettings = runBlocking { settingsStore.current() }

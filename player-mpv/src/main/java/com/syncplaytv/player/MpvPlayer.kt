@@ -256,7 +256,10 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
                 snapshotPosition()
                 _state.update { it.copy(buffering = value) }
             }
-            "seeking" -> _state.update { it.copy(seeking = value) }
+            "seeking" -> {
+                if (!value) cachedPositionAt = SystemClock.elapsedRealtime()
+                _state.update { it.copy(seeking = value) }
+            }
             "eof-reached" -> _state.update { it.copy(eofReached = value) }
         }
     }
@@ -283,6 +286,8 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
                 _state.update { it.copy(fileLoaded = false) }
             }
             MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
+                // The position was frozen while seeking; extrapolate from now, not from when the seek was issued.
+                if (_state.value.seeking) cachedPositionAt = SystemClock.elapsedRealtime()
                 _state.update { it.copy(seeking = false) }
             }
         }
