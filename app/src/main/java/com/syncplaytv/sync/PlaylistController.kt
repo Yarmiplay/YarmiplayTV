@@ -182,6 +182,13 @@ class PlaylistController(
         }
     }
 
+    /** Plays a direct URL locally; Syncplay identifies streams by their URL. */
+    fun playUrl(url: String) {
+        _openPlayerRequests.value++
+        val name = url.substringBefore('?').substringAfterLast('/').let { runCatching { java.net.URLDecoder.decode(it, "UTF-8") }.getOrDefault(it) }
+        load(NowPlaying(title = name.ifEmpty { url }, fileName = url, sizeBytes = 0, durationHint = 0.0, url = url), resetPosition = false, fromRoom = false)
+    }
+
     fun addToRoomPlaylist(item: MediaItem) {
         val source = mediaSource.value ?: return
         scope.launch {

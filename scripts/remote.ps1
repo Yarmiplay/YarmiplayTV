@@ -8,6 +8,7 @@
   ./scripts/remote.ps1 -Text "Neptunia"      # types text into the focused field
   ./scripts/remote.ps1 -Delay 800 right right ok back
 #>
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$Keys,
     [string]$Text,

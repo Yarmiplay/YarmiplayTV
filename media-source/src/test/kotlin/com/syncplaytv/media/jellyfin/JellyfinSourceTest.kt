@@ -77,6 +77,15 @@ class JellyfinSourceTest {
     }
 
     @Test
+    fun discoveryReplacesLoopbackAddressWithSender() {
+        val sender = java.net.InetAddress.getByName("10.0.2.2")
+        val fixed = JellyfinDiscovery.withReachableAddress(DiscoveredServer("http://127.0.0.1:8096", "id", "Benny"), sender)
+        assertEquals("http://10.0.2.2:8096", fixed.address)
+        val kept = JellyfinDiscovery.withReachableAddress(DiscoveredServer("http://192.168.1.5:8096", "id", "Benny"), sender)
+        assertEquals("http://192.168.1.5:8096", kept.address)
+    }
+
+    @Test
     fun normalizesServerUrls() {
         assertEquals("http://10.0.2.2:8096", client.normalizeServerUrl("10.0.2.2"))
         assertEquals("http://10.0.2.2:8096", client.normalizeServerUrl("http://10.0.2.2:8096/"))

@@ -48,11 +48,25 @@ object JellyfinDiscovery {
                     }
                     val text = String(packet.data, 0, packet.length)
                     runCatching { json.decodeFromString(DiscoveredServer.serializer(), text) }
-                        .getOrNull()?.let { found.putIfAbsent(it.id.ifEmpty { it.address }, it) }
+                        .getOrNull()
+                        ?.let { withReachableAddress(it, packet.address) }
+                        ?.let { found.putIfAbsent(it.id.ifEmpty { it.address }, it) }
                 }
             }
         }
         found.values.toList()
+    }
+
+    /** Servers often advertise a loopback or unset address; use the reply's source instead. */
+    internal fun withReachableAddress(server: DiscoveredServer, source: InetAddress): DiscoveredServer {
+        val uri = runCatching { java.net.URI(server.address) }.getOrNull()
+        val host = uri?.host
+        val unusable = host == null || host == "localhost" || host.startsWith("127.") || host == "0.0.0.0" || host == "::1"
+        if (!unusable) return server
+        val scheme = uri?.scheme ?: "http"
+        val port = uri?.port?.takeIf { it > 0 } ?: 8096
+        val hostPart = source.hostAddress.let { if (':' in it) "[$it]" else it }
+        return server.copy(address = "$scheme://$hostPart:$port")
     }
 
     private fun broadcastAddresses(): List<InetAddress> {
