@@ -1,13 +1,22 @@
 package com.syncplaytv
 
 import android.os.Bundle
+import android.view.SurfaceView
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.tv.material3.Text
+import com.syncplaytv.player.MpvPlayer
 
 class MainActivity : ComponentActivity() {
+    private var player: MpvPlayer? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { Text("SyncplayTV") }
+        val p = MpvPlayer(this)
+        player = p
+        val view = SurfaceView(this)
+        view.holder.addCallback(p.surfaceCallback)
+        setContentView(view)
+        intent.getStringExtra("url")?.let { url ->
+            view.post { p.load(url, startPaused = false) }
+        }
     }
 }
