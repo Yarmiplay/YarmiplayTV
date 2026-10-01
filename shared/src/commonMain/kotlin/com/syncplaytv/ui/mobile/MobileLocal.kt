@@ -1,9 +1,5 @@
 package com.syncplaytv.ui.mobile
 
-import android.content.Intent
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -45,7 +41,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -56,27 +51,6 @@ import com.syncplaytv.ui.nav.Navigator
 import com.syncplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
-/** System "open video" picker; keeps read access to the picked file across restarts when possible. */
-@Composable
-fun rememberVideoPicker(onPicked: (Uri) -> Unit): () -> Unit {
-    val context = LocalContext.current
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            onPicked(uri)
-        }
-    }
-    return { launcher.launch(arrayOf("video/*")) }
-}
-
-@Composable
-fun rememberFolderPicker(container: AppContainer): () -> Unit {
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) container.local.addFolder(uri.toString())
-    }
-    return { launcher.launch(null) }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
@@ -86,9 +60,9 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
     val room by container.sync.room.collectAsStateWithLifecycle()
     val inRoom = room.status == ConnectionStatus.CONNECTED
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf<Uri?>(null) }
+    var picked by remember { mutableStateOf<String?>(null) }
     val pickFolder = rememberFolderPicker(container)
-    val pickVideo = rememberVideoPicker { uri -> if (inRoom) picked = uri else container.playlist.playLocal(uri.toString(), inRoom = false) }
+    val pickVideo = rememberVideoPicker { uri -> if (inRoom) picked = uri else container.playlist.playLocal(uri, inRoom = false) }
 
     Column(Modifier.fillMaxSize()) {
         MobileTopBar("Files on this device", nav) {
@@ -130,7 +104,7 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
                 items(files, key = { "v:" + it.uri }) { file ->
                     Row(
                         Modifier.fillMaxWidth().clickable {
-                            if (inRoom) picked = Uri.parse(file.uri) else container.playlist.playLocal(file.uri, inRoom = false)
+                            if (inRoom) picked = file.uri else container.playlist.playLocal(file.uri, inRoom = false)
                         }.padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -150,23 +124,23 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
 
     picked?.let { uri ->
         ModalBottomSheet(onDismissRequest = { picked = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = AppColors.Surface, modifier = Modifier.exposeTestTags()) {
-            val name = files.firstOrNull { it.uri == uri.toString() }?.name ?: uri.lastPathSegment?.substringAfterLast('/') ?: ""
+            val name = files.firstOrNull { it.uri == uri }?.name ?: uriFileName(uri) ?: ""
             LocalFileActions(container, uri, name, room.room) { picked = null }
         }
     }
 }
 
 @Composable
-private fun LocalFileActions(container: AppContainer, uri: Uri, name: String, roomName: String, onDone: () -> Unit) {
+private fun LocalFileActions(container: AppContainer, uri: String, name: String, roomName: String, onDone: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Button({ container.playlist.playLocal(uri.toString(), inRoom = true); onDone() }, Modifier.fillMaxWidth().testTag("local_play_room")) {
+        Button({ container.playlist.playLocal(uri, inRoom = true); onDone() }, Modifier.fillMaxWidth().testTag("local_play_room")) {
             Icon(Icons.Filled.Groups, contentDescription = null); Text("  Play for everyone in '$roomName'")
         }
-        FilledTonalButton({ container.playlist.addLocalToRoomPlaylist(uri.toString()); onDone() }, Modifier.fillMaxWidth()) {
+        FilledTonalButton({ container.playlist.addLocalToRoomPlaylist(uri); onDone() }, Modifier.fillMaxWidth()) {
             Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null); Text("  Add to room playlist")
         }
-        OutlinedButton({ container.playlist.playLocal(uri.toString(), inRoom = false); onDone() }, Modifier.fillMaxWidth()) {
+        OutlinedButton({ container.playlist.playLocal(uri, inRoom = false); onDone() }, Modifier.fillMaxWidth()) {
             Icon(Icons.Filled.PlayArrow, contentDescription = null); Text("  Play only on this device")
         }
         Text("Others need the same file (same name) in their Syncplay media folders or Jellyfin.", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)

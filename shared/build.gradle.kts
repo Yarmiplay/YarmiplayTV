@@ -26,6 +26,15 @@ kotlin {
             implementation(libs.jetbrains.lifecycle.runtime.compose)
             implementation(libs.coil.compose)
         }
+        androidMain.dependencies {
+            implementation(project(":player-mpv"))
+            implementation(libs.androidx.activity.compose)
+            implementation(libs.androidx.core.ktx)
+        }
+        val desktopMain by getting {
+            // The logo is one Android vector drawable, read on desktop with loadXmlImageVector.
+            resources.srcDir("src/androidMain/res/drawable")
+        }
         val desktopTest by getting {
             dependencies {
                 implementation(libs.junit)

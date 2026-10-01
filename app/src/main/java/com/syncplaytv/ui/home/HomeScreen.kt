@@ -42,7 +42,6 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.syncplaytv.AppContainer
-import com.syncplaytv.R
 import com.syncplaytv.media.MediaItem
 import com.syncplaytv.media.MediaItemType
 import com.syncplaytv.syncplay.ConnectionStatus
@@ -81,7 +80,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
     ) {
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_logo), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(48.dp))
+                Icon(androidx.compose.ui.res.painterResource(com.syncplaytv.shared.R.drawable.ic_logo), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(48.dp))
                 Spacer(Modifier.width(16.dp))
                 Text("SyncplayTV", style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.weight(1f))

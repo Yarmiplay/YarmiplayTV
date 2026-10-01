@@ -21,7 +21,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.syncplaytv.AppContainer
-import com.syncplaytv.BuildConfig
 import com.syncplaytv.data.PlaybackPrefs
 import com.syncplaytv.syncplay.SyncSettings
 import com.syncplaytv.syncplay.UnpauseMode
@@ -88,7 +87,7 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
 
             SectionHeader("About")
             Text(
-                "SyncplayTV ${BuildConfig.VERSION_NAME} · Syncplay protocol 1.7 · mpv (libmpv)",
+                "SyncplayTV ${container.appVersion} · Syncplay protocol 1.7 · mpv (libmpv)",
                 color = AppColors.TextDim,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )

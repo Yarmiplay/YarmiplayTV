@@ -34,12 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.syncplaytv.AppContainer
 import com.syncplaytv.DeviceKind
-import com.syncplaytv.R
 import com.syncplaytv.media.MediaItem
 import com.syncplaytv.media.MediaItemType
 import com.syncplaytv.syncplay.ConnectionStatus
@@ -70,7 +68,7 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
     LazyColumn(Modifier.fillMaxSize().testTag("home"), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(painterResource(R.drawable.ic_logo), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(36.dp))
+                Icon(appLogoPainter(), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(36.dp))
                 Spacer(Modifier.width(12.dp))
                 Text("SyncplayTV", style = MaterialTheme.typography.headlineSmall)
             }

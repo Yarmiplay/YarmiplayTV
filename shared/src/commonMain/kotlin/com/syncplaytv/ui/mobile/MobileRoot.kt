@@ -1,6 +1,5 @@
 ﻿package com.syncplaytv.ui.mobile
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -74,7 +73,7 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind) {
             showing = launch { snackbar.showSnackbar(msg.from?.let { "$it: ${msg.text}" } ?: msg.text) }
         }
     }
-    BackHandler(enabled = nav.canGoBack && nav.current != Screen.Player) { nav.back() }
+    PlatformBackHandler(enabled = nav.canGoBack && nav.current != Screen.Player) { nav.back() }
 
     val screen = nav.current
     val selectedTab = stack.lastOrNull { s -> tabs.any { it.screen::class == s::class } }?.let { s -> tabs.first { it.screen::class == s::class } }

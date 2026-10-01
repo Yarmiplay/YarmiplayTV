@@ -27,7 +27,7 @@ import kotlinx.coroutines.runBlocking
 class AppContainer(
     val settingsStore: SettingsStore,
     deviceName: String,
-    appVersion: String,
+    val appVersion: String,
     createPlayer: (AppSettings) -> Player,
     createLocalLibrary: (SettingsStore, CoroutineScope, List<String>) -> LocalLibrary,
 ) {

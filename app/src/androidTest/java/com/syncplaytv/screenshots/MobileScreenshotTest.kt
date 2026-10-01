@@ -1,6 +1,7 @@
 package com.syncplaytv.screenshots
 
 import android.view.KeyEvent
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -76,8 +77,16 @@ class MobileScreenshotTest {
 
     private fun tap(tag: String) = compose.onNodeWithTag(tag).performClick()
     private fun tapText(text: String) = compose.onNodeWithText(text).performClick()
-    private fun await(tag: String) = compose.waitUntilAtLeastOneExists(hasTestTag(tag), 10_000)
-    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 10_000)
+    private fun await(tag: String) = onTimeoutSaveScreen("timeout_$tag") { compose.waitUntilAtLeastOneExists(hasTestTag(tag), 10_000) }
+    private fun awaitText(text: String) = onTimeoutSaveScreen("timeout_text") { compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 10_000) }
+
+    private fun onTimeoutSaveScreen(name: String, wait: () -> Unit) {
+        try {
+            wait()
+        } catch (e: ComposeTimeoutException) {
+            throw AssertionError("${e.message} (screen: ${Screenshots.saveFailure(name)})", e)
+        }
+    }
 
     /** A real BACK key, so dialogs and bottom sheets (separate windows) get it too. */
     private fun back() {

@@ -1,11 +1,5 @@
 package com.syncplaytv.ui.mobile
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
-import android.content.pm.ActivityInfo
-import android.view.SurfaceView
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -50,7 +44,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -64,18 +57,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.syncplaytv.AppContainer
-import com.syncplaytv.player.SurfacePlayer
 import com.syncplaytv.player.TrackType
 import com.syncplaytv.sync.FeedMessage
 import com.syncplaytv.sync.PlaylistStatus
@@ -92,7 +78,7 @@ private enum class PlayerSheet { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
-    val player = container.player as SurfacePlayer
+    val player = container.player
     val state by player.state.collectAsStateWithLifecycle()
     val room by container.sync.room.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
@@ -116,7 +102,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     }
     LaunchedEffect(seekFlash) { if (seekFlash != null) { delay(700); seekFlash = null } }
 
-    BackHandler {
+    PlatformBackHandler {
         when {
             sheet != null -> sheet = null
             else -> nav.back()
@@ -132,11 +118,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black).testTag("player")) {
-        AndroidView(
-            factory = { ctx -> SurfaceView(ctx).apply { holder.addCallback(player.surfaceCallback) } },
-            onRelease = { it.holder.removeCallback(player.surfaceCallback) },
-            modifier = Modifier.fillMaxSize(),
-        )
+        VideoSurface(player, Modifier.fillMaxSize())
         Box(
             Modifier.fillMaxSize().testTag("player_gestures").pointerInput(step) {
                 detectTapGestures(
@@ -208,36 +190,6 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
             }
         }
     }
-}
-
-/** Landscape, edge-to-edge with hidden system bars while the player is on screen. */
-@Composable
-private fun FullscreenLandscape() {
-    val context = LocalContext.current
-    val view = LocalView.current
-    DisposableEffect(Unit) {
-        val activity = context.findActivity()
-        val previous = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        val insets = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
-        insets?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        insets?.hide(WindowInsetsCompat.Type.systemBars())
-        view.keepScreenOn = true
-        onDispose {
-            view.keepScreenOn = false
-            insets?.show(WindowInsetsCompat.Type.systemBars())
-            activity?.requestedOrientation = previous
-        }
-    }
-}
-
-private fun Context.findActivity(): Activity? {
-    var c: Context? = this
-    while (c is ContextWrapper) {
-        if (c is Activity) return c
-        c = c.baseContext
-    }
-    return null
 }
 
 @Composable
@@ -359,8 +311,8 @@ private fun PlayerToasts(container: AppContainer, modifier: Modifier = Modifier)
 
 @Composable
 private fun CenterStatus(container: AppContainer, nav: Navigator, status: PlaylistStatus, nothingLoaded: Boolean, fileLoaded: Boolean, inRoom: Boolean) {
-    val pickFile = rememberVideoPicker { uri -> container.playlist.resolveManuallyLocal(uri.toString()) }
-    val playFile = rememberVideoPicker { uri -> container.playlist.playLocal(uri.toString(), inRoom) }
+    val pickFile = rememberVideoPicker { uri -> container.playlist.resolveManuallyLocal(uri) }
+    val playFile = rememberVideoPicker { uri -> container.playlist.playLocal(uri, inRoom) }
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         when (status) {
             is PlaylistStatus.Resolving -> StatusBox("Looking for the file…", status.fileName)
