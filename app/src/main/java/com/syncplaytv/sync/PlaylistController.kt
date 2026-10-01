@@ -157,7 +157,10 @@ class PlaylistController(
     }
 
     private fun load(media: NowPlaying, resetPosition: Boolean, fromRoom: Boolean) {
+        val alreadyLoading = pending?.media?.url == media.url
         pending = PendingLoad(media, resetPosition, fromRoom)
+        // E.g. a reconnect replays the room's selection while a manual pick of the same file is opening.
+        if (alreadyLoading) return
         _nowPlaying.value = media
         _status.value = PlaylistStatus.Loading(media.fileName)
         sync.reportLoading()

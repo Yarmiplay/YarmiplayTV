@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
@@ -82,7 +83,8 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind) {
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Box(Modifier.fillMaxSize().exposeTestTags()) {
             if (screen == Screen.Player) {
-                MobilePlayerScreen(container, nav)
+                // Unlike the other screens, the player isn't inside a Scaffold that sets this.
+                CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
             } else {
                 MobileScaffold(snackbar, selectedTab, useRail = kind == DeviceKind.TABLET, onTab = { nav.switchTab(it.screen) }) {
                     saveable.SaveableStateProvider(screen.key) {

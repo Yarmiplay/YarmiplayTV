@@ -47,6 +47,15 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     @Volatile private var cachedSpeed = 1.0
     @Volatile private var surfaceAttached = false
     @Volatile private var currentUrl: String? = null
+    /**
+     * Each loadfile yields exactly one START_FILE, so counting both tells whether the file mpv is opening is
+     * the latest load. Querying "path" on START_FILE instead races: a bad URI has already ended by then.
+     */
+    @Volatile private var loadsIssued = 0
+    @Volatile private var latestLoad = 0
+    private var filesStarted = 0
+    private var openingLatest = false
+    @Volatile private var openError: String? = null
     @Volatile private var pendingStartPaused = true
 
     init {
@@ -156,7 +165,9 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             if (mediaTitle != null) add("force-media-title=${mediaTitle.replace(",", "\\,")}")
             if (startPosition > 0) add("start=$startPosition")
         }.joinToString(",")
+        openError = null
         val target = mpvTarget(url)
+        latestLoad = ++loadsIssued
         if (opts.isEmpty()) mpv.command(arrayOf("loadfile", target, "replace"))
         else mpv.command(arrayOf("loadfile", target, "replace", "-1", opts))
     }
@@ -171,6 +182,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             "fdclose://${pfd.detachFd()}"
         }.getOrElse {
             Log.w(TAG, "Cannot open $url: ${it.message}")
+            openError = if (it is SecurityException) "No permission to read this file" else it.message
             url
         }
         url.startsWith("file://") -> Uri.parse(url).path ?: url
@@ -179,6 +191,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
     override fun stop() {
         currentUrl = null
+        latestLoad = -1
         mpv.command(arrayOf("stop"))
         _state.value = PlaybackState()
         _tracks.value = emptyList()
@@ -297,7 +310,9 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
     override fun event(eventId: Int) {
         when (eventId) {
+            MpvEvent.MPV_EVENT_START_FILE -> openingLatest = ++filesStarted == latestLoad
             MpvEvent.MPV_EVENT_FILE_LOADED -> {
+                openingLatest = false
                 val duration = mpv.getPropertyDouble("duration") ?: 0.0
                 val position = mpv.getPropertyDouble("time-pos") ?: cachedPosition
                 cachedPosition = position
@@ -308,6 +323,13 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             }
             MpvEvent.MPV_EVENT_END_FILE -> {
                 _state.update { it.copy(fileLoaded = false) }
+                val failedToOpen = openingLatest && filesStarted == latestLoad
+                openingLatest = false
+                // Ended before loading and not replaced or stopped since: opening failed. mpv often only
+                // logs the reason at verbose level (stream/ffmpeg), so the error-log path below misses it.
+                if (failedToOpen) {
+                    _events.tryEmit(PlayerEvent.EndFile(currentUrl, openError ?: "Couldn't open the file"))
+                }
             }
             MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
                 // The position was frozen while seeking; extrapolate from now, not from when the seek was issued.

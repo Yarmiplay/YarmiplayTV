@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -72,6 +73,8 @@ fun MobileTopBar(title: String, nav: Navigator, subtitle: String? = null, showBa
         },
         actions = { actions() },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = AppColors.Background),
+        // MobileScaffold already pads its content below the status bar.
+        windowInsets = WindowInsets(0),
     )
 }
 

@@ -11,6 +11,7 @@ import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.click
 import androidx.compose.ui.geometry.Offset
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.syncplaytv.sync.PlaylistStatus
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -64,6 +65,18 @@ class LocalPlaybackTest {
         assertEquals(TestSupport.clipSize(), np.sizeBytes)
         val duration = container.player.state.value.duration
         assertTrue("duration $duration", duration in 2.5..3.5)
+    }
+
+    @Test
+    fun unreadableUriFailsAndDoesNotBlockTheNextLoad() {
+        val missing = Uri.parse("content://media/external/video/media/987654321")
+        container.playlist.playLocal(missing, inRoom = false)
+        compose.waitUntil(20_000) { container.playlist.status.value is PlaylistStatus.Failed }
+        // The same URI again must try again rather than being treated as still loading.
+        container.playlist.dismissStatus()
+        container.playlist.playLocal(missing, inRoom = false)
+        compose.waitUntil(20_000) { container.playlist.status.value is PlaylistStatus.Failed }
+        playClipAndWaitLoaded()
     }
 
     @Test
