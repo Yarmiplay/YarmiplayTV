@@ -108,10 +108,13 @@ class LocalPlaybackTest {
         playClipAndWaitLoaded()
         compose.runOnUiThread { container.player.setPaused(true) }
         compose.waitUntilExactlyOneExists(hasTestTag("sheet_Chat"), 5_000)
+        val audioBounds = compose.onNodeWithTag("sheet_Audio").fetchSemanticsNode().boundsInRoot
         compose.onNodeWithTag("sheet_Chat").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("chat_field"), 5_000)
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.waitUntilDoesNotExist(hasTestTag("chat_field"), 5_000)
+        // The sheet brought the navigation bar back; tap only once the controls have slid back into place.
+        compose.waitUntil(5_000) { compose.onNodeWithTag("sheet_Audio").fetchSemanticsNode().boundsInRoot == audioBounds }
         compose.onNodeWithTag("sheet_Audio").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("player_sheet"), 5_000)
     }

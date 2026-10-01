@@ -77,6 +77,7 @@ class MobileScreenshotTest {
 
     private fun tap(tag: String) = compose.onNodeWithTag(tag).performClick()
     private fun tapText(text: String) = compose.onNodeWithText(text).performClick()
+    private fun boundsOf(tag: String) = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
     private fun await(tag: String) = onTimeoutSaveScreen("timeout_$tag") { compose.waitUntilAtLeastOneExists(hasTestTag(tag), 10_000) }
     private fun awaitText(text: String) = onTimeoutSaveScreen("timeout_text") { compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 10_000) }
 
@@ -195,7 +196,11 @@ class MobileScreenshotTest {
         scenarios.awaitCacheSettled()
         shot("player")
         val sheets = listOf("Shared playlist" to "playlist", "Room" to "room", "Chat" to "chat", "Audio" to "audio", "Subtitles" to "subtitles")
+        val resting = sheets.associate { (label, _) -> label to boundsOf("sheet_$label") }
         for ((label, slug) in sheets) {
+            // An open sheet brings the navigation bar back and lifts the controls; while they slide down again
+            // a tap at the button's position lands on the seek bar.
+            compose.waitUntil(5_000) { boundsOf("sheet_$label") == resting[label] }
             tap("sheet_$label"); await("player_sheet")
             shot("player_sheet_$slug")
             back()
