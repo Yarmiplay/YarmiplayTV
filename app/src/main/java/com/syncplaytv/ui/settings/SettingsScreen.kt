@@ -23,7 +23,7 @@ import com.syncplaytv.BuildConfig
 import com.syncplaytv.data.PlaybackPrefs
 import com.syncplaytv.syncplay.SyncSettings
 import com.syncplaytv.syncplay.UnpauseMode
-import com.syncplaytv.ui.Navigator
+import com.syncplaytv.ui.nav.Navigator
 import com.syncplaytv.ui.components.SectionTitle
 import com.syncplaytv.ui.components.ToggleRow
 import com.syncplaytv.ui.components.TvTextField

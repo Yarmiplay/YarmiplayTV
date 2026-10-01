@@ -5,6 +5,5 @@
         <item name="android:colorPrimary">@color/accent</item>
         <item name="android:colorAccent">@color/accent</item>
         <item name="android:windowNoTitle">true</item>
-        <item name="android:windowFullscreen">true</item>
     </style>
 </resources>

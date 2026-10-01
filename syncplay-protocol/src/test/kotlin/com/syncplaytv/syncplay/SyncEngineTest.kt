@@ -156,6 +156,24 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `joining mid-playback does not pause or rewind the room while the file opens`() {
+        player.isFileLoaded = false
+        engine.onFileLoading()
+        serverState(444.0, paused = false)
+        step(1.0)
+        // mpv has opened the file (paused at 0) but the app hasn't reported it yet.
+        player.isFileLoaded = true
+        step(1.0)
+        assertTrue("nothing may be broadcast before onFileLoaded: ${host.sent}", host.sent.none { it.stateChange })
+        assertTrue(host.readyChanges.isEmpty())
+        engine.onFileLoaded(resetPosition = false)
+        step(1.0)
+        assertEquals(447.0, player.position, 0.3)
+        assertFalse(player.isPaused)
+        assertTrue(host.sent.none { it.stateChange })
+    }
+
+    @Test
     fun `no file loaded never sends a state change`() {
         player.isFileLoaded = false
         serverState(10.0, paused = false)

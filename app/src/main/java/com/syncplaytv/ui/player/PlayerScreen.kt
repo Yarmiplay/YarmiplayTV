@@ -62,8 +62,8 @@ import com.syncplaytv.AppContainer
 import com.syncplaytv.player.TrackType
 import com.syncplaytv.syncplay.ConnectionStatus
 import com.syncplaytv.sync.PlaylistStatus
-import com.syncplaytv.ui.Navigator
-import com.syncplaytv.ui.Screen
+import com.syncplaytv.ui.nav.Navigator
+import com.syncplaytv.ui.nav.Screen
 import com.syncplaytv.ui.components.ActionButton
 import com.syncplaytv.ui.components.IconAction
 import com.syncplaytv.ui.components.Panel

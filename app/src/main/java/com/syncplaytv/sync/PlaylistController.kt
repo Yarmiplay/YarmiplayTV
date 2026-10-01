@@ -1,6 +1,9 @@
 package com.syncplaytv.sync
 
+import android.net.Uri
 import android.util.Log
+import com.syncplaytv.local.LocalFile
+import com.syncplaytv.local.LocalLibrary
 import com.syncplaytv.media.MediaItem
 import com.syncplaytv.media.MediaSource
 import com.syncplaytv.media.PlayableMedia
@@ -46,6 +49,7 @@ class PlaylistController(
     private val sync: SyncController,
     private val player: MpvPlayer,
     private val mediaSource: StateFlow<MediaSource?>,
+    private val local: LocalLibrary,
 ) {
     private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
     val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying.asStateFlow()
@@ -56,6 +60,9 @@ class PlaylistController(
     /** Set to true by the UI when the player screen should be brought up (e.g. room switched file). */
     private val _openPlayerRequests = MutableStateFlow(0)
     val openPlayerRequests: StateFlow<Int> = _openPlayerRequests.asStateFlow()
+
+    /** Last [openPlayerRequests] value a UI acted on; outlives activities so old requests aren't replayed. */
+    var handledPlayerRequests = 0
 
     var autoReady: Boolean = true
 
@@ -90,6 +97,7 @@ class PlaylistController(
                 _status.value = PlaylistStatus.Idle
                 sync.reportFile(FileInfo(p.media.fileName, duration, p.media.sizeBytes), p.resetPosition)
                 if (p.fromRoom && autoReady && sync.isActive) sync.setReady(true)
+                if (!sync.isActive) player.setPaused(false)
             }
             is PlayerEvent.EndFile -> {
                 val p = pending ?: return
@@ -113,14 +121,25 @@ class PlaylistController(
             load(it.toNowPlaying(), resetPosition, fromRoom = true)
             return
         }
-        val source = mediaSource.value
-        if (source == null) {
-            _status.value = PlaylistStatus.NotFound(filename, "Connect to Jellyfin to auto-load playlist items")
-            sync.postLocal("Can't load '$filename': not connected to Jellyfin", isError = true)
+        if (mediaSource.value == null && !local.hasFolders) {
+            _status.value = PlaylistStatus.NotFound(filename, "Connect to Jellyfin or add a media folder to auto-load playlist items")
+            sync.postLocal("Can't load '$filename': no Jellyfin server or media folders", isError = true)
             return
         }
         _status.value = PlaylistStatus.Resolving(filename)
         resolveJob = scope.launch {
+            // Local media folders first (like desktop Syncplay), then the Jellyfin server.
+            local.resolve(filename)?.let { match ->
+                Log.i(TAG, "Resolved '$filename' locally via ${match.kind} -> ${match.file.uri}")
+                load(match.file.toNowPlaying(), resetPosition, fromRoom = true)
+                return@launch
+            }
+            val source = mediaSource.value
+            if (source == null) {
+                _status.value = PlaylistStatus.NotFound(filename, "Not in your media folders (Jellyfin isn't connected)")
+                sync.postLocal("'$filename' not found in your media folders", isError = true)
+                return@launch
+            }
             val result = runCatching { source.resolveByFilename(filename) }
                 .getOrElse { ResolveResult.NotFound(filename, it.message ?: "Lookup failed") }
             when (result) {
@@ -129,8 +148,9 @@ class PlaylistController(
                     load(result.playable.toNowPlaying(), resetPosition, fromRoom = true)
                 }
                 is ResolveResult.NotFound -> {
+                    val where = if (local.hasFolders) "${source.displayName} or your media folders" else source.displayName
                     _status.value = PlaylistStatus.NotFound(filename, result.reason)
-                    sync.postLocal("'$filename' not found in ${source.displayName}", isError = true)
+                    sync.postLocal("'$filename' not found in $where", isError = true)
                 }
             }
         }
@@ -140,6 +160,7 @@ class PlaylistController(
         pending = PendingLoad(media, resetPosition, fromRoom)
         _nowPlaying.value = media
         _status.value = PlaylistStatus.Loading(media.fileName)
+        sync.reportLoading()
         player.load(media.url, media.title, startPaused = true)
     }
 
@@ -197,13 +218,7 @@ class PlaylistController(
                 return@launch
             }
             remember(playable)
-            val client = sync.client ?: return@launch
-            if (sync.room.value.playlist.any { Filenames.same(it, playable.fileName) }) {
-                sync.postLocal("${playable.fileName} is already in the playlist")
-            } else {
-                client.addToPlaylist(playable.fileName)
-                sync.postLocal("Added ${playable.fileName} to the room playlist")
-            }
+            addFileNameToPlaylist(playable.fileName)
         }
     }
 
@@ -220,6 +235,62 @@ class PlaylistController(
             if (status != null) knownPlayables[status.fileName] = playable
             _openPlayerRequests.value++
             load(playable.toNowPlaying(), resetPosition = true, fromRoom = true)
+        }
+    }
+
+    /**
+     * Plays a file from this device. With [inRoom] (and a room) its filename becomes the room's
+     * selection, so the others load their own copy; otherwise it only plays here and is reported.
+     */
+    fun playLocal(uri: Uri, inRoom: Boolean) {
+        scope.launch {
+            val playable = localPlayable(uri)
+            remember(playable)
+            val client = sync.client
+            if (inRoom && client != null && sync.isActive) {
+                client.playInRoom(playable.fileName)
+            } else {
+                _openPlayerRequests.value++
+                load(playable.toNowPlaying(), resetPosition = inRoom, fromRoom = false)
+            }
+        }
+    }
+
+    fun addLocalToRoomPlaylist(uri: Uri) {
+        scope.launch {
+            val playable = localPlayable(uri)
+            remember(playable)
+            addFileNameToPlaylist(playable.fileName)
+        }
+    }
+
+    /** Manual pick after a failed lookup: play a local file as the substitute for the playlist entry. */
+    fun resolveManuallyLocal(uri: Uri) {
+        val status = _status.value as? PlaylistStatus.NotFound
+        scope.launch {
+            val playable = localPlayable(uri)
+            remember(playable)
+            if (status != null) knownPlayables[status.fileName] = playable
+            _openPlayerRequests.value++
+            load(playable.toNowPlaying(), resetPosition = true, fromRoom = true)
+        }
+    }
+
+    private suspend fun localPlayable(uri: Uri): PlayableMedia {
+        val file = local.describe(uri)
+        return PlayableMedia(itemId = file.uri, url = file.uri, fileName = file.name, sizeBytes = file.sizeBytes, durationSeconds = 0.0, title = file.name)
+    }
+
+    private fun addFileNameToPlaylist(fileName: String) {
+        val client = sync.client ?: run {
+            sync.postLocal("Join a Syncplay room to use the shared playlist", isError = true)
+            return
+        }
+        if (sync.room.value.playlist.any { Filenames.same(it, fileName) }) {
+            sync.postLocal("$fileName is already in the playlist")
+        } else {
+            client.addToPlaylist(fileName)
+            sync.postLocal("Added $fileName to the room playlist")
         }
     }
 
@@ -246,6 +317,7 @@ class PlaylistController(
     }
 
     private fun PlayableMedia.toNowPlaying() = NowPlaying(title, fileName, sizeBytes, durationSeconds, url, itemId)
+    private fun LocalFile.toNowPlaying() = NowPlaying(name, name, sizeBytes, 0.0, uri, uri)
 
     companion object {
         private const val TAG = "PlaylistController"

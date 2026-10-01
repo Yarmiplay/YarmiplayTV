@@ -152,6 +152,11 @@ class SyncplayClient(
         }
     }
 
+    /** Call when the player starts opening a file; follow up with [fileLoaded] once it's ready. */
+    fun fileLoading() {
+        scope.launch { engine.onFileLoading() }
+    }
+
     fun setReady(ready: Boolean) {
         scope.launch { changeReadyState(ready, manuallyInitiated = true) }
     }

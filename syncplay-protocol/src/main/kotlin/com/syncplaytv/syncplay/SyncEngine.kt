@@ -45,6 +45,12 @@ class SyncEngine(
     private var lastAdvanceTime: Double? = null
     /** After a reset-to-start file switch the player reports position 0 until this time, like Syncplay's mpv wrapper. */
     private var resetIgnoreUntil: Double? = null
+    /**
+     * False between [onFileLoading] and [onFileLoaded]. The player already reports the new file
+     * (paused at 0) before the room knows about it, which would otherwise look like a local pause + seek.
+     */
+    private var fileReady = true
+    private val playerReady: Boolean get() = fileReady && player.isFileLoaded
 
     val hasGlobalState: Boolean get() = lastGlobalUpdate != null
 
@@ -62,11 +68,11 @@ class SyncEngine(
     private fun readPlayerPosition(): Double {
         val now = clock.now()
         resetIgnoreUntil?.let { if (now < it) return 0.0 else resetIgnoreUntil = null }
-        return if (player.isFileLoaded) max(player.position, 0.0) else getGlobalPosition()
+        return if (playerReady) max(player.position, 0.0) else getGlobalPosition()
     }
 
     private fun readPlayerPaused(): Boolean =
-        if (player.isFileLoaded) player.isPaused else getGlobalPaused()
+        if (playerReady) player.isPaused else getGlobalPaused()
 
     /** Call every [Constants.PLAYER_ASK_DELAY_MS] while connected. */
     fun poll() {
@@ -168,7 +174,7 @@ class SyncEngine(
     }
 
     private fun initPlayerState(position: Double, paused: Boolean): Boolean {
-        if (!player.isFileLoaded) return false
+        if (!playerReady) return false
         setPosition(position)
         setPlayerPaused(paused)
         return true
@@ -223,6 +229,7 @@ class SyncEngine(
      * With [resetPosition] playback starts from 0 (a playlist switch); otherwise it jumps to the room's position.
      */
     fun onFileLoaded(resetPosition: Boolean) {
+        fileReady = true
         val now = clock.now()
         if (resetPosition) {
             resetIgnoreUntil = now + Constants.NEWFILE_IGNORE_TIME
@@ -237,6 +244,11 @@ class SyncEngine(
         if (lastPlayerUpdate != null) lastPlayerUpdate = now
     }
 
+    /** Call when the player starts opening a new file; it's ignored until [onFileLoaded]. */
+    fun onFileLoading() {
+        fileReady = false
+    }
+
     fun markAdvanced() {
         lastAdvanceTime = clock.now()
     }
@@ -248,11 +260,11 @@ class SyncEngine(
         if (lastPlayerUpdate != null) lastPlayerUpdate = now
         val rewound = lastRewindTime
         if (rewound != null && abs(now - rewound) < 1.0 && position > 5) return
-        if (player.isFileLoaded) player.seek(max(position, 0.0))
+        if (playerReady) player.seek(max(position, 0.0))
     }
 
     private fun setPlayerPaused(paused: Boolean) {
-        if (!player.isFileLoaded) return
+        if (!playerReady) return
         if (lastPlayerUpdate != null && !paused) lastPlayerUpdate = clock.now()
         if (paused && speedChanged) {
             player.setSpeed(1.0)

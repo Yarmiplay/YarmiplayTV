@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Serves the SyncplayTV APK on the local network so a real TV can download and install it.
+Serves the SyncplayTV APK on the local network so a real TV, phone or tablet can download and install it.
 
   python scripts/apk_server.py [--apk app/build/outputs/apk/debug/app-debug.apk] [--port 8080]
 
 On the TV, open http://<this-pc>:<port>/ in a browser or the "Downloader" app,
-or enter http://<this-pc>:<port>/a to download the APK directly. Standard library only.
+or enter http://<this-pc>:<port>/a to download the APK directly. On a phone or tablet,
+open the page in the browser. Standard library only.
 """
 import argparse
 import datetime
@@ -92,9 +93,11 @@ def make_handler(apk_path, version):
  ol {{ display:inline-block; text-align:left; color:#9AA0A6; font-size:1.1em; line-height:1.7; }}
 </style></head><body>
 <h1>SyncplayTV</h1><p>{info}</p>{button}
+<p>One app for Google TV, phones and tablets: the TV gets the remote-friendly UI, phones and tablets a touch UI.</p>
 <ol><li>If Android asks, allow this app (browser / Downloader) to install unknown apps.</li>
 <li>Open the downloaded file and choose <b>Install</b> (or <b>Update</b>).</li>
-<li>Direct link for the Downloader app: <b>/a</b> on this address.</li></ol>
+<li>On a TV, the Downloader app's direct link is <b>/a</b> on this address.</li>
+<li>On a phone, tap the download notification (or open it from <b>Downloads</b>) to install.</li></ol>
 </body></html>""".encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -118,11 +121,14 @@ def main():
     a = ap.parse_args()
     if not os.path.isfile(a.apk):
         print(f"warning: {a.apk} does not exist yet (build with ./gradlew :app:assembleDebug)", file=sys.stderr)
+    # On Windows SO_REUSEADDR lets a second server bind a port that's already in use, and the old one keeps
+    # answering; without it a stale server makes this fail loudly instead.
+    ThreadingHTTPServer.allow_reuse_address = sys.platform != "win32"
     try:
         server = ThreadingHTTPServer(("0.0.0.0", a.port), make_handler(a.apk, a.version))
     except OSError as e:
         sys.exit(f"cannot listen on port {a.port}: {e} (try --port 8090)")
-    print("SyncplayTV APK server running. On the TV open one of:")
+    print("SyncplayTV APK server running. On the TV, phone or tablet open one of:")
     for i, ip in enumerate(lan_addresses()):
         note = "   <- most likely your LAN" if i == 0 else ""
         print(f"  http://{ip}:{a.port}/   (page)   http://{ip}:{a.port}/a   (direct download){note}")

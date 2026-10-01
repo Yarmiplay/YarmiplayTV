@@ -114,7 +114,8 @@ if (-not $tvImages) { throw "No Google TV system image found in the SDK package 
 $tvImage = $tvImages | Select-Object -First 1
 Write-Step "Using $tvImage"
 
-$packages = @("platform-tools", "emulator", "platforms;$Platform", "build-tools;$BuildTools", $tvImage) |
+$mobileImage = "system-images;android-36;google_apis_playstore;x86_64"
+$packages = @("platform-tools", "emulator", "platforms;$Platform", "build-tools;$BuildTools", $tvImage, $mobileImage) |
     ForEach-Object { Convert-PackageId $_ }
 foreach ($p in $packages) {
     Write-Step "Installing $p"

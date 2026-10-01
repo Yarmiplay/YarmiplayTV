@@ -1,13 +1,14 @@
 <#
 .SYNOPSIS
-  Sends TV remote-control keys to the emulator (or any adb device).
+  Sends TV remote-control keys, taps, swipes and rotation to the emulator (or any adb device).
 
 .EXAMPLE
   ./scripts/remote.ps1 down down ok
   ./scripts/remote.ps1 playpause
   ./scripts/remote.ps1 -Text "Neptunia"      # types text into the focused field
   ./scripts/remote.ps1 -Delay 800 right right ok back
-#>
+  ./scripts/remote.ps1 -Serial emulator-5556 tap 540 1200 swipe 540 1800 540 600
+  ./scripts/remote.ps1 -Serial emulator-5556 rotate landscape   # portrait | landscape | auto#>
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$Keys,
@@ -37,8 +38,43 @@ if ($Text) {
     & $adb @adbArgs shell input text ($Text -replace " ", "%s")
 }
 
-foreach ($k in $Keys) {
-    $code = if ($map.ContainsKey($k.ToLower())) { $map[$k.ToLower()] } elseif ($k -match "^KEYCODE_") { $k } else { throw "Unknown key '$k'. Known: $($map.Keys -join ', ')" }
-    & $adb @adbArgs shell input keyevent $code
+function Take([int]$count) {
+    if ($script:i + $count -ge $Keys.Count) { throw "'$($Keys[$script:i])' needs $count argument(s)" }
+    $vals = $Keys[($script:i + 1)..($script:i + $count)]
+    $script:i += $count
+    $vals
+}
+
+$script:i = 0
+while ($script:i -lt $Keys.Count) {
+    $k = $Keys[$script:i].ToLower()
+    switch ($k) {
+        "tap" {
+            $x, $y = Take 2
+            & $adb @adbArgs shell input tap $x $y
+        }
+        "swipe" {
+            $x1, $y1, $x2, $y2 = Take 4
+            & $adb @adbArgs shell input swipe $x1 $y1 $x2 $y2 300
+        }
+        "rotate" {
+            $mode = (Take 1).ToLower()
+            if ($mode -eq "auto") {
+                & $adb @adbArgs shell settings put system accelerometer_rotation 1
+            } else {
+                $rotation = @{ portrait = 0; landscape = 1; "reverse-portrait" = 2; "reverse-landscape" = 3 }[$mode]
+                if ($null -eq $rotation) { throw "rotate takes portrait, landscape, reverse-portrait, reverse-landscape or auto" }
+                & $adb @adbArgs shell settings put system accelerometer_rotation 0
+                & $adb @adbArgs shell settings put system user_rotation $rotation
+            }
+        }
+        default {
+            $code = if ($map.ContainsKey($k)) { $map[$k] } elseif ($Keys[$script:i] -match "^KEYCODE_") { $Keys[$script:i] } else {
+                throw "Unknown key '$k'. Known: tap x y, swipe x1 y1 x2 y2, rotate <mode>, $($map.Keys -join ', ')"
+            }
+            & $adb @adbArgs shell input keyevent $code
+        }
+    }
+    $script:i++
     Start-Sleep -Milliseconds $Delay
 }

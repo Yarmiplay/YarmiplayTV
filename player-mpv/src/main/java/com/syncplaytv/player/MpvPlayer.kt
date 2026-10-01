@@ -1,6 +1,7 @@
 package com.syncplaytv.player
 
 import android.content.Context
+import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import android.view.SurfaceHolder
@@ -119,6 +120,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             mpv.attachSurface(holder.surface)
             mpv.setOptionString("force-window", "yes")
             mpv.setPropertyString("vo", "gpu")
+            mpv.setPropertyString("vid", "auto")
             surfaceAttached = true
         }
 
@@ -128,6 +130,10 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
         override fun surfaceDestroyed(holder: SurfaceHolder) {
             surfaceAttached = false
+            // Without a surface the MediaCodec decoder can't drain its output and mpv's core spins
+            // in it holding the lock (the next main-thread mpv call then ANRs), so drop video until
+            // a surface is back; audio keeps playing.
+            mpv.setPropertyString("vid", "no")
             mpv.setPropertyString("vo", "null")
             mpv.setPropertyString("force-window", "no")
             mpv.detachSurface()
@@ -145,12 +151,30 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         _state.update { PlaybackState(url = url, paused = startPaused, position = startPosition) }
         _tracks.value = emptyList()
         mpv.setPropertyBoolean("pause", startPaused)
+        mpv.setPropertyString("vid", if (surfaceAttached) "auto" else "no")
         val opts = buildList {
             if (mediaTitle != null) add("force-media-title=${mediaTitle.replace(",", "\\,")}")
             if (startPosition > 0) add("start=$startPosition")
         }.joinToString(",")
-        if (opts.isEmpty()) mpv.command(arrayOf("loadfile", url, "replace"))
-        else mpv.command(arrayOf("loadfile", url, "replace", "-1", opts))
+        val target = mpvTarget(url)
+        if (opts.isEmpty()) mpv.command(arrayOf("loadfile", target, "replace"))
+        else mpv.command(arrayOf("loadfile", target, "replace", "-1", opts))
+    }
+
+    /**
+     * mpv can't open Android content:// URIs, so hand it a file descriptor instead; mpv closes it
+     * when the file is unloaded (fdclose://). file:// URLs become plain paths.
+     */
+    private fun mpvTarget(url: String): String = when {
+        url.startsWith("content://") -> runCatching {
+            val pfd = appContext.contentResolver.openFileDescriptor(Uri.parse(url), "r") ?: error("no descriptor")
+            "fdclose://${pfd.detachFd()}"
+        }.getOrElse {
+            Log.w(TAG, "Cannot open $url: ${it.message}")
+            url
+        }
+        url.startsWith("file://") -> Uri.parse(url).path ?: url
+        else -> url
     }
 
     override fun stop() {

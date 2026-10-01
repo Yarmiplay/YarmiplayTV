@@ -47,8 +47,8 @@ import com.syncplaytv.syncplay.ConnectionStatus
 import com.syncplaytv.syncplay.Constants
 import com.syncplaytv.syncplay.FileInfo
 import com.syncplaytv.syncplay.Filenames
-import com.syncplaytv.ui.Navigator
-import com.syncplaytv.ui.Screen
+import com.syncplaytv.ui.nav.Navigator
+import com.syncplaytv.ui.nav.Screen
 import com.syncplaytv.ui.components.ActionButton
 import com.syncplaytv.ui.components.Dot
 import com.syncplaytv.ui.components.IconAction
@@ -120,7 +120,7 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
     }
 }
 
-private fun sameFile(a: FileInfo?, b: FileInfo?): Boolean {
+internal fun sameFile(a: FileInfo?, b: FileInfo?): Boolean {
     if (a == null || b == null) return false
     val nameOk = Filenames.same(a.name, b.name)
     val sizeOk = a.size == 0L || b.size == 0L || a.size == b.size

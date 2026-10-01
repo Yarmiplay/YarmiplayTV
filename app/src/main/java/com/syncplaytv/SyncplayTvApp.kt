@@ -5,6 +5,7 @@ import android.os.Build
 import android.util.Log
 import com.syncplaytv.data.AppSettings
 import com.syncplaytv.data.SettingsStore
+import com.syncplaytv.local.LocalLibrary
 import com.syncplaytv.media.MediaSource
 import com.syncplaytv.media.jellyfin.ClientInfo
 import com.syncplaytv.media.jellyfin.JellyfinClient
@@ -44,6 +45,9 @@ class AppContainer(app: Application) {
     )
     val settingsStore = SettingsStore(app)
 
+    /** Set by MainActivity; decides the default Syncplay name and which UI is shown. */
+    var deviceKind: DeviceKind = DeviceKind.TV
+
     private val initial: AppSettings = runBlocking { settingsStore.current() }
     val settings: StateFlow<AppSettings> = settingsStore.settings.stateIn(scope, SharingStarted.Eagerly, initial)
 
@@ -68,8 +72,9 @@ class AppContainer(app: Application) {
     val mediaSource: StateFlow<MediaSource?> = _mediaSource.asStateFlow()
     val jellyfin: StateFlow<JellyfinSource?> = _mediaSource.asStateFlow()
 
+    val local = LocalLibrary(app, settingsStore, scope, initial.localFolders)
     val sync = SyncController(scope, player)
-    val playlist = PlaylistController(scope, sync, player, mediaSource)
+    val playlist = PlaylistController(scope, sync, player, mediaSource, local)
 
     init {
         scope.launch {

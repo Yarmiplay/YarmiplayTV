@@ -48,8 +48,8 @@ import com.syncplaytv.media.FileNames
 import com.syncplaytv.media.MediaItem
 import com.syncplaytv.media.MediaItemType
 import com.syncplaytv.syncplay.ConnectionStatus
-import com.syncplaytv.ui.Navigator
-import com.syncplaytv.ui.Screen
+import com.syncplaytv.ui.nav.Navigator
+import com.syncplaytv.ui.nav.Screen
 import com.syncplaytv.ui.components.ActionButton
 import com.syncplaytv.ui.components.EmptyState
 import com.syncplaytv.ui.components.PosterCard
@@ -61,12 +61,12 @@ fun openItem(container: AppContainer, nav: Navigator, item: MediaItem) {
     if (item.isPlayable) nav.actionItem = item else nav.push(Screen.Browse(item))
 }
 
-private fun aspectFor(items: List<MediaItem>): Float {
+internal fun aspectFor(items: List<MediaItem>): Float {
     val posters = items.count { it.type in setOf(MediaItemType.SERIES, MediaItemType.MOVIE, MediaItemType.SEASON) }
     return if (posters > items.size / 2) 2f / 3f else 16f / 9f
 }
 
-private fun subtitleFor(item: MediaItem): String? = when (item.type) {
+internal fun subtitleFor(item: MediaItem): String? = when (item.type) {
     MediaItemType.EPISODE -> listOfNotNull(item.seriesName, item.durationSeconds?.let { "${(it / 60).toInt()} min" }).joinToString(" · ")
     MediaItemType.MOVIE -> item.year?.toString()
     MediaItemType.SERIES -> item.year?.toString()

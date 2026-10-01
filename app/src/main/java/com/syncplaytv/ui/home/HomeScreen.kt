@@ -46,8 +46,8 @@ import com.syncplaytv.R
 import com.syncplaytv.media.MediaItem
 import com.syncplaytv.media.MediaItemType
 import com.syncplaytv.syncplay.ConnectionStatus
-import com.syncplaytv.ui.Navigator
-import com.syncplaytv.ui.Screen
+import com.syncplaytv.ui.nav.Navigator
+import com.syncplaytv.ui.nav.Screen
 import com.syncplaytv.ui.browse.openItem
 import com.syncplaytv.ui.components.Dot
 import com.syncplaytv.ui.components.IconAction

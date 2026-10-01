@@ -68,6 +68,7 @@ class SyncController(
 
     /** The file currently loaded and reported to the room (kept across reconnects/room changes). */
     private var reportedFile: FileInfo? = null
+    private var loading = false
 
     fun connect(config: SyncplayConfig) {
         disconnect()
@@ -96,7 +97,8 @@ class SyncController(
             }
         }
         newClient.start()
-        reportedFile?.let { newClient.fileLoaded(it, resetPosition = false) }
+        if (loading) newClient.fileLoading()
+        else reportedFile?.let { newClient.fileLoaded(it, resetPosition = false) }
     }
 
     fun disconnect() {
@@ -107,8 +109,15 @@ class SyncController(
         player.setSpeed(1.0)
     }
 
+    /** Report that mpv started opening a file; the room ignores the player until [reportFile]. */
+    fun reportLoading() {
+        loading = true
+        clientFlow.value?.fileLoading()
+    }
+
     /** Report a file that finished loading in mpv. */
     fun reportFile(file: FileInfo?, resetPosition: Boolean) {
+        loading = false
         reportedFile = file
         clientFlow.value?.fileLoaded(file, resetPosition)
     }

@@ -54,6 +54,8 @@ data class AppSettings(
     val playback: PlaybackPrefs = PlaybackPrefs(),
     val jellyfin: JellyfinSession? = null,
     val lastJellyfinUrl: String = "",
+    /** Persisted content:// tree URIs of the user's media folders. */
+    val localFolders: List<String> = emptyList(),
 )
 
 class SettingsStore(private val context: Context) {
@@ -86,6 +88,7 @@ class SettingsStore(private val context: Context) {
         val jfLastUrl = stringPreferencesKey("jf_last_url")
 
         val deviceId = stringPreferencesKey("device_id")
+        val localFolders = stringPreferencesKey("local_folders")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map(::read)
@@ -127,6 +130,7 @@ class SettingsStore(private val context: Context) {
                 accessToken = token,
             ) else null,
             lastJellyfinUrl = p[Keys.jfLastUrl] ?: "",
+            localFolders = p[Keys.localFolders]?.split('\n')?.filter { it.isNotBlank() } ?: emptyList(),
         )
     }
 
@@ -180,6 +184,8 @@ class SettingsStore(private val context: Context) {
     }
 
     suspend fun saveLastJellyfinUrl(url: String) = context.dataStore.edit { it[Keys.jfLastUrl] = url }
+
+    suspend fun saveLocalFolders(uris: List<String>) = context.dataStore.edit { it[Keys.localFolders] = uris.joinToString("\n") }
 
     suspend fun deviceId(): String {
         var id: String? = null
