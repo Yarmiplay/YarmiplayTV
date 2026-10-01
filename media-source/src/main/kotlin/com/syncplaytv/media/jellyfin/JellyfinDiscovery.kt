@@ -27,7 +27,13 @@ object JellyfinDiscovery {
     private const val MESSAGE = "who is JellyfinServer?"
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun discover(timeoutMs: Int = 2500): List<DiscoveredServer> = withContext(Dispatchers.IO) {
+    /** Replaces the network scan when set; tests use it for fixed results. */
+    @Volatile
+    var scanner: (suspend () -> List<DiscoveredServer>)? = null
+
+    suspend fun discover(timeoutMs: Int = 2500): List<DiscoveredServer> = scanner?.invoke() ?: scan(timeoutMs)
+
+    private suspend fun scan(timeoutMs: Int): List<DiscoveredServer> = withContext(Dispatchers.IO) {
         val found = LinkedHashMap<String, DiscoveredServer>()
         runCatching {
             DatagramSocket().use { socket ->

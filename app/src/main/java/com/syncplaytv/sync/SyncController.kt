@@ -10,6 +10,7 @@ import com.syncplaytv.syncplay.SyncplayClient
 import com.syncplaytv.syncplay.SyncplayConfig
 import com.syncplaytv.syncplay.SyncplayEvent
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -80,7 +81,8 @@ class SyncController(
             log = { Log.d(TAG, it) },
         )
         clientFlow.value = newClient
-        eventsJob = scope.launch {
+        // Subscribe before start(): events has no replay, and a local server answers within a millisecond.
+        eventsJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             newClient.events.collect { event ->
                 _events.emit(event)
                 when (event) {

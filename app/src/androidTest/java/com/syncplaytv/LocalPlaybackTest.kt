@@ -90,10 +90,13 @@ class LocalPlaybackTest {
 
         // Taps go to an empty spot, away from the centre buttons and the top/bottom bars.
         compose.waitUntilExactlyOneExists(hasTestTag("play_pause"), 5_000)
+        // A single tap only counts once the double-tap timeout has passed on the test clock.
         compose.onNodeWithTag("player_gestures").performTouchInput { click(Offset(width * 0.15f, height * 0.4f)) }
+        compose.mainClock.advanceTimeBy(DOUBLE_TAP_GAP_MS)
         compose.waitUntilDoesNotExist(hasTestTag("play_pause"), 5_000)
         assertTrue("tap must not unpause", container.player.state.value.paused)
         compose.onNodeWithTag("player_gestures").performTouchInput { click(Offset(width * 0.15f, height * 0.4f)) }
+        compose.mainClock.advanceTimeBy(DOUBLE_TAP_GAP_MS)
         compose.waitUntilExactlyOneExists(hasTestTag("play_pause"), 5_000)
 
         compose.onNodeWithTag("player_gestures").performTouchInput { doubleClick(Offset(width * 0.1f, height * 0.4f)) }
@@ -111,5 +114,10 @@ class LocalPlaybackTest {
         compose.waitUntilDoesNotExist(hasTestTag("chat_field"), 5_000)
         compose.onNodeWithTag("sheet_Audio").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("player_sheet"), 5_000)
+    }
+
+    private companion object {
+        /** More than ViewConfiguration's double-tap timeout (300 ms). */
+        const val DOUBLE_TAP_GAP_MS = 400L
     }
 }

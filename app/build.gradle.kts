@@ -40,6 +40,9 @@ android {
             useLegacyPackaging = true
         }
     }
+
+    // Reference screenshots for the safety-net comparison tests, read back from the test APK's assets.
+    sourceSets["androidTest"].assets.srcDir("src/androidTest/screenshots")
 }
 
 kotlin {
@@ -79,5 +82,6 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.okhttp.mockwebserver)
     debugImplementation(libs.compose.ui.test.manifest)
 }
