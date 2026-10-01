@@ -190,6 +190,7 @@ class TvScreenshotTest {
         @JvmStatic
         fun setUpClass() {
             assumeTrue("TV only", DeviceUi.kind(TestSupport.app) == DeviceKind.TV)
+            assumeTrue("needs -e screenshots true", Screenshots.enabled)
             syncplay = FakeSyncplayServer()
             jellyfin = FakeJellyfin()
             state.snapshot()

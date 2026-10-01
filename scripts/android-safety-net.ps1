@@ -106,13 +106,13 @@ try {
     $jobs = foreach ($avd in $Avds) {
         $serial = $devices[$avd]
         $tv = $avd -like "*TV*"
-        $filter = if ($Record) {
+        $filter = @("-e", "screenshots", "true") + $(if ($Record) {
             @("-e", "class", $(if ($tv) { "com.syncplaytv.tv.TvScreenshotTest" } else { "com.syncplaytv.screenshots.MobileScreenshotTest" }), "-e", "recordScreenshots", "true")
         } elseif ($tv) {
             @("-e", "package", "com.syncplaytv.tv")
         } else {
             @("-e", "notPackage", "com.syncplaytv.tv,com.syncplaytv.synccheck")
-        }
+        })
         Start-Job -Name $avd -ArgumentList $adb, $serial, $apk, $testApk, $runner, $deviceOut, $filter, $root -ScriptBlock {
             param($adb, $serial, $apk, $testApk, $runner, $deviceOut, $filter, $root)
             Set-Location $root

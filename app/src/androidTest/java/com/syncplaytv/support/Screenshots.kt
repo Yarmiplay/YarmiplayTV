@@ -45,6 +45,13 @@ object Screenshots {
     val recording: Boolean
         get() = InstrumentationRegistry.getArguments().getString("recordScreenshots") == "true"
 
+    /**
+     * The references match the safety net's emulators (scripts/android-safety-net.ps1 passes
+     * `-e screenshots true`); other devices, like CI's software-rendered emulator, skip the comparison.
+     */
+    val enabled: Boolean
+        get() = recording || InstrumentationRegistry.getArguments().getString("screenshots") == "true"
+
     /** E.g. `phone-1080x2400`: device kind plus the display's natural (portrait for phones) pixel size. */
     val device: String by lazy {
         val context = instrumentation.targetContext
