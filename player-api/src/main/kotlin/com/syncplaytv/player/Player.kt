@@ -1,16 +1,13 @@
 package com.syncplaytv.player
 
-import android.view.SurfaceHolder
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
+/** A media player as the app and the sync engine see it; each platform attaches video output its own way. */
 interface Player {
     val state: StateFlow<PlaybackState>
     val tracks: StateFlow<List<Track>>
     val events: SharedFlow<PlayerEvent>
-
-    /** Attach to the SurfaceView the video should render into. */
-    val surfaceCallback: SurfaceHolder.Callback
 
     /**
      * Load [url]. [mediaTitle] is shown in mpv's OSD; [startPaused] keeps the file paused once loaded;
@@ -29,6 +26,14 @@ interface Player {
 
     /** Short text shown by mpv's on-screen display. */
     fun showText(text: String, durationMs: Int = 3000)
+
+    // Fast reads for the sync engine: they reflect commands immediately, before mpv confirms them.
+    val isFileLoaded: Boolean
+    val isPaused: Boolean
+    val duration: Double
+
+    /** Position extrapolated from the last update, so polling between mpv updates stays smooth. */
+    fun currentPosition(): Double
 }
 
 data class PlaybackState(

@@ -30,7 +30,7 @@ data class MpvOptions(
  * property caches below are updated both from mpv's event thread and immediately when a
  * command is issued, so reads always reflect the last requested state.
  */
-class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()) : Player, MPVLib.EventObserver, MPVLib.LogObserver {
+class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()) : SurfacePlayer, MPVLib.EventObserver, MPVLib.LogObserver {
     private val appContext = context.applicationContext
     private val mpv: MPVLib = MPVLib.create(appContext) ?: error("libmpv failed to initialise")
 
@@ -235,12 +235,11 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
     // --- Fast reads for the sync engine -------------------------------------------
 
-    val isFileLoaded: Boolean get() = _state.value.fileLoaded
-    val isPaused: Boolean get() = cachedPaused
-    val duration: Double get() = _state.value.duration
+    override val isFileLoaded: Boolean get() = _state.value.fileLoaded
+    override val isPaused: Boolean get() = cachedPaused
+    override val duration: Double get() = _state.value.duration
 
-    /** Position extrapolated from the last update, so polling between mpv updates stays smooth. */
-    fun currentPosition(): Double {
+    override fun currentPosition(): Double {
         val base = cachedPosition
         val s = _state.value
         if (cachedPaused || s.buffering || s.seeking || !s.fileLoaded) return base

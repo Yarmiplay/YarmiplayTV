@@ -23,6 +23,7 @@ kotlin {
 }
 
 dependencies {
+    api(project(":player-api"))
     api(libs.libmpv)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.core.ktx)

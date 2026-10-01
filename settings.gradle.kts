@@ -19,6 +19,7 @@ rootProject.name = "SyncplayTV"
 include(":app")
 include(":syncplay-protocol")
 include(":media-source")
+include(":player-api")
 include(":player-mpv")
 include(":player-mpv-desktop")
 include(":desktop")
