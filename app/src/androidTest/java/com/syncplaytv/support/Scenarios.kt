@@ -63,7 +63,7 @@ class Scenarios(private val state: AppState, private val syncplay: FakeSyncplayS
     fun clipPlayingInRoom() {
         busyRoom()
         val uri = insertClip()
-        container.playlist.playLocal(uri, inRoom = true)
+        container.playlist.playLocal(uri.toString(), inRoom = true)
         waitUntil(20_000) {
             container.player.state.value.fileLoaded && container.playlist.nowPlaying.value?.fileName == CLIP_NAME &&
                 container.sync.room.value.playlistIndex == 1 && container.sync.room.value.isReady == true

@@ -75,6 +75,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.syncplaytv.AppContainer
+import com.syncplaytv.player.SurfacePlayer
 import com.syncplaytv.player.TrackType
 import com.syncplaytv.sync.FeedMessage
 import com.syncplaytv.sync.PlaylistStatus
@@ -91,7 +92,7 @@ private enum class PlayerSheet { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
-    val player = container.player
+    val player = container.player as SurfacePlayer
     val state by player.state.collectAsStateWithLifecycle()
     val room by container.sync.room.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
@@ -358,8 +359,8 @@ private fun PlayerToasts(container: AppContainer, modifier: Modifier = Modifier)
 
 @Composable
 private fun CenterStatus(container: AppContainer, nav: Navigator, status: PlaylistStatus, nothingLoaded: Boolean, fileLoaded: Boolean, inRoom: Boolean) {
-    val pickFile = rememberVideoPicker { uri -> container.playlist.resolveManuallyLocal(uri) }
-    val playFile = rememberVideoPicker { uri -> container.playlist.playLocal(uri, inRoom) }
+    val pickFile = rememberVideoPicker { uri -> container.playlist.resolveManuallyLocal(uri.toString()) }
+    val playFile = rememberVideoPicker { uri -> container.playlist.playLocal(uri.toString(), inRoom) }
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         when (status) {
             is PlaylistStatus.Resolving -> StatusBox("Looking for the file…", status.fileName)

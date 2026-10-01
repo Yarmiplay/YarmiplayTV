@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.syncplaytv.AppContainer
+import com.syncplaytv.player.SurfacePlayer
 import com.syncplaytv.player.TrackType
 import com.syncplaytv.syncplay.ConnectionStatus
 import com.syncplaytv.sync.PlaylistStatus
@@ -82,7 +83,7 @@ internal sealed interface Overlay {
 
 @Composable
 fun PlayerScreen(container: AppContainer, nav: Navigator) {
-    val player = container.player
+    val player = container.player as SurfacePlayer
     val state by player.state.collectAsStateWithLifecycle()
     val tracks by player.tracks.collectAsStateWithLifecycle()
     val room by container.sync.room.collectAsStateWithLifecycle()

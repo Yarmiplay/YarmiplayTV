@@ -47,7 +47,7 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         val data = intent?.data?.takeIf { intent.action == Intent.ACTION_VIEW }
         if (data != null && (data.scheme == "content" || data.scheme == "file")) {
-            container.playlist.playLocal(data, inRoom = false)
+            container.playlist.playLocal(data.toString(), inRoom = false)
             return
         }
         val url = intent?.getStringExtra("url") ?: data?.toString()

@@ -70,9 +70,9 @@ class SyncCheckTest {
         val b = insertClip(CLIP_B)
         activity = ActivityScenario.launch(MainActivity::class.java)
         // Registers both files with the playlist controller so the room's choice resolves to them.
-        container.playlist.addLocalToRoomPlaylist(a)
+        container.playlist.addLocalToRoomPlaylist(a.toString())
         Thread.sleep(500)
-        container.playlist.addLocalToRoomPlaylist(b)
+        container.playlist.addLocalToRoomPlaylist(b.toString())
         await(10_000, "playlist has both clips") { container.sync.room.value.playlist.containsAll(listOf(CLIP_A, CLIP_B)) }
 
         if (role == "leader") lead() else follow()

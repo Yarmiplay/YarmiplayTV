@@ -1,7 +1,7 @@
 package com.syncplaytv.sync
 
-import android.util.Log
-import com.syncplaytv.player.MpvPlayer
+import com.syncplaytv.Logger
+import com.syncplaytv.player.Player
 import com.syncplaytv.syncplay.ConnectionStatus
 import com.syncplaytv.syncplay.FileInfo
 import com.syncplaytv.syncplay.RoomState
@@ -36,7 +36,7 @@ data class FeedMessage(val text: String, val from: String? = null, val isError: 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SyncController(
     private val scope: CoroutineScope,
-    private val player: MpvPlayer,
+    private val player: Player,
 ) {
     private val adapter = MpvPlayerAdapter(player)
     private val clientFlow = MutableStateFlow<SyncplayClient?>(null)
@@ -78,7 +78,7 @@ class SyncController(
             player = adapter,
             settings = syncSettings,
             parentScope = scope,
-            log = { Log.d(TAG, it) },
+            log = { Logger.d(TAG, it) },
         )
         clientFlow.value = newClient
         // Subscribe before start(): events has no replay, and a local server answers within a millisecond.

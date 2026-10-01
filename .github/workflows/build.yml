@@ -45,7 +45,7 @@ jobs:
           SYNCPLAY_TEST_SERVER: 127.0.0.1:8999
         run: |
           chmod +x gradlew
-          ./gradlew --stacktrace :syncplay-protocol:test :media-source:test :app:testDebugUnitTest :app:assembleDebug
+          ./gradlew --stacktrace :syncplay-protocol:test :media-source:test :shared:desktopTest :app:testDebugUnitTest :app:assembleDebug
 
       - uses: actions/upload-artifact@v7
         with:

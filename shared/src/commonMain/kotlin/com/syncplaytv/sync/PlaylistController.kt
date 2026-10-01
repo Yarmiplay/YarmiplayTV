@@ -1,14 +1,13 @@
 package com.syncplaytv.sync
 
-import android.net.Uri
-import android.util.Log
+import com.syncplaytv.Logger
 import com.syncplaytv.local.LocalFile
 import com.syncplaytv.local.LocalLibrary
 import com.syncplaytv.media.MediaItem
 import com.syncplaytv.media.MediaSource
 import com.syncplaytv.media.PlayableMedia
 import com.syncplaytv.media.ResolveResult
-import com.syncplaytv.player.MpvPlayer
+import com.syncplaytv.player.Player
 import com.syncplaytv.player.PlayerEvent
 import com.syncplaytv.syncplay.FileInfo
 import com.syncplaytv.syncplay.Filenames
@@ -47,7 +46,7 @@ sealed interface PlaylistStatus {
 class PlaylistController(
     private val scope: CoroutineScope,
     private val sync: SyncController,
-    private val player: MpvPlayer,
+    private val player: Player,
     private val mediaSource: StateFlow<MediaSource?>,
     private val local: LocalLibrary,
 ) {
@@ -130,7 +129,7 @@ class PlaylistController(
         resolveJob = scope.launch {
             // Local media folders first (like desktop Syncplay), then the Jellyfin server.
             local.resolve(filename)?.let { match ->
-                Log.i(TAG, "Resolved '$filename' locally via ${match.kind} -> ${match.file.uri}")
+                Logger.i(TAG, "Resolved '$filename' locally via ${match.kind} -> ${match.file.uri}")
                 load(match.file.toNowPlaying(), resetPosition, fromRoom = true)
                 return@launch
             }
@@ -144,7 +143,7 @@ class PlaylistController(
                 .getOrElse { ResolveResult.NotFound(filename, it.message ?: "Lookup failed") }
             when (result) {
                 is ResolveResult.Found -> {
-                    Log.i(TAG, "Resolved '$filename' via ${result.matchedBy} -> ${result.item.id}")
+                    Logger.i(TAG, "Resolved '$filename' via ${result.matchedBy} -> ${result.item.id}")
                     load(result.playable.toNowPlaying(), resetPosition, fromRoom = true)
                 }
                 is ResolveResult.NotFound -> {
@@ -245,7 +244,7 @@ class PlaylistController(
      * Plays a file from this device. With [inRoom] (and a room) its filename becomes the room's
      * selection, so the others load their own copy; otherwise it only plays here and is reported.
      */
-    fun playLocal(uri: Uri, inRoom: Boolean) {
+    fun playLocal(uri: String, inRoom: Boolean) {
         scope.launch {
             val playable = localPlayable(uri)
             remember(playable)
@@ -259,7 +258,7 @@ class PlaylistController(
         }
     }
 
-    fun addLocalToRoomPlaylist(uri: Uri) {
+    fun addLocalToRoomPlaylist(uri: String) {
         scope.launch {
             val playable = localPlayable(uri)
             remember(playable)
@@ -268,7 +267,7 @@ class PlaylistController(
     }
 
     /** Manual pick after a failed lookup: play a local file as the substitute for the playlist entry. */
-    fun resolveManuallyLocal(uri: Uri) {
+    fun resolveManuallyLocal(uri: String) {
         val status = _status.value as? PlaylistStatus.NotFound
         scope.launch {
             val playable = localPlayable(uri)
@@ -279,7 +278,7 @@ class PlaylistController(
         }
     }
 
-    private suspend fun localPlayable(uri: Uri): PlayableMedia {
+    private suspend fun localPlayable(uri: String): PlayableMedia {
         val file = local.describe(uri)
         return PlayableMedia(itemId = file.uri, url = file.uri, fileName = file.name, sizeBytes = file.sizeBytes, durationSeconds = 0.0, title = file.name)
     }

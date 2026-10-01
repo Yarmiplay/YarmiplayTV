@@ -53,6 +53,7 @@ dependencies {
     implementation(project(":syncplay-protocol"))
     implementation(project(":media-source"))
     implementation(project(":player-mpv"))
+    implementation(project(":shared"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

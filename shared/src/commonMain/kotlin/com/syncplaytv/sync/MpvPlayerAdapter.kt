@@ -1,10 +1,10 @@
 package com.syncplaytv.sync
 
-import com.syncplaytv.player.MpvPlayer
+import com.syncplaytv.player.Player
 import com.syncplaytv.syncplay.PlayerAdapter
 
-/** Exposes [MpvPlayer] to the Syncplay engine; reads are served from the player's caches. */
-class MpvPlayerAdapter(private val player: MpvPlayer) : PlayerAdapter {
+/** Exposes the mpv [Player] to the Syncplay engine; reads are served from the player's caches. */
+class MpvPlayerAdapter(private val player: Player) : PlayerAdapter {
     override val isFileLoaded: Boolean get() = player.isFileLoaded
     override val duration: Double get() = player.duration
     override val position: Double get() = player.currentPosition()

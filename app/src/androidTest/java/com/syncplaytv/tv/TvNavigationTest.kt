@@ -167,7 +167,7 @@ class TvNavigationTest {
         try {
             launch()
             tv.awaitFocus("Join a Syncplay room")
-            container.playlist.playLocal(uri, inRoom = false)
+            container.playlist.playLocal(uri.toString(), inRoom = false)
             waitUntil(20_000) { container.player.state.value.fileLoaded }
             waitUntil(10_000) { !container.player.state.value.paused && container.player.currentPosition() > 0.5 }
             // While playing, the controls hide after 6 s of the test clock, which the position ticker races through.

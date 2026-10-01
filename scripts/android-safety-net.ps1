@@ -87,7 +87,7 @@ try {
     }
     if (-not $SkipJvm -and -not $Record) {
         Step "JVM tests"
-        & .\gradlew.bat test --console=plain -q
+        & .\gradlew.bat test :shared:desktopTest --console=plain -q
         $results["JVM tests"] = if ($LASTEXITCODE -eq 0) { "PASS" } else { "FAIL" }
     }
     # Three emulators need the memory the Gradle and Kotlin daemons hold (a starved emulator stops responding).

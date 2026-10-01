@@ -50,7 +50,7 @@ class LocalPlaybackTest {
     }
 
     private fun playClipAndWaitLoaded() {
-        container.playlist.playLocal(clip!!, inRoom = false)
+        container.playlist.playLocal(clip!!.toString(), inRoom = false)
         compose.waitUntilExactlyOneExists(hasTestTag("player"), 10_000)
         compose.waitUntil(20_000) {
             container.player.state.value.fileLoaded && container.playlist.nowPlaying.value?.fileName == clipName
@@ -70,11 +70,11 @@ class LocalPlaybackTest {
     @Test
     fun unreadableUriFailsAndDoesNotBlockTheNextLoad() {
         val missing = Uri.parse("content://media/external/video/media/987654321")
-        container.playlist.playLocal(missing, inRoom = false)
+        container.playlist.playLocal(missing.toString(), inRoom = false)
         compose.waitUntil(20_000) { container.playlist.status.value is PlaylistStatus.Failed }
         // The same URI again must try again rather than being treated as still loading.
         container.playlist.dismissStatus()
-        container.playlist.playLocal(missing, inRoom = false)
+        container.playlist.playLocal(missing.toString(), inRoom = false)
         compose.waitUntil(20_000) { container.playlist.status.value is PlaylistStatus.Failed }
         playClipAndWaitLoaded()
     }

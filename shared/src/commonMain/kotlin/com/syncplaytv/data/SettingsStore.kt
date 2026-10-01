@@ -1,12 +1,11 @@
 package com.syncplaytv.data
 
-import android.content.Context
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.syncplaytv.media.jellyfin.JellyfinSession
 import com.syncplaytv.syncplay.Constants
 import com.syncplaytv.syncplay.SyncSettings
@@ -16,8 +15,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.util.UUID
-
-private val Context.dataStore by preferencesDataStore("settings")
 
 data class SyncplayProfile(
     val host: String = "syncplay.pl",
@@ -54,11 +51,11 @@ data class AppSettings(
     val playback: PlaybackPrefs = PlaybackPrefs(),
     val jellyfin: JellyfinSession? = null,
     val lastJellyfinUrl: String = "",
-    /** Persisted content:// tree URIs of the user's media folders. */
+    /** Persisted URIs of the user's media folders (content:// trees on Android, file:// on desktop). */
     val localFolders: List<String> = emptyList(),
 )
 
-class SettingsStore(private val context: Context) {
+class SettingsStore(private val dataStore: DataStore<Preferences>) {
     private object Keys {
         val host = stringPreferencesKey("sp_host")
         val port = intPreferencesKey("sp_port")
@@ -91,7 +88,7 @@ class SettingsStore(private val context: Context) {
         val localFolders = stringPreferencesKey("local_folders")
     }
 
-    val settings: Flow<AppSettings> = context.dataStore.data.map(::read)
+    val settings: Flow<AppSettings> = dataStore.data.map(::read)
 
     suspend fun current(): AppSettings = settings.first()
 
@@ -135,7 +132,7 @@ class SettingsStore(private val context: Context) {
     }
 
     suspend fun saveSyncplay(profile: SyncplayProfile, autoConnect: Boolean? = null) {
-        context.dataStore.edit {
+        dataStore.edit {
             it[Keys.host] = profile.host.trim()
             it[Keys.port] = profile.port
             it[Keys.username] = profile.username.trim()
@@ -146,10 +143,10 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    suspend fun setAutoConnect(value: Boolean) = context.dataStore.edit { it[Keys.autoConnect] = value }
+    suspend fun setAutoConnect(value: Boolean) = dataStore.edit { it[Keys.autoConnect] = value }
 
     suspend fun saveSync(sync: SyncSettings, autoReady: Boolean) {
-        context.dataStore.edit {
+        dataStore.edit {
             it[Keys.rewind] = sync.rewindOnDesync
             it[Keys.slowdown] = sync.slowOnDesync
             it[Keys.unpause] = sync.unpauseMode.name
@@ -159,7 +156,7 @@ class SettingsStore(private val context: Context) {
     }
 
     suspend fun savePlayback(prefs: PlaybackPrefs) {
-        context.dataStore.edit {
+        dataStore.edit {
             it[Keys.hwdec] = prefs.hardwareDecoding
             it[Keys.alang] = prefs.audioLanguages
             it[Keys.slang] = prefs.subtitleLanguages
@@ -168,7 +165,7 @@ class SettingsStore(private val context: Context) {
     }
 
     suspend fun saveJellyfin(session: JellyfinSession?) {
-        context.dataStore.edit {
+        dataStore.edit {
             if (session == null) {
                 listOf(Keys.jfUrl, Keys.jfServerName, Keys.jfServerId, Keys.jfUserId, Keys.jfUserName, Keys.jfToken).forEach { k -> it.remove(k) }
             } else {
@@ -183,13 +180,13 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    suspend fun saveLastJellyfinUrl(url: String) = context.dataStore.edit { it[Keys.jfLastUrl] = url }
+    suspend fun saveLastJellyfinUrl(url: String) = dataStore.edit { it[Keys.jfLastUrl] = url }
 
-    suspend fun saveLocalFolders(uris: List<String>) = context.dataStore.edit { it[Keys.localFolders] = uris.joinToString("\n") }
+    suspend fun saveLocalFolders(uris: List<String>) = dataStore.edit { it[Keys.localFolders] = uris.joinToString("\n") }
 
     suspend fun deviceId(): String {
         var id: String? = null
-        context.dataStore.edit {
+        dataStore.edit {
             id = it[Keys.deviceId] ?: UUID.randomUUID().toString().also { new -> it[Keys.deviceId] = new }
         }
         return id!!

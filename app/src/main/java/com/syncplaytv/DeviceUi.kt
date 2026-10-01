@@ -7,8 +7,6 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
 
-enum class DeviceKind { TV, PHONE, TABLET }
-
 object DeviceUi {
     /** Debug/testing override: `am start ... --es ui mobile|tv`. */
     const val EXTRA_UI = "ui"

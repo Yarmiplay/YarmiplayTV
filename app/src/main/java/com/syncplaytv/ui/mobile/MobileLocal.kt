@@ -72,7 +72,7 @@ fun rememberVideoPicker(onPicked: (Uri) -> Unit): () -> Unit {
 @Composable
 fun rememberFolderPicker(container: AppContainer): () -> Unit {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) container.local.addFolder(uri)
+        if (uri != null) container.local.addFolder(uri.toString())
     }
     return { launcher.launch(null) }
 }
@@ -88,7 +88,7 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
     val scope = rememberCoroutineScope()
     var picked by remember { mutableStateOf<Uri?>(null) }
     val pickFolder = rememberFolderPicker(container)
-    val pickVideo = rememberVideoPicker { uri -> if (inRoom) picked = uri else container.playlist.playLocal(uri, inRoom = false) }
+    val pickVideo = rememberVideoPicker { uri -> if (inRoom) picked = uri else container.playlist.playLocal(uri.toString(), inRoom = false) }
 
     Column(Modifier.fillMaxSize()) {
         MobileTopBar("Files on this device", nav) {
@@ -130,7 +130,7 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
                 items(files, key = { "v:" + it.uri }) { file ->
                     Row(
                         Modifier.fillMaxWidth().clickable {
-                            if (inRoom) picked = Uri.parse(file.uri) else container.playlist.playLocal(Uri.parse(file.uri), inRoom = false)
+                            if (inRoom) picked = Uri.parse(file.uri) else container.playlist.playLocal(file.uri, inRoom = false)
                         }.padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -160,13 +160,13 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
 private fun LocalFileActions(container: AppContainer, uri: Uri, name: String, roomName: String, onDone: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Button({ container.playlist.playLocal(uri, inRoom = true); onDone() }, Modifier.fillMaxWidth().testTag("local_play_room")) {
+        Button({ container.playlist.playLocal(uri.toString(), inRoom = true); onDone() }, Modifier.fillMaxWidth().testTag("local_play_room")) {
             Icon(Icons.Filled.Groups, contentDescription = null); Text("  Play for everyone in '$roomName'")
         }
-        FilledTonalButton({ container.playlist.addLocalToRoomPlaylist(uri); onDone() }, Modifier.fillMaxWidth()) {
+        FilledTonalButton({ container.playlist.addLocalToRoomPlaylist(uri.toString()); onDone() }, Modifier.fillMaxWidth()) {
             Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null); Text("  Add to room playlist")
         }
-        OutlinedButton({ container.playlist.playLocal(uri, inRoom = false); onDone() }, Modifier.fillMaxWidth()) {
+        OutlinedButton({ container.playlist.playLocal(uri.toString(), inRoom = false); onDone() }, Modifier.fillMaxWidth()) {
             Icon(Icons.Filled.PlayArrow, contentDescription = null); Text("  Play only on this device")
         }
         Text("Others need the same file (same name) in their Syncplay media folders or Jellyfin.", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
