@@ -38,6 +38,18 @@ Media comes from your [Jellyfin](https://jellyfin.org/) server on the local netw
 ./scripts/screenshot.ps1 -Name home
 ```
 
+### Installing on a real TV
+
+```powershell
+./scripts/serve-apk.ps1            # builds the debug APK and serves it on port 8080
+```
+
+On the TV, open the printed `http://<pc-ip>:8080/` in a browser, or install the free **Downloader** app
+(by AFTVnews) and enter `http://<pc-ip>:8080/a` for a direct download. Allow that app to install unknown apps
+when Android asks, then open the file and choose Install. Re-run the script after changes and download again
+to update. Debug builds are signed with this PC's debug key, so an APK from CI (different key) can't update a
+locally built install without uninstalling first.
+
 Inside the emulator, the host PC is `10.0.2.2`, so a Jellyfin server on this PC is `http://10.0.2.2:8096`
 and a Syncplay server on this PC is `10.0.2.2:8999`. The player overlay auto-hides after 6 seconds, so
 send key sequences in a single `remote.ps1` call.
