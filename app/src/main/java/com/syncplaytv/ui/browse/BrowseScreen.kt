@@ -57,23 +57,6 @@ import com.syncplaytv.ui.components.TvTextField
 import com.syncplaytv.ui.theme.AppColors
 import kotlinx.coroutines.delay
 
-fun openItem(container: AppContainer, nav: Navigator, item: MediaItem) {
-    if (item.isPlayable) nav.actionItem = item else nav.push(Screen.Browse(item))
-}
-
-internal fun aspectFor(items: List<MediaItem>): Float {
-    val posters = items.count { it.type in setOf(MediaItemType.SERIES, MediaItemType.MOVIE, MediaItemType.SEASON) }
-    return if (posters > items.size / 2) 2f / 3f else 16f / 9f
-}
-
-internal fun subtitleFor(item: MediaItem): String? = when (item.type) {
-    MediaItemType.EPISODE -> listOfNotNull(item.seriesName, item.durationSeconds?.let { "${(it / 60).toInt()} min" }).joinToString(" · ")
-    MediaItemType.MOVIE -> item.year?.toString()
-    MediaItemType.SERIES -> item.year?.toString()
-    MediaItemType.VIDEO -> item.fileName
-    else -> null
-}
-
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun ItemGrid(

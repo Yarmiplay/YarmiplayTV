@@ -44,8 +44,6 @@ import androidx.tv.material3.Text
 import com.syncplaytv.AppContainer
 import com.syncplaytv.player.TrackType
 import com.syncplaytv.syncplay.ConnectionStatus
-import com.syncplaytv.syncplay.Constants
-import com.syncplaytv.syncplay.FileInfo
 import com.syncplaytv.syncplay.Filenames
 import com.syncplaytv.ui.nav.Navigator
 import com.syncplaytv.ui.nav.Screen
@@ -55,7 +53,6 @@ import com.syncplaytv.ui.components.IconAction
 import com.syncplaytv.ui.components.TvTextField
 import com.syncplaytv.ui.components.TvTile
 import com.syncplaytv.ui.theme.AppColors
-import kotlin.math.abs
 
 @Composable
 private fun PanelHeader(title: String, subtitle: String? = null) {
@@ -118,14 +115,6 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
             }
         }
     }
-}
-
-internal fun sameFile(a: FileInfo?, b: FileInfo?): Boolean {
-    if (a == null || b == null) return false
-    val nameOk = Filenames.same(a.name, b.name)
-    val sizeOk = a.size == 0L || b.size == 0L || a.size == b.size
-    val durationOk = abs(a.duration - b.duration) < Constants.DIFFERENT_DURATION_THRESHOLD
-    return nameOk && sizeOk && durationOk
 }
 
 @Composable

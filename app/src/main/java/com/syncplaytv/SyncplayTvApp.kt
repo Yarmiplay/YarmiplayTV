@@ -17,6 +17,7 @@ class SyncplayTvApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        DevicePlatform.init(this)
         container = AppContainer(
             settingsStore = SettingsStore(dataStore),
             deviceName = listOf(Build.MANUFACTURER, Build.MODEL).joinToString(" ").trim().ifEmpty { "Android TV" },

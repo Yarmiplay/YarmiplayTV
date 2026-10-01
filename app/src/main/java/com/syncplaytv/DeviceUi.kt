@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
-import android.os.Build
 
 object DeviceUi {
     /** Debug/testing override: `am start ... --es ui mobile|tv`. */
@@ -25,14 +24,5 @@ object DeviceUi {
     private fun mobileKind(context: Context): DeviceKind =
         if (context.resources.configuration.smallestScreenWidthDp >= 600) DeviceKind.TABLET else DeviceKind.PHONE
 
-    /** Default Syncplay user name, e.g. "TV-sdkgoogleatv" or "Phone-Pixel8". */
-    fun defaultUserName(kind: DeviceKind): String {
-        val prefix = when (kind) {
-            DeviceKind.TV -> "TV"
-            DeviceKind.PHONE -> "Phone"
-            DeviceKind.TABLET -> "Tablet"
-        }
-        val model = Build.MODEL.orEmpty().replace(Regex("[^A-Za-z0-9]"), "").take(16 - prefix.length - 1)
-        return if (model.isEmpty()) prefix else "$prefix-$model"
-    }
+    fun defaultUserName(kind: DeviceKind): String = defaultSyncplayName(kind)
 }

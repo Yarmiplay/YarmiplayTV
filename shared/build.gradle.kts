@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.compose)
 }
 
 kotlin {
@@ -16,6 +17,14 @@ kotlin {
             api(project(":player-api"))
             api(libs.kotlinx.coroutines.core)
             api(libs.androidx.datastore.preferences.core)
+
+            implementation(libs.jetbrains.compose.runtime)
+            implementation(libs.jetbrains.compose.foundation)
+            implementation(libs.jetbrains.compose.ui)
+            implementation(libs.jetbrains.compose.material3)
+            implementation(libs.jetbrains.compose.material.icons)
+            implementation(libs.jetbrains.lifecycle.runtime.compose)
+            implementation(libs.coil.compose)
         }
         val desktopTest by getting {
             dependencies {

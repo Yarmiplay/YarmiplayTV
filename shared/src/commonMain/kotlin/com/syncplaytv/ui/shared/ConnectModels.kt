@@ -1,8 +1,5 @@
 package com.syncplaytv.ui.shared
 
-import android.content.Context
-import android.net.wifi.WifiManager
-import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -11,10 +8,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import com.syncplaytv.AppContainer
-import com.syncplaytv.DeviceUi
+import com.syncplaytv.DevicePlatform
 import com.syncplaytv.data.SyncplayProfile
+import com.syncplaytv.defaultSyncplayName
 import com.syncplaytv.media.jellyfin.DiscoveredServer
 import com.syncplaytv.media.jellyfin.JellyfinDiscovery
 import com.syncplaytv.media.jellyfin.QuickConnectState
@@ -29,7 +26,7 @@ class SyncplayConnectModel(private val container: AppContainer) {
 
     var host by mutableStateOf(saved.syncplay.host)
     var port by mutableStateOf(saved.syncplay.port.toString())
-    var username by mutableStateOf(saved.syncplay.username.ifEmpty { DeviceUi.defaultUserName(container.deviceKind) })
+    var username by mutableStateOf(saved.syncplay.username.ifEmpty { defaultSyncplayName(container.deviceKind) })
     var room by mutableStateOf(saved.syncplay.room)
     var password by mutableStateOf(saved.syncplay.password)
     var tls by mutableStateOf(saved.syncplay.useTls)
@@ -66,7 +63,7 @@ fun rememberSyncplayConnectModel(container: AppContainer): SyncplayConnectModel 
 
 /** Jellyfin sign-in: LAN discovery, Quick Connect and username/password, shared by the TV and mobile UIs. */
 class JellyfinLoginModel(private val container: AppContainer, private val scope: CoroutineScope) {
-    var url by mutableStateOf(container.settings.value.lastJellyfinUrl.ifEmpty { if (isEmulator()) "http://10.0.2.2:8096" else "" })
+    var url by mutableStateOf(container.settings.value.lastJellyfinUrl.ifEmpty { if (DevicePlatform.isEmulator) "http://10.0.2.2:8096" else "" })
     var username by mutableStateOf("")
     var password by mutableStateOf("")
     var quickCode by mutableStateOf<String?>(null)
@@ -81,14 +78,8 @@ class JellyfinLoginModel(private val container: AppContainer, private val scope:
         private set
     private var quickJob: Job? = null
 
-    suspend fun discover(context: Context) {
-        val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-        val lock = wifi?.createMulticastLock("jellyfin-discovery")?.apply { setReferenceCounted(false); runCatching { acquire() } }
-        try {
-            discovered = JellyfinDiscovery.discover()
-        } finally {
-            runCatching { lock?.release() }
-        }
+    suspend fun discover() {
+        discovered = DevicePlatform.withMulticastLock("jellyfin-discovery") { JellyfinDiscovery.discover() }
     }
 
     fun startQuickConnect(onSignedIn: () -> Unit) {
@@ -150,17 +141,13 @@ class JellyfinLoginModel(private val container: AppContainer, private val scope:
         container.scope.launch { runCatching { container.jellyfinClient.logout(source.session) } }
         container.setJellyfinSession(null)
     }
-
-    private fun isEmulator(): Boolean =
-        Build.FINGERPRINT.contains("generic") || Build.HARDWARE.contains("ranchu") || Build.PRODUCT.contains("sdk")
 }
 
 @Composable
 fun rememberJellyfinLoginModel(container: AppContainer): JellyfinLoginModel {
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     val model = remember { JellyfinLoginModel(container, scope) }
-    LaunchedEffect(model) { model.discover(context) }
+    LaunchedEffect(model) { model.discover() }
     DisposableEffect(model) { onDispose { model.cancelQuickConnect() } }
     return model
 }
