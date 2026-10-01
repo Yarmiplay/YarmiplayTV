@@ -68,6 +68,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The runner has ~6 GB free; the emulator's userdata image plus Gradle caches need more headroom.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -93,6 +97,7 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
+          disk-size: 2048M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-boot-anim -camera-back none -camera-front none
           script: ./gradlew --stacktrace :app:connectedDebugAndroidTest
