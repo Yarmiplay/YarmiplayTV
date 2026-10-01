@@ -100,7 +100,9 @@ jobs:
           disk-size: 2048M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-boot-anim -camera-back none -camera-front none
-          script: ./gradlew --stacktrace :app:connectedDebugAndroidTest
+          # The safety-net classes (reference screenshots, sync check, TV) only run from scripts/android-safety-net.ps1.
+          # They skip themselves in @BeforeClass, which the runner reports as an incomplete run.
+          script: ./gradlew --stacktrace :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.notClass=com.syncplaytv.screenshots.MobileScreenshotTest,com.syncplaytv.synccheck.SyncCheckTest,com.syncplaytv.tv.TvNavigationTest,com.syncplaytv.tv.TvScreenshotTest"
 
       - uses: actions/upload-artifact@v7
         if: always()
