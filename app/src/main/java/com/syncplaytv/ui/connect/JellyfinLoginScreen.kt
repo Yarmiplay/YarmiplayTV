@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -125,8 +126,16 @@ fun JellyfinLoginScreen(container: AppContainer, nav: Navigator) {
         }
     }
 
+    val scrollState = rememberScrollState()
+    LaunchedEffect(quickCode) {
+        if (quickCode != null) {
+            withFrameNanos { }
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
+
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 96.dp, vertical = 40.dp),
+        Modifier.fillMaxSize().verticalScroll(scrollState).padding(horizontal = 96.dp, vertical = 40.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text("Jellyfin", style = MaterialTheme.typography.headlineMedium)
@@ -159,7 +168,11 @@ fun JellyfinLoginScreen(container: AppContainer, nav: Navigator) {
         }
         status?.let { Text(it, color = AppColors.TextDim) }
         quickCode?.let { code ->
-            Text(code.chunked(3).joinToString(" "), fontSize = 72.sp, fontWeight = FontWeight.Bold, color = AppColors.Accent, letterSpacing = 8.sp)
+            Text(
+                code.chunked(3).joinToString(" "),
+                style = androidx.compose.ui.text.TextStyle(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr),
+                fontSize = 72.sp, fontWeight = FontWeight.Bold, color = AppColors.Accent, letterSpacing = 8.sp,
+            )
         }
         if (showPassword) {
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {

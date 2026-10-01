@@ -86,7 +86,11 @@ fun AppRoot(container: AppContainer) {
 
     BackHandler(enabled = nav.canGoBack && nav.current != Screen.Player) { nav.back() }
 
-    CompositionLocalProvider(LocalContentColor provides AppColors.Text) {
+    // The UI is English-only, so keep it left-to-right even when the TV's system language is RTL.
+    CompositionLocalProvider(
+        LocalContentColor provides AppColors.Text,
+        androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Ltr,
+    ) {
     Box(Modifier.fillMaxSize().background(AppColors.Background)) {
         val screen = nav.current
         saveable.SaveableStateProvider(screen.key) {
