@@ -87,6 +87,9 @@ object Screenshots {
         demo("network -e wifi show -e level 4 -e fully true -e mobile hide -e airplane hide")
         demo("notifications -e visible false")
         demo("status -e volume hide -e bluetooth hide -e location hide -e alarm hide -e sync hide -e mute hide -e speakerphone hide")
+        // Right after a cold boot System UI can drop the network command while its Wi-Fi state is still loading.
+        Thread.sleep(1_000)
+        demo("network -e wifi show -e level 4 -e fully true -e mobile hide -e airplane hide")
         automation.setRotation(UiAutomation.ROTATION_FREEZE_0)
     }
 
