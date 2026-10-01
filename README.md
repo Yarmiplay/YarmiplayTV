@@ -51,7 +51,8 @@ send key sequences in a single `remote.ps1` call.
 $env:SYNCPLAY_TEST_SERVER = "127.0.0.1:8999"; ./gradlew :syncplay-protocol:test
 
 # Live Jellyfin test (optional)
-$env:JELLYFIN_URL = "http://localhost:8096"; $env:JELLYFIN_USER = "..."; $env:JELLYFIN_PASSWORD = "..."
+# (API key from Jellyfin Dashboard > API Keys, user id from the user's profile URL; keep these out of the repo)
+$env:JELLYFIN_URL = "http://localhost:8096"; $env:JELLYFIN_TOKEN = "..."; $env:JELLYFIN_USER_ID = "..."
 $env:JELLYFIN_RESOLVE = "Some Show - S01E01 - Title.mkv"
 ./gradlew :media-source:test --tests "*LiveJellyfinTest*"
 ```
