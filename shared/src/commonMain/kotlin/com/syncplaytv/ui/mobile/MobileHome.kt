@@ -1,7 +1,6 @@
 package com.syncplaytv.ui.mobile
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,7 +32,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.syncplaytv.AppContainer
@@ -74,7 +75,7 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
             }
         }
         item {
-            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            CardGrid(multiColumn = kind != DeviceKind.PHONE, modifier = Modifier.padding(horizontal = 16.dp)) {
                 val (title, detail, color) = when (room.status) {
                     ConnectionStatus.CONNECTED -> Triple(
                         "Room: ${room.room}",
@@ -151,6 +152,30 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+private val MinCardWidth = 280.dp
+private val CardGap = 10.dp
+
+/** One column on phones; on wider screens as many equal columns of at least [MinCardWidth] as fit. */
+@Composable
+private fun CardGrid(multiColumn: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Layout(content, modifier) { measurables, constraints ->
+        val gap = CardGap.roundToPx()
+        val width = constraints.maxWidth
+        val columns = if (multiColumn) ((width + gap) / (MinCardWidth.roundToPx() + gap)).coerceIn(1, measurables.size.coerceAtLeast(1)) else 1
+        val cellWidth = (width - gap * (columns - 1)) / columns
+        val rows = measurables.map { it.measure(Constraints.fixedWidth(cellWidth)) }.chunked(columns)
+        val rowHeights = rows.map { row -> row.maxOf { it.height } }
+        val height = rowHeights.sum() + gap * (rows.size - 1).coerceAtLeast(0)
+        layout(width, height) {
+            var y = 0
+            rows.forEachIndexed { i, row ->
+                row.forEachIndexed { j, placeable -> placeable.placeRelative(j * (cellWidth + gap), y) }
+                y += rowHeights[i] + gap
             }
         }
     }
