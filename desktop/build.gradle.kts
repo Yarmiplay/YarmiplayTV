@@ -46,7 +46,7 @@ tasks.test {
     testLogging { events("passed", "skipped", "failed") }
 }
 
-val appVersion = "1.0.0"
+val appVersion = "1.1.0"
 val libmpvDir = project(":player-mpv-desktop").layout.buildDirectory.dir("libmpv")
 
 /** Draws the app logo (the two play triangles of ic_logo.xml on the banner gradient) as png, ico and icns. */
