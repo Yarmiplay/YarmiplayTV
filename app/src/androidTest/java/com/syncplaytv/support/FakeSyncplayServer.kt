@@ -315,7 +315,7 @@ class FakeSyncplayServer(val port: Int = PORT) : AutoCloseable {
         put("position", 0)
         put("file", fileObj(file))
         put("controller", false)
-        ready?.let { put("isReady", it) } ?: put("isReady", JsonNull)
+        put("isReady", ready?.let(::JsonPrimitive) ?: JsonNull)
         putJsonObject("features") { put("sharedPlaylists", true); put("chat", true); put("readiness", true) }
     }
 
