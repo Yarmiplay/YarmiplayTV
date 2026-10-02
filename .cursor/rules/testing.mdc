@@ -32,9 +32,13 @@ Pick the smallest set that covers what changed; widen only when the change cross
 
 # Keep test runs fast and reliable
 
-- The full net runs all devices in parallel and the sync check on tablet + TV while the phone finishes.
-- Leave the emulators running between runs; the script cold-boots one only when its graphics allocator,
-  System UI or launcher is spinning (a worn emulator makes runs slow and flaky).
+- The full net runs all devices in parallel, the JVM tests alongside when the host has 6 GB free, and the
+  sync check on whichever of phone and tablet finishes first. It ends with each device's slowest tests.
+- Leave the emulators running between runs. The script restarts one when it has been up for over 2 hours
+  or its graphics allocator, System UI or launcher is spinning (worn emulators ran suites 2.5-4x slower),
+  booting from the `yarmiplaytv_clean` snapshot in ~20-45 s; the first cold boot settles and saves it.
+- Only one safety-net run uses the emulators at a time (a system-wide lock); a second run from another
+  working copy waits instead of breaking both.
 - A failure where logcat shows a long "Davey!" / "Skipped N frames" or "Application ANR likely" around
   the player's surface is the emulator GPU stalling mpv, not the test: rerun just that class.
 - Use debug-variant tasks (`testDebugUnitTest`, `assembleDebug`), never bare `test`/`build` locally:
