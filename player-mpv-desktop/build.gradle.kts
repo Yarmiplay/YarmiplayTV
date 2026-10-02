@@ -14,6 +14,7 @@ kotlin {
 val lwjglNatives = listOf("natives-windows", "natives-linux", "natives-macos", "natives-macos-arm64")
 
 dependencies {
+    api(project(":player-api"))
     api(libs.kotlinx.coroutines.core)
     api(libs.jna)
     implementation(libs.lwjgl)
@@ -78,9 +79,12 @@ val prepareLibmpv by tasks.registering {
     }
 }
 
+val testClip = rootProject.file("app/src/androidTest/assets/syncplaytv-test-clip.mp4").absolutePath
+
 tasks.test {
     dependsOn(prepareLibmpv)
     systemProperty("jna.library.path", libmpvDir.get().asFile.absolutePath)
+    systemProperty("syncplaytv.testClip", testClip)
     // The integration tests need a display and libmpv; set SYNCPLAYTV_SKIP_MPV_TESTS=1 to skip them.
     environment("SYNCPLAYTV_SKIP_MPV_TESTS", System.getenv("SYNCPLAYTV_SKIP_MPV_TESTS") ?: "")
     testLogging {
