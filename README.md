@@ -1,8 +1,8 @@
 # SyncplayTV
 
-A [Syncplay](https://syncplay.pl/) client for Android TV / Google TV, phones and tablets with [mpv](https://mpv.io/) built in.
-Media comes from your [Jellyfin](https://jellyfin.org/) server on the local network or, on phones and tablets,
-from files on the device.
+A [Syncplay](https://syncplay.pl/) client for Android TV / Google TV, phones, tablets and Windows, macOS and Linux
+desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin](https://jellyfin.org/) server on
+the local network or from files on the device.
 
 - Joins any Syncplay server/room; play, pause and seek are synchronised with desktop Syncplay users.
 - Plays through libmpv (hardware decoding with software fallback, libass subtitles, audio/subtitle track switching).
@@ -12,8 +12,44 @@ from files on the device.
 - One APK: the remote-friendly TV UI on Google TV, a touch UI on phones (bottom navigation) and tablets
   (navigation rail). On phones and tablets you can also open a single video, use "Open with" from a file
   manager, or add media folders that work like Syncplay's media directories.
+- A desktop app with the same UI plus a side panel that edits the room's playlist and chats the way the
+  desktop Syncplay client does.
+- Each room's playlist is remembered per server and put back when you rejoin a room whose playlist is empty
+  (Settings > Remember room playlists).
 
 ![Tablet: room, shared playlist and chat](docs/screenshots/tablet-room.png)
+
+## Desktop app
+
+Installers come from the `desktop` CI job (and the download page):
+
+- **Windows:** `.msi` or `.exe`, installed per user; libmpv is included.
+- **macOS:** `.dmg` (Apple Silicon, not notarized: right-click the app and choose Open the first time).
+  It uses Homebrew's libmpv, so run `brew install mpv` first.
+- **Linux:** `.deb` for Ubuntu 22.04+ and Debian 12+; `sudo apt install ./syncplaytv_*.deb` also installs
+  libmpv.
+
+Open a video from the home screen, drop files or folders on the window, or use "Open with" on a video.
+In a room, the player's playlist, room and chat buttons open a side panel:
+
+- **Playlist:** add videos, a folder or URLs, drop files while the tab is open, drag or Alt+↑/↓ to
+  reorder, Ctrl/Shift-click to select several, Delete to remove, Ctrl+Z to undo (anyone's last change),
+  double-click to play, shuffle, loop options, and save/load the list as a text file.
+- **Chat:** Enter in the player opens it; ↑/↓ recall what you sent.
+
+Player keys: Space or K pauses, ←/→ or J/L seek, ↑/↓ change the volume, F or F11 toggles full screen,
+Esc leaves full screen or goes back. The command line follows the official client:
+`SyncplayTV [--host host[:port]] [--name name] [--room room] [--password pw] [file]`.
+
+From source (downloads the pinned libmpv on Windows; use `brew install mpv` or `sudo apt install libmpv2`
+elsewhere):
+
+```powershell
+./gradlew :desktop:run --args="--host localhost:8999 --room tvtest D:/Videos/episode.mkv"
+./gradlew :desktop:packageDistributionForCurrentOS     # installers in desktop/build/compose/binaries
+./gradlew :player-mpv-desktop:test :desktop:test       # libmpv playback, the side panel (needs SYNCPLAY_TEST_SERVER)
+./scripts/e2e-desktop.ps1                              # phone leads; TV and desktop follow; official client watches
+```
 
 ## Project layout
 
@@ -22,7 +58,10 @@ from files on the device.
 | `syncplay-protocol` | Pure Kotlin Syncplay protocol client (JSON over TCP, optional TLS) |
 | `media-source` | `MediaSource` interface and the Jellyfin implementation (pure Kotlin, OkHttp) |
 | `player-mpv` | libmpv wrapper exposing a small `Player` interface |
-| `app` | TV UI (Compose for TV) and phone/tablet UI (Material 3), `SyncController`, `PlaylistController`, `LocalLibrary` |
+| `shared` | Kotlin Multiplatform (Android and desktop): phone/tablet/desktop UI, `SyncController`, `PlaylistController`, settings, local library |
+| `app` | The Android app: TV UI (Compose for TV) and the Android side of `shared` |
+| `player-mpv-desktop` | libmpv on the desktop through JNA, rendered with OpenGL (or software) into Compose |
+| `desktop` | The desktop app (Compose for Desktop): window, shortcuts, drag and drop, installers |
 
 ## Development on Windows
 
@@ -134,10 +173,12 @@ adb install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.
 adb shell am instrument -w -r com.syncplaytv.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-CI (`.github/workflows/build.yml`) does three things:
+CI (`.github/workflows/build.yml`) does four things:
 
 - runs the unit tests and the protocol test against a real Syncplay server;
 - runs the instrumented tests on an API 34 phone emulator;
+- tests the desktop app on Windows, macOS and Ubuntu, builds its installers, and installs and plays the
+  `.deb` on Ubuntu;
 - uploads the debug APK as an artifact.
 
 ### Testing sync locally
