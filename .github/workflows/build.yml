@@ -30,6 +30,15 @@ jobs:
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
+      # setup-gradle doesn't carry configuration-cache entries over to later commits. Gradle checks a restored
+      # entry against the build's inputs and recomputes it when they changed.
+      - name: Restore Gradle's configuration cache
+        uses: actions/cache@v6
+        with:
+          path: .gradle/configuration-cache
+          key: gradle-cc-${{ runner.os }}-${{ github.job }}${{ matrix.shard }}-${{ github.sha }}
+          restore-keys: gradle-cc-${{ runner.os }}-${{ github.job }}${{ matrix.shard }}-
+
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -99,6 +108,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      # setup-gradle doesn't carry configuration-cache entries over to later commits. Gradle checks a restored
+      # entry against the build's inputs and recomputes it when they changed.
+      - name: Restore Gradle's configuration cache
+        uses: actions/cache@v6
+        with:
+          path: .gradle/configuration-cache
+          key: gradle-cc-${{ runner.os }}-${{ github.job }}${{ matrix.shard }}-${{ github.sha }}
+          restore-keys: gradle-cc-${{ runner.os }}-${{ github.job }}${{ matrix.shard }}-
 
       - name: libmpv, a virtual display and .deb tooling
         if: runner.os == 'Linux'
@@ -202,6 +220,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      # setup-gradle doesn't carry configuration-cache entries over to later commits. Gradle checks a restored
+      # entry against the build's inputs and recomputes it when they changed.
+      - name: Restore Gradle's configuration cache
+        uses: actions/cache@v6
+        with:
+          path: .gradle/configuration-cache
+          key: gradle-cc-${{ runner.os }}-${{ github.job }}${{ matrix.shard }}-${{ github.sha }}
+          restore-keys: gradle-cc-${{ runner.os }}-${{ github.job }}${{ matrix.shard }}-
 
       - name: Enable KVM for the emulator
         run: |
