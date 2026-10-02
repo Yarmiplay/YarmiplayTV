@@ -1,0 +1,34 @@
+---
+description: Which tests to run after a change, and how to keep builds fast
+alwaysApply: true
+---
+
+# Run the tests the change can affect, not everything
+
+Pick the smallest set that covers what changed; widen only when the change crosses modules.
+
+| Changed | Run |
+|---|---|
+| `syncplay-protocol` | `gradlew :syncplay-protocol:test` (+ `scripts/sync-check.ps1` on phone + TV only if sync timing changed) |
+| `media-source` | `gradlew :media-source:test` |
+| `shared` logic (controllers, settings, local library) | `gradlew :shared:desktopTest :app:testDebugUnitTest`, then the instrumented classes that use it |
+| `shared/.../ui/mobile` | `android-safety-net.ps1 -SkipJvm -Tests <affected classes>` on phone + tablet, e.g. `MobileUiTest,MobileScreenshotTest` |
+| TV UI (`app/.../ui/tv`, `ui/screens`) | `android-safety-net.ps1 -SkipJvm -Tests TvNavigationTest,TvScreenshotTest` |
+| Player (`player-mpv`, `MobilePlayer.kt`) | `-Tests LocalPlaybackTest,MobileScreenshotTest#playerAndSheets` |
+| One test file | just that class (or `Class#method`) |
+| `player-mpv-desktop`, `desktop` | `gradlew :player-mpv-desktop:test :desktop:test` - no Android run |
+| Scripts, docs, CI yaml, README | no emulator run; dry-run or lint what changed |
+
+- Code moves between modules, dependency/Gradle/Compose version changes, theme or shared component changes:
+  full `scripts/android-safety-net.ps1` (all devices + sync check) - pixel identity is the point there.
+- Always run the full safety net once before a release/version bump.
+- Follow test progress (phase log + `adb logcat -d -s TestRunner:I` per device) instead of blind waiting.
+
+# Keep builds fast
+
+- Don't run `gradlew --stop` or kill the Kotlin daemon between builds; warm daemons make an edit-build ~8 s
+  instead of ~40 s. The safety-net script only stops them when it has to boot an emulator.
+- Use debug-variant tasks (`testDebugUnitTest`, `assembleDebug`), never bare `test`/`build` locally:
+  those also compile release variants and run the desktop libmpv tests.
+- Configuration cache is on: in build scripts, don't capture script-level vals/functions in task actions
+  (copy them into a local `val` first).

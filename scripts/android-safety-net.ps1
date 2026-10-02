@@ -15,16 +15,21 @@
   -Record writes new reference screenshots into app/src/androidTest/screenshots/<device>/ instead of
   comparing. Review them (git diff) before committing.
 
+  -Tests runs only the given instrumented classes (or Class#method), each on the devices it targets:
+  com.syncplaytv.tv.* on the TV, everything else on the phone and tablet. It skips the sync check.
+
 .EXAMPLE
   ./scripts/android-safety-net.ps1                 # full run
   ./scripts/android-safety-net.ps1 -Record         # re-record the reference screenshots
   ./scripts/android-safety-net.ps1 -SkipJvm -SkipSyncCheck
+  ./scripts/android-safety-net.ps1 -SkipJvm -Tests LocalPlaybackTest,MobileScreenshotTest#playerAndSheets
 #>
 param(
     [switch]$Record,
     [switch]$SkipJvm,
     [switch]$SkipSyncCheck,
     [switch]$NoBuild,
+    [string[]]$Tests,
     [string[]]$Avds = @("Phone_Pixel8", "Tablet_Pixel", "GoogleTV_1080p")
 )
 
@@ -73,6 +78,28 @@ function Wait-Boot([string]$serial) {
 
 Push-Location $root
 try {
+    $testsByAvd = @{}
+    if ($Tests) {
+        $SkipSyncCheck = $true
+        $resolved = foreach ($t in ($Tests -split ",") | Where-Object { $_ }) {
+            $class, $method = $t.Trim() -split "#", 2
+            if ($class -notmatch "\.") {
+                $src = Get-ChildItem "app\src\androidTest\java" -Recurse -Filter "$class.kt" | Select-Object -First 1
+                if (-not $src) { throw "No instrumented test class named $class." }
+                $pkg = (Select-String -Path $src.FullName -Pattern "^package\s+(\S+)" | Select-Object -First 1).Matches[0].Groups[1].Value
+                $class = "$pkg.$class"
+            }
+            if ($method) { "$class#$method" } else { $class }
+        }
+        foreach ($avd in $Avds) {
+            $tv = $avd -like "*TV*"
+            $mine = @($resolved | Where-Object { ($_ -like "com.syncplaytv.tv.*") -eq $tv })
+            if ($mine) { $testsByAvd[$avd] = $mine -join "," }
+        }
+        $Avds = @($Avds | Where-Object { $testsByAvd.ContainsKey($_) })
+        if (-not $Avds) { throw "None of the selected devices runs $($Tests -join ', ')." }
+    }
+
     # References are packaged into the test APK, so newly recorded ones need a rebuild.
     $testApkFile = Get-Item "app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk" -ErrorAction SilentlyContinue
     $newestShot = Get-ChildItem "app\src\androidTest\screenshots" -Recurse -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -87,12 +114,18 @@ try {
     }
     if (-not $SkipJvm -and -not $Record) {
         Step "JVM tests"
-        & .\gradlew.bat test :shared:desktopTest --console=plain -q
+        # Debug variants only (release runs the same tests after a second full compile); the desktop player's
+        # libmpv tests aren't part of the Android safety net.
+        & .\gradlew.bat testDebugUnitTest :syncplay-protocol:test :media-source:test :player-api:test :shared:desktopTest --console=plain -q
         $results["JVM tests"] = if ($LASTEXITCODE -eq 0) { "PASS" } else { "FAIL" }
     }
-    # Three emulators need the memory the Gradle and Kotlin daemons hold (a starved emulator stops responding).
-    & .\gradlew.bat --stop -q | Out-Null
-    Get-CimInstance Win32_Process -Filter "Name='java.exe'" | Where-Object { $_.CommandLine -match "KotlinCompileDaemon" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    # Booting emulators need the memory the Gradle and Kotlin daemons hold (a starved emulator stops responding).
+    # When they're already running, keep the daemons warm for the next build.
+    $running = @(Get-Emulators | ForEach-Object { Get-AvdName $_ })
+    if ($Avds | Where-Object { $running -notcontains $_ }) {
+        & .\gradlew.bat --stop -q | Out-Null
+        Get-CimInstance Win32_Process -Filter "Name='java.exe'" | Where-Object { $_.CommandLine -match "KotlinCompileDaemon" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    }
 
     $devices = [ordered]@{}
     foreach ($avd in $Avds) { $devices[$avd] = Start-Avd $avd }
@@ -108,6 +141,8 @@ try {
         $tv = $avd -like "*TV*"
         $filter = @("-e", "screenshots", "true") + $(if ($Record) {
             @("-e", "class", $(if ($tv) { "com.syncplaytv.tv.TvScreenshotTest" } else { "com.syncplaytv.screenshots.MobileScreenshotTest" }), "-e", "recordScreenshots", "true")
+        } elseif ($Tests) {
+            @("-e", "class", $testsByAvd[$avd])
         } elseif ($tv) {
             @("-e", "package", "com.syncplaytv.tv")
         } else {
