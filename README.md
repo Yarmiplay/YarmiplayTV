@@ -25,6 +25,10 @@ The [download page](https://yarmiplay.github.io/YarmiplayTV/) has a card per dev
 phone and tablet, Windows, macOS, Linux) and highlights the one for the device you open it on. On a TV, enter
 `https://yarmiplay.github.io/YarmiplayTV/a` in the Downloader app to get the APK directly.
 
+To host your own Syncplay and Jellyfin servers from a Windows, macOS or Linux computer, use
+[YarmiplayServerTV](https://yarmiplay.github.io/YarmiplayServerTV/)
+([source and setup guide](https://github.com/Yarmiplay/YarmiplayServerTV#readme)).
+
 The page is built by `scripts/download_site.py` and published by `.github/workflows/pages.yml` after every
 green `Build` run on `main` and after every `Release` run (or by hand from the Actions tab). It contains every
 artifact of that run whose name starts with `yarmiplaytv-`, except that the Windows installers come from the

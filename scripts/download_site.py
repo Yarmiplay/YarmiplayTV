@@ -24,6 +24,7 @@ from dataclasses import dataclass
 
 NAME = "YarmiplayTV"
 REPO_URL = "https://github.com/Yarmiplay/YarmiplayTV"
+SERVER_URL = "https://yarmiplay.github.io/YarmiplayServerTV/"
 
 # Lower-case extension -> platforms it installs on and the button label.
 EXTENSIONS = {
@@ -167,6 +168,8 @@ def render_page(downloads, version, built, short_link=None, privacy=False):
  .none {{ margin:0 0 .3em; }}
  details {{ margin-top:.8em; font-size:.85em; }} details div {{ margin-top:.5em; }}
  summary {{ cursor:pointer; }}
+ .host {{ margin-top:1.6em; text-align:center; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:1.2em 1.5em; }}
+ .host p {{ color:var(--muted); margin:.3em 0 0; }}
  #ios {{ display:none; text-align:center; color:var(--muted); margin:-1em 0 2em; }}
  footer {{ text-align:center; color:var(--muted); margin-top:3em; font-size:.95em; }}
  @media (min-width:1600px) {{ body {{ font-size:20px; }} main {{ max-width:1500px; }} }}
@@ -181,6 +184,10 @@ def render_page(downloads, version, built, short_link=None, privacy=False):
 <div class="grid">
 {chr(10).join(cards)}
 </div>
+<section class="host">
+ <strong>Host your own server</strong>
+ <p><a href="{SERVER_URL}">YarmiplayServerTV</a> runs a Syncplay server and a Jellyfin server from your Windows, macOS or Linux computer.</p>
+</section>
 <footer>Phones, tablets and TVs use the same APK: it picks the TV or touch interface by itself.
  &middot; <a href="{REPO_URL}">Source</a>{' &middot; <a href="privacy/">Privacy</a>' if privacy else ''}
  &middot; <a href="{REPO_URL}#code-signing-policy">Code signing policy</a></footer>
