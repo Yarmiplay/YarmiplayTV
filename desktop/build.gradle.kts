@@ -37,8 +37,9 @@ dependencies {
 
 tasks.test {
     dependsOn(":player-mpv-desktop:prepareLibmpv")
-    val screenshots = layout.buildDirectory.dir("desktop-screenshots").get().asFile.absolutePath
-    systemProperty("syncplaytv.screenshotDir", screenshots)
+    val screenshots = layout.buildDirectory.dir("desktop-screenshots")
+    outputs.dir(screenshots).withPropertyName("screenshots")
+    systemProperty("syncplaytv.screenshotDir", screenshots.get().asFile.absolutePath)
     systemProperty("syncplaytv.libmpv.dir", libmpvDir.get().asFile.absolutePath)
     systemProperty("syncplaytv.syncClip", rootProject.file("app/src/androidTest/assets/syncplaytv-sync-clip.mp4").absolutePath)
     environment("SYNCPLAY_TEST_SERVER", System.getenv("SYNCPLAY_TEST_SERVER") ?: "")
