@@ -27,6 +27,8 @@ jobs:
           packages: "platforms;android-36 build-tools;36.0.0"
 
       - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - uses: actions/setup-python@v7
         with:
@@ -82,6 +84,8 @@ jobs:
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - uses: actions/setup-python@v7
         with:
@@ -180,9 +184,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The runner has ~6 GB free; the emulator's userdata image plus Gradle caches need more headroom.
+      # The runner has ~6 GB free; the emulator snapshot plus Gradle caches need more headroom. Deleting
+      # takes ~20 s, so it runs in the background until the snapshot restore needs the space.
       - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+        run: |
+          nohup sudo sh -c 'rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost /opt/hostedtoolcache/CodeQL; touch /tmp/disk-freed' > /dev/null 2>&1 &
 
       - uses: actions/setup-java@v6
         with:
@@ -190,6 +196,8 @@ jobs:
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Enable KVM for the emulator
         run: |
@@ -197,10 +205,19 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Build app and test APKs
+      # Builds while the snapshot restores and the emulator action installs the SDK; ci-instrumented.sh
+      # waits for it before installing.
+      - name: Start building the app and test APKs
         run: |
           chmod +x gradlew
-          ./gradlew --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest
+          mkdir -p build/ci-instrumented
+          touch build/ci-instrumented/apks.started
+          nohup sh -c './gradlew --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest > build/ci-instrumented/apks.log 2>&1; echo $? > build/ci-instrumented/apks.exit' > /dev/null 2>&1 &
+
+      - name: Wait for the disk space
+        run: |
+          for i in $(seq 1 120); do [ -f /tmp/disk-freed ] && { df -h / | tail -1; exit 0; }; sleep 1; done
+          echo "::warning::Freeing disk space is still running"
 
       # Bump the key's version when the device settings below change.
       - name: Restore the emulator snapshot

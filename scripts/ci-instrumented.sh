@@ -31,10 +31,25 @@ wait_until_idle() {
   echo "Emulator still ${busy}% busy after 120 s; going ahead"
 }
 
+# The workflow builds the APKs in the background while the emulator is set up.
+wait_for_apks() {
+  [ -f "$out/apks.started" ] || return 0
+  local start=$SECONDS
+  while [ ! -f "$out/apks.exit" ]; do sleep 1; done
+  echo "Waited $((SECONDS - start)) s for the APK build"
+  if [ "$(cat "$out/apks.exit")" != 0 ]; then
+    tail -80 "$out/apks.log"
+    echo "::error::Building the APKs failed"
+    exit 1
+  fi
+}
+
 safety_net="com.syncplaytv.screenshots.MobileScreenshotTest,com.syncplaytv.synccheck.SyncCheckTest,com.syncplaytv.tv.TvNavigationTest,com.syncplaytv.tv.TvScreenshotTest"
 playback="com.syncplaytv.LocalPlaybackTest"
 case "$mode" in
   snapshot)
+    # The idle wait measures the emulator's own load; a build sharing the runner's CPU would skew it.
+    wait_for_apks
     start=$SECONDS
     adb shell cmd package bg-dexopt-job > /dev/null
     echo "Background dexopt done in $((SECONDS - start)) s"
@@ -47,6 +62,7 @@ case "$mode" in
   *) echo "unknown mode: $mode" >&2; exit 2 ;;
 esac
 
+wait_for_apks
 # A copy signed with another runner's debug key would refuse the update.
 adb uninstall com.syncplaytv > /dev/null 2>&1
 adb uninstall com.syncplaytv.test > /dev/null 2>&1
