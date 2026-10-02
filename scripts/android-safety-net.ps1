@@ -47,6 +47,21 @@ $results = [ordered]@{}
 
 function Step($text) { Write-Host "==> $text" -ForegroundColor Cyan }
 
+if (-not ("EmulatorQos" -as [type])) {
+    Add-Type @"
+using System; using System.Runtime.InteropServices;
+public static class EmulatorQos {
+    [StructLayout(LayoutKind.Sequential)] struct PowerThrottlingState { public uint Version; public uint ControlMask; public uint StateMask; }
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetProcessInformation(IntPtr process, int infoClass, ref PowerThrottlingState info, int size);
+    // ProcessPowerThrottling with EXECUTION_SPEED | IGNORE_TIMER_RESOLUTION controlled and off.
+    public static bool NoThrottling(IntPtr process) {
+        var state = new PowerThrottlingState { Version = 1, ControlMask = 0x1 | 0x4, StateMask = 0 };
+        return SetProcessInformation(process, 4, ref state, Marshal.SizeOf(typeof(PowerThrottlingState)));
+    }
+}
+"@
+}
+
 function Get-Emulators { & $adb devices | Select-String "^(emulator-\d+)\s+device" | ForEach-Object { $_.Matches[0].Groups[1].Value } }
 function Get-AvdName([string]$s) { $o = & $adb -s $s shell getprop ro.boot.qemu.avd_name 2>$null; if ($o) { ($o | Select-Object -First 1).Trim() } }
 
@@ -64,6 +79,20 @@ function Start-Avd([string]$avd) {
         $serial = Get-Emulators | Where-Object { $before -notcontains $_ } | Select-Object -First 1
     }
     return $serial
+}
+
+function Get-SpinningProcess([string]$serial) {
+    # Right after boot Play services and app optimisation are legitimately busy.
+    $uptime = [double]((& $adb -s $serial shell cat /proc/uptime 2>$null) -split " ")[0]
+    if ($uptime -lt 300) { return }
+    $hogs = foreach ($i in 1..2) {
+        & $adb -s $serial shell top -b -n 1 -m 5 -s 1 -o %CPU,NAME 2>$null | ForEach-Object {
+            if ($_ -match "^\s*(\d+(\.\d+)?)\s+(\S*(allocator|systemui|launcher|surfaceflinger)\S*)" -and [double]$matches[1] -ge 40) { $matches[3] }
+        }
+        Start-Sleep -Seconds 1
+    }
+    # Busy in both samples, not just a momentary spike.
+    $hogs | Group-Object | Where-Object Count -ge 2 | Select-Object -First 1 -ExpandProperty Name
 }
 
 function Wait-Boot([string]$serial) {
@@ -119,10 +148,26 @@ try {
         & .\gradlew.bat testDebugUnitTest :syncplay-protocol:test :media-source:test :player-api:test :shared:desktopTest --console=plain -q
         $results["JVM tests"] = if ($LASTEXITCODE -eq 0) { "PASS" } else { "FAIL" }
     }
-    # Booting emulators need the memory the Gradle and Kotlin daemons hold (a starved emulator stops responding).
-    # When they're already running, keep the daemons warm for the next build.
+    # A worn emulator has system processes spinning (graphics allocator, System UI) and stays slow and flaky
+    # until it's cold-booted again.
+    $sick = foreach ($serial in Get-Emulators) {
+        $avd = Get-AvdName $serial
+        if ($Avds -notcontains $avd) { continue }
+        $hog = Get-SpinningProcess $serial
+        if ($hog) {
+            Step "Restarting $avd ($hog is spinning)"
+            & $adb -s $serial emu kill 2>&1 | Out-Null
+            $serial
+        }
+    }
+    $deadline = (Get-Date).AddSeconds(60)
+    while ($sick -and (Get-Emulators | Where-Object { $sick -contains $_ }) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+
+    # When the host runs short of memory the emulators get paged out and stall (I/O-bound slowness, ANRs), so
+    # the Gradle and Kotlin daemons give their memory back unless there's plenty to spare.
     $running = @(Get-Emulators | ForEach-Object { Get-AvdName $_ })
-    if ($Avds | Where-Object { $running -notcontains $_ }) {
+    $freeGb = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB
+    if (($Avds | Where-Object { $running -notcontains $_ }) -or $freeGb -lt 6) {
         & .\gradlew.bat --stop -q | Out-Null
         Get-CimInstance Win32_Process -Filter "Name='java.exe'" | Where-Object { $_.CommandLine -match "KotlinCompileDaemon" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     }
@@ -130,6 +175,8 @@ try {
     $devices = [ordered]@{}
     foreach ($avd in $Avds) { $devices[$avd] = Start-Avd $avd }
     foreach ($avd in $Avds) { Wait-Boot $devices[$avd] }
+    # Emulator windows are in the background; on hybrid CPUs Windows would otherwise throttle them onto efficiency cores.
+    Get-Process qemu-system* -ErrorAction SilentlyContinue | ForEach-Object { [void][EmulatorQos]::NoThrottling($_.Handle) }
 
     $apk = "app\build\outputs\apk\debug\app-debug.apk"
     $testApk = "app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk"
@@ -159,6 +206,24 @@ try {
         }
     }
     Step "Running the instrumented suites on $($Avds -join ', ')"
+
+    # The sync check needs a mobile device and the TV. The tablet and TV finish their suites well before the
+    # phone, so it runs on those two while the phone is still busy.
+    $syncJob = $null
+    if (-not $SkipSyncCheck -and -not $Record) {
+        $mobile = @($Avds | Where-Object { $_ -like "Tablet*" }) + @($Avds | Where-Object { $_ -like "Phone*" }) | Select-Object -First 1
+        $tvAvd = $Avds | Where-Object { $_ -like "*TV*" } | Select-Object -First 1
+        if ($mobile -and $tvAvd) {
+            Wait-Job -Name $mobile, $tvAvd | Out-Null
+            Step "Sync check on $mobile + $tvAvd"
+            $syncLabel = "Sync check ($(($mobile -replace '_.*', '').ToLower()) + TV)"
+            $syncJob = Start-Job -ArgumentList "$PSScriptRoot\sync-check.ps1", $devices[$mobile], $devices[$tvAvd] -ScriptBlock {
+                param($script, $leader, $follower)
+                & $script -Leader $leader -Follower $follower -NoInstall *>&1 | Out-String -Stream
+                "SYNC-EXIT $LASTEXITCODE"
+            }
+        }
+    }
     $jobs | Wait-Job | Out-Null
 
     foreach ($avd in $Avds) {
@@ -192,13 +257,11 @@ try {
     }
     Remove-Job -Name $Avds -Force -ErrorAction SilentlyContinue
 
-    if (-not $SkipSyncCheck -and -not $Record) {
-        $phone = $Avds | Where-Object { $_ -like "Phone*" } | Select-Object -First 1
-        $tvAvd = $Avds | Where-Object { $_ -like "*TV*" } | Select-Object -First 1
-        if ($phone -and $tvAvd) {
-            & "$PSScriptRoot\sync-check.ps1" -Leader $devices[$phone] -Follower $devices[$tvAvd] -NoInstall
-            $results["Sync check (phone + TV)"] = if ($LASTEXITCODE -eq 0) { "PASS" } else { "FAIL" }
-        }
+    if ($syncJob) {
+        $syncLog = @($syncJob | Wait-Job | Receive-Job)
+        $syncLog | Where-Object { $_ -notmatch "^SYNC-EXIT" } | ForEach-Object { Write-Host "   $_" }
+        $results[$syncLabel] = if ($syncLog -contains "SYNC-EXIT 0") { "PASS" } else { "FAIL" }
+        Remove-Job $syncJob -Force
     }
 } finally {
     Pop-Location
@@ -213,3 +276,4 @@ foreach ($k in $results.Keys) {
     Write-Host ("  {0,-26} {1}" -f $k, $v) -ForegroundColor $(if ($v -like "PASS*") { "Green" } else { "Red" })
 }
 if ($failed) { exit 1 }
+exit 0

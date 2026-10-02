@@ -109,9 +109,11 @@ object Screenshots {
      * until the rotation is applied and the UI is idle again.
      */
     fun rotate(landscape: Boolean) {
-        automation.setRotation(if (landscape) UiAutomation.ROTATION_FREEZE_90 else UiAutomation.ROTATION_FREEZE_0)
         val display = instrumentation.targetContext.getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY)
         val target = if (landscape) Surface.ROTATION_90 else Surface.ROTATION_0
+        val turning = display.rotation != target
+        automation.setRotation(if (landscape) UiAutomation.ROTATION_FREEZE_90 else UiAutomation.ROTATION_FREEZE_0)
+        if (!turning) return
         AppState.waitUntil(5_000) { display.rotation == target }
         Thread.sleep(1_000)
         instrumentation.waitForIdleSync()

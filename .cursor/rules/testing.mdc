@@ -9,7 +9,7 @@ Pick the smallest set that covers what changed; widen only when the change cross
 
 | Changed | Run |
 |---|---|
-| `syncplay-protocol` | `gradlew :syncplay-protocol:test` (+ `scripts/sync-check.ps1` on phone + TV only if sync timing changed) |
+| `syncplay-protocol` | `gradlew :syncplay-protocol:test` (+ `scripts/sync-check.ps1` on a mobile device + TV only if sync timing changed) |
 | `media-source` | `gradlew :media-source:test` |
 | `shared` logic (controllers, settings, local library) | `gradlew :shared:desktopTest :app:testDebugUnitTest`, then the instrumented classes that use it |
 | `shared/.../ui/mobile` | `android-safety-net.ps1 -SkipJvm -Tests <affected classes>` on phone + tablet, e.g. `MobileUiTest,MobileScreenshotTest` |
@@ -27,7 +27,16 @@ Pick the smallest set that covers what changed; widen only when the change cross
 # Keep builds fast
 
 - Don't run `gradlew --stop` or kill the Kotlin daemon between builds; warm daemons make an edit-build ~8 s
-  instead of ~40 s. The safety-net script only stops them when it has to boot an emulator.
+  instead of ~40 s. The safety-net script only stops them when it has to boot an emulator or the host has
+  less than 6 GB free (paged-out emulators stall and ANR).
+
+# Keep test runs fast and reliable
+
+- The full net runs all devices in parallel and the sync check on tablet + TV while the phone finishes.
+- Leave the emulators running between runs; the script cold-boots one only when its graphics allocator,
+  System UI or launcher is spinning (a worn emulator makes runs slow and flaky).
+- A failure where logcat shows a long "Davey!" / "Skipped N frames" or "Application ANR likely" around
+  the player's surface is the emulator GPU stalling mpv, not the test: rerun just that class.
 - Use debug-variant tasks (`testDebugUnitTest`, `assembleDebug`), never bare `test`/`build` locally:
   those also compile release variants and run the desktop libmpv tests.
 - Configuration cache is on: in build scripts, don't capture script-level vals/functions in task actions
