@@ -98,14 +98,14 @@ jobs:
           ./gradlew --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest
 
       # Bump the key's version when the device settings below change.
-      - name: Emulator snapshot cache
+      - name: Restore the emulator snapshot
         id: avd-cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-34-google_apis-x86_64-pixel_6-2048M-v1
+          key: avd-34-google_apis-x86_64-pixel_6-2048M-v2
 
       - name: Create the emulator snapshot
         if: steps.avd-cache.outputs.cache-hit != 'true'
@@ -120,6 +120,17 @@ jobs:
           disable-animations: false
           emulator-options: ${{ env.EMULATOR_OPTIONS }}
           script: echo "Created the emulator snapshot."
+
+      # Saved before the tests run: an emulator that has been tested on carries the app (signed with this
+      # runner's debug key) and no longer matches its boot snapshot.
+      - name: Save the emulator snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: ${{ steps.avd-cache.outputs.cache-primary-key }}
 
       - name: Instrumented tests (${{ matrix.shard }}) on a phone emulator
         uses: reactivecircus/android-emulator-runner@v2

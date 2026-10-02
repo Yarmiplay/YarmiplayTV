@@ -22,6 +22,9 @@ case "$shard" in
   *) echo "unknown shard: $shard" >&2; exit 2 ;;
 esac
 
+# A copy signed with another runner's debug key would refuse the update.
+adb uninstall com.syncplaytv > /dev/null 2>&1
+adb uninstall com.syncplaytv.test > /dev/null 2>&1
 adb install -r -t app/build/outputs/apk/debug/app-debug.apk || exit 1
 adb install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || exit 1
 adb logcat -c
