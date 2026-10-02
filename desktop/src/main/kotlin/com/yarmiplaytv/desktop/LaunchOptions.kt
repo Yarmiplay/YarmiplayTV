@@ -5,7 +5,7 @@ import java.io.File
 
 /**
  * Command line, compatible with the official Syncplay client's main options:
- * `SyncplayTV [--host host[:port]] [--name name] [--room room] [--password pw] [file]`.
+ * `YarmiplayTV [--host host[:port]] [--name name] [--room room] [--password pw] [file]`.
  * Room options apply to this run only; they aren't saved.
  */
 internal data class LaunchOptions(

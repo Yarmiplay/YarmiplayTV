@@ -10,10 +10,10 @@ import androidx.activity.enableEdgeToEdge
 import com.yarmiplaytv.ui.TvRoot
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
-import com.yarmiplaytv.ui.theme.SyncplayTvTheme
+import com.yarmiplaytv.ui.theme.YarmiplayTvTheme
 
 class MainActivity : ComponentActivity() {
-    private val container get() = (application as SyncplayTvApp).container
+    private val container get() = (application as YarmiplayTvApp).container
 
     lateinit var deviceKind: DeviceKind
         private set
@@ -24,7 +24,7 @@ class MainActivity : ComponentActivity() {
         container.deviceKind = deviceKind
         if (deviceKind == DeviceKind.TV) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            setContent { SyncplayTvTheme { TvRoot(container) } }
+            setContent { YarmiplayTvTheme { TvRoot(container) } }
         } else {
             enableEdgeToEdge(
                 statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),

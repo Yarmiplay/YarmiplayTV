@@ -56,7 +56,7 @@ import javax.swing.SwingUtilities
 import kotlin.system.exitProcess
 
 internal fun runApp(args: List<String>) {
-    val configDir = DesktopPaths.configDir()
+    val configDir = DesktopPaths.migrateLegacyConfig()
     val boundsFile = File(configDir, "window.properties")
     var container: AppContainer? = null
     var failure: Throwable? = null
@@ -66,9 +66,9 @@ internal fun runApp(args: List<String>) {
     }
     val app = container ?: run {
         val error = failure
-        val message = (error as? MpvUnavailableException)?.hint ?: "SyncplayTV couldn't start: ${error?.message}"
+        val message = (error as? MpvUnavailableException)?.hint ?: "YarmiplayTV couldn't start: ${error?.message}"
         error?.printStackTrace()
-        JOptionPane.showMessageDialog(null, message, "SyncplayTV", JOptionPane.ERROR_MESSAGE)
+        JOptionPane.showMessageDialog(null, message, "YarmiplayTV", JOptionPane.ERROR_MESSAGE)
         exitProcess(1)
     }
     val player = app.player as DesktopMpvPlayer
@@ -162,7 +162,7 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             exitApplication()
         },
         state = state,
-        title = "SyncplayTV",
+        title = "YarmiplayTV",
         icon = appLogoPainter(),
         onKeyEvent = { event ->
             event.type == KeyEventType.KeyDown &&

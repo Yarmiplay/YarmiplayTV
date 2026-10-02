@@ -4,7 +4,7 @@
   other windows cover it and never disturbs what's on screen. Used to check the desktop app by eye.
 
 .EXAMPLE
-  ./scripts/window-shot.ps1 -Title SyncplayTV -Out build/desktop-shots/home.png
+  ./scripts/window-shot.ps1 -Title YarmiplayTV -Out build/desktop-shots/home.png
 #>
 param(
     [Parameter(Mandatory)] [string]$Title,

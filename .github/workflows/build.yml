@@ -51,7 +51,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: syncplaytv-debug-apk
+          name: yarmiplaytv-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
@@ -64,7 +64,7 @@ jobs:
             ${{ runner.temp }}/syncplay-server.log
 
   # The desktop app on each OS: its tests (the side panel against a real server, libmpv playback on Linux)
-  # and its installers, which the download page picks up by their syncplaytv- artifact names.
+  # and its installers, which the download page picks up by their yarmiplaytv- artifact names.
   desktop:
     strategy:
       fail-fast: false
@@ -133,10 +133,10 @@ jobs:
           # desktop install has and the runner image lacks.
           sudo mkdir -p /etc/xdg/menus/applications-merged /usr/share/applications /usr/share/desktop-directories
           sudo apt-get install -y -q "./$deb"
-          app=$(dpkg -L syncplaytv | grep '/bin/SyncplayTV$')
+          app=$(dpkg -L yarmiplaytv | grep '/bin/YarmiplayTV$')
           "$app" --version | tee "$RUNNER_TEMP/version.txt"
           grep -q "libmpv [0-9]" "$RUNNER_TEMP/version.txt"
-          xvfb-run -a -s "-screen 0 1920x1080x24" "$app" --benchmark app/src/androidTest/assets/syncplaytv-sync-clip.mp4 \
+          xvfb-run -a -s "-screen 0 1920x1080x24" "$app" --benchmark app/src/androidTest/assets/yarmiplaytv-sync-clip.mp4 \
             --seconds 10 --out "$RUNNER_TEMP/benchmark.txt" || true
           cat "$RUNNER_TEMP/benchmark.txt"
           grep -Eq "rendered [1-9]" "$RUNNER_TEMP/benchmark.txt"
@@ -147,7 +147,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: syncplaytv-desktop-${{ runner.os }}
+          name: yarmiplaytv-desktop-${{ runner.os }}
           path: |
             desktop/build/compose/binaries/main/msi/*.msi
             desktop/build/compose/binaries/main/exe/*.exe

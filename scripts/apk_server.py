@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Serves the SyncplayTV APK on the local network so a real TV, phone or tablet can download and install it.
+Serves the YarmiplayTV APK on the local network so a real TV, phone or tablet can download and install it.
 
   python scripts/apk_server.py [--apk app/build/outputs/apk/debug/app-debug.apk] [--port 8080]
 
@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from download_site import Download, by_platform, render_page
 
 APK_MIME = "application/vnd.android.package-archive"
-DOWNLOAD_NAME = "SyncplayTV.apk"
+DOWNLOAD_NAME = "YarmiplayTV.apk"
 
 
 def lan_addresses():
@@ -42,7 +42,7 @@ def lan_addresses():
 
 def make_handler(apk_path, version):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "SyncplayTV-APK"
+        server_version = "YarmiplayTV-APK"
 
         def do_HEAD(self):
             self.route(send_body=False)
@@ -52,7 +52,7 @@ def make_handler(apk_path, version):
 
         def route(self, send_body):
             path = self.path.split("?", 1)[0].rstrip("/") or "/"
-            if path in ("/a", "/apk", "/" + DOWNLOAD_NAME.lower(), "/" + DOWNLOAD_NAME, "/syncplaytv.apk"):
+            if path in ("/a", "/apk", "/" + DOWNLOAD_NAME.lower(), "/" + DOWNLOAD_NAME, "/yarmiplaytv.apk"):
                 self.send_apk(send_body)
             elif path == "/":
                 self.send_page(send_body)
@@ -114,7 +114,7 @@ def main():
         server = ThreadingHTTPServer(("0.0.0.0", a.port), make_handler(a.apk, a.version))
     except OSError as e:
         sys.exit(f"cannot listen on port {a.port}: {e} (try --port 8090)")
-    print("SyncplayTV APK server running. On the TV, phone or tablet open one of:")
+    print("YarmiplayTV APK server running. On the TV, phone or tablet open one of:")
     for i, ip in enumerate(lan_addresses()):
         note = "   <- most likely your LAN" if i == 0 else ""
         print(f"  http://{ip}:{a.port}/   (page)   http://{ip}:{a.port}/a   (direct download){note}")

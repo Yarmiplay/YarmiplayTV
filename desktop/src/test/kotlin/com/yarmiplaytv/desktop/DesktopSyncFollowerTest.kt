@@ -125,6 +125,6 @@ class DesktopSyncFollowerTest {
         const val NAME = "SN-Desktop"
         const val LEADER = "SN-Leader"
         const val MAX_DRIFT_S = 0.5
-        val CLIPS = listOf("SyncplayTV Sync Check A.mp4", "SyncplayTV Sync Check B.mp4")
+        val CLIPS = listOf("YarmiplayTV Sync Check A.mp4", "YarmiplayTV Sync Check B.mp4")
     }
 }

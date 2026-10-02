@@ -4,7 +4,7 @@ fun main(args: Array<String>) {
     val list = args.toList()
     when {
         "--benchmark" in list -> runBenchmark(BenchmarkOptions(list))
-        "--version" in list -> println("SyncplayTV $APP_VERSION, libmpv ${libmpvVersion()}")
+        "--version" in list -> println("YarmiplayTV $APP_VERSION, libmpv ${libmpvVersion()}")
         else -> runApp(list)
     }
 }

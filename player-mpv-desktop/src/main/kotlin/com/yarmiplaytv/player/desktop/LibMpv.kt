@@ -138,9 +138,9 @@ interface LibMpv : Library {
         }
 
         fun installHint(): String = when {
-            os.startsWith("windows") -> "libmpv-2.dll is missing from the installation. Reinstall SyncplayTV."
-            os.contains("mac") -> "SyncplayTV needs mpv's library. Install it with Homebrew: brew install mpv"
-            else -> "SyncplayTV needs libmpv. Install it with your package manager, e.g. sudo apt install libmpv2"
+            os.startsWith("windows") -> "libmpv-2.dll is missing from the installation. Reinstall YarmiplayTV."
+            os.contains("mac") -> "YarmiplayTV needs mpv's library. Install it with Homebrew: brew install mpv"
+            else -> "YarmiplayTV needs libmpv. Install it with your package manager, e.g. sudo apt install libmpv2"
         }
     }
 }

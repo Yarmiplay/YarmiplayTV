@@ -1,4 +1,4 @@
-# SyncplayTV
+# YarmiplayTV
 
 A [Syncplay](https://syncplay.pl/) client for Android TV / Google TV, phones, tablets and Windows, macOS and Linux
 desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin](https://jellyfin.org/) server on
@@ -21,13 +21,13 @@ the local network or from files on the device.
 
 ## Download
 
-The [download page](https://yarmiplay.github.io/SyncplayTV/) has a card per device type (Google TV, Android
+The [download page](https://yarmiplay.github.io/YarmiplayTV/) has a card per device type (Google TV, Android
 phone and tablet, Windows, macOS, Linux) and highlights the one for the device you open it on. On a TV, enter
-`https://yarmiplay.github.io/SyncplayTV/a` in the Downloader app to get the APK directly.
+`https://yarmiplay.github.io/YarmiplayTV/a` in the Downloader app to get the APK directly.
 
 The page is built by `scripts/download_site.py` and published by `.github/workflows/pages.yml` after every
 green `Build` run on `main` (or by hand from the Actions tab). It contains every artifact of that run whose
-name starts with `syncplaytv-`. Files are matched to platforms by extension (`.apk`, `.msi`/`.exe`,
+name starts with `yarmiplaytv-`. Files are matched to platforms by extension (`.apk`, `.msi`/`.exe`,
 `.dmg`/`.pkg`, `.deb`/`.rpm`/`.AppImage`). Platforms without a package show how to run from source. To
 preview it locally:
 
@@ -43,7 +43,7 @@ Installers come from the `desktop` CI job (and the download page):
 - **Windows:** `.msi` or `.exe`, installed per user; libmpv is included.
 - **macOS:** `.dmg` (Apple Silicon, not notarized: right-click the app and choose Open the first time).
   It uses Homebrew's libmpv, so run `brew install mpv` first.
-- **Linux:** `.deb` for Ubuntu 22.04+ and Debian 12+; `sudo apt install ./syncplaytv_*.deb` also installs
+- **Linux:** `.deb` for Ubuntu 22.04+ and Debian 12+; `sudo apt install ./yarmiplaytv_*.deb` also installs
   libmpv.
 
 Open a video from the home screen, drop files or folders on the window, or use "Open with" on a video.
@@ -56,7 +56,7 @@ In a room, the player's playlist, room and chat buttons open a side panel:
 
 Player keys: Space or K pauses, ←/→ or J/L seek, ↑/↓ change the volume, F or F11 toggles full screen,
 Esc leaves full screen or goes back. The command line follows the official client:
-`SyncplayTV [--host host[:port]] [--name name] [--room room] [--password pw] [file]`.
+`YarmiplayTV [--host host[:port]] [--name name] [--room room] [--password pw] [file]`.
 
 From source (downloads the pinned libmpv on Windows; use `brew install mpv` or `sudo apt install libmpv2`
 elsewhere):
@@ -107,7 +107,7 @@ elsewhere):
 ./scripts/ui.ps1 -Serial emulator-5554 -Id tab_Room
 ./scripts/ui.ps1 -Serial emulator-5554 "Use this folder" -Wait 10
 
-# Screenshot an emulator (saved under %TEMP%\syncplaytv-shots, path is printed)
+# Screenshot an emulator (saved under %TEMP%\yarmiplaytv-shots, path is printed)
 ./scripts/screenshot.ps1 -Name home
 ./scripts/screenshot.ps1 -Serial emulator-5554 -Name phone-home
 ```
@@ -188,7 +188,7 @@ tests through adb instead:
 ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
 adb install -r -t app/build/outputs/apk/debug/app-debug.apk
 adb install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-adb shell am instrument -w -r com.syncplaytv.test/androidx.test.runner.AndroidJUnitRunner
+adb shell am instrument -w -r com.yarmiplaytv.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 CI (`.github/workflows/build.yml`) does four things:

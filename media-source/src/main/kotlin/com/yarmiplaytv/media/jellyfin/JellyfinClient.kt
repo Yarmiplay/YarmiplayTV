@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 
 /** Identifies this app to Jellyfin (shown in the server's dashboard / Quick Connect prompt). */
 data class ClientInfo(
-    val clientName: String = "SyncplayTV",
+    val clientName: String = "YarmiplayTV",
     val deviceName: String,
     val deviceId: String,
     val version: String,

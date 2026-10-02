@@ -75,7 +75,7 @@ Start-Sleep -Seconds 3
 if (-not $official.HasExited) { $official.Kill() }
 $officialLog = $officialOut.Result + $officialErr.Result
 $officialLog | Out-File "$log\official.log"
-$clips = "SyncplayTV Sync Check A.mp4", "SyncplayTV Sync Check B.mp4"
+$clips = "YarmiplayTV Sync Check A.mp4", "YarmiplayTV Sync Check B.mp4"
 $sawPlaylist = ($clips | Where-Object { $officialLog -notmatch [regex]::Escape($_) }).Count -eq 0
 $sawChat = $officialLog -match "SN-Leader.*SYNC \d+ done" -and $officialLog -match "SN-Desktop.*ACK \d+"
 $officialOk = $sawPlaylist -and $sawChat

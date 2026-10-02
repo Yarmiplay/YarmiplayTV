@@ -33,7 +33,7 @@ class LocalPlaybackTest {
     private val container get() = TestSupport.container
     private lateinit var restoreRoom: () -> Unit
     private var clip: Uri? = null
-    private val clipName = "SyncplayTV Instrumented Clip - ${System.currentTimeMillis() % 100000}.mp4"
+    private val clipName = "YarmiplayTV Instrumented Clip - ${System.currentTimeMillis() % 100000}.mp4"
 
     @Before
     fun setUp() {

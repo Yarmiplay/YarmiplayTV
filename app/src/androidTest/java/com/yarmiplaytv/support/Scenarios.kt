@@ -119,7 +119,7 @@ class Scenarios(private val state: AppState, private val syncplay: FakeSyncplayS
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, CLIP_NAME)
             put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/SyncplayTV-tests")
+            put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/YarmiplayTV-tests")
             put(MediaStore.Video.Media.IS_PENDING, 1)
         }
         val uri = requireNotNull(resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values))
@@ -139,6 +139,6 @@ class Scenarios(private val state: AppState, private val syncplay: FakeSyncplayS
          * Solid black: the emulators' decoders sometimes place video tiles wrongly on the first frame,
          * which only stays pixel-identical when every tile looks the same.
          */
-        private const val CLIP_ASSET = "syncplaytv-black-clip.mp4"
+        private const val CLIP_ASSET = "yarmiplaytv-black-clip.mp4"
     }
 }

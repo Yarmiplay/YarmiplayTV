@@ -81,7 +81,7 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
                 }
                 Text(
                     "Media folders work like Syncplay's media directories: when the room's playlist moves to a file, " +
-                        "SyncplayTV looks for it here first, then in Jellyfin.",
+                        "YarmiplayTV looks for it here first, then in Jellyfin.",
                     color = AppColors.TextDim,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(horizontal = 16.dp),

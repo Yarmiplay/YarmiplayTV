@@ -17,7 +17,7 @@ class LiveJellyfinTest {
     @Test
     fun browseAndResolve() = runBlocking {
         assumeTrue(url.isNotEmpty() && token.isNotEmpty() && userId.isNotEmpty())
-        val client = JellyfinClient(ClientInfo(deviceName = "SyncplayTV test", deviceId = "syncplaytv-test", version = "0.1"))
+        val client = JellyfinClient(ClientInfo(deviceName = "YarmiplayTV test", deviceId = "yarmiplaytv-test", version = "0.1"))
         val info = client.publicInfo(url)
         println("Server: ${info.serverName} ${info.version}")
         val source = JellyfinSource(client, JellyfinSession(url, info.serverName ?: "", info.id ?: "", userId, "", token))

@@ -49,7 +49,7 @@ internal data class WindowBounds(
             p["maximized"] = (state.placement == WindowPlacement.Maximized).toString()
             runCatching {
                 file.parentFile?.mkdirs()
-                file.outputStream().use { p.store(it, "SyncplayTV window") }
+                file.outputStream().use { p.store(it, "YarmiplayTV window") }
             }
         }
 

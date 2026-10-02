@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SyncplayTV"
+rootProject.name = "YarmiplayTV"
 
 include(":app")
 include(":syncplay-protocol")

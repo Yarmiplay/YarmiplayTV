@@ -82,7 +82,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(androidx.compose.ui.res.painterResource(com.yarmiplaytv.shared.R.drawable.ic_logo), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(48.dp))
                 Spacer(Modifier.width(16.dp))
-                Text("SyncplayTV", style = MaterialTheme.typography.headlineMedium)
+                Text("YarmiplayTV", style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.weight(1f))
                 if (source != null) IconAction(Icons.Filled.Search, "Search", { nav.push(Screen.Search()) })
                 Spacer(Modifier.width(8.dp))

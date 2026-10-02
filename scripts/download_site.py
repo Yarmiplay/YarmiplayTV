@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Builds the SyncplayTV download page: one card per device type / OS, each with its download and install steps.
+Builds the YarmiplayTV download page: one card per device type / OS, each with its download and install steps.
 
   python scripts/download_site.py --dist dist --out _site [--version 0.1.0] [--commit abc1234] [--site-url URL]
 
 Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .msi/.exe: Windows,
-.dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as SyncplayTV.apk, so links
+.dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as YarmiplayTV.apk, so links
 keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader. Platforms without a
 file show how to run from source. The Pages workflow publishes the result; scripts/apk_server.py serves the
 same page on the local network. Standard library only.
@@ -22,8 +22,8 @@ import shutil
 import sys
 from dataclasses import dataclass
 
-NAME = "SyncplayTV"
-REPO_URL = "https://github.com/Yarmiplay/SyncplayTV"
+NAME = "YarmiplayTV"
+REPO_URL = "https://github.com/Yarmiplay/YarmiplayTV"
 
 # Lower-case extension -> platforms it installs on and the button label.
 EXTENSIONS = {
@@ -72,11 +72,11 @@ def platforms(short_link):
             "Open the file from the notification or <b>Downloads</b> and choose <b>Install</b>.",
         ], []),
         Platform("windows", "Windows", "Windows 10 or 11, 64-bit.", [
-            "Run the installer, then start SyncplayTV from the Start menu.",
+            "Run the installer, then start YarmiplayTV from the Start menu.",
         ], ["Install JDK 17, clone the repository, then:", "gradlew.bat :desktop:run"]),
         Platform("macos", "macOS", "Uses mpv from Homebrew.", [
             "Install mpv: <code>brew install mpv</code>",
-            "Open the disk image and drag SyncplayTV to Applications.",
+            "Open the disk image and drag YarmiplayTV to Applications.",
         ], ["Install JDK 17 and mpv (<code>brew install mpv</code>), clone the repository, then:", run]),
         Platform("linux", "Linux", "Uses your distribution's libmpv.", [
             "Install libmpv: <code>sudo apt install libmpv2</code> (Debian / Ubuntu) or "

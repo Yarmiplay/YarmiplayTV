@@ -13,15 +13,30 @@ object DesktopPaths {
         osName: String = System.getProperty("os.name").orEmpty(),
         env: (String) -> String? = System::getenv,
         home: String = System.getProperty("user.home").orEmpty(),
-    ): File {
+    ): File = dirNamed("YarmiplayTV", osName, env, home)
+
+    /** The folder the app used while it was called SyncplayTV. */
+    fun legacyConfigDir(
+        osName: String = System.getProperty("os.name").orEmpty(),
+        env: (String) -> String? = System::getenv,
+        home: String = System.getProperty("user.home").orEmpty(),
+    ): File = dirNamed("SyncplayTV", osName, env, home)
+
+    /** Moves [legacy] to [target] if only the legacy folder exists, so settings survive the rename. */
+    fun migrateLegacyConfig(target: File = configDir(), legacy: File = legacyConfigDir()): File {
+        if (!target.exists() && legacy.isDirectory) legacy.renameTo(target)
+        return target
+    }
+
+    private fun dirNamed(name: String, osName: String, env: (String) -> String?, home: String): File {
         val os = osName.lowercase()
         return when {
             os.startsWith("windows") ->
-                File(env("APPDATA")?.takeIf { it.isNotBlank() } ?: File(home, "AppData/Roaming").path, "SyncplayTV")
+                File(env("APPDATA")?.takeIf { it.isNotBlank() } ?: File(home, "AppData/Roaming").path, name)
             os.startsWith("mac") || os.startsWith("darwin") ->
-                File(home, "Library/Application Support/SyncplayTV")
+                File(home, "Library/Application Support/$name")
             else ->
-                File(env("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() } ?: File(home, ".config").path, "syncplaytv")
+                File(env("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() } ?: File(home, ".config").path, name.lowercase())
         }
     }
 }

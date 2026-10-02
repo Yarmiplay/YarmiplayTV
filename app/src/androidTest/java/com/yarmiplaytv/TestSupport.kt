@@ -10,18 +10,18 @@ import com.yarmiplaytv.data.AppSettings
 import kotlinx.coroutines.runBlocking
 
 object TestSupport {
-    const val CLIP_ASSET = "syncplaytv-test-clip.mp4"
+    const val CLIP_ASSET = "yarmiplaytv-test-clip.mp4"
 
-    val app: SyncplayTvApp get() = ApplicationProvider.getApplicationContext()
+    val app: YarmiplayTvApp get() = ApplicationProvider.getApplicationContext()
     val container: AppContainer get() = app.container
 
-    /** Copies the bundled test clip into MediaStore (Movies/SyncplayTV-tests) and returns its content:// URI. */
+    /** Copies the bundled test clip into MediaStore (Movies/YarmiplayTV-tests) and returns its content:// URI. */
     fun insertClip(displayName: String): Uri {
         val resolver = app.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, displayName)
             put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/SyncplayTV-tests")
+            put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/YarmiplayTV-tests")
             put(MediaStore.Video.Media.IS_PENDING, 1)
         }
         val uri = requireNotNull(resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)) { "MediaStore insert failed" }

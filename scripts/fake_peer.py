@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Scriptable Syncplay peer for testing SyncplayTV without a desktop client.
+Scriptable Syncplay peer for testing YarmiplayTV without a desktop client.
 
 It speaks the same protocol as Syncplay 1.7 (plain TCP), keeps a virtual playback clock,
 follows the room like a real client and prints what the room does. Standard library only.

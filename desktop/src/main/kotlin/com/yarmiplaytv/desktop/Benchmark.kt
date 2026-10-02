@@ -79,7 +79,7 @@ private var focusThief: javax.swing.JFrame? = null
 /** Activates a small window of ours ([away]) or the benchmark window again. */
 private fun switchFocus(window: java.awt.Window, away: Boolean) {
     if (away) {
-        val thief = focusThief ?: javax.swing.JFrame("SyncplayTV benchmark: focus elsewhere").apply {
+        val thief = focusThief ?: javax.swing.JFrame("YarmiplayTV benchmark: focus elsewhere").apply {
             setSize(360, 120)
             setLocation(40, 40)
             focusThief = this
@@ -119,7 +119,7 @@ internal fun runBenchmark(options: BenchmarkOptions) {
         val compensator = remember {
             LatencyCompensator(core, renderer) { awtWindow?.let(::refreshRateOf) ?: displayRefreshRate() }
         }
-        Window(onCloseRequest = ::exitApplication, state = windowState, title = "SyncplayTV benchmark") {
+        Window(onCloseRequest = ::exitApplication, state = windowState, title = "YarmiplayTV benchmark") {
             LaunchedEffect(Unit) {
                 awtWindow = window
                 if (!options.composeFullscreen) fullscreen.attach(window)
@@ -285,7 +285,7 @@ private suspend fun measure(
         "window never minimized ($minimizedCount)" to (minimizedCount == 0),
     )
     val text = buildString {
-        appendLine("=== SyncplayTV render benchmark ===")
+        appendLine("=== YarmiplayTV render benchmark ===")
         appendLine("file:        ${File(options.file).name}")
         appendLine("video:       $video")
         val modes = listOfNotNull(

@@ -225,7 +225,7 @@ class SyncCheckTest {
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, name)
             put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/SyncplayTV-tests")
+            put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/YarmiplayTV-tests")
             put(MediaStore.Video.Media.IS_PENDING, 1)
         }
         val uri = requireNotNull(resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values))
@@ -240,9 +240,9 @@ class SyncCheckTest {
     private fun log(message: String) = Log.i("SyncCheck", message)
 
     companion object {
-        private const val CLIP_ASSET = "syncplaytv-sync-clip.mp4"
-        private const val CLIP_A = "SyncplayTV Sync Check A.mp4"
-        private const val CLIP_B = "SyncplayTV Sync Check B.mp4"
+        private const val CLIP_ASSET = "yarmiplaytv-sync-clip.mp4"
+        private const val CLIP_A = "YarmiplayTV Sync Check A.mp4"
+        private const val CLIP_B = "YarmiplayTV Sync Check B.mp4"
         private const val MAX_DRIFT_S = 0.5
         private const val RESEND_MS = 5_000L
     }

@@ -93,7 +93,7 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
 
             SectionHeader("About")
             Text(
-                "SyncplayTV ${container.appVersion} · Syncplay protocol 1.7 · mpv (libmpv)",
+                "YarmiplayTV ${container.appVersion} · Syncplay protocol 1.7 · mpv (libmpv)",
                 color = AppColors.TextDim,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )

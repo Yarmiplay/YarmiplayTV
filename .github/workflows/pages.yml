@@ -43,13 +43,13 @@ jobs:
         with:
           ref: ${{ steps.run.outputs.sha }}
 
-      # Every artifact of the run whose name starts with syncplaytv- (the APK now, desktop packages later)
+      # Every artifact of the run whose name starts with yarmiplaytv- (the APK now, desktop packages later)
       # lands flat in dist/; download_site.py sorts the files onto platforms by extension.
       - name: Download the packages
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh run download "${{ steps.run.outputs.id }}" -R "$GITHUB_REPOSITORY" -p 'syncplaytv-*' -D artifacts
+          gh run download "${{ steps.run.outputs.id }}" -R "$GITHUB_REPOSITORY" -p 'yarmiplaytv-*' -D artifacts
           mkdir dist
           find artifacts -type f -exec mv -t dist {} +
           ls -l dist

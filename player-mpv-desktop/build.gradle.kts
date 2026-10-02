@@ -51,7 +51,7 @@ val prepareLibmpv by tasks.registering {
     description = "Downloads the pinned libmpv-2.dll (Windows only)."
     val windows = isWindows
     onlyIf { windows }
-    val cache = File(gradle.gradleUserHomeDir, "caches/syncplaytv-libmpv/${Libmpv.TAG}")
+    val cache = File(gradle.gradleUserHomeDir, "caches/yarmiplaytv-libmpv/${Libmpv.TAG}")
     val outDir = libmpvDir
     inputs.property("archive", Libmpv.ARCHIVE_SHA256)
     outputs.dir(outDir)
@@ -79,7 +79,7 @@ val prepareLibmpv by tasks.registering {
     }
 }
 
-val testClip = rootProject.file("app/src/androidTest/assets/syncplaytv-test-clip.mp4").absolutePath
+val testClip = rootProject.file("app/src/androidTest/assets/yarmiplaytv-test-clip.mp4").absolutePath
 
 tasks.test {
     dependsOn(prepareLibmpv)

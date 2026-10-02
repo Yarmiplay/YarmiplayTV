@@ -5,7 +5,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
 
 @Composable
-fun SyncplayTvTheme(content: @Composable () -> Unit) {
+fun YarmiplayTvTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = AppColors.Accent,

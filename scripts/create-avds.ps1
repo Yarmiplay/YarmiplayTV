@@ -24,7 +24,7 @@ $env:JAVA_HOME = $JdkDir
 $avdManager = "$SdkDir\cmdline-tools\latest\bin\avdmanager.bat"
 $avdHome = if ($env:ANDROID_AVD_HOME) { $env:ANDROID_AVD_HOME } else { "$env:USERPROFILE\.android\avd" }
 
-$tvImageFile = "$SdkDir\.syncplaytv-tv-image"
+$tvImageFile = "$SdkDir\.yarmiplaytv-tv-image"
 $tvImage = if (Test-Path $tvImageFile) { (Get-Content $tvImageFile -Raw).Trim() } else { $null }
 $mobileImage = "system-images;android-36;google_apis_playstore;x86_64"
 

@@ -83,6 +83,6 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
         TvTextField(pb.subtitleLanguages, { savePlayback(pb.copy(subtitleLanguages = it)) }, "Preferred subtitle languages (restart to apply)", placeholder = "eng,en")
 
         SectionTitle("About")
-        Text("SyncplayTV ${BuildConfig.VERSION_NAME} · Syncplay protocol 1.7 · mpv (libmpv)", color = AppColors.TextDim)
+        Text("YarmiplayTV ${BuildConfig.VERSION_NAME} · Syncplay protocol 1.7 · mpv (libmpv)", color = AppColors.TextDim)
     }
 }

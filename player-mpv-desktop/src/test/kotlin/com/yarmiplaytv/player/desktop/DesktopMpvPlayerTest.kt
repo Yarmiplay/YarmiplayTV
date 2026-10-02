@@ -67,7 +67,7 @@ class DesktopMpvPlayerTest {
 
     @Test
     fun framesAreUprightOnGpuAndCpu() = runBlocking {
-        val pattern = File.createTempFile("syncplaytv-orientation", ".png").apply { deleteOnExit() }
+        val pattern = File.createTempFile("yarmiplaytv-orientation", ".png").apply { deleteOnExit() }
         val image = BufferedImage(64, 36, BufferedImage.TYPE_INT_RGB)
         for (y in 0 until 18) for (x in 0 until 32) image.setRGB(x, y, 0xFFFFFF)
         ImageIO.write(image, "png", pattern)
@@ -116,7 +116,7 @@ class DesktopMpvPlayerTest {
 
     @Test
     fun reportsFilesMpvCannotRead() = runBlocking {
-        val garbage = File.createTempFile("syncplaytv-bad", ".mp4").apply { writeText("not a video"); deleteOnExit() }
+        val garbage = File.createTempFile("yarmiplaytv-bad", ".mp4").apply { writeText("not a video"); deleteOnExit() }
         val failed = loadAndAwait<PlayerEvent.EndFile>(garbage.toURI().toString())
         assertNotNull(failed.error)
         assertFalse(player.isFileLoaded)

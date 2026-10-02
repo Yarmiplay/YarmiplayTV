@@ -32,8 +32,8 @@ $adbArgs = @()
 if ($Serial) { $adbArgs += @("-s", $Serial) }
 
 function Get-Nodes {
-    & $adb @adbArgs shell uiautomator dump /sdcard/syncplaytv-ui.xml 2>&1 | Out-Null
-    $raw = (& $adb @adbArgs exec-out cat /sdcard/syncplaytv-ui.xml) -join "`n"
+    & $adb @adbArgs shell uiautomator dump /sdcard/yarmiplaytv-ui.xml 2>&1 | Out-Null
+    $raw = (& $adb @adbArgs exec-out cat /sdcard/yarmiplaytv-ui.xml) -join "`n"
     if (-not $raw -or $raw -notmatch "<hierarchy") { return @() }
     $xml = [xml]$raw
     $xml.SelectNodes("//node") | ForEach-Object {

@@ -41,7 +41,7 @@ tasks.test {
     outputs.dir(screenshots).withPropertyName("screenshots")
     systemProperty("yarmiplaytv.screenshotDir", screenshots.get().asFile.absolutePath)
     systemProperty("yarmiplaytv.libmpv.dir", libmpvDir.get().asFile.absolutePath)
-    systemProperty("yarmiplaytv.syncClip", rootProject.file("app/src/androidTest/assets/syncplaytv-sync-clip.mp4").absolutePath)
+    systemProperty("yarmiplaytv.syncClip", rootProject.file("app/src/androidTest/assets/yarmiplaytv-sync-clip.mp4").absolutePath)
     environment("SYNCPLAY_TEST_SERVER", System.getenv("SYNCPLAY_TEST_SERVER") ?: "")
     environment("SYNCPLAY_E2E_ROOM", System.getenv("SYNCPLAY_E2E_ROOM") ?: "")
     testLogging { events("passed", "skipped", "failed") }
@@ -159,7 +159,7 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb)
-            packageName = "SyncplayTV"
+            packageName = "YarmiplayTV"
             packageVersion = appVersion
             description = "Watch videos in sync with friends on Syncplay servers"
             vendor = "Yarmiplay"
@@ -171,7 +171,7 @@ compose.desktop {
 
             windows {
                 iconFile.set(generateAppIcons.flatMap { it.outputDir.file("icon.ico") })
-                menuGroup = "SyncplayTV"
+                menuGroup = "YarmiplayTV"
                 shortcut = true
                 dirChooser = true
                 perUserInstall = true
@@ -180,12 +180,12 @@ compose.desktop {
             macOS {
                 iconFile.set(generateAppIcons.flatMap { it.outputDir.file("icon.icns") })
                 bundleID = "com.yarmiplaytv.desktop"
-                dockName = "SyncplayTV"
+                dockName = "YarmiplayTV"
                 appCategory = "public.app-category.entertainment"
             }
             linux {
                 iconFile.set(generateAppIcons.flatMap { it.outputDir.file("icon.png") })
-                packageName = "syncplaytv"
+                packageName = "yarmiplaytv"
                 debMaintainer = "Yarmiplay@users.noreply.github.com"
                 appCategory = "AudioVideo"
                 menuGroup = "AudioVideo;Video;Player"

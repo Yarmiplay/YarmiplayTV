@@ -163,7 +163,7 @@ class TvNavigationTest {
 
     @Test
     fun localClipPlaysOnTv() {
-        val uri = TestSupport.insertClip("SyncplayTV TV Clip - ${System.currentTimeMillis() % 100000}.mp4")
+        val uri = TestSupport.insertClip("YarmiplayTV TV Clip - ${System.currentTimeMillis() % 100000}.mp4")
         try {
             launch()
             tv.awaitFocus("Join a Syncplay room")
@@ -174,7 +174,7 @@ class TvNavigationTest {
             onMain { container.player.setPaused(true) }
             tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
             tv.awaitFocus("Play/pause")
-            tv.await("SyncplayTV TV Clip")
+            tv.await("YarmiplayTV TV Clip")
         } finally {
             TestSupport.delete(uri)
         }

@@ -11,7 +11,7 @@ import com.yarmiplaytv.player.MpvPlayer
 
 private val Context.dataStore by preferencesDataStore("settings")
 
-class SyncplayTvApp : Application() {
+class YarmiplayTvApp : Application() {
     lateinit var container: AppContainer
         private set
 

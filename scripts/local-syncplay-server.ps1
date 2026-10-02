@@ -10,7 +10,7 @@
 param(
     [int]$Port = 8999,
     [string]$Password,
-    [string]$Motd = "SyncplayTV local test server"
+    [string]$Motd = "YarmiplayTV local test server"
 )
 
 $ErrorActionPreference = "Stop"

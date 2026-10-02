@@ -16,7 +16,7 @@ class PublicServerTlsTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val player = RealtimePlayer().apply { isFileLoaded = false }
         val client = SyncplayClient(
-            SyncplayConfig("syncplay.pl", 8999, "SyncplayTV-test", "syncplaytv-tls-" + System.nanoTime()),
+            SyncplayConfig("syncplay.pl", 8999, "YarmiplayTV-test", "yarmiplaytv-tls-" + System.nanoTime()),
             player,
             parentScope = scope,
         )

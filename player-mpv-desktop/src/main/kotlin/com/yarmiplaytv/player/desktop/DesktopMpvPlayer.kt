@@ -50,8 +50,8 @@ class DesktopMpvPlayer(
             put("save-position-on-quit", "no")
             put("osd-duration", "2500")
             put("sub-scale-with-window", "yes")
-            put("user-agent", "SyncplayTV")
-            put("audio-client-name", "SyncplayTV")
+            put("user-agent", "YarmiplayTV")
+            put("audio-client-name", "YarmiplayTV")
             if (options.audioLanguages.isNotBlank()) put("alang", options.audioLanguages)
             if (options.subtitleLanguages.isNotBlank()) put("slang", options.subtitleLanguages)
         },

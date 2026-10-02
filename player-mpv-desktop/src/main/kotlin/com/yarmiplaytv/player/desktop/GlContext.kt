@@ -38,7 +38,7 @@ private class GlfwContext : GlContext {
         GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, 3)
         GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 3)
         GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE, GLFW.GLFW_OPENGL_CORE_PROFILE)
-        window = GLFW.glfwCreateWindow(1, 1, "SyncplayTV video", MemoryUtil.NULL, MemoryUtil.NULL)
+        window = GLFW.glfwCreateWindow(1, 1, "YarmiplayTV video", MemoryUtil.NULL, MemoryUtil.NULL)
         check(window != MemoryUtil.NULL) { "Couldn't create an OpenGL 3.3 context" }
         GLFW.glfwMakeContextCurrent(window)
         GLFW.glfwSwapInterval(0)

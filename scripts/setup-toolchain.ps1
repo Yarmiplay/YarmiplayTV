@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Installs everything needed to build SyncplayTV and run the Google TV emulator, without admin rights:
+  Installs everything needed to build YarmiplayTV and run the Google TV emulator, without admin rights:
   a portable JDK 17, the Android command-line tools, platform-tools, emulator, SDK platform,
   build-tools and the newest Google TV x86_64 system image.
 
@@ -24,7 +24,7 @@ $ProgressPreference = "SilentlyContinue"
 function Write-Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 
 function Expand-SingleRootZip($zip, $dest) {
-    $tmp = Join-Path $env:TEMP ("syncplaytv-" + [guid]::NewGuid())
+    $tmp = Join-Path $env:TEMP ("yarmiplaytv-" + [guid]::NewGuid())
     Expand-Archive -Path $zip -DestinationPath $tmp -Force
     $root = Get-ChildItem $tmp | Select-Object -First 1
     if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
@@ -123,7 +123,7 @@ foreach ($p in $packages) {
     if ($LASTEXITCODE -ne 0) { throw "Installing $p failed with exit code $LASTEXITCODE" }
 }
 
-Set-Content -Path "$SdkDir\.syncplaytv-tv-image" -Value ($tvImage.Replace("/", ";")) -Encoding ASCII
+Set-Content -Path "$SdkDir\.yarmiplaytv-tv-image" -Value ($tvImage.Replace("/", ";")) -Encoding ASCII
 
 # --- Hardware acceleration --------------------------------------------------
 Write-Step "Checking emulator hardware acceleration"
