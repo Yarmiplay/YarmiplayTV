@@ -184,7 +184,10 @@ class SyncEngine(
         if (host.username == setBy) return false
         val before = getPlayerPosition()
         setPosition(position)
-        host.notify("${setBy ?: "Someone"} jumped from ${formatTime(before)} to ${formatTime(position)}")
+        // A new file starting at 0 also arrives as a seek; "jumped from 00:00 to 00:00" would only be noise.
+        if (abs(before - position) > Constants.SEEK_THRESHOLD) {
+            host.notify("${setBy ?: "Someone"} jumped from ${formatTime(before)} to ${formatTime(position)}")
+        }
         return true
     }
 

@@ -49,8 +49,17 @@ class SyncEngineTest {
         step(1.0)
         serverState(600.0, paused = false, doSeek = true, setBy = "alice")
         assertEquals(600.0, player.position, 0.2)
+        assertTrue(host.notifications.toString(), "alice jumped from 00:11 to 10:00" in host.notifications)
         step(1.0)
         assertTrue(host.sent.none { it.doSeek })
+    }
+
+    @Test
+    fun `a remote seek to where we already are is not announced`() {
+        serverState(0.0, paused = true)
+        step(1.0)
+        serverState(0.0, paused = true, doSeek = true, setBy = "alice")
+        assertTrue(host.notifications.toString(), host.notifications.none { "jumped" in it })
     }
 
     @Test
