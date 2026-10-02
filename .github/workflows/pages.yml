@@ -1,11 +1,12 @@
 name: Download page
 
-# Publishes the download page (scripts/download_site.py) with the packages of the latest green Build on main.
+# Publishes the download page (scripts/download_site.py) with the packages of the latest green Build on main,
+# except for Windows, whose code-signed installers come from the latest release. Release runs are for tags,
+# so the branch is checked in the job's condition rather than filtered here.
 on:
   workflow_run:
-    workflows: [Build]
+    workflows: [Build, Release]
     types: [completed]
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -20,7 +21,10 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    if: >-
+      github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      (github.event.workflow_run.name == 'Release' || github.event.workflow_run.head_branch == 'main'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -28,8 +32,8 @@ jobs:
         id: run
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ github.event.workflow_run.name == 'Build' && github.event.workflow_run.id || '' }}
+          RUN_SHA: ${{ github.event.workflow_run.name == 'Build' && github.event.workflow_run.head_sha || '' }}
         run: |
           if [ -z "$RUN_ID" ]; then
             read -r RUN_ID RUN_SHA < <(gh run list -R "$GITHUB_REPOSITORY" --workflow build.yml --branch main \
@@ -52,6 +56,12 @@ jobs:
           gh run download "${{ steps.run.outputs.id }}" -R "$GITHUB_REPOSITORY" -p 'yarmiplaytv-*' -D artifacts
           mkdir dist
           find artifacts -type f -exec mv -t dist {} +
+          if gh release download -R "$GITHUB_REPOSITORY" -p '*.msi' -p '*.exe' -D signed; then
+            rm -f dist/*.msi dist/*.exe
+            mv signed/* dist/
+          else
+            echo "::warning::No release with Windows installers; the page offers the unsigned ones from main"
+          fi
           ls -l dist
 
       - id: pages

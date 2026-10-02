@@ -182,7 +182,8 @@ def render_page(downloads, version, built, short_link=None, privacy=False):
 {chr(10).join(cards)}
 </div>
 <footer>Phones, tablets and TVs use the same APK: it picks the TV or touch interface by itself.
- &middot; <a href="{REPO_URL}">Source</a>{' &middot; <a href="privacy/">Privacy</a>' if privacy else ''}</footer>
+ &middot; <a href="{REPO_URL}">Source</a>{' &middot; <a href="privacy/">Privacy</a>' if privacy else ''}
+ &middot; <a href="{REPO_URL}#code-signing-policy">Code signing policy</a></footer>
 </main>
 <script>
 (function () {{

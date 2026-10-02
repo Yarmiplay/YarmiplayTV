@@ -1,8 +1,12 @@
-name: Release bundle
+name: Release
 
-# Builds the Play upload bundle for a version tag (v1.1, v1.2.3), signed with the upload key from the
-# secrets YARMIPLAYTV_KEYSTORE_BASE64, YARMIPLAYTV_KEYSTORE_PASSWORD, YARMIPLAYTV_KEY_ALIAS and
-# YARMIPLAYTV_KEY_PASSWORD. The tag has to match appVersion in app/build.gradle.kts.
+# For a version tag (v1.1, v1.2.3), which has to match appVersion in app/build.gradle.kts:
+# - the Play upload bundle, signed with the upload key from the secrets YARMIPLAYTV_KEYSTORE_BASE64,
+#   YARMIPLAYTV_KEYSTORE_PASSWORD, YARMIPLAYTV_KEY_ALIAS and YARMIPLAYTV_KEY_PASSWORD;
+# - the Windows installers, code signed through SignPath (certificate by SignPath Foundation) once an approver
+#   accepts the signing request, then attached to the tag's GitHub release, where the download page takes them
+#   from. Signing needs the variable SIGNPATH_ORGANIZATION_ID and the secret SIGNPATH_API_TOKEN; without them
+#   the installers are built but not signed or released.
 on:
   push:
     tags: ["v*"]
@@ -68,3 +72,128 @@ jobs:
           path: yarmiplaytv-*.aab
           if-no-files-found: error
           retention-days: 90
+
+  windows-installers:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the tag against appVersion
+        id: version
+        run: |
+          version=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' app/build.gradle.kts)
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match appVersion $version"; exit 1
+          fi
+          desktop=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' desktop/build.gradle.kts)
+          echo "desktop appVersion $desktop"
+          echo "version=$desktop" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      # SignPath's artifact configuration (.github/signpath/artifact-configuration.xml) expects the two
+      # installers at the root of the artifact.
+      - name: Installers
+        run: |
+          chmod +x gradlew
+          ./gradlew --stacktrace :desktop:packageMsi :desktop:packageExe
+          mkdir windows
+          cp desktop/build/compose/binaries/main/msi/*.msi desktop/build/compose/binaries/main/exe/*.exe windows/
+          ls -l windows
+
+      - name: jpackage logs
+        if: failure()
+        run: cat desktop/build/compose/logs/*/*.txt || true
+
+      - id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-installers-unsigned
+          path: windows/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Waits on a Linux runner while the signing request awaits manual approval in SignPath.
+  sign-windows:
+    needs: windows-installers
+    if: vars.SIGNPATH_ORGANIZATION_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Submit the signing request and wait for its approval
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: YarmiplayTV
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ needs.windows-installers.outputs.artifact-id }}
+          parameters: |
+            version: ${{ toJSON(needs.windows-installers.outputs.version) }}
+          wait-for-completion-timeout-in-seconds: 21000
+          output-artifact-directory: signed
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-installers-signed
+          path: signed/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Checks the signatures the way Windows does (including the launcher inside the .msi) and attaches the
+  # installers to the tag's release.
+  publish-windows:
+    needs: [windows-installers, sign-windows]
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows-installers-signed
+          path: signed
+
+      - name: Verify the signatures
+        shell: pwsh
+        run: |
+          $msi = Get-Item signed\*.msi
+          Start-Process msiexec -Wait -ArgumentList "/a `"$($msi.FullName)`" /qn TARGETDIR=`"$env:RUNNER_TEMP\msi`""
+          $files = @(Get-Item signed\*.msi, signed\*.exe) + @(Get-ChildItem "$env:RUNNER_TEMP\msi" -Recurse -Filter YarmiplayTV.exe)
+          if ($files.Count -ne 3) { throw "expected the .msi, the .exe and the launcher inside the .msi, found $($files.Count) files" }
+          foreach ($file in $files) {
+            $sig = Get-AuthenticodeSignature $file.FullName
+            "{0}: {1}, {2}" -f $file.Name, $sig.Status, $sig.SignerCertificate.Subject
+            if ($sig.Status -ne 'Valid' -or -not $sig.TimeStamperCertificate) { throw "$($file.Name) isn't validly signed and timestamped" }
+          }
+
+      - name: Attach the installers to the release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.windows-installers.outputs.version }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" signed/* -R "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" signed/* -R "$GITHUB_REPOSITORY" --verify-tag \
+              --title "YarmiplayTV $GITHUB_REF_NAME" \
+              --notes "Windows installers for YarmiplayTV $VERSION. Other platforms: https://yarmiplay.github.io/YarmiplayTV/
+
+          Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See the [code signing policy](https://github.com/$GITHUB_REPOSITORY#code-signing-policy)."
+          fi

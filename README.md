@@ -26,10 +26,11 @@ phone and tablet, Windows, macOS, Linux) and highlights the one for the device y
 `https://yarmiplay.github.io/YarmiplayTV/a` in the Downloader app to get the APK directly.
 
 The page is built by `scripts/download_site.py` and published by `.github/workflows/pages.yml` after every
-green `Build` run on `main` (or by hand from the Actions tab). It contains every artifact of that run whose
-name starts with `yarmiplaytv-`. Files are matched to platforms by extension (`.apk`, `.msi`/`.exe`,
-`.dmg`/`.pkg`, `.deb`/`.rpm`/`.AppImage`). Platforms without a package show how to run from source. To
-preview it locally:
+green `Build` run on `main` and after every `Release` run (or by hand from the Actions tab). It contains every
+artifact of that run whose name starts with `yarmiplaytv-`, except that the Windows installers come from the
+latest GitHub release, where they are code signed (see [Code signing policy](#code-signing-policy)). Files are
+matched to platforms by extension (`.apk`, `.msi`/`.exe`, `.dmg`/`.pkg`, `.deb`/`.rpm`/`.AppImage`). Platforms
+without a package show how to run from source. To preview it locally:
 
 ```powershell
 python scripts/download_site.py --dist app/build/outputs/apk/debug --out build/site
@@ -40,7 +41,8 @@ python -m http.server -d build/site 8000
 
 Installers come from the `desktop` CI job (and the download page):
 
-- **Windows:** `.msi` or `.exe`, installed per user; libmpv is included.
+- **Windows:** `.msi` or `.exe`, installed per user; libmpv is included. Releases are code signed; uninstall
+  from Settings > Apps.
 - **macOS:** `.dmg` (Apple Silicon, not notarized: right-click the app and choose Open the first time).
   It uses Homebrew's libmpv, so run `brew install mpv` first.
 - **Linux:** `.deb` for Ubuntu 22.04+ and Debian 12+; `sudo apt install ./yarmiplaytv_*.deb` also installs
@@ -251,6 +253,32 @@ Locally, `:app:bundleRelease` signs with the key named in a gitignored `keystore
 root (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). The store listing, graphics and policy answers
 are in [docs/play](docs/play/README.md); the privacy policy is [docs/privacy.md](docs/privacy.md), published at
 `/privacy/` on the download page.
+
+The same tag builds the Windows installers and submits them to [SignPath](https://signpath.io) for signing.
+An approver accepts the request in SignPath (the job waits up to 6 hours), then the signed `.msi` and `.exe`
+are verified and attached to the tag's GitHub release, and the download page is republished with them.
+Signing needs the repository variable `SIGNPATH_ORGANIZATION_ID` and the secret `SIGNPATH_API_TOKEN` (a SignPath
+CI user with submitter rights), a SignPath project with the slug `YarmiplayTV` linked to the GitHub.com trusted
+build system, its `release-signing` policy, and [.github/signpath/artifact-configuration.xml](.github/signpath/artifact-configuration.xml)
+as its default artifact configuration. Without the variable the installers are built but not signed or
+released. SmartScreen may still warn about a newly signed release until it has been downloaded enough; the
+reputation then stays with the certificate for later releases.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+- Committers and reviewers: [Yarmiplay](https://github.com/Yarmiplay)
+- Approvers: [Yarmiplay](https://github.com/Yarmiplay)
+
+Only the Windows installers and the YarmiplayTV launcher in them are signed, built by
+`.github/workflows/release.yml` from a version tag of this repository. Bundled third-party files (the Java
+runtime, libmpv, Skia) are included as their projects publish them.
+
+Privacy: this program will not transfer any information to other networked systems unless specifically
+requested by the user or the person installing or operating it. It connects only to the Syncplay and Jellyfin
+servers you enter; see the [privacy policy](docs/privacy.md).
 
 ## License
 
