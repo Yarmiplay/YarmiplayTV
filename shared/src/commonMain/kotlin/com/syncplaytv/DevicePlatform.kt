@@ -18,6 +18,7 @@ fun defaultSyncplayName(kind: DeviceKind): String {
         DeviceKind.TV -> "TV"
         DeviceKind.PHONE -> "Phone"
         DeviceKind.TABLET -> "Tablet"
+        DeviceKind.DESKTOP -> "PC"
     }
     val model = DevicePlatform.deviceModel.replace(Regex("[^A-Za-z0-9]"), "").take(16 - prefix.length - 1)
     return if (model.isEmpty()) prefix else "$prefix-$model"

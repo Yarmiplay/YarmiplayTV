@@ -85,7 +85,7 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind) {
                 // Unlike the other screens, the player isn't inside a Scaffold that sets this.
                 CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
             } else {
-                MobileScaffold(snackbar, selectedTab, useRail = kind == DeviceKind.TABLET, onTab = { nav.switchTab(it.screen) }) {
+                MobileScaffold(snackbar, selectedTab, useRail = kind.isLarge, onTab = { nav.switchTab(it.screen) }) {
                     saveable.SaveableStateProvider(screen.key) {
                         when (screen) {
                             Screen.Home -> MobileHomeScreen(container, nav, kind)

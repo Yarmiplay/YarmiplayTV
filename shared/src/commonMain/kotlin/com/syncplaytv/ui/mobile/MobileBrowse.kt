@@ -83,9 +83,9 @@ private fun MobileItemGrid(container: AppContainer, items: List<MediaItem>, kind
     val source by container.mediaSource.collectAsStateWithLifecycle()
     val aspect = aspectFor(items)
     val min = when {
-        aspect < 1f && kind == DeviceKind.TABLET -> 150.dp
+        aspect < 1f && kind.isLarge -> 150.dp
         aspect < 1f -> 110.dp
-        kind == DeviceKind.TABLET -> 240.dp
+        kind.isLarge -> 240.dp
         else -> 170.dp
     }
     LazyVerticalGrid(

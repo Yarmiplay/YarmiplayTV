@@ -17,6 +17,27 @@ expect fun PlatformBackHandler(enabled: Boolean = true, onBack: () -> Unit)
 @Composable
 expect fun VideoSurface(player: Player, modifier: Modifier = Modifier)
 
+/** What the player screen does in response to input; each platform maps its own gestures and keys onto it. */
+class PlayerInput(
+    val seekStep: Double,
+    val controlsVisible: Boolean,
+    val toggleControls: () -> Unit,
+    val showControls: () -> Unit,
+    val togglePause: () -> Unit,
+    val seekBy: (Double) -> Unit,
+)
+
+/** On the whole player screen: desktop mouse movement, scroll wheel and keyboard shortcuts. Nothing on Android. */
+@Composable
+expect fun Modifier.playerScreenInput(input: PlayerInput): Modifier
+
+/**
+ * On the video area. Android: tap toggles the controls, double tap seeks back/forward or pauses by screen
+ * thirds. Desktop: click pauses, double-click toggles full screen.
+ */
+@Composable
+expect fun Modifier.videoGestures(input: PlayerInput): Modifier
+
 /** Landscape, edge-to-edge with hidden system bars and the screen kept on while the player is on screen. */
 @Composable
 expect fun FullscreenLandscape()

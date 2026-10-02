@@ -65,7 +65,7 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
         runCatching { recent = s.recent() }
     }
 
-    val cardWidth = if (kind == DeviceKind.TABLET) 260.dp else 200.dp
+    val cardWidth = if (kind.isLarge) 260.dp else 200.dp
     LazyColumn(Modifier.fillMaxSize().testTag("home"), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {

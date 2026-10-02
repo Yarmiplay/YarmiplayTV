@@ -234,8 +234,8 @@ internal class GlVideoRenderer(lib: LibMpv, mpv: Pointer) : VideoRenderer(lib, m
     private var initParams: LibMpv.OpenGlInitParams? = null
     private val apiType = cString("opengl")
     private val fboParam = Memory(16)
-    private val flipParam = Memory(4).apply { setInt(0, 1) }
-    private val renderParams = params(LibMpv.RENDER_PARAM_OPENGL_FBO to fboParam, LibMpv.RENDER_PARAM_FLIP_Y to flipParam)
+    // No FLIP_Y: mpv draws an FBO top row first, which is the row order glReadPixels returns and Skia expects.
+    private val renderParams = params(LibMpv.RENDER_PARAM_OPENGL_FBO to fboParam)
 
     private var fbo = 0
     private var texture = 0

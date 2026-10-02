@@ -1,14 +1,27 @@
 package com.syncplaytv.ui.mobile
 
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
+import java.awt.Point
+import java.awt.Toolkit
+import java.awt.image.BufferedImage
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.loadXmlImageVector
@@ -49,6 +62,56 @@ actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
         onDispose { DesktopBack.remove(entry) }
     }
 }
+
+/**
+ * Connects the player screen and the desktop window: the window routes keyboard shortcuts to [input] while
+ * the player is showing, and provides full screen and volume to the player's mouse handling.
+ */
+object DesktopPlayerInput {
+    /** The player screen's current input, or null when the player isn't showing. */
+    var input: State<PlayerInput>? by mutableStateOf(null)
+        internal set
+    var toggleFullscreen: () -> Unit = {}
+    /** Changes the volume by the given percentage points. */
+    var changeVolume: (Double) -> Unit = {}
+}
+
+private val hiddenCursor: PointerIcon by lazy {
+    PointerIcon(Toolkit.getDefaultToolkit().createCustomCursor(BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), Point(0, 0), "hidden"))
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+actual fun Modifier.playerScreenInput(input: PlayerInput): Modifier {
+    val latest = rememberUpdatedState(input)
+    DisposableEffect(latest) {
+        DesktopPlayerInput.input = latest
+        onDispose { if (DesktopPlayerInput.input === latest) DesktopPlayerInput.input = null }
+    }
+    return this
+        .pointerHoverIcon(if (input.controlsVisible) PointerIcon.Default else hiddenCursor)
+        // Parents see pointer events after their children, so moving over the controls counts too.
+        .onPointerEvent(PointerEventType.Move) { latest.value.showControls() }
+        .onPointerEvent(PointerEventType.Scroll) { event ->
+            val dy = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
+            if (dy != 0f) DesktopPlayerInput.changeVolume(-dy * VOLUME_STEP)
+            latest.value.showControls()
+        }
+}
+
+@Composable
+actual fun Modifier.videoGestures(input: PlayerInput): Modifier {
+    val latest = rememberUpdatedState(input)
+    return pointerInput(Unit) {
+        detectTapGestures(
+            onTap = { latest.value.togglePause() },
+            onDoubleTap = { DesktopPlayerInput.toggleFullscreen() },
+        )
+    }
+}
+
+/** Volume change per scroll-wheel notch or arrow key, in percentage points. */
+const val VOLUME_STEP = 5.0
 
 /** Set by the desktop app to the libmpv render view; until then the player area stays empty. */
 object DesktopVideo {

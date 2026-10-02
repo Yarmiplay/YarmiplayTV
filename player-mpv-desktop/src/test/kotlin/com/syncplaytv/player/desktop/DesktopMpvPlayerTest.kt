@@ -19,7 +19,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
+import java.awt.image.BufferedImage
 import java.io.File
+import javax.imageio.ImageIO
 import kotlin.math.abs
 
 /** Real libmpv on the test clip; needs libmpv and a display (set SYNCPLAYTV_SKIP_MPV_TESTS=1 to skip). */
@@ -61,6 +63,33 @@ class DesktopMpvPlayerTest {
         assertNotNull("no frame rendered", rendered)
         assertEquals("640x360", player.renderer.frames.lastSize)
         assertTrue(player.tracks.value.any { it.type == TrackType.VIDEO })
+    }
+
+    @Test
+    fun framesAreUprightOnGpuAndCpu() = runBlocking {
+        val pattern = File.createTempFile("syncplaytv-orientation", ".png").apply { deleteOnExit() }
+        val image = BufferedImage(64, 36, BufferedImage.TYPE_INT_RGB)
+        for (y in 0 until 18) for (x in 0 until 32) image.setRGB(x, y, 0xFFFFFF)
+        ImageIO.write(image, "png", pattern)
+        for (mode in listOf("gl", "sw")) {
+            player.close()
+            player = DesktopMpvPlayer(DesktopMpvOptions(render = mode))
+            player.renderer.setSize(640, 360)
+            loadAndAwait<PlayerEvent.FileLoaded>(pattern.toURI().toString())
+            fun VideoFrame.luma(x: Int, y: Int) = data.bytes[y * rowBytes + x * 4 + 1].toInt() and 0xFF
+            // Frames before the first decoded picture are black everywhere.
+            val frame = withTimeout(5_000) {
+                var f: VideoFrame? = null
+                while (f == null || listOf(f.luma(80, 45), f.luma(560, 45), f.luma(80, 315)).all { it < 128 }) {
+                    delay(20)
+                    f = player.renderer.frames.acquire()
+                }
+                f
+            }
+            val corners = "top-left ${frame.luma(80, 45)}, top-right ${frame.luma(560, 45)}, bottom-left ${frame.luma(80, 315)}"
+            assertTrue("$mode: only the top-left quadrant should be white: $corners",
+                frame.luma(80, 45) > 200 && frame.luma(560, 45) < 50 && frame.luma(80, 315) < 50)
+        }
     }
 
     @Test

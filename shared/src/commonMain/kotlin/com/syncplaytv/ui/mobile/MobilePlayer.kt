@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,7 +55,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -117,23 +115,17 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
         touch()
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black).testTag("player")) {
+    val input = PlayerInput(
+        seekStep = step,
+        controlsVisible = controls || sheet != null,
+        toggleControls = { controls = !controls; touch() },
+        showControls = { controls = true; touch() },
+        togglePause = ::togglePause,
+        seekBy = ::seekBy,
+    )
+    Box(Modifier.fillMaxSize().background(Color.Black).testTag("player").playerScreenInput(input)) {
         VideoSurface(player, Modifier.fillMaxSize())
-        Box(
-            Modifier.fillMaxSize().testTag("player_gestures").pointerInput(step) {
-                detectTapGestures(
-                    onTap = { controls = !controls; touch() },
-                    onDoubleTap = { offset ->
-                        val third = size.width / 3f
-                        when {
-                            offset.x < third -> seekBy(-step)
-                            offset.x > third * 2 -> seekBy(step)
-                            else -> togglePause()
-                        }
-                    },
-                )
-            },
-        )
+        Box(Modifier.fillMaxSize().testTag("player_gestures").videoGestures(input))
 
         CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom)
 

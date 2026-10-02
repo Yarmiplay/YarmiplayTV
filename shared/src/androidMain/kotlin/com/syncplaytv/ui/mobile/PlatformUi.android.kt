@@ -10,10 +10,12 @@ import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
@@ -32,6 +34,24 @@ actual fun Modifier.exposeTestTags(): Modifier = semantics { testTagsAsResourceI
 
 @Composable
 actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) = BackHandler(enabled, onBack)
+
+@Composable
+actual fun Modifier.playerScreenInput(input: PlayerInput): Modifier = this
+
+@Composable
+actual fun Modifier.videoGestures(input: PlayerInput): Modifier = pointerInput(input.seekStep) {
+    detectTapGestures(
+        onTap = { input.toggleControls() },
+        onDoubleTap = { offset ->
+            val third = size.width / 3f
+            when {
+                offset.x < third -> input.seekBy(-input.seekStep)
+                offset.x > third * 2 -> input.seekBy(input.seekStep)
+                else -> input.togglePause()
+            }
+        },
+    )
+}
 
 @Composable
 actual fun VideoSurface(player: Player, modifier: Modifier) {
