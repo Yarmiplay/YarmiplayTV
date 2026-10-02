@@ -105,7 +105,7 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-34-google_apis-x86_64-pixel_6-2048M-v2
+          key: avd-34-google_apis-x86_64-pixel_6-2cores-2048M-v3
 
       - name: Create the emulator snapshot
         if: steps.avd-cache.outputs.cache-hit != 'true'
@@ -115,11 +115,12 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
+          cores: 2
           disk-size: 2048M
           force-avd-creation: false
           disable-animations: false
           emulator-options: ${{ env.EMULATOR_OPTIONS }}
-          script: echo "Created the emulator snapshot."
+          script: bash scripts/ci-instrumented.sh snapshot
 
       # Saved before the tests run: an emulator that has been tested on carries the app (signed with this
       # runner's debug key) and no longer matches its boot snapshot.
@@ -139,7 +140,10 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
-          disk-size: 2048M
+          # The AVD already has 2 cores and 2048M from its creation; setting them here would append them to
+          # config.ini again, and the emulator refuses a snapshot whose AVD configuration changed.
+          cores: ""
+          disk-size: ""
           force-avd-creation: false
           disable-animations: true
           emulator-options: -no-snapshot-save ${{ env.EMULATOR_OPTIONS }}
