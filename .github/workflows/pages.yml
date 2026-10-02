@@ -59,8 +59,7 @@ jobs:
 
       - name: Build the site
         run: >
-          python3 scripts/download_site.py --dist dist --out _site
-          --commit "${{ steps.run.outputs.sha }}" --site-url "${{ steps.pages.outputs.base_url }}"
+          python3 scripts/download_site.py --dist dist --out _site --site-url "${{ steps.pages.outputs.base_url }}"
 
       - uses: actions/upload-pages-artifact@v5
         with:

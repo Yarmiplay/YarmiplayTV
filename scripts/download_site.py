@@ -2,7 +2,7 @@
 """
 Builds the YarmiplayTV download page: one card per device type / OS, each with its download and install steps.
 
-  python scripts/download_site.py --dist dist --out _site [--version 0.1.0] [--commit abc1234] [--site-url URL]
+  python scripts/download_site.py --dist dist --out _site [--version 0.1.0] [--site-url URL]
 
 Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .msi/.exe: Windows,
 .dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as YarmiplayTV.apk, so links
@@ -108,7 +108,7 @@ def fmt_size(n):
     return f"{n / 1e6:.1f} MB"
 
 
-def render_page(downloads, version, built, commit=None, short_link=None, privacy=False):
+def render_page(downloads, version, built, short_link=None, privacy=False):
     """downloads: {platform key: [Download]}. Returns the page as a str."""
     cards = []
     for p in platforms(short_link):
@@ -130,9 +130,6 @@ def render_page(downloads, version, built, commit=None, short_link=None, privacy
                      f'<h2>{p.title}</h2><p class="blurb">{p.blurb}</p>{body}</section>')
 
     meta = f"Version {html.escape(version)} &middot; built {html.escape(built)}"
-    if commit:
-        meta += (f' &middot; <a href="{REPO_URL}/commit/{html.escape(commit)}">'
-                 f'{html.escape(commit[:7])}</a>')
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -281,7 +278,7 @@ def redirect_page(target):
             f'<meta http-equiv="refresh" content="0; url={t}"><a href="{t}">Download {NAME}</a>\n')
 
 
-def build(dist, out, version, commit, site_url):
+def build(dist, out, version, site_url):
     found = {}
     for name in sorted(os.listdir(dist)):
         path = os.path.join(dist, name)
@@ -320,7 +317,7 @@ def build(dist, out, version, commit, site_url):
 
     built = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
-        f.write(render_page(by_platform(downloads), version, built, commit, short_link, os.path.isfile(privacy)))
+        f.write(render_page(by_platform(downloads), version, built, short_link, os.path.isfile(privacy)))
     open(os.path.join(out, ".nojekyll"), "w").close()
     print(f"wrote {out} ({len(downloads)} downloads)")
 
@@ -337,10 +334,9 @@ def main():
     ap.add_argument("--dist", required=True, help="folder with the built packages")
     ap.add_argument("--out", required=True, help="site folder to (re)create")
     ap.add_argument("--version", default=None, help="defaults to the app's appVersion")
-    ap.add_argument("--commit", default=None)
     ap.add_argument("--site-url", default=None, help="public URL of the site, shown as the TV short link")
     a = ap.parse_args()
-    build(a.dist, a.out, a.version or app_version(root), a.commit, a.site_url)
+    build(a.dist, a.out, a.version or app_version(root), a.site_url)
 
 
 if __name__ == "__main__":
