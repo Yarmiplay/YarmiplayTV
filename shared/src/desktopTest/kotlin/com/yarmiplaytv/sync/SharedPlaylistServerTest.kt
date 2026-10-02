@@ -121,6 +121,22 @@ class SharedPlaylistServerTest {
     }
 
     @Test
+    fun `files dropped in the middle are inserted there and the room keeps its current entry`() {
+        val alice = join("alice", alicePlayer)
+        val bob = join("bob", bobPlayer)
+        onMain { alice.playlist.shared.add(listOf("one.mkv", "two.mkv", "three.mkv")) }
+        awaitTrue("bob to see the playlist") { bob.sync.room.value.playlist.size == 3 }
+        onMain { alice.playlist.selectIndex(1) }
+        awaitTrue("bob to be on two") { bob.sync.room.value.playlistIndex == 1 }
+
+        val dropped = listOf("new.mkv", "two.mkv").map { name -> tmp.root.resolve(name).apply { writeBytes(ByteArray(10)) } }
+        onMain { alice.playlist.addLocalFilesToRoomPlaylist(dropped.map { FileLocalLibrary.uriOf(it.toPath()) }, at = 1) }
+        awaitTrue("bob to see the inserted file") { bob.sync.room.value.playlist == listOf("one.mkv", "new.mkv", "two.mkv", "three.mkv") }
+        awaitTrue("the room to stay on two") { bob.sync.room.value.playlistIndex == 2 }
+        assertEquals(true, onMain { alice.sync.feed.value.any { it.text == "Added 1 to the playlist (1 already in it)" } })
+    }
+
+    @Test
     fun `links on untrusted domains only open when the user says so`() {
         val alice = join("alice", alicePlayer)
         val bob = join("bob", bobPlayer)

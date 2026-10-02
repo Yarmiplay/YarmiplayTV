@@ -19,6 +19,16 @@ class PlaylistEditsTest {
     }
 
     @Test
+    fun `insert places entries before an index, or at the end`() {
+        val added = listOf("x.mkv", "y.mkv")
+        assertEquals(listOf("x.mkv", "y.mkv") + list, PlaylistEdits.insert(list, added, 0))
+        assertEquals(listOf("a.mkv", "b.mkv", "x.mkv", "y.mkv", "c.mkv", "d.mkv", "e.mkv"), PlaylistEdits.insert(list, added, 2))
+        assertEquals(list + added, PlaylistEdits.insert(list, added, null))
+        assertEquals(list + added, PlaylistEdits.insert(list, added, 99))
+        assertEquals(added + list, PlaylistEdits.insert(list, added, -1))
+    }
+
+    @Test
     fun `shift moves a selection as a block and stops at the ends`() {
         assertEquals(listOf("b.mkv", "c.mkv", "a.mkv", "d.mkv", "e.mkv") to setOf(0, 1), PlaylistEdits.shift(list, setOf(1, 2), -1))
         assertEquals(listOf("a.mkv", "c.mkv", "b.mkv", "e.mkv", "d.mkv") to setOf(2, 4), PlaylistEdits.shift(list, setOf(1, 3), 1))

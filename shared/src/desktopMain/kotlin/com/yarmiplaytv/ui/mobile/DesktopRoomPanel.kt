@@ -3,6 +3,7 @@ package com.yarmiplaytv.ui.mobile
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.background
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -58,10 +60,19 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draganddrop.DragAndDropEvent
+import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.DragData
+import androidx.compose.ui.draganddrop.dragData
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -81,6 +92,9 @@ import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -101,7 +115,11 @@ import com.yarmiplaytv.sync.PlaylistEdits
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
+import java.awt.dnd.DropTargetDragEvent
+import java.awt.dnd.DropTargetDropEvent
+import java.net.URI
 import java.nio.file.Files
+import java.nio.file.Paths
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -187,7 +205,7 @@ actual fun RoomSidePanel(container: AppContainer) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
 private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
     val room by container.sync.room.collectAsState()
@@ -208,8 +226,8 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
     fun saveOptions(sharedPlaylists: Boolean = options.sharedPlaylists, loop: Boolean = options.loopPlaylist, single: Boolean = options.loopSingleFile) {
         container.scope.launch { container.settingsStore.savePlaylistOptions(sharedPlaylists, loop, single) }
     }
-    fun addPaths(paths: List<java.nio.file.Path>) =
-        container.playlist.addLocalFilesToRoomPlaylist(paths.flatMap(DesktopDialogs::videosIn).map(FileLocalLibrary::uriOf))
+    fun addPaths(paths: List<java.nio.file.Path>, at: Int? = null) =
+        container.playlist.addLocalFilesToRoomPlaylist(paths.flatMap(DesktopDialogs::videosIn).map(FileLocalLibrary::uriOf), at)
     fun removeSelected() {
         if (selected.isEmpty()) return
         shared.remove(selected)
@@ -217,8 +235,48 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
     }
     fun play(index: Int) = container.playlist.selectIndex(index)
 
-    Column(modifier.fillMaxWidth()) {
-        if (room.status != ConnectionStatus.CONNECTED) {
+    // Where dragged-in files would be inserted while they hover over the tab, null otherwise.
+    var dropAt by remember { mutableStateOf<Int?>(null) }
+    var listCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val density by rememberUpdatedState(LocalDensity.current.density)
+    val drop = remember(container) {
+        object : DragAndDropTarget {
+            fun indexAt(event: DragAndDropEvent): Int {
+                val count = container.sync.room.value.playlist.size
+                val coords = listCoords?.takeIf { it.isAttached } ?: return count
+                // AWT reports the pointer in points within the window's Compose content, whose root is in pixels.
+                val pointerY = when (val native = event.nativeEvent) {
+                    is DropTargetDragEvent -> native.location.y
+                    is DropTargetDropEvent -> native.location.y
+                    else -> return count
+                }
+                val y = pointerY * density - coords.positionInRoot().y
+                return playlistDropIndex(y, coords.size.height, listState.layoutInfo.visibleItemsInfo, count)
+            }
+            override fun onEntered(event: DragAndDropEvent) { dropAt = indexAt(event) }
+            override fun onMoved(event: DragAndDropEvent) { dropAt = indexAt(event) }
+            override fun onExited(event: DragAndDropEvent) { dropAt = null }
+            override fun onEnded(event: DragAndDropEvent) { dropAt = null }
+            override fun onDrop(event: DragAndDropEvent): Boolean {
+                val at = indexAt(event)
+                dropAt = null
+                val paths = (event.dragData() as? DragData.FilesList)?.readFiles().orEmpty()
+                    .mapNotNull { runCatching { Paths.get(URI(it)) }.getOrNull() }
+                if (paths.isEmpty()) return false
+                addPaths(paths, at)
+                return true
+            }
+        }
+    }
+    val connected = room.status == ConnectionStatus.CONNECTED
+
+    Column(
+        modifier.fillMaxWidth().then(
+            if (connected) Modifier.dragAndDropTarget(shouldStartDragAndDrop = { it.dragData() is DragData.FilesList }, target = drop)
+            else Modifier
+        ),
+    ) {
+        if (!connected) {
             Text("Join a Syncplay room to use the shared playlist.", color = AppColors.TextDim, modifier = Modifier.padding(16.dp))
             return@Column
         }
@@ -273,7 +331,7 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
 
         if (playlist.isEmpty()) {
             Text(
-                "The playlist is empty. Add videos, a folder or URLs, or drop videos on the window while this tab is open.",
+                "The playlist is empty. Add videos, a folder or URLs, or drop videos or folders here.",
                 color = AppColors.TextDim, modifier = Modifier.padding(16.dp),
             )
         }
@@ -282,7 +340,24 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
         var dragOffset by remember { mutableFloatStateOf(0f) }
         LazyColumn(
             state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth().testTag("playlist_list").focusRequester(listFocus).focusable()
+            modifier = Modifier.weight(1f).fillMaxWidth().testTag("playlist_list")
+                .onGloballyPositioned { listCoords = it }
+                .background(if (dropAt != null) AppColors.Accent.copy(alpha = 0.06f) else Color.Transparent)
+                .drawWithContent {
+                    drawContent()
+                    val at = dropAt ?: return@drawWithContent
+                    val rows = listState.layoutInfo.visibleItemsInfo
+                    val y = rows.firstOrNull { it.index == at }?.offset?.toFloat()
+                        ?: rows.lastOrNull()?.let { (it.offset + it.size).toFloat() } ?: 0f
+                    val thickness = 2.dp.toPx()
+                    val inset = 8.dp.toPx()
+                    drawRect(
+                        AppColors.Accent,
+                        topLeft = Offset(inset, (y - thickness / 2).coerceIn(0f, size.height - thickness)),
+                        size = Size(size.width - 2 * inset, thickness),
+                    )
+                }
+                .focusRequester(listFocus).focusable()
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     val ctrl = event.isCtrlPressed || event.isMetaPressed
@@ -353,7 +428,13 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
                 )
             }
         }
-        if (playlist.isNotEmpty()) {
+        if (dropAt != null) {
+            Text(
+                if (dropAt!! < playlist.size) "Release to insert the videos at the line" else "Release to add the videos at the end",
+                color = AppColors.Accent, style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp).testTag("playlist_drop_hint"),
+            )
+        } else if (playlist.isNotEmpty()) {
             Text(
                 "Double-click plays · Del removes · drag or Alt+↑↓ moves",
                 color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall,
@@ -364,6 +445,16 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
 }
 
 private fun rangeOf(a: Int, b: Int): Set<Int> = (minOf(a, b)..maxOf(a, b)).toSet()
+
+/**
+ * The index files dropped at [y] (from the top of a list [height] tall showing [rows]) are inserted at: before the
+ * row whose upper half is under the pointer. Outside the list they go at the end.
+ */
+internal fun playlistDropIndex(y: Float, height: Int, rows: List<LazyListItemInfo>, count: Int): Int {
+    if (y < 0f || y > height) return count
+    val row = rows.firstOrNull { y < it.offset + it.size / 2f } ?: return rows.lastOrNull()?.let { it.index + 1 } ?: count
+    return row.index
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

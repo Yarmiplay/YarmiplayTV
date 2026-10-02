@@ -23,6 +23,12 @@ object PlaylistEdits {
         return added
     }
 
+    /** [playlist] with [entries] placed before index [at], or at the end when [at] is null or past it. */
+    fun insert(playlist: List<String>, entries: List<String>, at: Int?): List<String> {
+        val index = (at ?: playlist.size).coerceIn(0, playlist.size)
+        return playlist.take(index) + entries + playlist.drop(index)
+    }
+
     fun remove(playlist: List<String>, indices: Set<Int>): List<String> = playlist.filterIndexed { i, _ -> i !in indices }
 
     /**
@@ -106,10 +112,10 @@ class SharedPlaylist(scope: CoroutineScope, private val sync: SyncController) {
         }
     }
 
-    /** Adds the entries that aren't in the playlist yet; returns how many were added. */
-    fun add(files: List<String>): Int {
+    /** Adds the entries that aren't in the playlist yet, before index [at] or at the end; returns how many were added. */
+    fun add(files: List<String>, at: Int? = null): Int {
         val added = PlaylistEdits.newEntries(playlist, files)
-        if (added.isNotEmpty()) apply(playlist + added)
+        if (added.isNotEmpty()) apply(PlaylistEdits.insert(playlist, added, at))
         return added.size
     }
 

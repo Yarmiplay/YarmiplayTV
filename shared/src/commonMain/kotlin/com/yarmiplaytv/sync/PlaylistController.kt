@@ -244,15 +244,15 @@ class PlaylistController(
             knownPlayables.keys.any { Filenames.same(it, fileName) } ||
             LocalMatcher.find(local.files.value, fileName) != null
 
-    /** Adds files from this device to the shared playlist in one edit, skipping ones already in it. */
-    fun addLocalFilesToRoomPlaylist(uris: List<String>) {
+    /** Adds files from this device to the shared playlist in one edit, before index [at] or at the end, skipping ones already in it. */
+    fun addLocalFilesToRoomPlaylist(uris: List<String>, at: Int? = null) {
         if (sync.client == null) {
             sync.postLocal("Join a Syncplay room to use the shared playlist", isError = true)
             return
         }
         scope.launch {
             val names = uris.map { uri -> localPlayable(uri).also(::remember).fileName }
-            reportAdded(names.size, shared.add(names))
+            reportAdded(names.size, shared.add(names, at))
         }
     }
 
