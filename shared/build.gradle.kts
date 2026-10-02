@@ -45,7 +45,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.syncplaytv.shared"
+    namespace = "com.yarmiplaytv.shared"
     compileSdk = 36
 
     defaultConfig {

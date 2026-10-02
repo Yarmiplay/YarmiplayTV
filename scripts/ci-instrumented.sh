@@ -9,7 +9,7 @@
 set -uo pipefail
 
 mode="${1:?usage: ci-instrumented.sh snapshot|playback|ui}"
-runner="com.syncplaytv.test/androidx.test.runner.AndroidJUnitRunner"
+runner="com.yarmiplaytv.test/androidx.test.runner.AndroidJUnitRunner"
 out="build/ci-instrumented"
 mkdir -p "$out"
 
@@ -44,8 +44,8 @@ wait_for_apks() {
   fi
 }
 
-safety_net="com.syncplaytv.screenshots.MobileScreenshotTest,com.syncplaytv.synccheck.SyncCheckTest,com.syncplaytv.tv.TvNavigationTest,com.syncplaytv.tv.TvScreenshotTest"
-playback="com.syncplaytv.LocalPlaybackTest"
+safety_net="com.yarmiplaytv.screenshots.MobileScreenshotTest,com.yarmiplaytv.synccheck.SyncCheckTest,com.yarmiplaytv.tv.TvNavigationTest,com.yarmiplaytv.tv.TvScreenshotTest"
+playback="com.yarmiplaytv.LocalPlaybackTest"
 case "$mode" in
   snapshot)
     # The idle wait measures the emulator's own load; a build sharing the runner's CPU would skew it.
@@ -64,8 +64,8 @@ esac
 
 wait_for_apks
 # A copy signed with another runner's debug key would refuse the update.
-adb uninstall com.syncplaytv > /dev/null 2>&1
-adb uninstall com.syncplaytv.test > /dev/null 2>&1
+adb uninstall com.yarmiplaytv > /dev/null 2>&1
+adb uninstall com.yarmiplaytv.test > /dev/null 2>&1
 adb install -r -t app/build/outputs/apk/debug/app-debug.apk || exit 1
 adb install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || exit 1
 wait_until_idle

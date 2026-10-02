@@ -22,7 +22,7 @@ $ErrorActionPreference = "Continue"
 $root = Split-Path $PSScriptRoot
 $sdk = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $adb = "$sdk\platform-tools\adb.exe"
-$runner = "com.syncplaytv.test/androidx.test.runner.AndroidJUnitRunner"
+$runner = "com.yarmiplaytv.test/androidx.test.runner.AndroidJUnitRunner"
 $room = if ($Room) { $Room } else { "safety-net-$(Get-Random -Maximum 99999)" }
 $followers = (@("SN-Follower") + $ExtraFollowers) -join ","
 
@@ -38,7 +38,7 @@ $jobs = foreach ($pair in @(@($Follower, "follower"), @($Leader, "leader"))) {
     $serial, $role = $pair
     Start-Job -Name "sync-$role" -ArgumentList $adb, $serial, $role, $room, $ServerHost, $Port, $runner, $followers -ScriptBlock {
         param($adb, $serial, $role, $room, $h, $p, $runner, $followers)
-        & $adb -s $serial shell am instrument -w -r -e class com.syncplaytv.synccheck.SyncCheckTest `
+        & $adb -s $serial shell am instrument -w -r -e class com.yarmiplaytv.synccheck.SyncCheckTest `
             -e syncRole $role -e syncRoom $room -e syncHost $h -e syncPort $p -e syncFollowers $followers $runner 2>&1
     }
     Start-Sleep -Seconds 2

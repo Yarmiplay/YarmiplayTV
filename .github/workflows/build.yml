@@ -116,7 +116,7 @@ jobs:
         env:
           SYNCPLAY_TEST_SERVER: 127.0.0.1:8999
           # The Windows and macOS runners have no usable OpenGL for libmpv; Linux tests playback on Mesa.
-          SYNCPLAYTV_SKIP_MPV_TESTS: ${{ runner.os != 'Linux' && '1' || '' }}
+          YARMIPLAYTV_SKIP_MPV_TESTS: ${{ runner.os != 'Linux' && '1' || '' }}
         run: |
           chmod +x gradlew
           display=""; [ "$RUNNER_OS" = Linux ] && display="xvfb-run -a"

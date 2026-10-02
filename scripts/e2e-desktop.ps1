@@ -51,7 +51,7 @@ $desktop = Start-Job -Name e2e-desktop -ArgumentList $root, $room, $Port -Script
     param($root, $room, $port)
     $env:SYNCPLAY_TEST_SERVER = "localhost:$port"
     $env:SYNCPLAY_E2E_ROOM = $room
-    & "$root\gradlew.bat" -p $root :desktop:test --tests com.syncplaytv.desktop.DesktopSyncFollowerTest --rerun 2>&1
+    & "$root\gradlew.bat" -p $root :desktop:test --tests com.yarmiplaytv.desktop.DesktopSyncFollowerTest --rerun 2>&1
 }
 Write-Host "   desktop follower starting"
 
@@ -62,7 +62,7 @@ Write-Host "==> Waiting for the desktop follower" -ForegroundColor Cyan
 $desktop | Wait-Job -Timeout 120 | Out-Null
 Receive-Job $desktop | Out-File "$log\desktop.log"
 Remove-Job $desktop -Force
-$result = "$root\desktop\build\test-results\test\TEST-com.syncplaytv.desktop.DesktopSyncFollowerTest.xml"
+$result = "$root\desktop\build\test-results\test\TEST-com.yarmiplaytv.desktop.DesktopSyncFollowerTest.xml"
 $desktopOk = $false
 if (Test-Path $result) {
     $suite = ([xml](Get-Content $result)).testsuite

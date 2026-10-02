@@ -16,7 +16,7 @@
   comparing. Review them (git diff) before committing.
 
   -Tests runs only the given instrumented classes (or Class#method), each on the devices it targets:
-  com.syncplaytv.tv.* on the TV, everything else on the phone and tablet. It skips the sync check.
+  com.yarmiplaytv.tv.* on the TV, everything else on the phone and tablet. It skips the sync check.
 
 .EXAMPLE
   ./scripts/android-safety-net.ps1                 # full run
@@ -41,8 +41,8 @@ $env:ANDROID_HOME = $sdk
 $adb = "$sdk\platform-tools\adb.exe"
 $emulator = "$sdk\emulator\emulator.exe"
 $out = Join-Path $root "build\safety-net"
-$runner = "com.syncplaytv.test/androidx.test.runner.AndroidJUnitRunner"
-$deviceOut = "/sdcard/Android/data/com.syncplaytv/files/screenshots"
+$runner = "com.yarmiplaytv.test/androidx.test.runner.AndroidJUnitRunner"
+$deviceOut = "/sdcard/Android/data/com.yarmiplaytv/files/screenshots"
 $results = [ordered]@{}
 
 function Step($text) { Write-Host "==> $text" -ForegroundColor Cyan }
@@ -122,7 +122,7 @@ try {
         }
         foreach ($avd in $Avds) {
             $tv = $avd -like "*TV*"
-            $mine = @($resolved | Where-Object { ($_ -like "com.syncplaytv.tv.*") -eq $tv })
+            $mine = @($resolved | Where-Object { ($_ -like "com.yarmiplaytv.tv.*") -eq $tv })
             if ($mine) { $testsByAvd[$avd] = $mine -join "," }
         }
         $Avds = @($Avds | Where-Object { $testsByAvd.ContainsKey($_) })
@@ -187,13 +187,13 @@ try {
         $serial = $devices[$avd]
         $tv = $avd -like "*TV*"
         $filter = @("-e", "screenshots", "true") + $(if ($Record) {
-            @("-e", "class", $(if ($tv) { "com.syncplaytv.tv.TvScreenshotTest" } else { "com.syncplaytv.screenshots.MobileScreenshotTest" }), "-e", "recordScreenshots", "true")
+            @("-e", "class", $(if ($tv) { "com.yarmiplaytv.tv.TvScreenshotTest" } else { "com.yarmiplaytv.screenshots.MobileScreenshotTest" }), "-e", "recordScreenshots", "true")
         } elseif ($Tests) {
             @("-e", "class", $testsByAvd[$avd])
         } elseif ($tv) {
-            @("-e", "package", "com.syncplaytv.tv")
+            @("-e", "package", "com.yarmiplaytv.tv")
         } else {
-            @("-e", "notPackage", "com.syncplaytv.tv,com.syncplaytv.synccheck")
+            @("-e", "notPackage", "com.yarmiplaytv.tv,com.yarmiplaytv.synccheck")
         })
         Start-Job -Name $avd -ArgumentList $adb, $serial, $apk, $testApk, $runner, $deviceOut, $filter, $root -ScriptBlock {
             param($adb, $serial, $apk, $testApk, $runner, $deviceOut, $filter, $root)

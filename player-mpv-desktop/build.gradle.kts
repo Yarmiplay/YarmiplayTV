@@ -84,9 +84,9 @@ val testClip = rootProject.file("app/src/androidTest/assets/syncplaytv-test-clip
 tasks.test {
     dependsOn(prepareLibmpv)
     systemProperty("jna.library.path", libmpvDir.get().asFile.absolutePath)
-    systemProperty("syncplaytv.testClip", testClip)
-    // The integration tests need a display and libmpv; set SYNCPLAYTV_SKIP_MPV_TESTS=1 to skip them.
-    environment("SYNCPLAYTV_SKIP_MPV_TESTS", System.getenv("SYNCPLAYTV_SKIP_MPV_TESTS") ?: "")
+    systemProperty("yarmiplaytv.testClip", testClip)
+    // The integration tests need a display and libmpv; set YARMIPLAYTV_SKIP_MPV_TESTS=1 to skip them.
+    environment("YARMIPLAYTV_SKIP_MPV_TESTS", System.getenv("YARMIPLAYTV_SKIP_MPV_TESTS") ?: "")
     testLogging {
         events("passed", "skipped", "failed")
         showStandardStreams = true

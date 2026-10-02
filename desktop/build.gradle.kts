@@ -39,9 +39,9 @@ tasks.test {
     dependsOn(":player-mpv-desktop:prepareLibmpv")
     val screenshots = layout.buildDirectory.dir("desktop-screenshots")
     outputs.dir(screenshots).withPropertyName("screenshots")
-    systemProperty("syncplaytv.screenshotDir", screenshots.get().asFile.absolutePath)
-    systemProperty("syncplaytv.libmpv.dir", libmpvDir.get().asFile.absolutePath)
-    systemProperty("syncplaytv.syncClip", rootProject.file("app/src/androidTest/assets/syncplaytv-sync-clip.mp4").absolutePath)
+    systemProperty("yarmiplaytv.screenshotDir", screenshots.get().asFile.absolutePath)
+    systemProperty("yarmiplaytv.libmpv.dir", libmpvDir.get().asFile.absolutePath)
+    systemProperty("yarmiplaytv.syncClip", rootProject.file("app/src/androidTest/assets/syncplaytv-sync-clip.mp4").absolutePath)
     environment("SYNCPLAY_TEST_SERVER", System.getenv("SYNCPLAY_TEST_SERVER") ?: "")
     environment("SYNCPLAY_E2E_ROOM", System.getenv("SYNCPLAY_E2E_ROOM") ?: "")
     testLogging { events("passed", "skipped", "failed") }
@@ -154,8 +154,8 @@ val videoTypes = listOf(
 
 compose.desktop {
     application {
-        mainClass = "com.syncplaytv.desktop.MainKt"
-        jvmArgs += "-Dsyncplaytv.version=$appVersion"
+        mainClass = "com.yarmiplaytv.desktop.MainKt"
+        jvmArgs += "-Dyarmiplaytv.version=$appVersion"
 
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb)
@@ -179,7 +179,7 @@ compose.desktop {
             }
             macOS {
                 iconFile.set(generateAppIcons.flatMap { it.outputDir.file("icon.icns") })
-                bundleID = "com.syncplaytv.desktop"
+                bundleID = "com.yarmiplaytv.desktop"
                 dockName = "SyncplayTV"
                 appCategory = "public.app-category.entertainment"
             }
@@ -205,6 +205,6 @@ afterEvaluate {
     val libmpvPath = libmpvDir.get().asFile.absolutePath
     tasks.named<JavaExec>("run") {
         dependsOn(":player-mpv-desktop:prepareLibmpv")
-        systemProperty("syncplaytv.libmpv.dir", libmpvPath)
+        systemProperty("yarmiplaytv.libmpv.dir", libmpvPath)
     }
 }

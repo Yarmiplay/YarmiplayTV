@@ -27,7 +27,7 @@ if (-not $env:JAVA_HOME) { $env:JAVA_HOME = "$env:LOCALAPPDATA\Programs\jdk-17" 
 $env:ANDROID_HOME = $sdk
 $adb = "$sdk\platform-tools\adb.exe"
 $emulator = "$sdk\emulator\emulator.exe"
-$appId = "com.syncplaytv"
+$appId = "com.yarmiplaytv"
 
 function Get-Emulators {
     & $adb devices | Select-String "^(emulator-\d+)\s+(device|offline)" | ForEach-Object { $_.Matches[0].Groups[1].Value }

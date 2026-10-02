@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.syncplaytv"
+    namespace = "com.yarmiplaytv"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.syncplaytv"
+        applicationId = "com.yarmiplaytv"
         minSdk = 26
         targetSdk = 36
         versionCode = 2

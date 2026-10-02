@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.syncplaytv.player"
+    namespace = "com.yarmiplaytv.player"
     compileSdk = 36
 
     defaultConfig {
