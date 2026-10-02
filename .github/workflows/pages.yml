@@ -21,10 +21,12 @@ concurrency:
 
 jobs:
   build:
+    # A Release run counts even when it failed: its Play bundle can fail after the Windows installers were
+    # released, and without new installers the page comes out the same.
     if: >-
-      github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      (github.event.workflow_run.name == 'Release' || github.event.workflow_run.head_branch == 'main'))
+      github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' &&
+      (github.event.workflow_run.name == 'Release' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
