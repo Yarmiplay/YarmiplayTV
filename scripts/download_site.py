@@ -254,7 +254,7 @@ def build(dist, out, version, commit, site_url):
 
 def app_version(root):
     with open(os.path.join(root, "app", "build.gradle.kts"), encoding="utf-8") as f:
-        m = re.search(r'versionName\s*=\s*"([^"]+)"', f.read())
+        m = re.search(r'val appVersion\s*=\s*"([^"]+)"', f.read())
     return m.group(1) if m else "dev"
 
 
@@ -263,7 +263,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dist", required=True, help="folder with the built packages")
     ap.add_argument("--out", required=True, help="site folder to (re)create")
-    ap.add_argument("--version", default=None, help="defaults to the app's versionName")
+    ap.add_argument("--version", default=None, help="defaults to the app's appVersion")
     ap.add_argument("--commit", default=None)
     ap.add_argument("--site-url", default=None, help="public URL of the site, shown as the TV short link")
     a = ap.parse_args()

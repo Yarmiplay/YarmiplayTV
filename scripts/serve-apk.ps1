@@ -31,7 +31,7 @@ if (-not $NoBuild) {
 }
 if (-not (Test-Path $apk)) { throw "No APK at $apk; run without -NoBuild." }
 
-$version = (Select-String -Path (Join-Path $root "app\build.gradle.kts") -Pattern 'versionName\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+$version = (Select-String -Path (Join-Path $root "app\build.gradle.kts") -Pattern 'val appVersion\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
 
 $python = (Get-Command py -ErrorAction SilentlyContinue).Source
 $pyArgs = @("-3")

@@ -13,8 +13,10 @@ captures/
 # Local configuration
 local.properties
 *.keystore
+*.jks
 !debug.keystore
 secrets.properties
+keystore.properties
 
 # IDE
 .idea/

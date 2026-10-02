@@ -1,8 +1,36 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+}
+
+val appVersion = "1.1"
+
+/** Play needs an ever-increasing versionCode: major * 10000 + minor * 100 + patch. */
+fun versionCodeOf(name: String): Int {
+    val parts = name.split(".").map(String::toInt)
+    return parts[0] * 10000 + parts.getOrElse(1) { 0 } * 100 + parts.getOrElse(2) { 0 }
+}
+
+/**
+ * The Play upload key, from keystore.properties at the repository root (gitignored) or, in CI, from
+ * YARMIPLAYTV_KEYSTORE, YARMIPLAYTV_KEYSTORE_PASSWORD, YARMIPLAYTV_KEY_ALIAS and YARMIPLAYTV_KEY_PASSWORD.
+ * Without either, release builds are unsigned.
+ */
+val uploadKey: Map<String, String>? = run {
+    val file = rootProject.file("keystore.properties")
+    val props = Properties().apply { if (file.isFile) file.inputStream().use { load(it) } }
+    fun value(key: String, env: String): String? = props.getProperty(key) ?: System.getenv(env)?.takeIf { it.isNotBlank() }
+    val storeFile = value("storeFile", "YARMIPLAYTV_KEYSTORE") ?: return@run null
+    mapOf(
+        "storeFile" to storeFile,
+        "storePassword" to value("storePassword", "YARMIPLAYTV_KEYSTORE_PASSWORD").orEmpty(),
+        "keyAlias" to value("keyAlias", "YARMIPLAYTV_KEY_ALIAS").orEmpty(),
+        "keyPassword" to value("keyPassword", "YARMIPLAYTV_KEY_PASSWORD").orEmpty(),
+    )
 }
 
 android {
@@ -13,13 +41,25 @@ android {
         applicationId = "com.yarmiplaytv"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = versionCodeOf(appVersion)
+        versionName = appVersion
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (uploadKey != null) {
+            create("release") {
+                storeFile = rootProject.file(uploadKey.getValue("storeFile"))
+                storePassword = uploadKey.getValue("storePassword")
+                keyAlias = uploadKey.getValue("keyAlias")
+                keyPassword = uploadKey.getValue("keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
