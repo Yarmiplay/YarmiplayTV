@@ -61,10 +61,17 @@ jobs:
             **/build/reports/tests/
             ${{ runner.temp }}/syncplay-server.log
 
-  # Compose UI and local-playback tests on a phone emulator (touch UI, content:// playback through mpv).
+  # Compose UI and local-playback tests on a phone emulator (touch UI, content:// playback through mpv),
+  # split over two emulators that boot from a cached snapshot.
   instrumented:
     runs-on: ubuntu-latest
     timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [playback, ui]
+    env:
+      EMULATOR_OPTIONS: -no-window -gpu swiftshader_indirect -no-boot-anim -camera-back none -camera-front none
     steps:
       - uses: actions/checkout@v7
 
@@ -90,7 +97,18 @@ jobs:
           chmod +x gradlew
           ./gradlew --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest
 
-      - name: Instrumented tests on a phone emulator
+      # Bump the key's version when the device settings below change.
+      - name: Emulator snapshot cache
+        id: avd-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-34-google_apis-x86_64-pixel_6-2048M-v1
+
+      - name: Create the emulator snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -98,17 +116,27 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disk-size: 2048M
+          force-avd-creation: false
+          disable-animations: false
+          emulator-options: ${{ env.EMULATOR_OPTIONS }}
+          script: echo "Created the emulator snapshot."
+
+      - name: Instrumented tests (${{ matrix.shard }}) on a phone emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disk-size: 2048M
+          force-avd-creation: false
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-boot-anim -camera-back none -camera-front none
-          # The safety-net classes (reference screenshots, sync check, TV) only run from scripts/android-safety-net.ps1.
-          # They skip themselves in @BeforeClass, which the runner reports as an incomplete run.
-          script: ./gradlew --stacktrace :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.notClass=com.syncplaytv.screenshots.MobileScreenshotTest,com.syncplaytv.synccheck.SyncCheckTest,com.syncplaytv.tv.TvNavigationTest,com.syncplaytv.tv.TvScreenshotTest"
+          emulator-options: -no-snapshot-save ${{ env.EMULATOR_OPTIONS }}
+          script: bash scripts/ci-instrumented.sh ${{ matrix.shard }}
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: instrumented-test-reports
-          path: |
-            app/build/reports/androidTests/connected/
-            app/build/outputs/androidTest-results/connected/
+          name: instrumented-${{ matrix.shard }}
+          path: build/ci-instrumented/
           if-no-files-found: ignore
