@@ -15,6 +15,7 @@ sealed interface Screen {
     data object Player : Screen { override val key = "player" }
     data object Settings : Screen { override val key = "settings" }
     data object LocalFiles : Screen { override val key = "local" }
+    data object Licenses : Screen { override val key = "licenses" }
     data class Browse(val item: MediaItem) : Screen { override val key = "browse/${item.id}" }
 
     /** [pickFor] is set when the user is choosing a substitute for a playlist entry that wasn't found. */

@@ -97,6 +97,7 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                 color = AppColors.TextDim,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
+            ValueSetting("Open-source licenses", "mpv, FFmpeg and the other parts this app is built on") { nav.push(Screen.Licenses) }
         }
     }
 }

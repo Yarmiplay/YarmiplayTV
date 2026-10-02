@@ -94,6 +94,24 @@ class TvNavigationTest {
     }
 
     @Test
+    fun licensesScrollWithDpad() {
+        launch()
+        tv.awaitFocus("Join a Syncplay room")
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("Settings")
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        tv.awaitFocus("When I unpause")
+        tv.click("Open-source licenses")
+        tv.awaitFocus("mpv")
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
+        tv.awaitFocus("FFmpeg")
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = 30)
+        tv.awaitFocus("LWJGL")
+        tv.back()
+        tv.awaitFocus("When I unpause")
+    }
+
+    @Test
     fun browseLibraryWithDpad() {
         state.signInJellyfin(jellyfin)
         launch()

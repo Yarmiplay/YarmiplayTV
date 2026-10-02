@@ -24,6 +24,7 @@ import com.yarmiplaytv.data.PlaybackPrefs
 import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.UnpauseMode
 import com.yarmiplaytv.ui.nav.Navigator
+import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.components.SectionTitle
 import com.yarmiplaytv.ui.components.ToggleRow
 import com.yarmiplaytv.ui.components.TvTextField
@@ -84,5 +85,6 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
 
         SectionTitle("About")
         Text("YarmiplayTV ${BuildConfig.VERSION_NAME} · Syncplay protocol 1.7 · mpv (libmpv)", color = AppColors.TextDim)
+        ValueRow("Open-source licenses", "View", { nav.push(Screen.Licenses) }, subtitle = "mpv, FFmpeg and the other parts this app is built on")
     }
 }

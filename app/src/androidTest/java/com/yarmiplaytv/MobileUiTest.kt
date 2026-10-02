@@ -92,6 +92,17 @@ class MobileUiTest {
     }
 
     @Test
+    fun licensesOpenFromSettings() {
+        compose.onNodeWithTag("tab_Settings").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("settings"), 5_000)
+        compose.onNodeWithText("Open-source licenses").performScrollTo().performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("licenses"), 5_000)
+        compose.onNodeWithText("FFmpeg").assertIsDisplayed()
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntilExactlyOneExists(hasTestTag("settings"), 5_000)
+    }
+
+    @Test
     fun settingsToggleIsPersisted() {
         compose.onNodeWithTag("tab_Settings").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("toggle_ready_at_start"), 5_000)

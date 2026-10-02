@@ -237,4 +237,8 @@ then follow the peer's unpause and seek, slow down for small drifts and rewind f
 
 ## License
 
-Apache 2.0, same as Syncplay.
+The code in this repository is Apache 2.0, same as Syncplay. The Android app bundles libmpv-android, whose
+FFmpeg is built with `--enable-gpl --enable-version3`, and the Windows installer bundles a GPL build of
+libmpv, so those packages as a whole are distributed under the GPL 3.0 (Apache 2.0 code may be combined
+with it). This repository is their corresponding source. Settings > Open-source licenses lists every
+bundled component (`shared/.../ui/shared/Licenses.kt`).

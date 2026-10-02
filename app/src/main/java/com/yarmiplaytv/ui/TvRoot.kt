@@ -28,6 +28,7 @@ import com.yarmiplaytv.ui.home.HomeScreen
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.player.PlayerScreen
+import com.yarmiplaytv.ui.settings.LicensesScreen
 import com.yarmiplaytv.ui.settings.SettingsScreen
 import com.yarmiplaytv.ui.theme.AppColors
 /** The D-pad driven UI used on Google TV / Android TV. */
@@ -62,6 +63,7 @@ fun TvRoot(container: AppContainer) {
                     Screen.JellyfinLogin -> JellyfinLoginScreen(container, nav)
                     Screen.Player -> PlayerScreen(container, nav)
                     Screen.Settings, Screen.LocalFiles -> SettingsScreen(container, nav)
+                    Screen.Licenses -> LicensesScreen()
                     is Screen.Browse -> BrowseScreen(container, nav, screen.item)
                     is Screen.Search -> SearchScreen(container, nav, screen.initialQuery, screen.pickFor)
                 }
