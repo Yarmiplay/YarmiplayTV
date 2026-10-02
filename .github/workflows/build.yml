@@ -214,6 +214,12 @@ jobs:
           touch build/ci-instrumented/apks.started
           nohup sh -c './gradlew --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest > build/ci-instrumented/apks.log 2>&1; echo $? > build/ci-instrumented/apks.exit' > /dev/null 2>&1 &
 
+      # The emulator action would download these (~50 s) only after the snapshot restore; installed now, it
+      # finds them up to date.
+      - name: Start installing the emulator and system image
+        run: |
+          nohup sh -c 'yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install emulator "system-images;android-34;google_apis;x86_64" > /tmp/sdk.log 2>&1; echo $? > /tmp/sdk.exit' > /dev/null 2>&1 &
+
       - name: Wait for the disk space
         run: |
           for i in $(seq 1 120); do [ -f /tmp/disk-freed ] && { df -h / | tail -1; exit 0; }; sleep 1; done
@@ -228,6 +234,16 @@ jobs:
             ~/.android/avd/*
             ~/.android/adb*
           key: avd-34-google_apis-x86_64-pixel_6-2cores-2048M-v3
+
+      - name: Wait for the emulator and system image
+        run: |
+          for i in $(seq 1 180); do [ -f /tmp/sdk.exit ] && break; sleep 1; done
+          # Two sdkmanagers writing the SDK at once would corrupt it.
+          [ -f /tmp/sdk.exit ] || pkill -f sdkmanager || true
+          if [ "$(cat /tmp/sdk.exit 2>/dev/null)" != 0 ]; then
+            tail -20 /tmp/sdk.log
+            echo "::warning::Installing the emulator and system image in the background failed; the emulator action installs them"
+          fi
 
       - name: Create the emulator snapshot
         if: steps.avd-cache.outputs.cache-hit != 'true'
