@@ -6,15 +6,17 @@ Serves the SyncplayTV APK on the local network so a real TV, phone or tablet can
 
 On the TV, open http://<this-pc>:<port>/ in a browser or the "Downloader" app,
 or enter http://<this-pc>:<port>/a to download the APK directly. On a phone or tablet,
-open the page in the browser. Standard library only.
+open the page in the browser. The page is the same one GitHub Pages shows (scripts/download_site.py).
+Standard library only.
 """
 import argparse
 import datetime
-import html
 import os
 import socket
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from download_site import Download, by_platform, render_page
 
 APK_MIME = "application/vnd.android.package-archive"
 DOWNLOAD_NAME = "SyncplayTV.apk"
@@ -75,30 +77,14 @@ def make_handler(apk_path, version):
                 print(f"  -> sent APK ({size / 1e6:.1f} MB) to {self.client_address[0]}", flush=True)
 
         def send_page(self, send_body):
+            downloads, built = {}, "not yet"
             if os.path.isfile(apk_path):
                 st = os.stat(apk_path)
                 built = datetime.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M")
-                info = f"Version {html.escape(version)} &middot; {st.st_size / 1e6:.1f} MB &middot; built {built}"
-                button = f'<a class="btn" href="/{DOWNLOAD_NAME}">Download SyncplayTV</a>'
-            else:
-                info, button = "The APK has not been built yet.", ""
-            body = f"""<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>SyncplayTV</title>
-<style>
- body {{ background:#0E1116; color:#E8EAED; font-family:sans-serif; text-align:center; padding:6vh 4vw; }}
- h1 {{ font-size:3em; margin:0 0 .3em; }} p {{ color:#9AA0A6; font-size:1.3em; }}
- .btn {{ display:inline-block; margin:1.2em; padding:.8em 2em; font-size:1.8em; border-radius:12px;
-        background:#3DA5F4; color:#0E1116; text-decoration:none; font-weight:bold; }}
- .btn:focus {{ outline:4px solid #fff; }}
- ol {{ display:inline-block; text-align:left; color:#9AA0A6; font-size:1.1em; line-height:1.7; }}
-</style></head><body>
-<h1>SyncplayTV</h1><p>{info}</p>{button}
-<p>One app for Google TV, phones and tablets: the TV gets the remote-friendly UI, phones and tablets a touch UI.</p>
-<ol><li>If Android asks, allow this app (browser / Downloader) to install unknown apps.</li>
-<li>Open the downloaded file and choose <b>Install</b> (or <b>Update</b>).</li>
-<li>On a TV, the Downloader app's direct link is <b>/a</b> on this address.</li>
-<li>On a phone, tap the download notification (or open it from <b>Downloads</b>) to install.</li></ol>
-</body></html>""".encode()
+                downloads = by_platform({".apk": Download("/" + DOWNLOAD_NAME, "APK", st.st_size)})
+            host = self.headers.get("Host")
+            short_link = f"http://{host}/a" if host else None
+            body = render_page(downloads, version, built, short_link=short_link).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))

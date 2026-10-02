@@ -19,6 +19,23 @@ the local network or from files on the device.
 
 ![Tablet: room, shared playlist and chat](docs/screenshots/tablet-room.png)
 
+## Download
+
+The [download page](https://yarmiplay.github.io/SyncplayTV/) has a card per device type (Google TV, Android
+phone and tablet, Windows, macOS, Linux) and highlights the one for the device you open it on. On a TV, enter
+`https://yarmiplay.github.io/SyncplayTV/a` in the Downloader app to get the APK directly.
+
+The page is built by `scripts/download_site.py` and published by `.github/workflows/pages.yml` after every
+green `Build` run on `main` (or by hand from the Actions tab). It contains every artifact of that run whose
+name starts with `syncplaytv-`. Files are matched to platforms by extension (`.apk`, `.msi`/`.exe`,
+`.dmg`/`.pkg`, `.deb`/`.rpm`/`.AppImage`). Platforms without a package show how to run from source. To
+preview it locally:
+
+```powershell
+python scripts/download_site.py --dist app/build/outputs/apk/debug --out build/site
+python -m http.server -d build/site 8000
+```
+
 ## Desktop app
 
 Installers come from the `desktop` CI job (and the download page):
@@ -104,7 +121,8 @@ Play Store's Gboard, whose stylus tutorial swallows scripted text; `run-app.ps1`
 ./scripts/serve-apk.ps1            # builds the debug APK and serves it on port 8080
 ```
 
-On the TV, open the printed `http://<pc-ip>:8080/` in a browser, or install the free **Downloader** app
+It serves the same download page as GitHub Pages, with your local build. On the TV, open the printed
+`http://<pc-ip>:8080/` in a browser, or install the free **Downloader** app
 (by AFTVnews) and enter `http://<pc-ip>:8080/a` for a direct download. Allow that app to install unknown apps
 when Android asks, then open the file and choose Install. Re-run the script after changes and download again
 to update. Debug builds are signed with this PC's debug key, so an APK from CI (different key) can't update a
@@ -179,7 +197,7 @@ CI (`.github/workflows/build.yml`) does four things:
 - runs the instrumented tests on an API 34 phone emulator;
 - tests the desktop app on Windows, macOS and Ubuntu, builds its installers, and installs and plays the
   `.deb` on Ubuntu;
-- uploads the debug APK as an artifact.
+- uploads the debug APK as an artifact, which `pages.yml` then publishes on the download page.
 
 ### Testing sync locally
 
