@@ -122,10 +122,23 @@ jobs:
           emulator-options: ${{ env.EMULATOR_OPTIONS }}
           script: bash scripts/ci-instrumented.sh snapshot
 
+      # The emulator doesn't always manage to write the snapshot when it's shut down; caching it without one
+      # would make every later run cold-boot.
+      - name: Check the emulator snapshot
+        id: snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        run: |
+          ls -la ~/.android/avd/test.avd/snapshots/default_boot || true
+          if [ -f ~/.android/avd/test.avd/snapshots/default_boot/snapshot.pb ]; then
+            echo "saved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::The emulator didn't save its boot snapshot; not caching it"
+          fi
+
       # Saved before the tests run: an emulator that has been tested on carries the app (signed with this
       # runner's debug key) and no longer matches its boot snapshot.
       - name: Save the emulator snapshot
-        if: steps.avd-cache.outputs.cache-hit != 'true'
+        if: steps.snapshot.outputs.saved == 'true'
         uses: actions/cache/save@v6
         with:
           path: |
