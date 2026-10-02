@@ -117,6 +117,14 @@ location).
    Google also looks at whether testers actually use the app, so ask them to join a room together a few times
    during those two weeks, on phones and TVs. Fix anything in the pre-launch report (crashes, ANRs,
    accessibility warnings worth fixing) and upload a new version if needed; the 14 days don't restart.
+   A message for testers:
+
+   > I'm testing my watch-together app YarmiplayTV before it goes on Google Play, and Google needs 12 people
+   > to try it for two weeks. 1) Join the testers group: <group link>. 2) Open <opt-in link> on your Android
+   > phone, tablet or Google TV and tap "Become a tester", then install from Play. 3) Keep it installed for 14
+   > days and join our room a few times (server syncplay.pl, port 8999, room <room>), so we can watch
+   > something together. Tell me anything that breaks or confuses you.
+
 3. **Apply for production** (Dashboard > Apply for production) after the 14 days. It asks how testers were
    recruited, what feedback came in and what changed; answer from the test. Review takes up to about a week.
 4. **Production:** roll out, staged if you like. The TV opt-in is reviewed separately and can take longer.
