@@ -27,8 +27,9 @@ import kotlin.math.abs
  * user) and one as `follower` (checks it follows). They coordinate through room chat: the leader
  * announces each step with its own position, the follower answers `ACK <step>` or `FAIL <step> …`.
  *
- * Arguments: `-e syncRole leader|follower -e syncRoom <room> [-e syncHost 10.0.2.2] [-e syncPort 8999]`.
- * Without `syncRole` the test is skipped.
+ * Arguments: `-e syncRole leader|follower -e syncRoom <room> [-e syncHost 10.0.2.2] [-e syncPort 8999]`,
+ * and for more followers (e.g. the desktop app's DesktopSyncFollowerTest) `-e syncFollowers SN-Follower,SN-Desktop`
+ * on the leader. Without `syncRole` the test is skipped.
  */
 @RunWith(AndroidJUnit4::class)
 class SyncCheckTest {
@@ -41,6 +42,8 @@ class SyncCheckTest {
 
     private val leaderName = "SN-Leader"
     private val followerName = "SN-Follower"
+    private val followers = args.getString("syncFollowers")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+        ?: listOf(followerName)
 
     @Before
     fun setUp() {
@@ -81,12 +84,13 @@ class SyncCheckTest {
     // --- Leader --------------------------------------------------------------------------
 
     private fun lead() {
-        await(120_000, "follower joined") { container.sync.room.value.users.any { it.name.trimEnd('_') == followerName } }
+        fun user(name: String) = container.sync.room.value.users.firstOrNull { it.name.trimEnd('_') == name }
+        await(120_000, "followers $followers joined") { followers.all { user(it) != null } }
         val player = container.player
 
         container.playlist.selectIndex(container.sync.room.value.playlist.indexOf(CLIP_A))
         await(20_000, "clip A loaded here") { loaded(CLIP_A) }
-        await(30_000, "follower loaded clip A") { container.sync.room.value.users.any { it.name.trimEnd('_') == followerName && it.file?.name == CLIP_A } }
+        await(30_000, "followers loaded clip A") { followers.all { user(it)?.file?.name == CLIP_A } }
         step("file", "name=$CLIP_A")
 
         // Unpausing while not ready only marks this user ready, and within 5 s of a file switch
@@ -125,7 +129,7 @@ class SyncCheckTest {
     private var stepNumber = 0
 
     /**
-     * Announces a step and waits for the follower to confirm it. The announcement is repeated while
+     * Announces a step and waits for every follower to confirm it. The announcement is repeated while
      * unanswered: chat sent during a reconnect (emulator network handovers) is lost.
      */
     private fun step(kind: String, detail: String = "") {
@@ -134,14 +138,19 @@ class SyncCheckTest {
         val announcement = "SYNC $n $kind $detail".trim()
         log("leader: step $n $kind $detail")
         var lastSent = 0L
-        val answer = awaitValue(20_000, "follower answer to step $n $kind") {
+        val pending = followers.toMutableSet()
+        awaitValue(20_000, "answers to step $n $kind from $pending") {
             if (System.currentTimeMillis() - lastSent > RESEND_MS && container.sync.room.value.status == ConnectionStatus.CONNECTED) {
                 container.sync.sendChat(announcement)
                 lastSent = System.currentTimeMillis()
             }
-            container.sync.feed.value.drop(sentAt).firstOrNull { it.from?.trimEnd('_') == followerName && (it.text == "ACK $n" || it.text.startsWith("FAIL $n")) }
+            for (message in container.sync.feed.value.drop(sentAt)) {
+                val from = message.from?.trimEnd('_')?.takeIf { it in pending } ?: continue
+                if (message.text.startsWith("FAIL $n")) throw AssertionError("$from: ${message.text}")
+                if (message.text == "ACK $n") pending -= from
+            }
+            Unit.takeIf { pending.isEmpty() }
         }
-        if (answer.text.startsWith("FAIL")) throw AssertionError("Follower: ${answer.text}")
     }
 
     // --- Follower --------------------------------------------------------------------------

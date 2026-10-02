@@ -118,6 +118,26 @@ jobs:
           display=""; [ "$RUNNER_OS" = Linux ] && display="xvfb-run -a"
           $display ./gradlew --stacktrace :player-mpv-desktop:test :desktop:test :desktop:packageDistributionForCurrentOS
 
+      # apt resolves the package's libmpv dependency; the benchmark's timing targets aren't met on a VM
+      # without a GPU, so it only has to play.
+      - name: Install the .deb and play a clip with it
+        if: runner.os == 'Linux'
+        run: |
+          deb=$(ls desktop/build/compose/binaries/main/deb/*.deb)
+          dpkg-deb -f "$deb" Depends
+          sudo apt-get install -y -q "./$deb"
+          app=$(dpkg -L syncplaytv | grep '/bin/SyncplayTV$')
+          "$app" --version | tee "$RUNNER_TEMP/version.txt"
+          grep -q "libmpv [0-9]" "$RUNNER_TEMP/version.txt"
+          xvfb-run -a -s "-screen 0 1920x1080x24" "$app" --benchmark app/src/androidTest/assets/syncplaytv-sync-clip.mp4 \
+            --seconds 10 --out "$RUNNER_TEMP/benchmark.txt" || true
+          cat "$RUNNER_TEMP/benchmark.txt"
+          grep -Eq "rendered [1-9]" "$RUNNER_TEMP/benchmark.txt"
+
+      - name: jpackage logs
+        if: failure()
+        run: cat desktop/build/compose/logs/*/*.txt || true
+
       - uses: actions/upload-artifact@v7
         with:
           name: syncplaytv-desktop-${{ runner.os }}

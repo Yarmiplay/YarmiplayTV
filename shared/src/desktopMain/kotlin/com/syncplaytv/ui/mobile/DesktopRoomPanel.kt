@@ -355,7 +355,7 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
         }
         if (playlist.isNotEmpty()) {
             Text(
-                "Double-click plays · Delete removes · Alt+↑/↓ or drag moves",
+                "Double-click plays · Del removes · drag or Alt+↑↓ moves",
                 color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
             )

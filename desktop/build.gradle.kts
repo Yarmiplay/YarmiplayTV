@@ -36,9 +36,13 @@ dependencies {
 }
 
 tasks.test {
+    dependsOn(":player-mpv-desktop:prepareLibmpv")
     val screenshots = layout.buildDirectory.dir("desktop-screenshots").get().asFile.absolutePath
     systemProperty("syncplaytv.screenshotDir", screenshots)
+    systemProperty("syncplaytv.libmpv.dir", libmpvDir.get().asFile.absolutePath)
+    systemProperty("syncplaytv.syncClip", rootProject.file("app/src/androidTest/assets/syncplaytv-sync-clip.mp4").absolutePath)
     environment("SYNCPLAY_TEST_SERVER", System.getenv("SYNCPLAY_TEST_SERVER") ?: "")
+    environment("SYNCPLAY_E2E_ROOM", System.getenv("SYNCPLAY_E2E_ROOM") ?: "")
     testLogging { events("passed", "skipped", "failed") }
 }
 
@@ -190,9 +194,10 @@ compose.desktop {
     }
 }
 
-// Ubuntu 24.04 / Debian 12 ship libmpv2, Ubuntu 22.04 libmpv1.
+// Ubuntu 24.04 / Debian 12 ship libmpv2, Ubuntu 22.04 libmpv1. Free args go into jpackage's @argfile as they
+// are, so a value with spaces needs its own quotes.
 tasks.withType<AbstractJPackageTask>().configureEach {
-    if (targetFormat == TargetFormat.Deb) freeArgs.addAll("--linux-package-deps", "libmpv2 | libmpv1")
+    if (targetFormat == TargetFormat.Deb) freeArgs.addAll("--linux-package-deps", "\"libmpv2 | libmpv1\"")
 }
 
 afterEvaluate {
