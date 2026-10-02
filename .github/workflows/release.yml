@@ -1,0 +1,70 @@
+name: Release bundle
+
+# Builds the Play upload bundle for a version tag (v1.1, v1.2.3), signed with the upload key from the
+# secrets YARMIPLAYTV_KEYSTORE_BASE64, YARMIPLAYTV_KEYSTORE_PASSWORD, YARMIPLAYTV_KEY_ALIAS and
+# YARMIPLAYTV_KEY_PASSWORD. The tag has to match appVersion in app/build.gradle.kts.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the tag against appVersion
+        run: |
+          version=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' app/build.gradle.kts)
+          echo "appVersion $version"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match appVersion $version"; exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: "platforms;android-36 build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Upload key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.YARMIPLAYTV_KEYSTORE_BASE64 }}
+        run: |
+          [ -n "$KEYSTORE_BASE64" ] || { echo "::error::The YARMIPLAYTV_KEYSTORE_BASE64 secret isn't set"; exit 1; }
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          echo "YARMIPLAYTV_KEYSTORE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+
+      - name: Signed bundle
+        env:
+          YARMIPLAYTV_KEYSTORE_PASSWORD: ${{ secrets.YARMIPLAYTV_KEYSTORE_PASSWORD }}
+          YARMIPLAYTV_KEY_ALIAS: ${{ secrets.YARMIPLAYTV_KEY_ALIAS }}
+          YARMIPLAYTV_KEY_PASSWORD: ${{ secrets.YARMIPLAYTV_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --stacktrace :app:bundleRelease
+          aab=app/build/outputs/bundle/release/app-release.aab
+          jarsigner -verify "$aab" | tee "$RUNNER_TEMP/verify.txt"
+          grep -q "jar verified" "$RUNNER_TEMP/verify.txt"
+          mv "$aab" "yarmiplaytv-$VERSION.aab"
+          rm -f "$RUNNER_TEMP/upload.jks"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: play-bundle-${{ env.VERSION }}
+          path: yarmiplaytv-*.aab
+          if-no-files-found: error
+          retention-days: 90
