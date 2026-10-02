@@ -1,13 +1,13 @@
 # YarmiplayTV privacy policy
 
-Effective 2 October 2026. This policy covers the YarmiplayTV app for Android TV, Android phones and tablets,
+Effective 3 October 2026. This policy covers the YarmiplayTV app for Android TV, Android phones and tablets,
 and desktop.
 
 ## Summary
 
 YarmiplayTV doesn't collect any data. It has no accounts, no analytics, no advertising and no crash reporting,
-and the developer runs no servers that the app talks to. The app only connects to the Syncplay and Jellyfin
-servers you enter or pick.
+and the developer runs no servers that the app talks to. The app connects to the Syncplay and Jellyfin servers
+you enter or pick and, unless you turn it off, to GitHub to check for a new version.
 
 ## What the app sends, and to whom
 
@@ -21,6 +21,14 @@ servers you enter or pick.
   list of devices.
 - **Your local network:** when you look for Jellyfin servers, the app sends a discovery message on the local
   network that Jellyfin servers answer.
+- **GitHub, to check for updates:** when it starts, the app from the download page (the APK and the desktop
+  apps) reads the latest version number from the download page on GitHub Pages (yarmiplay.github.io). The
+  request contains nothing about you, your settings or your device; like any web request it reaches GitHub
+  from your IP address, and GitHub handles it under the
+  [GitHub Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
+  The developer doesn't receive it. Turn it off with **Check for updates** in Settings. When you install an
+  update on Windows, the installer is downloaded from the same page. The app from Google Play doesn't check:
+  Google Play updates it.
 
 Connections are encrypted when the server supports it: Syncplay servers with TLS, and Jellyfin servers on
 HTTPS. Jellyfin servers on a home network often use plain HTTP, and the app allows that.

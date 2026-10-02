@@ -16,6 +16,7 @@ import com.yarmiplaytv.support.FakeSyncplayServer
 import com.yarmiplaytv.support.Scenarios
 import com.yarmiplaytv.support.Screenshots
 import com.yarmiplaytv.support.TvUi
+import com.yarmiplaytv.update.Update
 import org.junit.After
 import org.junit.AfterClass
 import org.junit.Assert.assertEquals
@@ -90,6 +91,24 @@ class TvNavigationTest {
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
         waitUntil(5_000) { container.settings.value.sync.rewindOnDesync == before }
         tv.back()
+        tv.awaitFocus("Join a Syncplay room")
+    }
+
+    @Test
+    fun updateNoticeWithDpad() {
+        launch()
+        tv.awaitFocus("Join a Syncplay room")
+        onMain { container.updates.show(Update("99.0", "https://yarmiplay.github.io/YarmiplayTV/", "https://yarmiplay.github.io/YarmiplayTV/YarmiplayTV.apk", null)) }
+        tv.await("YarmiplayTV 99.0 is available")
+        tv.await("To install it, open Downloader and enter yarmiplay.github.io/YarmiplayTV/a")
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("YarmiplayTV 99.0 is available")
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("Settings")
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
+        tv.awaitFocus("YarmiplayTV 99.0 is available")
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitUntil(5_000) { container.updates.state.value == null && container.settings.value.dismissedUpdate == "99.0" }
         tv.awaitFocus("Join a Syncplay room")
     }
 

@@ -85,6 +85,14 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
 
         SectionTitle("About")
         Text("YarmiplayTV ${BuildConfig.VERSION_NAME} · Syncplay protocol 1.7 · mpv (libmpv)", color = AppColors.TextDim)
+        if (container.updates.platform != null) {
+            ToggleRow(
+                "Check for updates",
+                settings.checkForUpdates,
+                { container.scope.launch { container.settingsStore.saveUpdatePrefs(!settings.checkForUpdates, settings.installUpdatesOnLaunch) } },
+                subtitle = "Look for a new version on the download page (GitHub) when the app starts",
+            )
+        }
         ValueRow("Open-source licenses", "View", { nav.push(Screen.Licenses) }, subtitle = "mpv, FFmpeg and the other parts this app is built on")
     }
 }

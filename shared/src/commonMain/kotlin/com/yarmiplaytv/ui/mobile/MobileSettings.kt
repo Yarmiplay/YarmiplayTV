@@ -97,6 +97,24 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                 color = AppColors.TextDim,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
+            if (container.updates.platform != null) {
+                fun saveUpdates(check: Boolean = settings.checkForUpdates, install: Boolean = settings.installUpdatesOnLaunch) =
+                    container.scope.launch { container.settingsStore.saveUpdatePrefs(check, install) }
+                ToggleSetting(
+                    "Check for updates",
+                    "Look for a new version on the download page (GitHub) when the app starts",
+                    settings.checkForUpdates,
+                    Modifier.testTag("toggle_check_updates"),
+                ) { saveUpdates(check = it) }
+                if (container.updates.installer != null) {
+                    ToggleSetting(
+                        "Install updates on launch",
+                        "Download new versions when the app starts and install them when you close it",
+                        settings.checkForUpdates && settings.installUpdatesOnLaunch,
+                        Modifier.testTag("toggle_install_updates"),
+                    ) { saveUpdates(check = settings.checkForUpdates || it, install = it) }
+                }
+            }
             ValueSetting("Open-source licenses", "mpv, FFmpeg and the other parts this app is built on") { nav.push(Screen.Licenses) }
         }
     }

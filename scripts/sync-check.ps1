@@ -22,7 +22,7 @@ $ErrorActionPreference = "Continue"
 $root = Split-Path $PSScriptRoot
 $sdk = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $adb = "$sdk\platform-tools\adb.exe"
-$runner = "com.yarmiplaytv.test/androidx.test.runner.AndroidJUnitRunner"
+$runner = "com.yarmiplaytv.test/com.yarmiplaytv.YarmiplayTestRunner"
 $room = if ($Room) { $Room } else { "safety-net-$(Get-Random -Maximum 99999)" }
 $followers = (@("SN-Follower") + $ExtraFollowers) -join ","
 

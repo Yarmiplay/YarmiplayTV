@@ -33,6 +33,16 @@ val uploadKey: Map<String, String>? = run {
     )
 }
 
+/**
+ * The download page's APK key, from YARMIPLAYTV_APK_KEYSTORE and YARMIPLAYTV_APK_KEYSTORE_PASSWORD (CI on main).
+ * Signing every published debug APK with the same key lets new versions install over old ones; without it,
+ * debug builds use the machine's debug key.
+ */
+val apkKey: Map<String, String>? = run {
+    val storeFile = System.getenv("YARMIPLAYTV_APK_KEYSTORE")?.takeIf { it.isNotBlank() } ?: return@run null
+    mapOf("storeFile" to storeFile, "password" to System.getenv("YARMIPLAYTV_APK_KEYSTORE_PASSWORD").orEmpty())
+}
+
 android {
     namespace = "com.yarmiplaytv"
     compileSdk = 36
@@ -43,7 +53,8 @@ android {
         targetSdk = 36
         versionCode = versionCodeOf(appVersion)
         versionName = appVersion
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.yarmiplaytv.YarmiplayTestRunner"
+        buildConfigField("boolean", "UPDATE_CHECK", "true")
     }
 
     signingConfigs {
@@ -55,10 +66,23 @@ android {
                 keyPassword = uploadKey.getValue("keyPassword")
             }
         }
+        if (apkKey != null) {
+            create("downloadPage") {
+                storeFile = file(apkKey.getValue("storeFile"))
+                storePassword = apkKey.getValue("password")
+                keyAlias = "yarmiplaytv-apk"
+                keyPassword = apkKey.getValue("password")
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfigs.findByName("downloadPage")?.let { signingConfig = it }
+        }
         release {
+            // Play builds: apps on Play mustn't update themselves or point to updates outside Play.
+            buildConfigField("boolean", "UPDATE_CHECK", "false")
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

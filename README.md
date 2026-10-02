@@ -34,12 +34,28 @@ green `Build` run on `main` and after every `Release` run (or by hand from the A
 artifact of that run whose name starts with `yarmiplaytv-`, except that the Windows installers come from the
 latest GitHub release, where they are code signed (see [Code signing policy](#code-signing-policy)). Files are
 matched to platforms by extension (`.apk`, `.msi`/`.exe`, `.dmg`/`.pkg`, `.deb`/`.rpm`/`.AppImage`). Platforms
-without a package show how to run from source. To preview it locally:
+without a package show how to run from source. The page's `version.json` lists each platform's package,
+version and SHA-256 for the apps' update check (see [Updates](#updates)). To preview it locally:
 
 ```powershell
 python scripts/download_site.py --dist app/build/outputs/apk/debug --out build/site
 python -m http.server -d build/site 8000
 ```
+
+### Updates
+
+When it starts, the app from the download page reads `version.json` and shows a notice on the home screen if
+its platform's package has a higher version than the one running (so only bumping `appVersion` makes an
+update; builds of the same version don't). Phones and tablets link to the download page, TVs show the
+Downloader short link, and the installed Windows app downloads the `.msi`, checks its SHA-256 and installs it
+(per user, no administrator prompt) with **Install**, or by itself with **Install updates on launch** in
+Settings: it downloads at startup and installs when the app closes. "Check for updates" in Settings turns it
+all off. Release builds, which go to Google Play, never check: Play doesn't allow apps to update outside it.
+
+The download page's APK is signed with a fixed key from the repository secrets
+`YARMIPLAYTV_APK_KEYSTORE_BASE64` and `YARMIPLAYTV_APK_KEYSTORE_PASSWORD` (alias `yarmiplaytv-apk`), so a new
+version installs over the old one and keeps its settings. Without the secrets (e.g. pull requests from forks)
+CI signs with a throwaway debug key.
 
 ## Desktop app
 
@@ -194,7 +210,7 @@ tests through adb instead:
 ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
 adb install -r -t app/build/outputs/apk/debug/app-debug.apk
 adb install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-adb shell am instrument -w -r com.yarmiplaytv.test/androidx.test.runner.AndroidJUnitRunner
+adb shell am instrument -w -r com.yarmiplaytv.test/com.yarmiplaytv.YarmiplayTestRunner
 ```
 
 CI (`.github/workflows/build.yml`) does four things:
@@ -280,9 +296,9 @@ Only the Windows installers and the YarmiplayTV launcher in them are signed, bui
 `.github/workflows/release.yml` from a version tag of this repository. Bundled third-party files (the Java
 runtime, libmpv, Skia) are included as their projects publish them.
 
-Privacy: this program will not transfer any information to other networked systems unless specifically
-requested by the user or the person installing or operating it. It connects only to the Syncplay and Jellyfin
-servers you enter; see the [privacy policy](docs/privacy.md).
+Privacy: see the [privacy policy](docs/privacy.md). The program connects to the Syncplay and Jellyfin servers
+you enter and, when it starts, reads the latest version number from the download page on GitHub Pages; that
+request carries no information about the user and can be turned off with "Check for updates" in Settings.
 
 ## License
 

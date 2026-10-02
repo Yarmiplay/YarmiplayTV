@@ -86,7 +86,8 @@ doesn't apply. Answer No to "could unintentionally appeal to children".
 
 **Data safety:**
 - "Does your app collect or share any of the required user data types?" **No.** The developer receives
-  nothing; the app only connects to servers the user enters, like other Jellyfin and Syncplay clients.
+  nothing; the app only connects to servers the user enters, like other Jellyfin and Syncplay clients. The
+  Play build (release) doesn't run the download page's update check.
 - "Is all of the user data collected by your app encrypted in transit?" isn't asked when nothing is
   collected. If you choose to declare the room data instead (see below), answer No: plain Syncplay and
   local Jellyfin servers aren't encrypted.

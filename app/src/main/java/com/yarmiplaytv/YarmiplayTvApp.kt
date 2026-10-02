@@ -34,5 +34,10 @@ class YarmiplayTvApp : Application() {
             },
             createLocalLibrary = { store, scope, folders -> SafLocalLibrary(this, store, scope, folders) },
         )
+        if (BuildConfig.UPDATE_CHECK) {
+            container.updates.platform = "android"
+            // Set by the instrumented tests' runner, so tests don't depend on what the live download page offers.
+            if (System.getProperty("yarmiplaytv.noUpdateCheck") == null) container.updates.checkOnLaunch()
+        }
     }
 }

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +36,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -50,16 +52,19 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.browse.openItem
 import com.yarmiplaytv.ui.components.Dot
 import com.yarmiplaytv.ui.components.IconAction
+import com.yarmiplaytv.ui.components.Pill
 import com.yarmiplaytv.ui.components.PosterCard
 import com.yarmiplaytv.ui.components.SectionTitle
 import com.yarmiplaytv.ui.components.TvTile
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.update.UpdateState
 
 @Composable
 fun HomeScreen(container: AppContainer, nav: Navigator) {
     val room by container.sync.room.collectAsStateWithLifecycle()
     val source by container.mediaSource.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
+    val update by container.updates.state.collectAsStateWithLifecycle()
     var libraries by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var recent by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -78,7 +83,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
         contentPadding = PaddingValues(vertical = 32.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        item {
+        item(key = "header") {
             Row(Modifier.fillMaxWidth().padding(horizontal = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(androidx.compose.ui.res.painterResource(com.yarmiplaytv.shared.R.drawable.ic_logo), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(48.dp))
                 Spacer(Modifier.width(16.dp))
@@ -89,7 +94,15 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                 IconAction(Icons.Filled.Settings, "Settings", { nav.push(Screen.Settings) })
             }
         }
-        item {
+        update?.let { u ->
+            item(key = "update") {
+                UpdateNotice(u, {
+                    container.updates.dismiss()
+                    runCatching { firstFocus.requestFocus() }
+                }, Modifier.padding(horizontal = 48.dp))
+            }
+        }
+        item(key = "tiles") {
             // Tiles share the row width so they always fit inside the TV-safe area.
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 48.dp, vertical = 8.dp),
@@ -117,10 +130,10 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
             }
         }
         if (loadError != null) {
-            item { Text("Couldn't load libraries: $loadError", color = AppColors.Error, modifier = Modifier.padding(horizontal = 48.dp)) }
+            item(key = "load_error") { Text("Couldn't load libraries: $loadError", color = AppColors.Error, modifier = Modifier.padding(horizontal = 48.dp)) }
         }
         if (libraries.isNotEmpty()) {
-            item {
+            item(key = "libraries") {
                 Column {
                     SectionTitle("Libraries", Modifier.padding(horizontal = 48.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp), contentPadding = PaddingValues(horizontal = 48.dp, vertical = 8.dp)) {
@@ -144,7 +157,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
             }
         }
         if (recent.isNotEmpty()) {
-            item {
+            item(key = "recent") {
                 Column {
                     SectionTitle("Continue watching & recently added", Modifier.padding(horizontal = 48.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp), contentPadding = PaddingValues(horizontal = 48.dp, vertical = 8.dp)) {
@@ -163,7 +176,28 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                 }
             }
         }
-        item { Spacer(Modifier.height(24.dp)) }
+        item(key = "bottom") { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+/**
+ * TVs rarely have a browser, so this says how to get the update with Downloader, like the download page.
+ * One full-width tile, so the D-pad reaches it from the tiles below; OK dismisses it.
+ */
+@Composable
+private fun UpdateNotice(state: UpdateState, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    val shortLink = state.update.pageUrl.substringAfter("://").trimEnd('/') + "/a"
+    TvTile(onClick = onDismiss, modifier = modifier.fillMaxWidth().testTag("update_banner"), focusedScale = 1.02f) {
+        Row(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.SystemUpdate, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(32.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("YarmiplayTV ${state.update.version} is available", style = MaterialTheme.typography.titleMedium)
+                Text("To install it, open Downloader and enter $shortLink", style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
+            }
+            Spacer(Modifier.width(16.dp))
+            Pill("Not now", AppColors.TextDim)
+        }
     }
 }
 

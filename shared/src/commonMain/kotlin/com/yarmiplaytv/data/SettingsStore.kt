@@ -60,6 +60,12 @@ data class AppSettings(
     val onlySwitchToTrustedDomains: Boolean = true,
     /** Remember each room's playlist and put it back when rejoining the room finds it empty. */
     val autosavePlaylists: Boolean = true,
+    /** Look for a newer version on the download page when the app starts (not in Play builds). */
+    val checkForUpdates: Boolean = true,
+    /** Desktop: download updates when the app starts and install them when it closes. */
+    val installUpdatesOnLaunch: Boolean = false,
+    /** The update version the user dismissed; it isn't shown again. */
+    val dismissedUpdate: String = "",
 )
 
 class SettingsStore(private val dataStore: DataStore<Preferences>) {
@@ -83,6 +89,9 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val trustedDomains = stringPreferencesKey("trusted_domains")
         val onlyTrusted = booleanPreferencesKey("only_trusted_domains")
         val autosavePlaylists = booleanPreferencesKey("autosave_playlists")
+        val checkForUpdates = booleanPreferencesKey("update_check")
+        val installUpdatesOnLaunch = booleanPreferencesKey("update_install_on_launch")
+        val dismissedUpdate = stringPreferencesKey("update_dismissed")
         /** Followed by "host:port/room"; the value is the playlist, one entry per line. */
         const val ROOM_PLAYLIST_PREFIX = "room_playlist:"
         fun roomPlaylist(key: String) = stringPreferencesKey(ROOM_PLAYLIST_PREFIX + key)
@@ -150,6 +159,9 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             trustedDomains = p[Keys.trustedDomains]?.split('\n')?.filter { it.isNotBlank() } ?: defaults.trustedDomains,
             onlySwitchToTrustedDomains = p[Keys.onlyTrusted] ?: true,
             autosavePlaylists = p[Keys.autosavePlaylists] ?: true,
+            checkForUpdates = p[Keys.checkForUpdates] ?: true,
+            installUpdatesOnLaunch = p[Keys.installUpdatesOnLaunch] ?: false,
+            dismissedUpdate = p[Keys.dismissedUpdate] ?: "",
         )
     }
 
@@ -197,6 +209,13 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
     }
 
     suspend fun saveAutosavePlaylists(on: Boolean) = dataStore.edit { it[Keys.autosavePlaylists] = on }
+
+    suspend fun saveUpdatePrefs(check: Boolean, installOnLaunch: Boolean) = dataStore.edit {
+        it[Keys.checkForUpdates] = check
+        it[Keys.installUpdatesOnLaunch] = installOnLaunch
+    }
+
+    suspend fun saveDismissedUpdate(version: String) = dataStore.edit { it[Keys.dismissedUpdate] = version }
 
     /** The playlist saved for [room] ("host:port/room"), or empty. */
     suspend fun roomPlaylist(room: String): List<String> =

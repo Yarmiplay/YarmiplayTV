@@ -85,11 +85,15 @@ internal fun runApp(args: List<String>) {
     SwingUtilities.invokeLater {
         launch.profile(app.settings.value.syncplay, defaultSyncplayName(DeviceKind.DESKTOP))?.let { app.sync.connect(it.toConfig()) }
         openFiles(app, launch.files)
+        app.updates.platform = updatePlatform()
+        app.updates.installer = WindowsUpdater.createOrNull()
+        app.updates.checkOnLaunch()
     }
 
     application(exitProcessOnExit = false) {
         MainWindow(app, boundsFile)
     }
+    app.updates.onExit()
     player.close()
     exitProcess(0)
 }
@@ -155,12 +159,14 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             }
         }
     }
+    val close = {
+        fullscreen.set(false)
+        WindowBounds.save(boundsFile, state)
+        exitApplication()
+    }
+    container.updates.exitApp = close
     Window(
-        onCloseRequest = {
-            fullscreen.set(false)
-            WindowBounds.save(boundsFile, state)
-            exitApplication()
-        },
+        onCloseRequest = close,
         state = state,
         title = "YarmiplayTV",
         icon = appLogoPainter(),

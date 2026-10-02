@@ -39,7 +39,7 @@ class AppState {
 
     fun restore() {
         JellyfinDiscovery.scanner = null
-        onMain { container.playlist.stop() }
+        onMain { container.playlist.stop(); container.updates.dismiss(remember = false) }
         container.sync.disconnect()
         runBlocking {
             val store = container.settingsStore
@@ -49,6 +49,8 @@ class AppState {
             store.saveLastJellyfinUrl(saved.lastJellyfinUrl)
             store.saveLocalFolders(saved.localFolders)
             store.saveAutosavePlaylists(saved.autosavePlaylists)
+            store.saveUpdatePrefs(saved.checkForUpdates, saved.installUpdatesOnLaunch)
+            store.saveDismissedUpdate(saved.dismissedUpdate)
             store.replaceRoomPlaylists(savedRoomPlaylists)
         }
         onMain { container.setJellyfinSession(saved.jellyfin) }
@@ -62,7 +64,7 @@ class AppState {
     fun baseline() {
         // The host's real servers would otherwise show up in "Found on your network".
         JellyfinDiscovery.scanner = { listOf(DiscoveredServer(address = "http://192.168.1.20:8096", id = "fake-server", name = "Living Room")) }
-        onMain { container.playlist.stop() }
+        onMain { container.playlist.stop(); container.updates.dismiss(remember = false) }
         container.sync.disconnect()
         runBlocking {
             val store = container.settingsStore
@@ -71,6 +73,7 @@ class AppState {
             store.savePlayback(PlaybackPrefs())
             store.saveLastJellyfinUrl(LAST_JELLYFIN_URL)
             store.saveAutosavePlaylists(true)
+            store.saveUpdatePrefs(check = true, installOnLaunch = false)
             store.replaceRoomPlaylists(emptyMap())
         }
         onMain { container.setJellyfinSession(null) }

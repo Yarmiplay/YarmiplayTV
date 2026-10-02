@@ -10,6 +10,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.yarmiplaytv.update.Update
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertNotEquals
 import org.junit.Before
@@ -34,6 +36,7 @@ class MobileUiTest {
 
     @After
     fun tearDown() {
+        compose.runOnUiThread { container.updates.dismiss(remember = false) }
         restoreRoom()
     }
 
@@ -111,5 +114,33 @@ class MobileUiTest {
         compose.waitUntil(5_000) { container.settings.value.sync.readyAtStart == !before }
         compose.onNodeWithTag("toggle_ready_at_start").performClick()
         compose.waitUntil(5_000) { container.settings.value.sync.readyAtStart == before }
+    }
+
+    @Test
+    fun updateNoticeShowsAndIsDismissed() {
+        val dismissed = container.settings.value.dismissedUpdate
+        compose.runOnUiThread { container.updates.show(TEST_UPDATE) }
+        compose.waitUntilExactlyOneExists(hasTestTag("update_banner"), 5_000)
+        compose.onNodeWithText("YarmiplayTV 99.0 is available").assertIsDisplayed()
+        compose.onNodeWithText("Download page").assertIsDisplayed()
+        compose.onNodeWithText("Not now").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("update_banner"), 5_000)
+        compose.waitUntil(5_000) { container.settings.value.dismissedUpdate == "99.0" }
+        runBlocking { container.settingsStore.saveDismissedUpdate(dismissed) }
+    }
+
+    @Test
+    fun updateCheckCanBeTurnedOff() {
+        compose.onNodeWithTag("tab_Settings").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("settings"), 5_000)
+        val before = container.settings.value.checkForUpdates
+        compose.onNodeWithTag("toggle_check_updates").performScrollTo().performClick()
+        compose.waitUntil(5_000) { container.settings.value.checkForUpdates == !before }
+        compose.onNodeWithTag("toggle_check_updates").performClick()
+        compose.waitUntil(5_000) { container.settings.value.checkForUpdates == before }
+    }
+
+    private companion object {
+        val TEST_UPDATE = Update("99.0", "https://yarmiplay.github.io/YarmiplayTV/", "https://yarmiplay.github.io/YarmiplayTV/YarmiplayTV.apk", null)
     }
 }

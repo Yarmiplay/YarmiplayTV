@@ -17,6 +17,7 @@ kotlin {
             api(project(":player-api"))
             api(libs.kotlinx.coroutines.core)
             api(libs.androidx.datastore.preferences.core)
+            implementation(libs.kotlinx.serialization.json)
 
             implementation(libs.jetbrains.compose.runtime)
             implementation(libs.jetbrains.compose.foundation)
@@ -39,6 +40,7 @@ kotlin {
             dependencies {
                 implementation(libs.junit)
                 implementation(libs.kotlinx.coroutines.test)
+                implementation(libs.okhttp.mockwebserver)
             }
         }
     }

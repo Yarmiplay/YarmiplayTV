@@ -12,6 +12,7 @@ import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.sync.PlaylistAutosave
 import com.yarmiplaytv.sync.PlaylistController
 import com.yarmiplaytv.sync.SyncController
+import com.yarmiplaytv.update.Updates
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +62,8 @@ class AppContainer(
     val sync = SyncController(scope, player)
     val playlist = PlaylistController(scope, sync, player, mediaSource, local)
     private val autosave = PlaylistAutosave(scope, sync, playlist.shared, settingsStore).apply { enabled = initial.autosavePlaylists }
+    /** Starts checking only when the host calls [Updates.checkOnLaunch]. */
+    val updates = Updates(scope, settingsStore, appVersion)
 
     init {
         scope.launch {

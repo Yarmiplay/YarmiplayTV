@@ -9,7 +9,7 @@
 set -uo pipefail
 
 mode="${1:?usage: ci-instrumented.sh snapshot|playback|ui}"
-runner="com.yarmiplaytv.test/androidx.test.runner.AndroidJUnitRunner"
+runner="com.yarmiplaytv.test/com.yarmiplaytv.YarmiplayTestRunner"
 out="build/ci-instrumented"
 mkdir -p "$out"
 

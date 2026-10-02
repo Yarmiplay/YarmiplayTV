@@ -42,9 +42,19 @@ jobs:
           for i in $(seq 1 30); do nc -z 127.0.0.1 8999 && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/syncplay-server.log"; exit 1
 
+      # The download page's APK is signed with one fixed key, so new versions install over old ones.
+      - name: APK signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.YARMIPLAYTV_APK_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then echo "No APK key secret; signing with a throwaway debug key"; exit 0; fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/apk.jks"
+          echo "YARMIPLAYTV_APK_KEYSTORE=$RUNNER_TEMP/apk.jks" >> "$GITHUB_ENV"
+
       - name: Unit tests and debug APK
         env:
           SYNCPLAY_TEST_SERVER: 127.0.0.1:8999
+          YARMIPLAYTV_APK_KEYSTORE_PASSWORD: ${{ secrets.YARMIPLAYTV_APK_KEYSTORE_PASSWORD }}
         run: |
           chmod +x gradlew
           ./gradlew --stacktrace :syncplay-protocol:test :media-source:test :shared:desktopTest :app:testDebugUnitTest :app:assembleDebug

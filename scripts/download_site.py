@@ -6,8 +6,9 @@ Builds the YarmiplayTV download page: one card per device type / OS, each with i
 
 Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .msi/.exe: Windows,
 .dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as YarmiplayTV.apk, so links
-keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader, and <site>/privacy/
-is docs/privacy.md (the Play Store privacy policy). Platforms without a file show how to run from source. The Pages workflow publishes the result; scripts/apk_server.py serves the
+keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader, <site>/privacy/
+is docs/privacy.md (the Play Store privacy policy), and <site>/version.json lists each platform's package
+and version for the apps' update check. Platforms without a file show how to run from source. The Pages workflow publishes the result; scripts/apk_server.py serves the
 same page on the local network. Standard library only.
 """
 from __future__ import annotations
@@ -16,6 +17,7 @@ import argparse
 import datetime
 import hashlib
 import html
+import json
 import os
 import re
 import shutil
@@ -36,6 +38,15 @@ EXTENSIONS = {
     ".deb": (("linux",), "Debian / Ubuntu (.deb)"),
     ".rpm": (("linux",), "Fedora / openSUSE (.rpm)"),
     ".appimage": (("linux",), "AppImage"),
+}
+
+# version.json: the package each platform's update check offers, by preference. Windows installs the .msi
+# itself (msiexec), so only that counts there.
+UPDATE_PACKAGES = {
+    "android": (".apk",),
+    "windows": (".msi",),
+    "macos": (".dmg", ".pkg"),
+    "linux": (".deb", ".rpm", ".appimage"),
 }
 
 
@@ -286,7 +297,26 @@ def redirect_page(target):
             f'<meta http-equiv="refresh" content="0; url={t}"><a href="{t}">Download {NAME}</a>\n')
 
 
-def build(dist, out, version, site_url):
+def file_version(name):
+    """The version in a package name such as YarmiplayTV-1.1.0.msi or yarmiplaytv_1.1.0-1_amd64.deb, or None."""
+    m = re.search(r"[-_](\d+(?:\.\d+)+)", name)
+    return m.group(1) if m else None
+
+
+def update_manifest(found, downloads, version, desktop_version):
+    """found: {extension: original file name}; downloads: {extension: Download}. Paths are relative to the site."""
+    platforms = {}
+    for key, exts in UPDATE_PACKAGES.items():
+        ext = next((e for e in exts if e in downloads), None)
+        if ext is None:
+            continue
+        fallback = version if ext == ".apk" else desktop_version
+        platforms[key] = {"version": file_version(found[ext]) or fallback, "file": downloads[ext].href,
+                          "sha256": downloads[ext].sha256}
+    return {"page": "./", "platforms": platforms}
+
+
+def build(dist, out, version, site_url, desktop_version=None):
     found = {}
     for name in sorted(os.listdir(dist)):
         path = os.path.join(dist, name)
@@ -326,12 +356,14 @@ def build(dist, out, version, site_url):
     built = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
         f.write(render_page(by_platform(downloads), version, built, short_link, os.path.isfile(privacy)))
+    with open(os.path.join(out, "version.json"), "w", encoding="utf-8") as f:
+        json.dump(update_manifest(found, downloads, version, desktop_version or version), f, indent=1)
     open(os.path.join(out, ".nojekyll"), "w").close()
     print(f"wrote {out} ({len(downloads)} downloads)")
 
 
-def app_version(root):
-    with open(os.path.join(root, "app", "build.gradle.kts"), encoding="utf-8") as f:
+def app_version(root, module="app"):
+    with open(os.path.join(root, module, "build.gradle.kts"), encoding="utf-8") as f:
         m = re.search(r'val appVersion\s*=\s*"([^"]+)"', f.read())
     return m.group(1) if m else "dev"
 
@@ -344,7 +376,7 @@ def main():
     ap.add_argument("--version", default=None, help="defaults to the app's appVersion")
     ap.add_argument("--site-url", default=None, help="public URL of the site, shown as the TV short link")
     a = ap.parse_args()
-    build(a.dist, a.out, a.version or app_version(root), a.site_url)
+    build(a.dist, a.out, a.version or app_version(root), a.site_url, app_version(root, "desktop"))
 
 
 if __name__ == "__main__":
