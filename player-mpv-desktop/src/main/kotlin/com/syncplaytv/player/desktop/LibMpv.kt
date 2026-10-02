@@ -101,7 +101,7 @@ interface LibMpv : Library {
         private val candidates: List<String> = when {
             os.startsWith("windows") -> listOf("libmpv-2", "mpv-2", "mpv")
             os.contains("mac") -> listOf("mpv.2", "mpv")
-            else -> listOf("libmpv.so.2", "mpv")
+            else -> listOf("libmpv.so.2", "libmpv.so.1", "mpv")
         }
 
         /** Where Homebrew and the packaged app keep libmpv, besides the system default paths. */
