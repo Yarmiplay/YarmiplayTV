@@ -13,9 +13,10 @@ import javax.imageio.ImageIO;
 /**
  * Draws the YarmiplayTV artwork: the Android TV launcher banner and the Google Play store graphics.
  * The logo is the two play triangles of shared/src/androidMain/res/drawable/ic_logo.xml on the
- * banner gradient (colors.xml). JDK only:
+ * banner gradient (colors.xml). Also turns reference screenshots into Play screenshots: Play only takes
+ * 16:9 or 9:16, so phone (20:9) and tablet (16:10) ones are fitted onto a 16:9 / 9:16 canvas. JDK only:
  *
- *   java scripts/BrandArt.java [repo root]   # writes app/src/main/res/drawable-xhdpi/banner.png and docs/play/*.png
+ *   java scripts/BrandArt.java [repo root]   # writes app/src/main/res/drawable-xhdpi/banner.png and docs/play/
  */
 public class BrandArt {
     static final Color GRADIENT_START = new Color(0x1B2A41);
@@ -31,6 +32,34 @@ public class BrandArt {
         write(icon(512), new File(play, "icon-512.png"));
         write(banner(2), new File(play, "tv-banner-1280x720.png"));
         write(featureGraphic(), new File(play, "feature-graphic-1024x500.png"));
+
+        File shots = new File(root, "app/src/androidTest/screenshots");
+        String[] touch = {"home_full", "room_chat", "player_sheet_chat", "browse_series", "local_files", "search_results"};
+        storeScreenshots(new File(shots, "phone-1080x2400"), touch, 1920, new File(play, "screenshots/phone"));
+        storeScreenshots(new File(shots, "tablet-1600x2560"), touch, 2560, new File(play, "screenshots/tablet"));
+        storeScreenshots(new File(shots, "tv-1920x1080"),
+                new String[] {"home_full", "player_panel_chat", "connect_connected", "browse_series", "player_panel_playlist", "search"},
+                1920, new File(play, "screenshots/tv"));
+    }
+
+    /** Each named screenshot, centred on a 16:9 (landscape) or 9:16 (portrait) canvas whose long side is [longSide]. */
+    static void storeScreenshots(File dir, String[] names, int longSide, File out) throws Exception {
+        for (int i = 0; i < names.length; i++) {
+            BufferedImage src = ImageIO.read(new File(dir, names[i] + ".png"));
+            boolean landscape = src.getWidth() >= src.getHeight();
+            int w = landscape ? longSide : longSide * 9 / 16;
+            int h = landscape ? longSide * 9 / 16 : longSide;
+            double scale = Math.min((double) w / src.getWidth(), (double) h / src.getHeight());
+            int sw = (int) Math.round(src.getWidth() * scale), sh = (int) Math.round(src.getHeight() * scale);
+            BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = start(image);
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            g.setColor(GRADIENT_END);
+            g.fillRect(0, 0, w, h);
+            g.drawImage(src, (w - sw) / 2, (h - sh) / 2, sw, sh, null);
+            g.dispose();
+            write(image, new File(out, String.format("%02d-%s.png", i + 1, names[i])));
+        }
     }
 
     /** The launcher banner, 640x360 at scale 1 (320x180 dp at xhdpi). */

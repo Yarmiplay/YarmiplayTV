@@ -6,8 +6,8 @@ Builds the YarmiplayTV download page: one card per device type / OS, each with i
 
 Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .msi/.exe: Windows,
 .dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as YarmiplayTV.apk, so links
-keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader. Platforms without a
-file show how to run from source. The Pages workflow publishes the result; scripts/apk_server.py serves the
+keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader, and <site>/privacy/
+is docs/privacy.md (the Play Store privacy policy). Platforms without a file show how to run from source. The Pages workflow publishes the result; scripts/apk_server.py serves the
 same page on the local network. Standard library only.
 """
 from __future__ import annotations
@@ -108,7 +108,7 @@ def fmt_size(n):
     return f"{n / 1e6:.1f} MB"
 
 
-def render_page(downloads, version, built, commit=None, short_link=None):
+def render_page(downloads, version, built, commit=None, short_link=None, privacy=False):
     """downloads: {platform key: [Download]}. Returns the page as a str."""
     cards = []
     for p in platforms(short_link):
@@ -185,7 +185,7 @@ def render_page(downloads, version, built, commit=None, short_link=None):
 {chr(10).join(cards)}
 </div>
 <footer>Phones, tablets and TVs use the same APK: it picks the TV or touch interface by itself.
- &middot; <a href="{REPO_URL}">Source</a></footer>
+ &middot; <a href="{REPO_URL}">Source</a>{' &middot; <a href="privacy/">Privacy</a>' if privacy else ''}</footer>
 </main>
 <script>
 (function () {{
@@ -206,6 +206,72 @@ def render_page(downloads, version, built, commit=None, short_link=None):
 }})();
 </script>
 </body></html>
+"""
+
+
+def inline_markdown(text):
+    """`code`, **bold** and [text](url) in already-escaped text."""
+    text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    return re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", r'<a href="\2">\1</a>', text)
+
+
+def markdown_to_html(md):
+    """The Markdown docs/privacy.md uses: # headings, paragraphs and "- " lists, lines wrapped freely."""
+    blocks, para, items = [], [], []
+
+    def flush():
+        if para:
+            blocks.append(f"<p>{inline_markdown(html.escape(' '.join(para), quote=False))}</p>")
+            para.clear()
+        if items:
+            lis = "".join(f"<li>{inline_markdown(html.escape(i, quote=False))}</li>" for i in items)
+            blocks.append(f"<ul>{lis}</ul>")
+            items.clear()
+
+    for line in md.splitlines():
+        stripped = line.strip()
+        heading = re.match(r"(#{1,3}) (.+)", stripped)
+        if not stripped:
+            flush()
+        elif heading:
+            flush()
+            level = len(heading.group(1))
+            blocks.append(f"<h{level}>{inline_markdown(html.escape(heading.group(2), quote=False))}</h{level}>")
+        elif stripped.startswith("- "):
+            if para:
+                flush()
+            items.append(stripped[2:])
+        elif items and line.startswith(" "):
+            items[-1] += " " + stripped
+        else:
+            if items:
+                flush()
+            para.append(stripped)
+    flush()
+    return "\n".join(blocks)
+
+
+def render_doc(md):
+    """A Markdown document as a page in the download page's style."""
+    title = next((l[2:].strip() for l in md.splitlines() if l.startswith("# ")), NAME)
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html.escape(title)}</title>
+<style>
+ body {{ margin:0; background:#0E1116; color:#E8EAED; font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }}
+ main {{ max-width:760px; margin:0 auto; padding:6vh 5vw; }}
+ h1 {{ font-size:2.2em; letter-spacing:-.02em; margin:0 0 .6em; }}
+ h2 {{ font-size:1.3em; margin:1.6em 0 .4em; }}
+ p, li {{ color:#C4C7CC; }}
+ a {{ color:#3DA5F4; }}
+ code {{ font-family:ui-monospace,Consolas,monospace; font-size:.9em; background:#171B22; padding:.1em .35em; border-radius:4px; }}
+</style></head>
+<body><main>
+{markdown_to_html(md)}
+<p><a href="../">{NAME} downloads</a></p>
+</main></body></html>
 """
 
 
@@ -245,9 +311,16 @@ def build(dist, out, version, commit, site_url):
         if site_url:
             short_link = site_url.rstrip("/") + "/a"
 
+    privacy = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "privacy.md")
+    if os.path.isfile(privacy):
+        os.makedirs(os.path.join(out, "privacy"))
+        with open(privacy, encoding="utf-8") as src, \
+                open(os.path.join(out, "privacy", "index.html"), "w", encoding="utf-8") as f:
+            f.write(render_doc(src.read()))
+
     built = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
-        f.write(render_page(by_platform(downloads), version, built, commit, short_link))
+        f.write(render_page(by_platform(downloads), version, built, commit, short_link, os.path.isfile(privacy)))
     open(os.path.join(out, ".nojekyll"), "w").close()
     print(f"wrote {out} ({len(downloads)} downloads)")
 

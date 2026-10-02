@@ -235,6 +235,23 @@ then follow the peer's unpause and seek, slow down for small drifts and rewind f
 
 ![Player following a desktop Syncplay client](docs/screenshots/player-desktop-sync.png)
 
+## Releasing to Google Play
+
+Bump `appVersion` in `app/build.gradle.kts` (the Android `versionCode` follows from it), run the full
+`scripts/android-safety-net.ps1`, then push a matching tag:
+
+```powershell
+git tag v1.2; git push origin v1.2
+```
+
+`.github/workflows/release.yml` builds the app bundle signed with the upload key from the repository secrets
+`YARMIPLAYTV_KEYSTORE_BASE64`, `YARMIPLAYTV_KEYSTORE_PASSWORD`, `YARMIPLAYTV_KEY_ALIAS` and
+`YARMIPLAYTV_KEY_PASSWORD`, and attaches `yarmiplaytv-<version>.aab` to the run for uploading in the Play Console.
+Locally, `:app:bundleRelease` signs with the key named in a gitignored `keystore.properties` at the repository
+root (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). The store listing, graphics and policy answers
+are in [docs/play](docs/play/README.md); the privacy policy is [docs/privacy.md](docs/privacy.md), published at
+`/privacy/` on the download page.
+
 ## License
 
 The code in this repository is Apache 2.0, same as Syncplay. The Android app bundles libmpv-android, whose
