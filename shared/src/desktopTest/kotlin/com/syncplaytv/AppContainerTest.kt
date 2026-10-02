@@ -107,7 +107,7 @@ class AppContainerTest {
     }
 }
 
-private class FakePlayer : Player {
+internal class FakePlayer : Player {
     override val state = MutableStateFlow(PlaybackState())
     override val tracks = MutableStateFlow<List<Track>>(emptyList())
     override val events = MutableSharedFlow<PlayerEvent>(extraBufferCapacity = 16)

@@ -83,6 +83,11 @@ class SyncplayClient(
     private var clientIgnoringOnTheFly = 0
     private var serverIgnoringOnTheFly = 0
     private var hadFirstPlaylistIndex = false
+    /**
+     * The server sends the room's playlist after a Hello or room change, naming whoever last set the room's play state,
+     * and before answering the List request that follows.
+     */
+    private var awaitingRoomPlaylist = false
     private var lastMessageTime = 0.0
 
     private var currentFile: FileInfo? = null
@@ -172,9 +177,10 @@ class SyncplayClient(
     fun changeRoom(room: String) {
         scope.launch {
             config = config.copy(room = room)
-            _state.update { it.copy(room = room, playlist = emptyList(), playlistIndex = null) }
+            _state.update { it.copy(room = room, playlist = emptyList(), playlistReceived = false, playlistIndex = null) }
             if (!logged) return@launch
             hadFirstPlaylistIndex = false
+            awaitingRoomPlaylist = true
             users.clear()
             sendSet { putJsonObject("room") { put("name", room) } }
             sendList()
@@ -438,6 +444,8 @@ class SyncplayClient(
     }
 
     private fun handleList(list: JsonObject) {
+        // Servers that skip an empty room's playlist still answer the List sent after joining.
+        if (awaitingRoomPlaylist) applyPlaylist(emptyList(), null)
         val myRoom = state.value.room
         val roomUsers = list[myRoom] as? JsonObject ?: return
         users.clear()
@@ -516,11 +524,19 @@ class SyncplayClient(
     // --- Playlist ----------------------------------------------------------------
 
     private fun handlePlaylistChange(change: JsonObject) {
-        val user = change.str("user")
         val files = (change["files"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content } ?: return
-        if (files == state.value.playlist) return
-        _state.update { it.copy(playlist = files) }
-        emit(SyncplayEvent.PlaylistChanged(files, user))
+        applyPlaylist(files, change.str("user"))
+    }
+
+    private fun applyPlaylist(files: List<String>, setBy: String?) {
+        val joining = awaitingRoomPlaylist
+        awaitingRoomPlaylist = false
+        val user = if (joining) null else setBy
+        val previous = state.value.playlist
+        // The room's list is announced even when it's empty, so listeners know it has arrived.
+        if (files == previous && !joining) return
+        _state.update { it.copy(playlist = files, playlistReceived = it.playlistReceived || joining) }
+        emit(SyncplayEvent.PlaylistChanged(files, user, previous))
         if (user != null && user != state.value.username) notify("$user changed the playlist")
     }
 
@@ -533,6 +549,7 @@ class SyncplayClient(
         if (files.isEmpty()) return
         lastPlaylistIndexChange = clock.now()
         _state.update { it.copy(playlistIndex = index) }
+        if (!engine.settings.sharedPlaylists) return
         val filename = files.getOrNull(index) ?: return
         val current = currentFile
         val queued = queuedFilename
@@ -560,6 +577,7 @@ class SyncplayClient(
     }
 
     private fun changeToPlaylistIndexFromFilename(filename: String) {
+        if (!engine.settings.sharedPlaylists) return
         val index = state.value.playlist.indexOf(filename)
         if (index >= 0 && index != state.value.playlistIndex) sendPlaylistIndex(index)
     }
@@ -570,10 +588,24 @@ class SyncplayClient(
         val current = currentFile ?: return
         if (clock.now() - lastPlaylistIndexChange <= Constants.PLAYLIST_LOAD_NEXT_FILE_TIME_FROM_END_THRESHOLD) return
         if (s.playlist.getOrNull(index)?.let { Filenames.same(it, current.name) } != true) return
-        val next = index + 1
-        val filename = s.playlist.getOrNull(next) ?: return
-        engine.markAdvanced()
+        val settings = engine.settings
+        if (!settings.sharedPlaylists) return
+        val next = nextPlaylistIndex(s.playlist.size, index, settings.loopPlaylist, settings.loopSingleFile) ?: return
         lastPlaylistIndexChange = clock.now()
+        if (next == index) {
+            // Not marked as an advance: the engine then sends the rewind and unpause to the room as a seek and play.
+            // Like Syncplay, unpause again shortly after, because the room's echo of the end-of-file pause can
+            // re-pause the player.
+            player.seek(0.0)
+            player.setPaused(false)
+            scope.launch {
+                delay(500)
+                player.setPaused(false)
+            }
+            return
+        }
+        engine.markAdvanced()
+        val filename = s.playlist[next]
         queuedFilename = filename
         emit(SyncplayEvent.AdvancePlaylist(next, filename))
     }
@@ -581,6 +613,8 @@ class SyncplayClient(
     // --- Outgoing messages -----------------------------------------------------
 
     private fun sendHello() {
+        awaitingRoomPlaylist = true
+        _state.update { it.copy(playlistReceived = false) }
         send(obj {
             putJsonObject("Hello") {
                 put("username", config.username)
@@ -702,6 +736,17 @@ class SyncplayClient(
     }
 
     companion object {
+        /**
+         * Port of Syncplay's _thereIsNextPlaylistIndex/_nextPlaylistIndex: the entry to play after [index] ends,
+         * [index] itself to replay a single-entry playlist, or null to stop.
+         */
+        fun nextPlaylistIndex(size: Int, index: Int, loopPlaylist: Boolean, loopSingleFile: Boolean): Int? = when {
+            size == 1 -> if (loopSingleFile) index else null
+            index + 1 < size -> index + 1
+            loopPlaylist -> 0
+            else -> null
+        }
+
         /** Port of Syncplay's _getValidIndexFromNewPlaylist: keep pointing at the same file if it survived the edit. */
         fun validIndexFromNewPlaylist(old: List<String>, oldIndex: Int?, new: List<String>): Int {
             if (oldIndex == null || new.size <= 1) return 0

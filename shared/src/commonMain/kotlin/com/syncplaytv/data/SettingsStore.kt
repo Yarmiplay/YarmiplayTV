@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.syncplaytv.media.jellyfin.JellyfinSession
+import com.syncplaytv.sync.TrustedDomains
 import com.syncplaytv.syncplay.Constants
 import com.syncplaytv.syncplay.SyncSettings
 import com.syncplaytv.syncplay.SyncplayConfig
@@ -53,6 +54,12 @@ data class AppSettings(
     val lastJellyfinUrl: String = "",
     /** Persisted URIs of the user's media folders (content:// trees on Android, file:// on desktop). */
     val localFolders: List<String> = emptyList(),
+    /** Syncplay's trusted domains: the room may switch everyone to URLs on these without asking. */
+    val trustedDomains: List<String> = TrustedDomains.DEFAULT,
+    /** Syncplay's "Only switch to trusted domains" (when off, any URL the room picks is opened). */
+    val onlySwitchToTrustedDomains: Boolean = true,
+    /** Remember each room's playlist and put it back when rejoining the room finds it empty. */
+    val autosavePlaylists: Boolean = true,
 )
 
 class SettingsStore(private val dataStore: DataStore<Preferences>) {
@@ -70,6 +77,15 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val unpause = stringPreferencesKey("sync_unpause_mode")
         val readyAtStart = booleanPreferencesKey("sync_ready_at_start")
         val autoReady = booleanPreferencesKey("sync_auto_ready")
+        val sharedPlaylists = booleanPreferencesKey("sync_shared_playlists")
+        val loopPlaylist = booleanPreferencesKey("sync_loop_playlist")
+        val loopSingleFile = booleanPreferencesKey("sync_loop_single_file")
+        val trustedDomains = stringPreferencesKey("trusted_domains")
+        val onlyTrusted = booleanPreferencesKey("only_trusted_domains")
+        val autosavePlaylists = booleanPreferencesKey("autosave_playlists")
+        /** Followed by "host:port/room"; the value is the playlist, one entry per line. */
+        const val ROOM_PLAYLIST_PREFIX = "room_playlist:"
+        fun roomPlaylist(key: String) = stringPreferencesKey(ROOM_PLAYLIST_PREFIX + key)
 
         val hwdec = booleanPreferencesKey("pb_hwdec")
         val alang = stringPreferencesKey("pb_alang")
@@ -110,6 +126,9 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
                 slowOnDesync = p[Keys.slowdown] ?: true,
                 unpauseMode = p[Keys.unpause]?.let { runCatching { UnpauseMode.valueOf(it) }.getOrNull() } ?: UnpauseMode.IF_OTHERS_READY,
                 readyAtStart = p[Keys.readyAtStart] ?: false,
+                sharedPlaylists = p[Keys.sharedPlaylists] ?: true,
+                loopPlaylist = p[Keys.loopPlaylist] ?: false,
+                loopSingleFile = p[Keys.loopSingleFile] ?: false,
             ),
             autoReadyOnLoad = p[Keys.autoReady] ?: true,
             playback = PlaybackPrefs(
@@ -128,6 +147,9 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             ) else null,
             lastJellyfinUrl = p[Keys.jfLastUrl] ?: "",
             localFolders = p[Keys.localFolders]?.split('\n')?.filter { it.isNotBlank() } ?: emptyList(),
+            trustedDomains = p[Keys.trustedDomains]?.split('\n')?.filter { it.isNotBlank() } ?: defaults.trustedDomains,
+            onlySwitchToTrustedDomains = p[Keys.onlyTrusted] ?: true,
+            autosavePlaylists = p[Keys.autosavePlaylists] ?: true,
         )
     }
 
@@ -152,7 +174,48 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             it[Keys.unpause] = sync.unpauseMode.name
             it[Keys.readyAtStart] = sync.readyAtStart
             it[Keys.autoReady] = autoReady
+            it[Keys.sharedPlaylists] = sync.sharedPlaylists
+            it[Keys.loopPlaylist] = sync.loopPlaylist
+            it[Keys.loopSingleFile] = sync.loopSingleFile
         }
+    }
+
+    /** Just the playlist options of [SyncSettings], e.g. from the playlist panel's menu. */
+    suspend fun savePlaylistOptions(sharedPlaylists: Boolean, loopPlaylist: Boolean, loopSingleFile: Boolean) {
+        dataStore.edit {
+            it[Keys.sharedPlaylists] = sharedPlaylists
+            it[Keys.loopPlaylist] = loopPlaylist
+            it[Keys.loopSingleFile] = loopSingleFile
+        }
+    }
+
+    suspend fun saveTrustedDomains(domains: List<String>, onlySwitchToTrusted: Boolean) {
+        dataStore.edit {
+            it[Keys.trustedDomains] = domains.map { d -> d.trim() }.filter { d -> d.isNotEmpty() }.distinct().joinToString("\n")
+            it[Keys.onlyTrusted] = onlySwitchToTrusted
+        }
+    }
+
+    suspend fun saveAutosavePlaylists(on: Boolean) = dataStore.edit { it[Keys.autosavePlaylists] = on }
+
+    /** The playlist saved for [room] ("host:port/room"), or empty. */
+    suspend fun roomPlaylist(room: String): List<String> =
+        dataStore.data.first()[Keys.roomPlaylist(room)]?.split('\n')?.filter { it.isNotEmpty() } ?: emptyList()
+
+    /** Saves [room]'s playlist; an empty one forgets it. */
+    suspend fun saveRoomPlaylist(room: String, files: List<String>) = dataStore.edit {
+        if (files.isEmpty()) it.remove(Keys.roomPlaylist(room)) else it[Keys.roomPlaylist(room)] = files.joinToString("\n")
+    }
+
+    /** Every saved room playlist by room; with [replaceRoomPlaylists], tests put the user's back. */
+    suspend fun roomPlaylists(): Map<String, List<String>> =
+        dataStore.data.first().asMap().entries
+            .filter { it.key.name.startsWith(Keys.ROOM_PLAYLIST_PREFIX) }
+            .associate { (key, value) -> key.name.removePrefix(Keys.ROOM_PLAYLIST_PREFIX) to (value as String).split('\n').filter { it.isNotEmpty() } }
+
+    suspend fun replaceRoomPlaylists(playlists: Map<String, List<String>>) = dataStore.edit { prefs ->
+        prefs.asMap().keys.filter { it.name.startsWith(Keys.ROOM_PLAYLIST_PREFIX) }.forEach { prefs.remove(it) }
+        playlists.filterValues { it.isNotEmpty() }.forEach { (room, files) -> prefs[Keys.roomPlaylist(room)] = files.joinToString("\n") }
     }
 
     suspend fun savePlayback(prefs: PlaybackPrefs) {

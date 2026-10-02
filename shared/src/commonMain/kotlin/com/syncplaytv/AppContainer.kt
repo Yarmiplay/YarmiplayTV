@@ -9,6 +9,7 @@ import com.syncplaytv.media.jellyfin.JellyfinClient
 import com.syncplaytv.media.jellyfin.JellyfinSession
 import com.syncplaytv.media.jellyfin.JellyfinSource
 import com.syncplaytv.player.Player
+import com.syncplaytv.sync.PlaylistAutosave
 import com.syncplaytv.sync.PlaylistController
 import com.syncplaytv.sync.SyncController
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -59,12 +60,16 @@ class AppContainer(
     val local: LocalLibrary = createLocalLibrary(settingsStore, scope, initial.localFolders)
     val sync = SyncController(scope, player)
     val playlist = PlaylistController(scope, sync, player, mediaSource, local)
+    private val autosave = PlaylistAutosave(scope, sync, playlist.shared, settingsStore).apply { enabled = initial.autosavePlaylists }
 
     init {
         scope.launch {
             settings.collect { s ->
                 sync.syncSettings = s.sync
                 playlist.autoReady = s.autoReadyOnLoad
+                playlist.trustedDomains = s.trustedDomains
+                playlist.onlySwitchToTrustedDomains = s.onlySwitchToTrustedDomains
+                autosave.enabled = s.autosavePlaylists
             }
         }
         if (initial.autoConnect && initial.syncplay.isComplete) sync.connect(initial.syncplay.toConfig())

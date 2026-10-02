@@ -22,6 +22,12 @@ data class SyncSettings(
     val unpauseMode: UnpauseMode = UnpauseMode.IF_OTHERS_READY,
     /** Ready state sent right after connecting when we have no previous ready state. */
     val readyAtStart: Boolean = false,
+    /** "Enable shared playlists": follow the room's playlist selection and tell the room which entry we play. */
+    val sharedPlaylists: Boolean = true,
+    /** "Loop at end of playlist": after the last entry, go back to the first. */
+    val loopPlaylist: Boolean = false,
+    /** "Loop single file": replay the file when it's the playlist's only entry. */
+    val loopSingleFile: Boolean = false,
 )
 
 enum class UnpauseMode {
@@ -65,6 +71,8 @@ data class RoomState(
     /** Everyone in our room, including us. */
     val users: List<RoomUser> = emptyList(),
     val playlist: List<String> = emptyList(),
+    /** Whether the server has sent the room's playlist since we (re)joined the room; until then [playlist] isn't the room's. */
+    val playlistReceived: Boolean = false,
     val playlistIndex: Int? = null,
     val isReady: Boolean? = null,
     val globalPaused: Boolean = true,

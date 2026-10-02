@@ -53,6 +53,11 @@ actual fun Modifier.videoGestures(input: PlayerInput): Modifier = pointerInput(i
     )
 }
 
+actual fun toggleRoomSidePanel(tab: RoomPanelTab): Boolean = false
+
+@Composable
+actual fun RoomSidePanel(container: AppContainer) = Unit
+
 @Composable
 actual fun VideoSurface(player: Player, modifier: Modifier) {
     val surfacePlayer = player as SurfacePlayer

@@ -28,10 +28,12 @@ import kotlinx.coroutines.withContext
 class AppState {
     private val container: AppContainer get() = TestSupport.container
     private lateinit var saved: AppSettings
+    private var savedRoomPlaylists = emptyMap<String, List<String>>()
     private var wasConnected = false
 
     fun snapshot() {
         saved = container.settings.value
+        savedRoomPlaylists = runBlocking { container.settingsStore.roomPlaylists() }
         wasConnected = container.sync.isActive
     }
 
@@ -46,6 +48,8 @@ class AppState {
             store.savePlayback(saved.playback)
             store.saveLastJellyfinUrl(saved.lastJellyfinUrl)
             store.saveLocalFolders(saved.localFolders)
+            store.saveAutosavePlaylists(saved.autosavePlaylists)
+            store.replaceRoomPlaylists(savedRoomPlaylists)
         }
         onMain { container.setJellyfinSession(saved.jellyfin) }
         setLocalLibrary(saved.localFolders.map { LocalFolder(it, folderName(it)) }, emptyList())
@@ -54,7 +58,7 @@ class AppState {
         if (wasConnected && saved.syncplay.isComplete) container.sync.connect(saved.syncplay.toConfig())
     }
 
-    /** No room, nothing playing, no Jellyfin, no media folders, default settings and a fixed profile. */
+    /** No room, nothing playing, no Jellyfin, no media folders, no saved room playlists, default settings and a fixed profile. */
     fun baseline() {
         // The host's real servers would otherwise show up in "Found on your network".
         JellyfinDiscovery.scanner = { listOf(DiscoveredServer(address = "http://192.168.1.20:8096", id = "fake-server", name = "Living Room")) }
@@ -66,6 +70,8 @@ class AppState {
             store.saveSync(SyncSettings(), autoReady = true)
             store.savePlayback(PlaybackPrefs())
             store.saveLastJellyfinUrl(LAST_JELLYFIN_URL)
+            store.saveAutosavePlaylists(true)
+            store.replaceRoomPlaylists(emptyMap())
         }
         onMain { container.setJellyfinSession(null) }
         runBlocking { container.settingsStore.saveLastJellyfinUrl(LAST_JELLYFIN_URL) }

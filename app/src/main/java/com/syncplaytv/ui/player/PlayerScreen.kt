@@ -264,6 +264,20 @@ private fun CenterStatus(
                     }
                 }
             }
+            is PlaylistStatus.Untrusted -> {
+                LaunchedEffect(status, canFocus) { if (canFocus) runCatching { delay(50); focus.requestFocus() } }
+                Panel(Modifier.width(820.dp)) {
+                    Column(Modifier.padding(32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Open this link?", style = MaterialTheme.typography.headlineSmall)
+                        Text(status.url, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text("The room picked it, but it isn't on one of your trusted domains.", color = AppColors.TextDim)
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
+                            ActionButton("Open", { container.playlist.playUntrusted() }, Modifier.focusRequester(focus), primary = true)
+                            ActionButton("Dismiss", { container.playlist.dismissStatus() })
+                        }
+                    }
+                }
+            }
             PlaylistStatus.Idle -> if (nothingLoaded) {
                 LaunchedEffect(canFocus) { if (canFocus) runCatching { delay(50); focus.requestFocus() } }
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {

@@ -44,6 +44,10 @@ class SyncController(
 
     val client: SyncplayClient? get() = clientFlow.value
 
+    /** "host:port" of the server [connect] last used. */
+    var server: String? = null
+        private set
+
     val room: StateFlow<RoomState> = clientFlow
         .flatMapLatest { it?.state ?: flowOf(RoomState()) }
         .stateIn(scope, SharingStarted.Eagerly, RoomState())
@@ -73,6 +77,7 @@ class SyncController(
 
     fun connect(config: SyncplayConfig) {
         disconnect()
+        server = "${config.host.trim().lowercase()}:${config.port}"
         val newClient = SyncplayClient(
             config = config,
             player = adapter,
@@ -126,7 +131,11 @@ class SyncController(
 
     fun toggleReady() = clientFlow.value?.toggleReady()
     fun setReady(ready: Boolean) = clientFlow.value?.setReady(ready)
-    fun sendChat(text: String) = clientFlow.value?.sendChat(text.trim())
+    fun sendChat(text: String) = clientFlow.value?.sendChat(text.trim().take(maxChatLength))
+
+    /** The server's chat message limit (it cuts longer messages off), or Syncplay's default before joining. */
+    val maxChatLength: Int
+        get() = (room.value.serverFeatures["maxChatMessageLength"] as? Number)?.toInt()?.takeIf { it > 0 } ?: DEFAULT_MAX_CHAT_LENGTH
     fun changeRoom(room: String) = clientFlow.value?.changeRoom(room.trim())
 
     private fun post(message: FeedMessage) {
@@ -139,5 +148,7 @@ class SyncController(
     companion object {
         private const val TAG = "SyncController"
         private const val MAX_FEED = 200
+        /** Syncplay's MAX_CHAT_MESSAGE_LENGTH. */
+        const val DEFAULT_MAX_CHAT_LENGTH = 150
     }
 }

@@ -3,6 +3,7 @@ package com.syncplaytv.sync
 import com.syncplaytv.Logger
 import com.syncplaytv.local.LocalFile
 import com.syncplaytv.local.LocalLibrary
+import com.syncplaytv.local.LocalMatcher
 import com.syncplaytv.media.MediaItem
 import com.syncplaytv.media.MediaSource
 import com.syncplaytv.media.PlayableMedia
@@ -35,6 +36,8 @@ sealed interface PlaylistStatus {
     data class Loading(val fileName: String) : PlaylistStatus
     data class NotFound(val fileName: String, val reason: String) : PlaylistStatus
     data class Failed(val fileName: String, val reason: String) : PlaylistStatus
+    /** The room picked a URL that isn't on a trusted domain; it only opens when the user says so. */
+    data class Untrusted(val url: String, val domain: String?) : PlaylistStatus
 }
 
 /**
@@ -64,6 +67,11 @@ class PlaylistController(
     var handledPlayerRequests = 0
 
     var autoReady: Boolean = true
+    var trustedDomains: List<String> = TrustedDomains.DEFAULT
+    var onlySwitchToTrustedDomains: Boolean = true
+
+    /** Syncplay-style editing of the room's playlist (multi-select, shuffle, undo). */
+    val shared = SharedPlaylist(scope, sync)
 
     private data class PendingLoad(val media: NowPlaying, val resetPosition: Boolean, val fromRoom: Boolean)
 
@@ -113,7 +121,12 @@ class PlaylistController(
         resolveJob?.cancel()
         _openPlayerRequests.value++
         if (Filenames.isUrl(filename)) {
-            load(NowPlaying(title = filename, fileName = filename, sizeBytes = 0, durationHint = 0.0, url = filename), resetPosition, fromRoom = true)
+            if (onlySwitchToTrustedDomains && !TrustedDomains.isTrusted(filename, trustedDomains)) {
+                _status.value = PlaylistStatus.Untrusted(filename, TrustedDomains.domainOf(filename))
+                sync.postLocal("Not opening $filename: it isn't on a trusted domain", isError = true)
+                return
+            }
+            load(urlNowPlaying(filename), resetPosition, fromRoom = true)
             return
         }
         knownPlayables.entries.firstOrNull { Filenames.same(it.key, filename) }?.value?.let {
@@ -208,8 +221,55 @@ class PlaylistController(
     /** Plays a direct URL locally; Syncplay identifies streams by their URL. */
     fun playUrl(url: String) {
         _openPlayerRequests.value++
+        load(urlNowPlaying(url), resetPosition = false, fromRoom = false)
+    }
+
+    /** Opens the untrusted URL the room picked, after the user agreed. */
+    fun playUntrusted() {
+        val status = _status.value as? PlaylistStatus.Untrusted ?: return
+        load(urlNowPlaying(status.url), resetPosition = true, fromRoom = true)
+    }
+
+    private fun urlNowPlaying(url: String): NowPlaying {
         val name = url.substringBefore('?').substringAfterLast('/').let { runCatching { java.net.URLDecoder.decode(it, "UTF-8") }.getOrDefault(it) }
-        load(NowPlaying(title = name.ifEmpty { url }, fileName = url, sizeBytes = 0, durationHint = 0.0, url = url), resetPosition = false, fromRoom = false)
+        return NowPlaying(title = name.ifEmpty { url }, fileName = url, sizeBytes = 0, durationHint = 0.0, url = url)
+    }
+
+    /**
+     * Whether this device can play a playlist entry without asking: a URL, a file picked here, or one in the
+     * media folders. Entries that aren't may still be found on the Jellyfin server when selected.
+     */
+    fun isAvailable(fileName: String): Boolean =
+        Filenames.isUrl(fileName) ||
+            knownPlayables.keys.any { Filenames.same(it, fileName) } ||
+            LocalMatcher.find(local.files.value, fileName) != null
+
+    /** Adds files from this device to the shared playlist in one edit, skipping ones already in it. */
+    fun addLocalFilesToRoomPlaylist(uris: List<String>) {
+        if (sync.client == null) {
+            sync.postLocal("Join a Syncplay room to use the shared playlist", isError = true)
+            return
+        }
+        scope.launch {
+            val names = uris.map { uri -> localPlayable(uri).also(::remember).fileName }
+            reportAdded(names.size, shared.add(names))
+        }
+    }
+
+    /** Adds stream URLs to the shared playlist in one edit; anything that isn't an http(s) URL is ignored. */
+    fun addUrlsToRoomPlaylist(urls: List<String>): Int {
+        val valid = urls.map { it.trim() }.filter { Filenames.isUrl(it) }
+        if (valid.isNotEmpty()) reportAdded(valid.size, shared.add(valid))
+        return valid.size
+    }
+
+    private fun reportAdded(requested: Int, added: Int) {
+        val skipped = requested - added
+        when {
+            added == 0 && skipped > 0 -> sync.postLocal(if (skipped == 1) "That's already in the playlist" else "Those are already in the playlist")
+            skipped > 0 -> sync.postLocal("Added $added to the playlist ($skipped already in it)")
+            added > 0 -> sync.postLocal(if (added == 1) "Added 1 entry to the playlist" else "Added $added entries to the playlist")
+        }
     }
 
     fun addToRoomPlaylist(item: MediaItem) {
@@ -284,21 +344,20 @@ class PlaylistController(
     }
 
     private fun addFileNameToPlaylist(fileName: String) {
-        val client = sync.client ?: run {
+        if (sync.client == null) {
             sync.postLocal("Join a Syncplay room to use the shared playlist", isError = true)
             return
         }
-        if (sync.room.value.playlist.any { Filenames.same(it, fileName) }) {
+        if (shared.add(listOf(fileName)) == 0) {
             sync.postLocal("$fileName is already in the playlist")
         } else {
-            client.addToPlaylist(fileName)
             sync.postLocal("Added $fileName to the room playlist")
         }
     }
 
     fun selectIndex(index: Int) = sync.client?.selectPlaylistIndex(index)
-    fun removeIndex(index: Int) = sync.client?.removeFromPlaylist(index)
-    fun move(from: Int, to: Int) = sync.client?.movePlaylistItem(from, to)
+    fun removeIndex(index: Int) = shared.remove(setOf(index))
+    fun move(from: Int, to: Int) = shared.move(from, to)
 
     fun dismissStatus() {
         _status.value = PlaylistStatus.Idle

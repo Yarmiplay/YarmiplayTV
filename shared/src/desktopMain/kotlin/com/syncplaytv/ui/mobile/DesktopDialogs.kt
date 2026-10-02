@@ -27,11 +27,39 @@ object DesktopDialogs {
         return File(dir, file).toPath()
     }
 
-    fun pickFolder(): Path? {
+    fun pickVideos(): List<Path> {
+        val dialog = FileDialog(owner, "Add videos to the playlist", FileDialog.LOAD)
+        dialog.isMultipleMode = true
+        dialog.setFilenameFilter { _, name -> LocalMatcher.isVideo(name, null) }
+        if (isWindows) dialog.file = VIDEO_PATTERN
+        dialog.isVisible = true
+        return dialog.files.orEmpty().map { it.toPath() }
+    }
+
+    fun openPlaylist(): Path? {
+        val dialog = FileDialog(owner, "Load a playlist", FileDialog.LOAD)
+        dialog.setFilenameFilter { _, name -> name.endsWith(".txt", ignoreCase = true) }
+        if (isWindows) dialog.file = "*.txt"
+        dialog.isVisible = true
+        val dir = dialog.directory ?: return null
+        val file = dialog.file ?: return null
+        return File(dir, file).toPath()
+    }
+
+    fun savePlaylist(suggestedName: String): Path? {
+        val dialog = FileDialog(owner, "Save the playlist", FileDialog.SAVE)
+        dialog.file = suggestedName
+        dialog.isVisible = true
+        val dir = dialog.directory ?: return null
+        val file = dialog.file ?: return null
+        return File(dir, if (file.contains('.')) file else "$file.txt").toPath()
+    }
+
+    fun pickFolder(title: String = "Add a media folder"): Path? {
         if (isMac) {
             System.setProperty("apple.awt.fileDialogForDirectories", "true")
             try {
-                val dialog = FileDialog(owner, "Add a media folder", FileDialog.LOAD)
+                val dialog = FileDialog(owner, title, FileDialog.LOAD)
                 dialog.isVisible = true
                 val dir = dialog.directory ?: return null
                 val file = dialog.file ?: return null
@@ -41,11 +69,21 @@ object DesktopDialogs {
             }
         }
         val chooser = JFileChooser().apply {
-            dialogTitle = "Add a media folder"
+            dialogTitle = title
             fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
             isAcceptAllFileFilterUsed = false
         }
         return if (chooser.showOpenDialog(owner) == JFileChooser.APPROVE_OPTION) chooser.selectedFile.toPath() else null
+    }
+
+    /** The videos directly inside [folder], or [folder] itself when it's a video, sorted by name like a file browser. */
+    fun videosIn(folder: Path): List<Path> {
+        val file = folder.toFile()
+        if (file.isFile) return if (LocalMatcher.isVideo(file.name, null)) listOf(folder) else emptyList()
+        return file.listFiles().orEmpty()
+            .filter { it.isFile && LocalMatcher.isVideo(it.name, null) }
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+            .map { it.toPath() }
     }
 
     private const val VIDEO_PATTERN = "*.mkv;*.mp4;*.m4v;*.avi;*.mov;*.webm;*.wmv;*.flv;*.ts;*.m2ts;*.mts;*.mpg;*.mpeg;*.ogv;*.3gp;*.vob"

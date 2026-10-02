@@ -38,6 +38,18 @@ expect fun Modifier.playerScreenInput(input: PlayerInput): Modifier
 @Composable
 expect fun Modifier.videoGestures(input: PlayerInput): Modifier
 
+enum class RoomPanelTab { ROOM, PLAYLIST, CHAT }
+
+/**
+ * Desktop shows room, playlist and chat in a side panel next to the video: opens it on [tab] (or closes it
+ * when it's already showing that tab) and returns true. Android returns false and uses bottom sheets.
+ */
+expect fun toggleRoomSidePanel(tab: RoomPanelTab): Boolean
+
+/** The side panel next to the video while it's open (desktop); nothing on Android. */
+@Composable
+expect fun RoomSidePanel(container: AppContainer)
+
 /** Landscape, edge-to-edge with hidden system bars and the screen kept on while the player is on screen. */
 @Composable
 expect fun FullscreenLandscape()

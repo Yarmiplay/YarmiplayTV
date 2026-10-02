@@ -101,6 +101,57 @@ class ServerIntegrationTest {
         }
     }
 
+    @Test
+    fun `a single looping file restarts for the whole room`() {
+        desktop.settings = SyncSettings(loopSingleFile = true)
+        desktop.start()
+        desktop.fileLoaded(ep1)
+        tv.start()
+        tvPlayer.isFileLoaded = true
+        tv.fileLoaded(ep1)
+        eventually("both connected") { desktop.state.value.users.size == 2 && tv.state.value.users.any { it.name == "desktop" && it.file == ep1 } }
+        desktop.addToPlaylist(ep1.name)
+        eventually("playlist selected") { desktop.state.value.playlistIndex == 0 && tv.state.value.playlist == listOf(ep1.name) }
+        tv.setReady(true)
+        desktop.setReady(true)
+        eventually("both ready") { desktop.state.value.users.all { it.isReady == true } }
+
+        // Ends within 5 s of a playlist change don't count, like in Syncplay.
+        Thread.sleep(3_000)
+        desktopPlayer.seek(ep1.duration - 3)
+        desktopPlayer.setPaused(false)
+        eventually("tv near the end and playing") { !tvPlayer.isPaused && tvPlayer.position > ep1.duration - 10 }
+        Thread.sleep(2_500)
+        // mpv pauses on the last frame (keep-open) when the file ends.
+        desktopPlayer.setPaused(true)
+        eventually("desktop restarted") { !desktopPlayer.isPaused && desktopPlayer.position < 10 }
+        eventually("tv restarted") { !tvPlayer.isPaused && tvPlayer.position < 10 }
+    }
+
+    @Test
+    fun `the room's playlist is announced on joining as nobody's change, even when empty`() {
+        desktop.start()
+        eventually("desktop gets the empty room playlist") {
+            desktopEvents.any { it is SyncplayEvent.PlaylistChanged && it.files.isEmpty() && it.setBy == null }
+        }
+        desktopPlayer.setPaused(false)
+        desktop.setPlaylist(listOf(ep1.name))
+        eventually("desktop set the room's play state") { desktop.state.value.playlistIndex == 0 }
+        Thread.sleep(1_500)
+
+        // The server names whoever last set the play state (desktop) as the sender of the list it sends a joiner.
+        tv.start()
+        eventually("tv gets the room's playlist") {
+            tvEvents.any { it is SyncplayEvent.PlaylistChanged && it.files == listOf(ep1.name) && it.setBy == null }
+        }
+        assertTrue(tvEvents.none { it is SyncplayEvent.Notification && "changed the playlist" in it.message })
+
+        tv.changeRoom("$room-other")
+        eventually("tv gets the other room's empty playlist") {
+            tvEvents.count { it is SyncplayEvent.PlaylistChanged && it.setBy == null } == 2 && tv.state.value.playlist.isEmpty()
+        }
+    }
+
     private fun eventually(what: String, timeoutMs: Long = 8_000, condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {

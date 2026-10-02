@@ -34,17 +34,19 @@ import com.syncplaytv.data.DesktopPaths
 import com.syncplaytv.defaultSyncplayName
 import com.syncplaytv.data.desktopSettingsStore
 import com.syncplaytv.local.FileLocalLibrary
-import com.syncplaytv.local.LocalMatcher
 import com.syncplaytv.player.desktop.DesktopMpvOptions
 import com.syncplaytv.player.desktop.DesktopMpvPlayer
 import com.syncplaytv.player.desktop.MpvUnavailableException
 import com.syncplaytv.player.desktop.VideoSurface
 import com.syncplaytv.ui.mobile.DesktopBack
+import com.syncplaytv.ui.mobile.DesktopDialogs
+import com.syncplaytv.ui.mobile.DesktopRoomPanel
 import com.syncplaytv.ui.mobile.DesktopPlayerInput
 import com.syncplaytv.ui.mobile.DesktopVideo
 import com.syncplaytv.ui.mobile.MobileRoot
 import com.syncplaytv.ui.mobile.MobileTheme
 import com.syncplaytv.ui.mobile.appLogoPainter
+import java.awt.Desktop
 import java.awt.Dimension
 import java.io.File
 import java.net.URI
@@ -76,6 +78,10 @@ internal fun runApp(args: List<String>) {
         player.showText("Volume ${player.volume.value.toInt()}%", 1000)
     }
     val launch = LaunchOptions.parse(args)
+    // macOS hands files opened from Finder to the app as events rather than arguments.
+    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.APP_OPEN_FILE)) {
+        Desktop.getDesktop().setOpenFileHandler { event -> SwingUtilities.invokeLater { openFiles(app, event.files) } }
+    }
     SwingUtilities.invokeLater {
         launch.profile(app.settings.value.syncplay, defaultSyncplayName(DeviceKind.DESKTOP))?.let { app.sync.connect(it.toConfig()) }
         openFiles(app, launch.files)
@@ -109,13 +115,18 @@ private fun createContainer(configDir: File): AppContainer {
 
 /**
  * Plays the first video like "Open with" on Android (here, reported to the room). Further videos are
- * added to the room's shared playlist when in a room.
+ * added to the room's shared playlist when in a room. Folders stand for the videos directly in them.
+ * With the playlist panel open ([addToPlaylist]), every video goes to the playlist instead.
  */
-internal fun openFiles(container: AppContainer, files: List<File>) {
-    val videos = files.filter { it.isFile && LocalMatcher.isVideo(it.name, null) }
+internal fun openFiles(container: AppContainer, files: List<File>, addToPlaylist: Boolean = false) {
+    val videos = files.flatMap { DesktopDialogs.videosIn(it.toPath()) }.map(FileLocalLibrary::uriOf)
+    if (addToPlaylist) {
+        container.playlist.addLocalFilesToRoomPlaylist(videos)
+        return
+    }
     val first = videos.firstOrNull() ?: return
-    container.playlist.playLocal(FileLocalLibrary.uriOf(first.toPath()), inRoom = false)
-    if (container.sync.isActive) videos.drop(1).forEach { container.playlist.addLocalToRoomPlaylist(FileLocalLibrary.uriOf(it.toPath())) }
+    container.playlist.playLocal(first, inRoom = false)
+    if (container.sync.isActive && videos.size > 1) container.playlist.addLocalFilesToRoomPlaylist(videos.drop(1))
 }
 
 @OptIn(ExperimentalComposeUiApi::class, ExperimentalFoundationApi::class)
@@ -131,6 +142,7 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             override fun back() = DesktopBack.dispatch()
             override val player get() = DesktopPlayerInput.input?.value
             override fun changeVolume(delta: Double) = DesktopPlayerInput.changeVolume(delta)
+            override fun focusChat() = DesktopRoomPanel.focusChat()
         }
     }
     val drop = remember {
@@ -138,7 +150,7 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             override fun onDrop(event: DragAndDropEvent): Boolean {
                 val files = (event.dragData() as? DragData.FilesList)?.readFiles().orEmpty()
                     .mapNotNull { runCatching { Paths.get(URI(it)).toFile() }.getOrNull() }
-                openFiles(container, files)
+                openFiles(container, files, addToPlaylist = DesktopRoomPanel.showsPlaylist && container.sync.isActive)
                 return files.isNotEmpty()
             }
         }

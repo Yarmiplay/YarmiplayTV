@@ -201,7 +201,7 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
         }
         if (feed.isEmpty()) Text("No messages yet.", color = AppColors.TextDim)
         OutlinedTextField(
-            message, { message = it.take(500) },
+            message, { message = it.take(container.sync.maxChatLength) },
             label = { Text("Message") },
             singleLine = true,
             enabled = container.sync.room.value.status == ConnectionStatus.CONNECTED,

@@ -66,6 +66,12 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
         ToggleRow("Slow down to catch up", s.slowOnDesync, { saveSync(s.copy(slowOnDesync = !s.slowOnDesync)) }, subtitle = "Play at 0.95× when slightly ahead")
         ToggleRow("Ready when joining a room", s.readyAtStart, { saveSync(s.copy(readyAtStart = !s.readyAtStart)) })
         ToggleRow("Ready after loading a playlist item", settings.autoReadyOnLoad, { saveSync(autoReady = !settings.autoReadyOnLoad) }, subtitle = "Mark yourself ready once the room's file is loaded from Jellyfin")
+        ToggleRow(
+            "Remember room playlists",
+            settings.autosavePlaylists,
+            { container.scope.launch { container.settingsStore.saveAutosavePlaylists(!settings.autosavePlaylists) } },
+            subtitle = "Put a room's playlist back when you rejoin and it's empty",
+        )
 
         SectionTitle("Playback")
         ToggleRow("Hardware decoding", pb.hardwareDecoding, { savePlayback(pb.copy(hardwareDecoding = !pb.hardwareDecoding)) }, subtitle = "MediaCodec with software fallback. Takes effect after restarting the app")

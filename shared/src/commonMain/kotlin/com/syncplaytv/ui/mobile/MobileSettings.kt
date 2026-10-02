@@ -65,6 +65,12 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
             ToggleSetting("Ready after loading a playlist item", "Mark yourself ready once the room's file is loaded", settings.autoReadyOnLoad) {
                 saveSync(autoReady = it)
             }
+            ToggleSetting(
+                "Remember room playlists",
+                "Put a room's playlist back when you rejoin and it's empty",
+                settings.autosavePlaylists,
+                Modifier.testTag("toggle_autosave_playlists"),
+            ) { container.scope.launch { container.settingsStore.saveAutosavePlaylists(it) } }
 
             SectionHeader("Playback")
             ToggleSetting("Hardware decoding", "MediaCodec with software fallback. Takes effect after restarting the app", pb.hardwareDecoding) {

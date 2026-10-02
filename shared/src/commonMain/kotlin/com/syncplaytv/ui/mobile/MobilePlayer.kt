@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -70,6 +71,7 @@ import com.syncplaytv.ui.nav.Screen
 import com.syncplaytv.ui.player.formatClock
 import com.syncplaytv.ui.theme.AppColors
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private enum class PlayerSheet { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES }
 
@@ -123,45 +125,57 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
         togglePause = ::togglePause,
         seekBy = ::seekBy,
     )
-    Box(Modifier.fillMaxSize().background(Color.Black).testTag("player").playerScreenInput(input)) {
-        VideoSurface(player, Modifier.fillMaxSize())
-        Box(Modifier.fillMaxSize().testTag("player_gestures").videoGestures(input))
-
-        CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom)
-
-        if (state.buffering && state.fileLoaded) {
-            Chip("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(top = 24.dp))
+    fun openSheet(kind: PlayerSheet) {
+        val tab = when (kind) {
+            PlayerSheet.PLAYLIST -> RoomPanelTab.PLAYLIST
+            PlayerSheet.ROOM -> RoomPanelTab.ROOM
+            PlayerSheet.CHAT -> RoomPanelTab.CHAT
+            else -> null
         }
-        seekFlash?.let { Chip(it, AppColors.Accent, Modifier.align(Alignment.Center)) }
-        PlayerToasts(container, Modifier.align(Alignment.TopStart).padding(16.dp))
+        if (tab == null || !toggleRoomSidePanel(tab)) sheet = kind
+    }
+    Row(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxHeight().background(Color.Black).testTag("player").playerScreenInput(input)) {
+            VideoSurface(player, Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().testTag("player_gestures").videoGestures(input))
 
-        AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().testTag("player_controls")) {
-                Row(
-                    Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(nav::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
-                    Text(nowPlaying?.title ?: "Nothing playing", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    RoomStatusChip(room)
-                }
-                if (state.fileLoaded) {
-                    Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RoundButton(Icons.Filled.FastRewind, "Back ${step.toInt()} seconds") { seekBy(-step) }
-                        RoundButton(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, if (state.paused) "Play" else "Pause", big = true, modifier = Modifier.testTag("play_pause")) { togglePause() }
-                        RoundButton(Icons.Filled.FastForward, "Forward ${step.toInt()} seconds") { seekBy(step) }
+            CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom)
+
+            if (state.buffering && state.fileLoaded) {
+                Chip("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(top = 24.dp))
+            }
+            seekFlash?.let { Chip(it, AppColors.Accent, Modifier.align(Alignment.Center)) }
+            PlayerToasts(container, Modifier.align(Alignment.TopStart).padding(16.dp))
+
+            androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize().testTag("player_controls")) {
+                    Row(
+                        Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconButton(nav::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
+                        Text(nowPlaying?.title ?: "Nothing playing", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        RoomStatusChip(room)
                     }
+                    if (state.fileLoaded) {
+                        Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RoundButton(Icons.Filled.FastRewind, "Back ${step.toInt()} seconds") { seekBy(-step) }
+                            RoundButton(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, if (state.paused) "Play" else "Pause", big = true, modifier = Modifier.testTag("play_pause")) { togglePause() }
+                            RoundButton(Icons.Filled.FastForward, "Forward ${step.toInt()} seconds") { seekBy(step) }
+                        }
+                    }
+                    BottomControls(
+                        container = container,
+                        inRoom = inRoom,
+                        ready = room.isReady == true,
+                        onInteract = ::touch,
+                        onSheet = ::openSheet,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
                 }
-                BottomControls(
-                    container = container,
-                    inRoom = inRoom,
-                    ready = room.isReady == true,
-                    onInteract = ::touch,
-                    onSheet = { sheet = it },
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                )
             }
         }
+        RoomSidePanel(container)
     }
 
     sheet?.let { kind ->
@@ -326,6 +340,26 @@ private fun CenterStatus(container: AppContainer, nav: Navigator, status: Playli
                                 if (container.mediaSource.value != null) {
                                     FilledTonalButton({ nav.push(Screen.Search(pickFor = file)) }) { Text("Jellyfin") }
                                 }
+                            }
+                            TextButton({ container.playlist.dismissStatus() }) { Text("Dismiss") }
+                        }
+                    }
+                }
+            }
+            is PlaylistStatus.Untrusted -> {
+                Surface(color = AppColors.Surface.copy(alpha = 0.95f), shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp).testTag("untrusted_url")) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Open this link?", style = MaterialTheme.typography.titleLarge)
+                        Text(status.url, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text("The room picked it, but it isn't on one of your trusted domains.", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                            Button({ container.playlist.playUntrusted() }) { Text("Open") }
+                            status.domain?.let { domain ->
+                                FilledTonalButton({
+                                    val s = container.settings.value
+                                    container.scope.launch { container.settingsStore.saveTrustedDomains(s.trustedDomains + domain, s.onlySwitchToTrustedDomains) }
+                                    container.playlist.playUntrusted()
+                                }) { Text("Always trust $domain", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             }
                             TextButton({ container.playlist.dismissStatus() }) { Text("Dismiss") }
                         }

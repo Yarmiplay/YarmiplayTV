@@ -36,6 +36,15 @@ class PlaylistLogicTest {
     }
 
     @Test
+    fun `the end of a file advances, loops or stops like Syncplay`() {
+        assertEquals(2, SyncplayClient.nextPlaylistIndex(3, 1, loopPlaylist = false, loopSingleFile = false))
+        assertEquals(null, SyncplayClient.nextPlaylistIndex(3, 2, loopPlaylist = false, loopSingleFile = true))
+        assertEquals(0, SyncplayClient.nextPlaylistIndex(3, 2, loopPlaylist = true, loopSingleFile = false))
+        assertEquals(null, SyncplayClient.nextPlaylistIndex(1, 0, loopPlaylist = true, loopSingleFile = false))
+        assertEquals(0, SyncplayClient.nextPlaylistIndex(1, 0, loopPlaylist = false, loopSingleFile = true))
+    }
+
+    @Test
     fun `format time`() {
         assertEquals("01:05", formatTime(65.4))
         assertEquals("1:00:00", formatTime(3600.0))

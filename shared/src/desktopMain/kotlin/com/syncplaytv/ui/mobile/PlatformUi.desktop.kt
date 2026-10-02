@@ -24,6 +24,7 @@ import java.awt.Toolkit
 import java.awt.image.BufferedImage
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.loadXmlImageVector
 import com.syncplaytv.AppContainer
 import com.syncplaytv.local.FileLocalLibrary
@@ -102,9 +103,11 @@ actual fun Modifier.playerScreenInput(input: PlayerInput): Modifier {
 @Composable
 actual fun Modifier.videoGestures(input: PlayerInput): Modifier {
     val latest = rememberUpdatedState(input)
+    val focusManager = LocalFocusManager.current
     return pointerInput(Unit) {
         detectTapGestures(
-            onTap = { latest.value.togglePause() },
+            // Clicking the video leaves the chat box, so the keyboard shortcuts work again.
+            onTap = { focusManager.clearFocus(); latest.value.togglePause() },
             onDoubleTap = { DesktopPlayerInput.toggleFullscreen() },
         )
     }

@@ -21,7 +21,8 @@ sealed interface SyncplayEvent {
         val resetPosition: Boolean,
     ) : SyncplayEvent
 
-    data class PlaylistChanged(val files: List<String>, val setBy: String?) : SyncplayEvent
+    /** The server sent a new playlist; [setBy] is null for the room's list sent on joining it, which comes even when empty. */
+    data class PlaylistChanged(val files: List<String>, val setBy: String?, val previous: List<String> = emptyList()) : SyncplayEvent
 
     /** Playback reached the end of the file and the next playlist entry should be loaded locally. */
     data class AdvancePlaylist(val nextIndex: Int, val filename: String) : SyncplayEvent

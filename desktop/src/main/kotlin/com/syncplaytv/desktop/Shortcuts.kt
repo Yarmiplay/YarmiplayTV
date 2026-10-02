@@ -13,11 +13,14 @@ internal interface ShortcutTarget {
     /** The player screen's input while it's showing. */
     val player: PlayerInput?
     fun changeVolume(delta: Double)
+    /** Opens the chat panel with the cursor in the message box. */
+    fun focusChat()
 }
 
 /**
- * Window-level shortcuts. The window only passes keys nothing focused has used, so typing in a text field
- * never triggers them. Esc leaves full screen, else goes back; the rest only work on the player screen.
+ * Window-level shortcuts. The window only passes keys nothing focused has used, and the side panel keeps its
+ * keys to itself, so typing in a text field never triggers them. Esc leaves full screen, else goes back; the
+ * rest only work on the player screen.
  */
 internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget): Boolean {
     if (key == Key.Escape) {
@@ -36,6 +39,7 @@ internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget)
         Key.DirectionUp -> target.changeVolume(VOLUME_STEP)
         Key.DirectionDown -> target.changeVolume(-VOLUME_STEP)
         Key.F, Key.F11 -> target.setFullscreen(!target.isFullscreen)
+        Key.Enter, Key.NumPadEnter -> target.focusChat()
         else -> return false
     }
     input.showControls()
