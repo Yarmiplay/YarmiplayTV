@@ -152,33 +152,37 @@ actual fun RoomSidePanel(container: AppContainer) {
     LaunchedEffect(chatShowing) { if (chatShowing) panel.unread = 0 }
     if (!panel.open) return
 
-    Column(
-        Modifier.width(PANEL_WIDTH).fillMaxHeight().background(AppColors.Surface).testTag("room_panel")
+    Surface(
+        Modifier.width(PANEL_WIDTH).fillMaxHeight().testTag("room_panel")
             // Keys the focused field or list didn't use stay in the panel, so typing never reaches the
             // player's shortcuts. Esc still goes on to leave full screen or go back.
             .onKeyEvent { it.key != Key.Escape && !it.isCtrlPressed && !it.isAltPressed && !it.isMetaPressed },
+        color = AppColors.Surface,
+        contentColor = AppColors.Text,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TabRow(selectedTabIndex = panel.tab.ordinal, containerColor = AppColors.Surface, modifier = Modifier.weight(1f)) {
-                RoomPanelTab.entries.forEach { tab ->
-                    Tab(selected = panel.tab == tab, onClick = { panel.tab = tab }, modifier = Modifier.testTag("panel_tab_${tab.name}"), text = {
-                        val label = tab.name.lowercase().replaceFirstChar { it.uppercase() }
-                        if (tab == RoomPanelTab.CHAT && panel.unread > 0) {
-                            BadgedBox(badge = { Badge { Text(if (panel.unread > 99) "99+" else "${panel.unread}") } }) { Text(label) }
-                        } else {
-                            Text(label)
-                        }
-                    })
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TabRow(selectedTabIndex = panel.tab.ordinal, containerColor = AppColors.Surface, modifier = Modifier.weight(1f)) {
+                    RoomPanelTab.entries.forEach { tab ->
+                        Tab(selected = panel.tab == tab, onClick = { panel.tab = tab }, modifier = Modifier.testTag("panel_tab_${tab.name}"), text = {
+                            val label = tab.name.lowercase().replaceFirstChar { it.uppercase() }
+                            if (tab == RoomPanelTab.CHAT && panel.unread > 0) {
+                                BadgedBox(badge = { Badge { Text(if (panel.unread > 99) "99+" else "${panel.unread}") } }) { Text(label) }
+                            } else {
+                                Text(label)
+                            }
+                        })
+                    }
                 }
+                IconButton({ panel.open = false }) { Icon(Icons.Filled.Close, "Close the panel") }
             }
-            IconButton({ panel.open = false }) { Icon(Icons.Filled.Close, "Close the panel") }
-        }
-        when (panel.tab) {
-            RoomPanelTab.ROOM -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
-                RoomUsersContent(container)
+            when (panel.tab) {
+                RoomPanelTab.ROOM -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
+                    RoomUsersContent(container)
+                }
+                RoomPanelTab.PLAYLIST -> DesktopPlaylist(container, Modifier.weight(1f))
+                RoomPanelTab.CHAT -> DesktopChat(container, Modifier.weight(1f))
             }
-            RoomPanelTab.PLAYLIST -> DesktopPlaylist(container, Modifier.weight(1f))
-            RoomPanelTab.CHAT -> DesktopChat(container, Modifier.weight(1f))
         }
     }
 }

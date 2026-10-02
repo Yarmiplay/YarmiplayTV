@@ -61,6 +61,88 @@ jobs:
             **/build/reports/tests/
             ${{ runner.temp }}/syncplay-server.log
 
+  # The desktop app on each OS: its tests (the side panel against a real server, libmpv playback on Linux)
+  # and its installers, which the download page picks up by their syncplaytv- artifact names.
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: libmpv, a virtual display and .deb tooling
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libmpv2 xvfb fakeroot
+
+      - name: Start a real Syncplay server
+        run: |
+          git clone --depth 1 https://github.com/Syncplay/syncplay "$RUNNER_TEMP/syncplay"
+          pip install -q "twisted[tls]" certifi pyopenssl service_identity idna
+          python "$RUNNER_TEMP/syncplay/syncplayServer.py" --port 8999 > "$RUNNER_TEMP/syncplay-server.log" 2>&1 &
+          python - <<'EOF'
+          import socket, time
+          for _ in range(30):
+              try:
+                  socket.create_connection(("127.0.0.1", 8999), 1).close()
+                  break
+              except OSError:
+                  time.sleep(1)
+          else:
+              raise SystemExit("syncplay-server didn't start")
+          EOF
+
+      - name: Desktop tests and installers
+        env:
+          SYNCPLAY_TEST_SERVER: 127.0.0.1:8999
+          # The Windows and macOS runners have no usable OpenGL for libmpv; Linux tests playback on Mesa.
+          SYNCPLAYTV_SKIP_MPV_TESTS: ${{ runner.os != 'Linux' && '1' || '' }}
+        run: |
+          chmod +x gradlew
+          display=""; [ "$RUNNER_OS" = Linux ] && display="xvfb-run -a"
+          $display ./gradlew --stacktrace :player-mpv-desktop:test :desktop:test :desktop:packageDistributionForCurrentOS
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: syncplaytv-desktop-${{ runner.os }}
+          path: |
+            desktop/build/compose/binaries/main/msi/*.msi
+            desktop/build/compose/binaries/main/exe/*.exe
+            desktop/build/compose/binaries/main/dmg/*.dmg
+            desktop/build/compose/binaries/main/deb/*.deb
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: desktop-screenshots-${{ runner.os }}
+          path: desktop/build/desktop-screenshots/
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: desktop-test-reports-${{ runner.os }}
+          path: |
+            **/build/reports/tests/
+            ${{ runner.temp }}/syncplay-server.log
+
   # Compose UI and local-playback tests on a phone emulator (touch UI, content:// playback through mpv),
   # split over two emulators that boot from a cached snapshot.
   instrumented:

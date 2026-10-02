@@ -29,6 +29,17 @@ dependencies {
     implementation(libs.coil.network.okhttp)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.jetbrains.lifecycle.runtime.compose)
+    @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+    testImplementation(compose.uiTest)
+}
+
+tasks.test {
+    val screenshots = layout.buildDirectory.dir("desktop-screenshots").get().asFile.absolutePath
+    systemProperty("syncplaytv.screenshotDir", screenshots)
+    environment("SYNCPLAY_TEST_SERVER", System.getenv("SYNCPLAY_TEST_SERVER") ?: "")
+    testLogging { events("passed", "skipped", "failed") }
 }
 
 val appVersion = "1.0.0"
