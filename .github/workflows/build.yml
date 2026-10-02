@@ -125,9 +125,9 @@ jobs:
         run: |
           deb=$(ls desktop/build/compose/binaries/main/deb/*.deb)
           dpkg-deb -f "$deb" Depends
-          # The package registers its menu entry with xdg-desktop-menu, which needs the menus directory a
+          # The package registers its menu entry with xdg-desktop-menu, which needs the menu directories a
           # desktop install has and the runner image lacks.
-          sudo mkdir -p /etc/xdg/menus/applications-merged
+          sudo mkdir -p /etc/xdg/menus/applications-merged /usr/share/applications /usr/share/desktop-directories
           sudo apt-get install -y -q "./$deb"
           app=$(dpkg -L syncplaytv | grep '/bin/SyncplayTV$')
           "$app" --version | tee "$RUNNER_TEMP/version.txt"
