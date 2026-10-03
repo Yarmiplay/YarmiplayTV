@@ -65,6 +65,7 @@ private fun ItemGrid(
     onClick: (MediaItem) -> Unit,
     modifier: Modifier = Modifier,
     firstFocus: FocusRequester? = null,
+    showServer: Boolean = false,
 ) {
     val source by container.mediaSource.collectAsStateWithLifecycle()
     val aspect = aspectFor(items)
@@ -77,11 +78,11 @@ private fun ItemGrid(
         horizontalArrangement = Arrangement.spacedBy(24.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        items(items, key = { it.id }) { item ->
+        items(items, key = { it.uniqueKey }) { item ->
             val index = items.indexOf(item)
             PosterCard(
                 title = if (item.type == MediaItemType.EPISODE) item.displayTitle else item.name,
-                subtitle = subtitleFor(item),
+                subtitle = subtitleFor(item, if (showServer) serverNameOf(source, item) else null),
                 imageUrl = source?.imageUrl(item, if (aspect < 1f) 300 else 480),
                 aspectRatio = aspect,
                 placeholderIcon = when (item.type) {
@@ -104,7 +105,7 @@ fun BrowseScreen(container: AppContainer, nav: Navigator, parent: MediaItem) {
     var error by remember { mutableStateOf<String?>(null) }
     val firstFocus = remember { FocusRequester() }
 
-    LaunchedEffect(parent.id, source) {
+    LaunchedEffect(parent.uniqueKey, source) {
         val s = source ?: return@LaunchedEffect
         runCatching { s.children(parent) }
             .onSuccess { items = it }
@@ -163,7 +164,7 @@ fun SearchScreen(container: AppContainer, nav: Navigator, initialQuery: String, 
             TvTextField(query, { query = it }, "Title", Modifier.fillMaxWidth().padding(top = 12.dp).focusRequester(fieldFocus), placeholder = "Type to search")
         }
         when {
-            source == null -> EmptyState("Connect Jellyfin first")
+            source == null -> EmptyState("Connect Jellyfin or Plex first")
             searching && results.isEmpty() -> EmptyState("Searching…")
             query.length >= 2 && results.isEmpty() -> EmptyState("No results")
             else -> ItemGrid(container, results, { item ->
@@ -174,7 +175,7 @@ fun SearchScreen(container: AppContainer, nav: Navigator, initialQuery: String, 
                     }
                     else -> openItem(container, nav, item)
                 }
-            }, Modifier.fillMaxSize())
+            }, Modifier.fillMaxSize(), showServer = true)
         }
     }
 }

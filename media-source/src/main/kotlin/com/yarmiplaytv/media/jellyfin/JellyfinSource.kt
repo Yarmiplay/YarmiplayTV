@@ -1,23 +1,27 @@
 package com.yarmiplaytv.media.jellyfin
 
 import com.yarmiplaytv.media.FileNames
+import com.yarmiplaytv.media.FilenameIndex
 import com.yarmiplaytv.media.MatchKind
 import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.MediaItemType
 import com.yarmiplaytv.media.MediaSource
 import com.yarmiplaytv.media.MediaSourceException
 import com.yarmiplaytv.media.PlayableMedia
+import com.yarmiplaytv.media.PlaybackReport
+import com.yarmiplaytv.media.ReportState
 import com.yarmiplaytv.media.ResolveResult
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import okhttp3.HttpUrl
+import java.util.concurrent.ConcurrentHashMap
 
 class JellyfinSource(
     private val client: JellyfinClient,
     val session: JellyfinSession,
-    private val clock: () -> Long = System::currentTimeMillis,
+    clock: () -> Long = System::currentTimeMillis,
 ) : MediaSource {
 
+    override val key: String = keyOf(session)
+    override val kind: String get() = KIND
     override val displayName: String get() = session.serverName
 
     private val base get() = session.serverUrl
@@ -123,6 +127,7 @@ class JellyfinSource(
             ?: dto.mediaSources?.firstOrNull()
         val path = source?.path ?: dto.path ?: throw MediaSourceException("${dto.name} has no file")
         val ticks = source?.runTimeTicks ?: dto.runTimeTicks ?: 0L
+        source?.id?.let { mediaSourceIds[dto.id] = it }
         return PlayableMedia(
             itemId = dto.id,
             url = streamUrl(dto.id, source?.id),
@@ -130,7 +135,37 @@ class JellyfinSource(
             sizeBytes = source?.size ?: 0L,
             durationSeconds = ticks / TICKS_PER_SECOND,
             title = dto.toMediaItem().let { m -> m.seriesName?.let { "$it · ${m.displayTitle}" } ?: m.displayTitle },
+            sourceKey = key,
         )
+    }
+
+    /** The media source (version) each item was last resolved to, so reports name the one being played. */
+    private val mediaSourceIds = ConcurrentHashMap<String, String>()
+
+    override suspend fun reportPlayback(report: PlaybackReport) {
+        val path = when (report.state) {
+            ReportState.STARTED -> "Sessions/Playing"
+            ReportState.PLAYING, ReportState.PAUSED -> "Sessions/Playing/Progress"
+            ReportState.STOPPED -> "Sessions/Playing/Stopped"
+        }
+        val body = PlaybackProgressBody(
+            itemId = report.itemId,
+            mediaSourceId = mediaSourceIds[report.itemId],
+            playSessionId = report.sessionId,
+            positionTicks = (report.positionSeconds * TICKS_PER_SECOND).toLong(),
+            isPaused = report.state == ReportState.PAUSED,
+        )
+        client.postRaw(base, token, path, client.json.encodeToString(PlaybackProgressBody.serializer(), body)) { }
+        if (report.markWatched) markPlayed(report.itemId)
+    }
+
+    private suspend fun markPlayed(itemId: String) {
+        try {
+            client.postRaw(base, token, "UserPlayedItems/$itemId", null) { addQueryParameter("userId", session.userId) }
+        } catch (e: MediaSourceException) {
+            if (e.httpCode != 404) throw e
+            client.postRaw(base, token, "Users/${session.userId}/PlayedItems/$itemId", null) { }
+        }
     }
 
     fun streamUrl(itemId: String, mediaSourceId: String?): String =
@@ -151,17 +186,11 @@ class JellyfinSource(
 
     // --- Filename resolution (shared playlist auto-load) ------------------------------------
 
-    private data class IndexEntry(val id: String, val fileName: String)
-
-    private val indexLock = Mutex()
-    private var byName: Map<String, List<IndexEntry>> = emptyMap()
-    private var byNormalized: Map<String, List<IndexEntry>> = emptyMap()
-    private var indexBuiltAt = 0L
+    private val index = FilenameIndex(clock, MIN_REFRESH_MS)
 
     /** Builds (or refreshes) the basename index of every video file across the user's libraries. */
-    suspend fun refreshIndex(force: Boolean = false) = indexLock.withLock {
-        if (!force && indexBuiltAt != 0L && clock() - indexBuiltAt < MIN_REFRESH_MS) return@withLock
-        val entries = ArrayList<IndexEntry>()
+    suspend fun refreshIndex(force: Boolean = false) = index.refresh(force) {
+        val entries = ArrayList<FilenameIndex.Entry>()
         var start = 0
         while (true) {
             val page: ItemsResult = client.get(base, token, "Items") {
@@ -174,16 +203,26 @@ class JellyfinSource(
                 addQueryParameter("startIndex", start.toString())
                 addQueryParameter("limit", PAGE_SIZE.toString())
             }
-            page.items.forEach { dto -> dto.path?.let { entries += IndexEntry(dto.id, FileNames.baseName(it)) } }
+            page.items.forEach { dto -> dto.path?.let { entries += FilenameIndex.Entry(dto.id, FileNames.baseName(it)) } }
             start += page.items.size
             if (page.items.isEmpty() || start >= page.totalRecordCount) break
         }
-        byName = entries.groupBy { it.fileName.lowercase() }
-        byNormalized = entries.groupBy { FileNames.normalize(it.fileName) }
-        indexBuiltAt = clock()
+        entries
     }
 
-    val indexedFileCount: Int get() = byName.values.sumOf { it.size }
+    val indexedFileCount: Int get() = index.size
+
+    override suspend fun findExact(fileName: String): ResolveResult.Found? {
+        val name = FileNames.baseName(fileName.trim())
+        if (name.isEmpty()) return null
+        if (!index.isBuilt) runCatching { refreshIndex() }
+        var candidates = index.exact(name)
+        if (candidates.isEmpty()) {
+            runCatching { refreshIndex() }
+            candidates = index.exact(name)
+        }
+        return foundIn(candidates, MatchKind.EXACT_FILENAME)
+    }
 
     override suspend fun resolveByFilename(fileName: String): ResolveResult {
         val name = FileNames.baseName(fileName.trim())
@@ -202,12 +241,12 @@ class JellyfinSource(
     }
 
     private suspend fun lookupIndex(name: String): ResolveResult? {
-        if (indexBuiltAt == 0L) runCatching { refreshIndex() }
-        val exact = byName[name.lowercase()]
-        val (candidates, kind) = when {
-            !exact.isNullOrEmpty() -> exact to MatchKind.EXACT_FILENAME
-            else -> (byNormalized[FileNames.normalize(name)] ?: return null) to MatchKind.NORMALIZED_FILENAME
-        }
+        if (!index.isBuilt) runCatching { refreshIndex() }
+        val (candidates, kind) = index.lookup(name) ?: return null
+        return foundIn(candidates, kind)
+    }
+
+    private suspend fun foundIn(candidates: List<FilenameIndex.Entry>, kind: MatchKind): ResolveResult.Found? {
         for (candidate in candidates) {
             val dto = runCatching {
                 items {
@@ -287,10 +326,15 @@ class JellyfinSource(
             imageTag = imageTags?.get("Primary"),
             played = userData?.played ?: false,
             resumeSeconds = (userData?.playbackPositionTicks ?: 0L) / TICKS_PER_SECOND,
+            sourceKey = key,
         )
     }
 
     companion object {
+        const val KIND = "jellyfin"
+
+        /** The [key] of [session]'s server; signing in to the same server again gives the same key. */
+        fun keyOf(session: JellyfinSession): String = "$KIND:${session.serverId.ifEmpty { session.serverUrl }}"
         private const val TICKS_PER_SECOND = 10_000_000.0
         private const val PAGE_SIZE = 2000
         private const val MIN_REFRESH_MS = 30_000L

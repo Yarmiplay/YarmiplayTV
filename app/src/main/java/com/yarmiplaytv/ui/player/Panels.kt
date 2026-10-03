@@ -88,7 +88,7 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
         val np = nowPlaying
         val canAddCurrent = np != null && room.playlist.none { Filenames.same(it, np.fileName) }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 12.dp)) {
-            ActionButton("Add from Jellyfin", { nav.popTo(Screen.Home) }, if (room.playlist.isEmpty()) Modifier.focusRequester(focus) else Modifier, icon = Icons.Filled.Home)
+            ActionButton("Add from your libraries", { nav.popTo(Screen.Home) }, if (room.playlist.isEmpty()) Modifier.focusRequester(focus) else Modifier, icon = Icons.Filled.Home)
             if (canAddCurrent && np != null) {
                 ActionButton("Add current", { container.sync.client?.addToPlaylist(np.fileName) }, icon = Icons.Filled.Add)
             }

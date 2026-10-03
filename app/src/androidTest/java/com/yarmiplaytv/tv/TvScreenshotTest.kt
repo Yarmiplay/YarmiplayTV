@@ -10,11 +10,13 @@ import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.DeviceUi
 import com.yarmiplaytv.MainActivity
 import com.yarmiplaytv.TestSupport
+import com.yarmiplaytv.media.CompositeMediaSource
 import com.yarmiplaytv.sync.PlaylistStatus
 import com.yarmiplaytv.support.AppState
 import com.yarmiplaytv.support.AppState.Companion.onMain
 import com.yarmiplaytv.support.AppState.Companion.waitUntil
 import com.yarmiplaytv.support.FakeJellyfin
+import com.yarmiplaytv.support.FakePlex
 import com.yarmiplaytv.support.FakeSyncplayServer
 import com.yarmiplaytv.support.Scenarios
 import com.yarmiplaytv.support.Screenshots
@@ -78,6 +80,9 @@ class TvScreenshotTest {
         tv.click("Connect Jellyfin"); tv.await("Quick Connect")
         tv.await("Living Room")
         shot("jellyfin_login")
+        tv.back(); tv.await("Connect Plex")
+        tv.click("Connect Plex"); tv.await("Link this TV to your Plex account")
+        shot("plex_login")
         tv.back(); tv.await("Join a Syncplay room")
         tv.click("Settings"); tv.await("When I unpause")
         shot("settings")
@@ -104,9 +109,34 @@ class TvScreenshotTest {
         tv.back()
         tv.click("Room: ${FakeSyncplayServer.ROOM}"); tv.await("Connected to")
         shot("connect_connected")
-        tv.back()
-        tv.click("Jellyfin: "); tv.await("Signed in to")
-        shot("jellyfin_signed_in")
+        Screenshots.assertAllMatched()
+    }
+
+    @Test
+    fun bothServers() {
+        state.signInJellyfin(jellyfin)
+        state.signInPlex(plex)
+        waitUntil(5_000) { TestSupport.container.mediaSource.value is CompositeMediaSource }
+        launch()
+        tv.await("Films"); tv.await("Continue watching · Screenshot Server")
+        shot("home_both_servers")
+        tv.click("Settings"); tv.awaitFocus("When I unpause")
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = 6); tv.awaitFocus("Preferred server")
+        shot("settings_both_servers")
+        Screenshots.assertAllMatched()
+    }
+
+    @Test
+    fun manyServers() {
+        state.signInJellyfin(jellyfin)
+        state.signInJellyfin(jellyfin2)
+        state.signInPlex(plex)
+        waitUntil(5_000) { (TestSupport.container.mediaSource.value as? CompositeMediaSource)?.sources?.size == 3 }
+        launch()
+        tv.await("Jellyfin: 2 servers"); tv.await("Continue watching · Screenshot Server")
+        shot("home_many_servers")
+        tv.click("Jellyfin: 2 servers"); tv.await("Media servers"); tv.await("Plex Server")
+        shot("servers")
         Screenshots.assertAllMatched()
     }
 
@@ -185,6 +215,8 @@ class TvScreenshotTest {
         private val state = AppState()
         private lateinit var syncplay: FakeSyncplayServer
         private lateinit var jellyfin: FakeJellyfin
+        private lateinit var jellyfin2: FakeJellyfin
+        private lateinit var plex: FakePlex
 
         @BeforeClass
         @JvmStatic
@@ -193,6 +225,8 @@ class TvScreenshotTest {
             assumeTrue("needs -e screenshots true", Screenshots.enabled)
             syncplay = FakeSyncplayServer()
             jellyfin = FakeJellyfin()
+            jellyfin2 = FakeJellyfin(FakeJellyfin.PORT + 1, serverId = "fake-server-2", serverName = "Bedroom Server")
+            plex = FakePlex()
             state.snapshot()
             Screenshots.prepareDevice()
         }
@@ -204,6 +238,8 @@ class TvScreenshotTest {
             Screenshots.restoreDevice()
             syncplay.close()
             jellyfin.close()
+            jellyfin2.close()
+            plex.close()
             state.restore()
         }
     }

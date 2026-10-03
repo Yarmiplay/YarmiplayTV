@@ -26,6 +26,9 @@ import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.UnpauseMode
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.shared.nextPreferred
+import com.yarmiplaytv.ui.shared.preferredOf
+import com.yarmiplaytv.ui.shared.serverLabel
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
@@ -33,7 +36,11 @@ import kotlinx.coroutines.launch
 fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
     val settings by container.settings.collectAsStateWithLifecycle()
     val folders by container.local.folders.collectAsStateWithLifecycle()
-    val source by container.mediaSource.collectAsStateWithLifecycle()
+    val servers by container.servers.collectAsStateWithLifecycle()
+    val jellyfin by container.jellyfinServers.collectAsStateWithLifecycle()
+    val plex by container.plexServers.collectAsStateWithLifecycle()
+    fun saveServerPrefs(preferred: String = settings.preferredServer, report: Boolean = settings.reportPlayback) =
+        container.scope.launch { container.settingsStore.saveServerPrefs(preferred, report) }
 
     fun saveSync(sync: SyncSettings = settings.sync, autoReady: Boolean = settings.autoReadyOnLoad) =
         container.scope.launch { container.settingsStore.saveSync(sync, autoReady) }
@@ -45,8 +52,25 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
         MobileTopBar("Settings", nav, showBack = false)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(bottom = 24.dp).testTag("settings")) {
             SectionHeader("Media")
-            ValueSetting("Jellyfin", source?.displayName ?: "Not connected") { nav.push(Screen.JellyfinLogin) }
+            ValueSetting("Jellyfin", jellyfin.joinToString { it.displayName }.ifEmpty { "Not connected" }) {
+                nav.push(if (jellyfin.isEmpty()) Screen.JellyfinLogin else Screen.Servers)
+            }
+            ValueSetting("Plex", plex.joinToString { it.displayName }.ifEmpty { "Not connected" }) {
+                nav.push(if (plex.isEmpty()) Screen.PlexLogin else Screen.Servers)
+            }
             ValueSetting("Media folders on this device", if (folders.isEmpty()) "None" else folders.joinToString { it.name }) { nav.push(Screen.LocalFiles) }
+            preferredOf(servers, settings.preferredServer)?.takeIf { servers.size > 1 }?.let { preferred ->
+                ValueSetting(
+                    "Preferred server",
+                    "${serverLabel(preferred)} · streams a room's file when several servers have it",
+                ) { saveServerPrefs(preferred = nextPreferred(servers, preferred.key)) }
+            }
+            ToggleSetting(
+                "Report progress to your media servers",
+                "Send watched state and how far you got to the servers that have the file",
+                settings.reportPlayback,
+                Modifier.testTag("toggle_report_playback"),
+            ) { saveServerPrefs(report = it) }
 
             SectionHeader("Syncing")
             ValueSetting(

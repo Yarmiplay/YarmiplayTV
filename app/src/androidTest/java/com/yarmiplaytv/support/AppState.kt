@@ -22,7 +22,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * Puts the app's process-wide state into fixed, known values for screenshots and restores the user's
- * own settings (Syncplay profile, Jellyfin sign-in, media folders) afterwards. Nothing here changes
+ * own settings (Syncplay profile, Jellyfin and Plex sign-ins, media folders) afterwards. Nothing here changes
  * app code: private state is reached by reflection, so the hooks stay out of the shipped app.
  */
 class AppState {
@@ -51,16 +51,21 @@ class AppState {
             store.saveAutosavePlaylists(saved.autosavePlaylists)
             store.saveUpdatePrefs(saved.checkForUpdates, saved.installUpdatesOnLaunch)
             store.saveDismissedUpdate(saved.dismissedUpdate)
+            store.saveServerPrefs(saved.preferredServer, saved.reportPlayback)
             store.replaceRoomPlaylists(savedRoomPlaylists)
         }
-        onMain { container.setJellyfinSession(saved.jellyfin) }
+        onMain {
+            removeAllServers()
+            saved.jellyfinServers.forEach(container::addJellyfin)
+            saved.plexServers.forEach(container::addPlex)
+        }
         setLocalLibrary(saved.localFolders.map { LocalFolder(it, folderName(it)) }, emptyList())
         runBlocking { if (saved.localFolders.isNotEmpty()) container.local.refresh() }
         clearFeed()
         if (wasConnected && saved.syncplay.isComplete) container.sync.connect(saved.syncplay.toConfig())
     }
 
-    /** No room, nothing playing, no Jellyfin, no media folders, no saved room playlists, default settings and a fixed profile. */
+    /** No room, nothing playing, no Jellyfin or Plex, no media folders, no saved room playlists, default settings and a fixed profile. */
     fun baseline() {
         // The host's real servers would otherwise show up in "Found on your network".
         JellyfinDiscovery.scanner = { listOf(DiscoveredServer(address = "http://192.168.1.20:8096", id = "fake-server", name = "Living Room")) }
@@ -74,22 +79,31 @@ class AppState {
             store.saveLastJellyfinUrl(LAST_JELLYFIN_URL)
             store.saveAutosavePlaylists(true)
             store.saveUpdatePrefs(check = true, installOnLaunch = false)
+            store.saveServerPrefs("", reportPlayback = true)
             store.replaceRoomPlaylists(emptyMap())
         }
-        onMain { container.setJellyfinSession(null) }
+        onMain { removeAllServers() }
         runBlocking { container.settingsStore.saveLastJellyfinUrl(LAST_JELLYFIN_URL) }
         setLocalLibrary(emptyList(), emptyList())
         waitUntil(5_000) {
             val s = container.settings.value
-            s.syncplay == PROFILE && s.jellyfin == null && container.mediaSource.value == null && s.lastJellyfinUrl == LAST_JELLYFIN_URL
+            s.syncplay == PROFILE && s.jellyfinServers.isEmpty() && s.plexServers.isEmpty() && container.mediaSource.value == null &&
+                s.lastJellyfinUrl == LAST_JELLYFIN_URL
         }
         clearFeed()
     }
 
     fun signInJellyfin(fake: FakeJellyfin) {
-        onMain { container.setJellyfinSession(fake.session) }
-        waitUntil(5_000) { container.mediaSource.value != null }
+        onMain { container.addJellyfin(fake.session) }
+        waitUntil(5_000) { container.servers.value.any { it.key == fake.key } && container.mediaSource.value != null }
     }
+
+    fun signInPlex(fake: FakePlex) {
+        onMain { container.addPlex(fake.session) }
+        waitUntil(5_000) { container.servers.value.any { it.key == fake.key } && container.mediaSource.value != null }
+    }
+
+    private fun removeAllServers() = container.servers.value.forEach { container.removeServer(it.key) }
 
     fun joinRoom(server: FakeSyncplayServer) {
         container.sync.connect(PROFILE.copy(host = "127.0.0.1", port = server.port).toConfig())

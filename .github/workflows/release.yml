@@ -3,10 +3,14 @@ name: Release
 # For a version tag (v1.1, v1.2.3), which has to match appVersion in app/build.gradle.kts:
 # - the Play upload bundle, signed with the upload key from the secrets YARMIPLAYTV_KEYSTORE_BASE64,
 #   YARMIPLAYTV_KEYSTORE_PASSWORD, YARMIPLAYTV_KEY_ALIAS and YARMIPLAYTV_KEY_PASSWORD;
-# - the Windows installers, code signed through SignPath (certificate by SignPath Foundation) once an approver
-#   accepts the signing request, then attached to the tag's GitHub release, where the download page takes them
-#   from. Signing needs the variable SIGNPATH_ORGANIZATION_ID and the secret SIGNPATH_API_TOKEN; without them
-#   the installers are built but not signed or released.
+# - the Windows installers, attached to the tag's GitHub release, where the download page and winget take them
+#   from. With the variable SIGNPATH_ORGANIZATION_ID and the secret SIGNPATH_API_TOKEN they are first code
+#   signed through SignPath (certificate by SignPath Foundation), once an approver accepts the signing request;
+#   without them the unsigned installers are released;
+# - the Microsoft Store package (.msix, unsigned: the Store signs it), attached to the run for uploading in
+#   Partner Center;
+# - with the variable WINGET_PACKAGE_ID and the secret WINGET_TOKEN, a pull request to microsoft/winget-pkgs
+#   with the release's .msi.
 on:
   push:
     tags: ["v*"]
@@ -127,6 +131,19 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # Kept out of the SignPath artifact: the Store signs the package itself when it is uploaded.
+      - name: Store package
+        run: |
+          ./gradlew --stacktrace :desktop:createDistributable
+          pwsh -NoProfile -File scripts/make-msix.ps1 -NoBuild
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-store-msix-${{ steps.version.outputs.version }}
+          path: desktop/build/msix/*.msix
+          if-no-files-found: error
+          retention-days: 90
+
   # Waits on a Linux runner while the signing request awaits manual approval in SignPath.
   sign-windows:
     needs: windows-installers
@@ -154,26 +171,32 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Checks the signatures the way Windows does (including the launcher inside the .msi) and attaches the
-  # installers to the tag's release.
+  # Attaches the installers to the tag's release: the signed ones when SignPath is set up, checked the way
+  # Windows does (including the launcher inside the .msi), otherwise the unsigned ones.
   publish-windows:
     needs: [windows-installers, sign-windows]
+    if: >-
+      always() && needs.windows-installers.result == 'success' &&
+      (needs.sign-windows.result == 'success' || needs.sign-windows.result == 'skipped')
     runs-on: windows-latest
     timeout-minutes: 15
     permissions:
       contents: write
+    env:
+      SIGNED: ${{ needs.sign-windows.result == 'success' }}
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: windows-installers-signed
-          path: signed
+          name: ${{ needs.sign-windows.result == 'success' && 'windows-installers-signed' || 'windows-installers-unsigned' }}
+          path: windows
 
       - name: Verify the signatures
+        if: env.SIGNED == 'true'
         shell: pwsh
         run: |
-          $msi = Get-Item signed\*.msi
+          $msi = Get-Item windows\*.msi
           Start-Process msiexec -Wait -ArgumentList "/a `"$($msi.FullName)`" /qn TARGETDIR=`"$env:RUNNER_TEMP\msi`""
-          $files = @(Get-Item signed\*.msi, signed\*.exe) + @(Get-ChildItem "$env:RUNNER_TEMP\msi" -Recurse -Filter YarmiplayTV.exe)
+          $files = @(Get-Item windows\*.msi, windows\*.exe) + @(Get-ChildItem "$env:RUNNER_TEMP\msi" -Recurse -Filter YarmiplayTV.exe)
           if ($files.Count -ne 3) { throw "expected the .msi, the .exe and the launcher inside the .msi, found $($files.Count) files" }
           foreach ($file in $files) {
             $sig = Get-AuthenticodeSignature $file.FullName
@@ -187,13 +210,36 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.windows-installers.outputs.version }}
+          WINGET_ID: ${{ vars.WINGET_PACKAGE_ID }}
         run: |
           if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" signed/* -R "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$GITHUB_REF_NAME" windows/* -R "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" signed/* -R "$GITHUB_REPOSITORY" --verify-tag \
-              --title "YarmiplayTV $GITHUB_REF_NAME" \
-              --notes "Windows installers for YarmiplayTV $VERSION. Other platforms: https://yarmiplay.github.io/YarmiplayTV/
+            notes="Windows installers for YarmiplayTV $VERSION${WINGET_ID:+ (or \`winget install $WINGET_ID\`)}. Other platforms: https://yarmiplay.github.io/YarmiplayTV/"
+            if [ "$SIGNED" = true ]; then
+              notes="$notes
 
           Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See the [code signing policy](https://github.com/$GITHUB_REPOSITORY#code-signing-policy)."
+            fi
+            gh release create "$GITHUB_REF_NAME" windows/* -R "$GITHUB_REPOSITORY" --verify-tag \
+              --title "YarmiplayTV $GITHUB_REF_NAME" --notes "$notes"
           fi
+
+  # Opens the pull request that adds the release's .msi to winget, from the token owner's fork of
+  # microsoft/winget-pkgs. The package has to be in winget already (the first version is submitted by hand
+  # with wingetcreate, see the README).
+  winget:
+    needs: [windows-installers, publish-windows]
+    if: >-
+      always() && needs.publish-windows.result == 'success' && github.ref_type == 'tag' &&
+      vars.WINGET_PACKAGE_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: vedantmgoyal9/winget-releaser@main
+        with:
+          identifier: ${{ vars.WINGET_PACKAGE_ID }}
+          version: ${{ needs.windows-installers.outputs.version }}
+          release-tag: ${{ github.ref_name }}
+          installers-regex: '\.msi$'
+          token: ${{ secrets.WINGET_TOKEN }}

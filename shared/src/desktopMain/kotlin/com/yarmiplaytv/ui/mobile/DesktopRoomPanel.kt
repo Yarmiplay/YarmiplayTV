@@ -492,7 +492,7 @@ private fun PlaylistRow(index: Int, file: String, current: Boolean, selected: Bo
             }
         }
         if (!available) {
-            TooltipArea(tooltip = { Tooltip("Not in your media folders; it's looked up on Jellyfin when it's picked") }) {
+            TooltipArea(tooltip = { Tooltip("Not in your media folders; it's looked up on your media servers when it's picked") }) {
                 Icon(Icons.Filled.SearchOff, "Not found here", tint = AppColors.TextDim, modifier = Modifier.size(18.dp))
             }
         }

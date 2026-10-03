@@ -7,6 +7,9 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
+import com.yarmiplaytv.media.jellyfin.JellyfinSource
+import com.yarmiplaytv.media.plex.PlexSession
+import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.sync.TrustedDomains
 import com.yarmiplaytv.syncplay.Constants
 import com.yarmiplaytv.syncplay.SyncSettings
@@ -15,6 +18,9 @@ import com.yarmiplaytv.syncplay.UnpauseMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import java.util.UUID
 
 data class SyncplayProfile(
@@ -52,8 +58,15 @@ data class AppSettings(
     val sync: SyncSettings = SyncSettings(),
     val autoReadyOnLoad: Boolean = true,
     val playback: PlaybackPrefs = PlaybackPrefs(),
-    val jellyfin: JellyfinSession? = null,
+    /** Signed-in Jellyfin servers, one per server, in the order they were added. */
+    val jellyfinServers: List<JellyfinSession> = emptyList(),
     val lastJellyfinUrl: String = "",
+    /** Signed-in Plex servers, one per server, in the order they were added. */
+    val plexServers: List<PlexSession> = emptyList(),
+    /** Which server streams a room's file when several have it (a [com.yarmiplaytv.media.MediaSource.key]); empty = the first. */
+    val preferredServer: String = "",
+    /** Send playback progress and watched state to the servers that have the playing file. */
+    val reportPlayback: Boolean = true,
     /** Persisted URIs of the user's media folders (content:// trees on Android, file:// on desktop). */
     val localFolders: List<String> = emptyList(),
     /** Syncplay's trusted domains: the room may switch everyone to URLs on these without asking. */
@@ -104,6 +117,11 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val seekStep = intPreferencesKey("pb_seek_step")
         val controlsHide = intPreferencesKey("pb_controls_hide")
 
+        /** JSON lists of [JellyfinSession] and [PlexSession]. */
+        val jfServers = stringPreferencesKey("jf_servers")
+        val pxServers = stringPreferencesKey("px_servers")
+
+        // Single-server keys from before several servers were supported; read once, removed on the next save.
         val jfUrl = stringPreferencesKey("jf_url")
         val jfServerName = stringPreferencesKey("jf_server_name")
         val jfServerId = stringPreferencesKey("jf_server_id")
@@ -111,6 +129,16 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val jfUserName = stringPreferencesKey("jf_user_name")
         val jfToken = stringPreferencesKey("jf_token")
         val jfLastUrl = stringPreferencesKey("jf_last_url")
+
+        val pxUrl = stringPreferencesKey("px_url")
+        val pxServerName = stringPreferencesKey("px_server_name")
+        val pxMachineId = stringPreferencesKey("px_machine_id")
+        val pxUserName = stringPreferencesKey("px_user_name")
+        val pxServerToken = stringPreferencesKey("px_server_token")
+        val pxAccountToken = stringPreferencesKey("px_account_token")
+
+        val preferredServer = stringPreferencesKey("preferred_server")
+        val reportPlayback = booleanPreferencesKey("report_playback")
 
         val deviceId = stringPreferencesKey("device_id")
         val localFolders = stringPreferencesKey("local_folders")
@@ -122,7 +150,13 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
 
     private fun read(p: Preferences): AppSettings {
         val defaults = AppSettings()
-        val token = p[Keys.jfToken]
+        val jellyfinServers = p[Keys.jfServers]?.let { decode(it, jellyfinList) } ?: listOfNotNull(legacyJellyfin(p))
+        val plexServers = p[Keys.pxServers]?.let { decode(it, plexList) } ?: listOfNotNull(legacyPlex(p))
+        val preferred = when (val saved = p[Keys.preferredServer] ?: "") {
+            JellyfinSource.KIND -> jellyfinServers.firstOrNull()?.let(JellyfinSource::keyOf) ?: ""
+            PlexSource.KIND -> plexServers.firstOrNull()?.let(PlexSource::keyOf) ?: ""
+            else -> saved
+        }
         return AppSettings(
             syncplay = SyncplayProfile(
                 host = p[Keys.host] ?: defaults.syncplay.host,
@@ -150,15 +184,11 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
                 seekStepSeconds = p[Keys.seekStep] ?: 10,
                 controlsHideSeconds = p[Keys.controlsHide] ?: defaults.playback.controlsHideSeconds,
             ),
-            jellyfin = if (token != null) JellyfinSession(
-                serverUrl = p[Keys.jfUrl] ?: "",
-                serverName = p[Keys.jfServerName] ?: "",
-                serverId = p[Keys.jfServerId] ?: "",
-                userId = p[Keys.jfUserId] ?: "",
-                userName = p[Keys.jfUserName] ?: "",
-                accessToken = token,
-            ) else null,
+            jellyfinServers = jellyfinServers,
             lastJellyfinUrl = p[Keys.jfLastUrl] ?: "",
+            plexServers = plexServers,
+            preferredServer = preferred,
+            reportPlayback = p[Keys.reportPlayback] ?: true,
             localFolders = p[Keys.localFolders]?.split('\n')?.filter { it.isNotBlank() } ?: emptyList(),
             trustedDomains = p[Keys.trustedDomains]?.split('\n')?.filter { it.isNotBlank() } ?: defaults.trustedDomains,
             onlySwitchToTrustedDomains = p[Keys.onlyTrusted] ?: true,
@@ -251,23 +281,60 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         }
     }
 
-    suspend fun saveJellyfin(session: JellyfinSession?) {
+    /** Saves every signed-in server in one edit, replacing the saved lists (and any single-server keys from older versions). */
+    suspend fun saveServers(jellyfin: List<JellyfinSession>, plex: List<PlexSession>) {
         dataStore.edit {
-            if (session == null) {
-                listOf(Keys.jfUrl, Keys.jfServerName, Keys.jfServerId, Keys.jfUserId, Keys.jfUserName, Keys.jfToken).forEach { k -> it.remove(k) }
-            } else {
-                it[Keys.jfUrl] = session.serverUrl
-                it[Keys.jfServerName] = session.serverName
-                it[Keys.jfServerId] = session.serverId
-                it[Keys.jfUserId] = session.userId
-                it[Keys.jfUserName] = session.userName
-                it[Keys.jfToken] = session.accessToken
-                it[Keys.jfLastUrl] = session.serverUrl
-            }
+            val preferred = read(it).preferredServer
+            it[Keys.jfServers] = json.encodeToString(jellyfinList, jellyfin)
+            it[Keys.pxServers] = json.encodeToString(plexList, plex)
+            LEGACY_SERVER_KEYS.forEach { k -> it.remove(k) }
+            if (it[Keys.preferredServer] != null) it[Keys.preferredServer] = preferred
         }
     }
 
     suspend fun saveLastJellyfinUrl(url: String) = dataStore.edit { it[Keys.jfLastUrl] = url }
+
+    private fun legacyJellyfin(p: Preferences): JellyfinSession? {
+        val token = p[Keys.jfToken] ?: return null
+        return JellyfinSession(
+            serverUrl = p[Keys.jfUrl] ?: "",
+            serverName = p[Keys.jfServerName] ?: "",
+            serverId = p[Keys.jfServerId] ?: "",
+            userId = p[Keys.jfUserId] ?: "",
+            userName = p[Keys.jfUserName] ?: "",
+            accessToken = token,
+        )
+    }
+
+    private fun legacyPlex(p: Preferences): PlexSession? {
+        val token = p[Keys.pxServerToken] ?: return null
+        return PlexSession(
+            serverUrl = p[Keys.pxUrl] ?: "",
+            serverName = p[Keys.pxServerName] ?: "",
+            machineId = p[Keys.pxMachineId] ?: "",
+            userName = p[Keys.pxUserName] ?: "",
+            serverToken = token,
+            accountToken = p[Keys.pxAccountToken] ?: token,
+        )
+    }
+
+    private fun <T> decode(text: String, serializer: KSerializer<List<T>>): List<T> =
+        runCatching { json.decodeFromString(serializer, text) }.getOrDefault(emptyList())
+
+    private companion object {
+        val json = Json { ignoreUnknownKeys = true }
+        val jellyfinList = ListSerializer(JellyfinSession.serializer())
+        val plexList = ListSerializer(PlexSession.serializer())
+        val LEGACY_SERVER_KEYS = listOf(
+            Keys.jfUrl, Keys.jfServerName, Keys.jfServerId, Keys.jfUserId, Keys.jfUserName, Keys.jfToken,
+            Keys.pxUrl, Keys.pxServerName, Keys.pxMachineId, Keys.pxUserName, Keys.pxServerToken, Keys.pxAccountToken,
+        )
+    }
+
+    suspend fun saveServerPrefs(preferredServer: String, reportPlayback: Boolean) = dataStore.edit {
+        it[Keys.preferredServer] = preferredServer
+        it[Keys.reportPlayback] = reportPlayback
+    }
 
     suspend fun saveLocalFolders(uris: List<String>) = dataStore.edit { it[Keys.localFolders] = uris.joinToString("\n") }
 

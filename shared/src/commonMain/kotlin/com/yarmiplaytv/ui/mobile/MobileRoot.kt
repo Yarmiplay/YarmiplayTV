@@ -91,6 +91,8 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind) {
                             Screen.Home -> MobileHomeScreen(container, nav, kind)
                             Screen.SyncplayConnect -> MobileRoomScreen(container, nav)
                             Screen.JellyfinLogin -> MobileJellyfinScreen(container, nav)
+                            Screen.PlexLogin -> MobilePlexScreen(container, nav)
+                            Screen.Servers -> MobileServersScreen(container, nav)
                             Screen.Settings -> MobileSettingsScreen(container, nav)
                             Screen.LocalFiles -> MobileLocalFilesScreen(container, nav)
                             Screen.Licenses -> MobileLicensesScreen(nav)

@@ -1,6 +1,8 @@
 package com.yarmiplaytv.media.jellyfin
 
 import com.yarmiplaytv.media.MatchKind
+import com.yarmiplaytv.media.PlaybackReport
+import com.yarmiplaytv.media.ReportState
 import com.yarmiplaytv.media.ResolveResult
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -10,6 +12,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -42,6 +45,8 @@ class JellyfinSourceTest {
                         url.queryParameter("includeItemTypes") == "Episode" -> """{"Items":[${episodeJson(withSources = true)}],"TotalRecordCount":1}"""
                         else -> """{"Items":[],"TotalRecordCount":0}"""
                     }
+                    "/Sessions/Playing", "/Sessions/Playing/Progress", "/Sessions/Playing/Stopped", "/Users/u1/PlayedItems/ep1" ->
+                        return MockResponse().setResponseCode(204)
                     else -> return MockResponse().setResponseCode(404)
                 }
                 return MockResponse().setHeader("Content-Type", "application/json").setBody(body)
@@ -125,5 +130,34 @@ class JellyfinSourceTest {
     fun reportsNotFound() = runBlocking {
         val source = JellyfinSource(client, session())
         assertTrue(source.resolveByFilename("Something Else Entirely.mkv") is ResolveResult.NotFound)
+    }
+
+    @Test
+    fun findExactOnlyAcceptsTheExactName() = runBlocking {
+        val source = JellyfinSource(client, session())
+        assertEquals("jellyfin:srv", source.findExact(fileName)?.playable?.sourceKey)
+        assertNull(source.findExact("hyperdimension_neptunia_-_s01e01_-_the_goddess_(neptune)_of_planeptune.mkv"))
+        assertNull(source.findExact("[Group] Hyperdimension Neptunia S01E01 [1080p].mkv"))
+    }
+
+    @Test
+    fun reportsSessionProgressAndMarksPlayedWithFallback() = runBlocking {
+        val source = JellyfinSource(client, session())
+        source.playable(source.findExact(fileName)!!.item)
+        source.reportPlayback(PlaybackReport("ep1", "sess1", ReportState.STARTED, 0.0, 1420.0))
+        source.reportPlayback(PlaybackReport("ep1", "sess1", ReportState.PAUSED, 61.5, 1420.0))
+        source.reportPlayback(PlaybackReport("ep1", "sess1", ReportState.STOPPED, 1300.0, 1420.0, markWatched = true))
+        val sent = generateSequence { server.takeRequest(0, java.util.concurrent.TimeUnit.SECONDS) }.toList()
+        val sessions = sent.filter { it.requestUrl!!.encodedPath.startsWith("/Sessions/Playing") }
+        assertEquals(listOf("/Sessions/Playing", "/Sessions/Playing/Progress", "/Sessions/Playing/Stopped"), sessions.map { it.requestUrl!!.encodedPath })
+        val paused = sessions[1].body.readUtf8()
+        assertTrue(paused, paused.contains("\"ItemId\":\"ep1\""))
+        assertTrue(paused, paused.contains("\"MediaSourceId\":\"ms1\""))
+        assertTrue(paused, paused.contains("\"PlaySessionId\":\"sess1\""))
+        assertTrue(paused, paused.contains("\"PositionTicks\":615000000"))
+        assertTrue(paused, paused.contains("\"IsPaused\":true"))
+        val played = sent.filter { it.requestUrl!!.encodedPath.contains("PlayedItems") }
+        assertEquals(listOf("/UserPlayedItems/ep1", "/Users/u1/PlayedItems/ep1"), played.map { it.requestUrl!!.encodedPath })
+        assertEquals("u1", played[0].requestUrl!!.queryParameter("userId"))
     }
 }

@@ -14,7 +14,9 @@ import com.yarmiplaytv.TestSupport
 import com.yarmiplaytv.support.AppState
 import com.yarmiplaytv.support.AppState.Companion.onMain
 import com.yarmiplaytv.support.AppState.Companion.waitUntil
+import com.yarmiplaytv.media.CompositeMediaSource
 import com.yarmiplaytv.support.FakeJellyfin
+import com.yarmiplaytv.support.FakePlex
 import com.yarmiplaytv.support.FakeSyncplayServer
 import com.yarmiplaytv.support.Scenarios
 import com.yarmiplaytv.support.Screenshots
@@ -65,7 +67,9 @@ class TvNavigationTest {
         tv.awaitFocus("Join a Syncplay room")
         tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
         tv.awaitFocus("Connect Jellyfin")
-        tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Connect Plex")
+        tv.key(KeyEvent.KEYCODE_DPAD_LEFT, times = 2)
         tv.awaitFocus("Join a Syncplay room")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
         tv.await("Syncplay room")
@@ -187,6 +191,67 @@ class TvNavigationTest {
     }
 
     @Test
+    fun plexLinkAndServersScreens() {
+        launch()
+        tv.awaitFocus("Join a Syncplay room")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT, times = 2)
+        tv.awaitFocus("Connect Plex")
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        tv.await("Link this TV to your Plex account")
+        tv.awaitFocus("Get a link code")
+        tv.back()
+        tv.await("Connect Plex")
+
+        state.signInPlex(plex)
+        tv.click("Plex: Plex Server")
+        tv.await("Media servers")
+        tv.awaitFocus("Sign out")
+        tv.awaitGone("Get a link code")
+        tv.back()
+        tv.await("Plex: Plex Server")
+    }
+
+    @Test
+    fun signOutOfOneOfTwoServersWithDpad() {
+        state.signInJellyfin(jellyfin)
+        state.signInJellyfin(jellyfin2)
+        launch()
+        tv.awaitFocus("Join a Syncplay room")
+        tv.click("Jellyfin: 2 servers")
+        tv.await("Media servers")
+        tv.await("Bedroom Server")
+        tv.awaitFocus("Sign out")
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitUntil(5_000) { container.servers.value.map { it.key } == listOf(jellyfin2.key) }
+        tv.awaitGone("Screenshot Server")
+        tv.awaitFocus("Sign out")
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
+        tv.awaitFocus("Add Plex server")
+        tv.back()
+        tv.await("Jellyfin: Bedroom Server")
+    }
+
+    @Test
+    fun browseBothServersWithDpad() {
+        state.signInJellyfin(jellyfin)
+        state.signInPlex(plex)
+        waitUntil(5_000) { container.mediaSource.value is CompositeMediaSource }
+        launch()
+        tv.await("Libraries")
+        tv.awaitFocus("Join a Syncplay room")
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
+        tv.awaitFocus("Shows")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT, times = 2)
+        tv.awaitFocus("Films")
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        tv.awaitFocus("Lantern Festival")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Paper Boats")
+        tv.back()
+        tv.await("Libraries")
+    }
+
+    @Test
     fun playerPanelsWithDpad() {
         scenarios.clipPlayingInRoom()
         launch()
@@ -269,6 +334,8 @@ class TvNavigationTest {
         private val state = AppState()
         private lateinit var syncplay: FakeSyncplayServer
         private lateinit var jellyfin: FakeJellyfin
+        private lateinit var jellyfin2: FakeJellyfin
+        private lateinit var plex: FakePlex
 
         @BeforeClass
         @JvmStatic
@@ -276,6 +343,8 @@ class TvNavigationTest {
             assumeTrue("TV only", DeviceUi.kind(TestSupport.app) == DeviceKind.TV)
             syncplay = FakeSyncplayServer()
             jellyfin = FakeJellyfin()
+            jellyfin2 = FakeJellyfin(FakeJellyfin.PORT + 1, serverId = "fake-server-2", serverName = "Bedroom Server")
+            plex = FakePlex()
             state.snapshot()
         }
 
@@ -285,6 +354,8 @@ class TvNavigationTest {
             if (!::syncplay.isInitialized) return
             syncplay.close()
             jellyfin.close()
+            jellyfin2.close()
+            plex.close()
             state.restore()
         }
     }

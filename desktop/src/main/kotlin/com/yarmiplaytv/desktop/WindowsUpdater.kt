@@ -12,8 +12,15 @@ import java.security.MessageDigest
 import java.util.Base64
 import java.util.concurrent.TimeUnit
 
-/** The download page's name for this OS, which picks the package in its version.json. */
-internal fun updatePlatform(osName: String = System.getProperty("os.name").orEmpty()): String {
+/**
+ * The download page's name for this OS, which picks the package in its version.json; null in a store build
+ * (the Microsoft Store package sets yarmiplaytv.store), which mustn't update outside its store.
+ */
+internal fun updatePlatform(
+    osName: String = System.getProperty("os.name").orEmpty(),
+    store: String? = System.getProperty("yarmiplaytv.store"),
+): String? {
+    if (!store.isNullOrEmpty()) return null
     val os = osName.lowercase()
     return when {
         os.startsWith("windows") -> "windows"

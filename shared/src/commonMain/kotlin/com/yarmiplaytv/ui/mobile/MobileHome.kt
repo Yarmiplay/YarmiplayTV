@@ -35,34 +35,52 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.DeviceKind
+import com.yarmiplaytv.media.CompositeMediaSource
 import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.MediaItemType
+import com.yarmiplaytv.media.MediaSource
+import com.yarmiplaytv.media.jellyfin.JellyfinSource
+import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.browse.openItem
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.shared.ServerRecent
+import com.yarmiplaytv.ui.shared.recentByServer
+import com.yarmiplaytv.ui.shared.serversDetail
+import com.yarmiplaytv.ui.shared.serversTitle
 import com.yarmiplaytv.ui.theme.AppColors
 
 @Composable
 fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) {
     val room by container.sync.room.collectAsStateWithLifecycle()
     val source by container.mediaSource.collectAsStateWithLifecycle()
+    val jellyfin by container.jellyfinServers.collectAsStateWithLifecycle()
+    val plex by container.plexServers.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     val localFiles by container.local.files.collectAsStateWithLifecycle()
     val folders by container.local.folders.collectAsStateWithLifecycle()
     var libraries by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var recent by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var serverRecents by remember { mutableStateOf<List<ServerRecent>>(emptyList()) }
     var loadError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(source) {
-        val s = source ?: run { libraries = emptyList(); recent = emptyList(); return@LaunchedEffect }
+        val s = source ?: run { libraries = emptyList(); recent = emptyList(); serverRecents = emptyList(); return@LaunchedEffect }
         loadError = null
         runCatching { libraries = s.libraries() }.onFailure { loadError = it.message }
-        runCatching { recent = s.recent() }
+        if (s is CompositeMediaSource) {
+            recent = emptyList()
+            serverRecents = recentByServer(s.sources)
+        } else {
+            serverRecents = emptyList()
+            runCatching { recent = s.recent() }
+        }
     }
 
     val cardWidth = if (kind.isLarge) 260.dp else 200.dp
@@ -90,14 +108,21 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
                 nowPlaying?.let { np ->
                     StatusCard(Icons.Filled.PlayCircle, "Now playing", np.title, AppColors.Accent, { nav.push(Screen.Player) }, Modifier.fillMaxWidth())
                 }
-                val s = source
                 StatusCard(
                     Icons.Filled.Cloud,
-                    if (s != null) "Jellyfin: ${s.displayName}" else "Connect Jellyfin",
-                    if (s != null) "Signed in" else "Browse your media server",
-                    if (s != null) AppColors.Ready else AppColors.TextDim,
-                    { nav.push(Screen.JellyfinLogin) },
+                    serversTitle(JellyfinSource.KIND, jellyfin),
+                    if (jellyfin.isNotEmpty()) serversDetail(jellyfin) else "Browse your media server",
+                    if (jellyfin.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
+                    { nav.push(if (jellyfin.isEmpty()) Screen.JellyfinLogin else Screen.Servers) },
                     Modifier.fillMaxWidth().testTag("card_jellyfin"),
+                )
+                StatusCard(
+                    Icons.Filled.Cloud,
+                    serversTitle(PlexSource.KIND, plex),
+                    if (plex.isNotEmpty()) serversDetail(plex) else "Browse your Plex server",
+                    if (plex.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
+                    { nav.push(if (plex.isEmpty()) Screen.PlexLogin else Screen.Servers) },
+                    Modifier.fillMaxWidth().testTag("card_plex"),
                 )
                 StatusCard(
                     Icons.Filled.SdStorage,
@@ -119,10 +144,10 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
             item {
                 SectionHeader("Libraries", Modifier.padding(top = 12.dp))
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(libraries, key = { it.id }) { lib ->
+                    items(libraries, key = { it.uniqueKey }) { lib ->
                         PosterTile(
                             title = lib.name,
-                            subtitle = null,
+                            subtitle = (source as? CompositeMediaSource)?.sourceOf(lib)?.displayName,
                             imageUrl = source?.imageUrl(lib, 480),
                             aspectRatio = 16f / 9f,
                             placeholder = when (lib.collectionType) {
@@ -138,22 +163,34 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
             }
         }
         if (recent.isNotEmpty()) {
-            item {
-                SectionHeader("Continue watching & recently added", Modifier.padding(top = 12.dp))
-                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(recent, key = { it.id }) { item ->
-                        PosterTile(
-                            title = item.seriesName ?: item.name,
-                            subtitle = if (item.type == MediaItemType.EPISODE) item.displayTitle else item.year?.toString(),
-                            imageUrl = source?.imageUrl(item, 480),
-                            aspectRatio = 16f / 9f,
-                            placeholder = Icons.Filled.Movie,
-                            onClick = { openItem(container, nav, item) },
-                            modifier = Modifier.width(cardWidth),
-                        )
-                    }
+            item { RecentRow(container, nav, "Continue watching & recently added", recent, source, cardWidth) }
+        }
+        serverRecents.forEach { row ->
+            if (row.items.isNotEmpty()) {
+                item(key = "recent_${row.server.key}") { RecentRow(container, nav, row.title, row.items, row.server, cardWidth) }
+            } else if (row.error != null) {
+                item(key = "recent_${row.server.key}") {
+                    Text("Couldn't load ${row.server.displayName}: ${row.error}", color = AppColors.Error, modifier = Modifier.padding(16.dp))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RecentRow(container: AppContainer, nav: Navigator, title: String, items: List<MediaItem>, source: MediaSource?, cardWidth: Dp) {
+    SectionHeader(title, Modifier.padding(top = 12.dp))
+    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(items, key = { it.uniqueKey }) { item ->
+            PosterTile(
+                title = item.seriesName ?: item.name,
+                subtitle = if (item.type == MediaItemType.EPISODE) item.displayTitle else item.year?.toString(),
+                imageUrl = source?.imageUrl(item, 480),
+                aspectRatio = 16f / 9f,
+                placeholder = Icons.Filled.Movie,
+                onClick = { openItem(container, nav, item) },
+                modifier = Modifier.width(cardWidth),
+            )
         }
     }
 }

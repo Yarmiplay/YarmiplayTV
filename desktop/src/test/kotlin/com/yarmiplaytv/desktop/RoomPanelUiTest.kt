@@ -213,7 +213,7 @@ class RoomPanelUiTest {
     }
 }
 
-private class IdlePlayer : Player {
+internal class IdlePlayer : Player {
     override val state = MutableStateFlow(PlaybackState())
     override val tracks = MutableStateFlow<List<Track>>(emptyList())
     override val events = MutableSharedFlow<PlayerEvent>(extraBufferCapacity = 16)

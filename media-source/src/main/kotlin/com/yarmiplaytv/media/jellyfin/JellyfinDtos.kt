@@ -82,6 +82,17 @@ internal data class AuthenticateByNameBody(
 )
 
 @Serializable
+internal data class PlaybackProgressBody(
+    @SerialName("ItemId") val itemId: String,
+    @SerialName("MediaSourceId") val mediaSourceId: String? = null,
+    @SerialName("PlaySessionId") val playSessionId: String,
+    @SerialName("PositionTicks") val positionTicks: Long,
+    @SerialName("IsPaused") val isPaused: Boolean,
+    @SerialName("CanSeek") val canSeek: Boolean = true,
+    @SerialName("PlayMethod") val playMethod: String = "DirectPlay",
+)
+
+@Serializable
 internal data class QuickConnectAuthBody(
     @SerialName("Secret") val secret: String,
 )

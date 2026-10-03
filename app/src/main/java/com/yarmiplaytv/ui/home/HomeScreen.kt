@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -44,8 +45,12 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.media.CompositeMediaSource
 import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.MediaItemType
+import com.yarmiplaytv.media.MediaSource
+import com.yarmiplaytv.media.jellyfin.JellyfinSource
+import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
@@ -56,6 +61,10 @@ import com.yarmiplaytv.ui.components.Pill
 import com.yarmiplaytv.ui.components.PosterCard
 import com.yarmiplaytv.ui.components.SectionTitle
 import com.yarmiplaytv.ui.components.TvTile
+import com.yarmiplaytv.ui.shared.ServerRecent
+import com.yarmiplaytv.ui.shared.recentByServer
+import com.yarmiplaytv.ui.shared.serversDetail
+import com.yarmiplaytv.ui.shared.serversTitle
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.update.UpdateState
 
@@ -63,18 +72,28 @@ import com.yarmiplaytv.update.UpdateState
 fun HomeScreen(container: AppContainer, nav: Navigator) {
     val room by container.sync.room.collectAsStateWithLifecycle()
     val source by container.mediaSource.collectAsStateWithLifecycle()
+    val jellyfin by container.jellyfinServers.collectAsStateWithLifecycle()
+    val plex by container.plexServers.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     val update by container.updates.state.collectAsStateWithLifecycle()
     var libraries by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var recent by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var serverRecents by remember { mutableStateOf<List<ServerRecent>>(emptyList()) }
     var loadError by remember { mutableStateOf<String?>(null) }
     val firstFocus = remember { FocusRequester() }
+    val updateFocus = remember { FocusRequester() }
 
     LaunchedEffect(source) {
-        val s = source ?: run { libraries = emptyList(); recent = emptyList(); return@LaunchedEffect }
+        val s = source ?: run { libraries = emptyList(); recent = emptyList(); serverRecents = emptyList(); return@LaunchedEffect }
         loadError = null
         runCatching { libraries = s.libraries() }.onFailure { loadError = it.message }
-        runCatching { recent = s.recent() }
+        if (s is CompositeMediaSource) {
+            recent = emptyList()
+            serverRecents = recentByServer(s.sources)
+        } else {
+            serverRecents = emptyList()
+            runCatching { recent = s.recent() }
+        }
     }
     LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
 
@@ -89,9 +108,11 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                 Spacer(Modifier.width(16.dp))
                 Text("YarmiplayTV", style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.weight(1f))
-                if (source != null) IconAction(Icons.Filled.Search, "Search", { nav.push(Screen.Search()) })
+                // The tiles under these buttons would otherwise win over the full-width update notice.
+                val toNotice = if (update != null) Modifier.focusProperties { down = updateFocus } else Modifier
+                if (source != null) IconAction(Icons.Filled.Search, "Search", { nav.push(Screen.Search()) }, toNotice)
                 Spacer(Modifier.width(8.dp))
-                IconAction(Icons.Filled.Settings, "Settings", { nav.push(Screen.Settings) })
+                IconAction(Icons.Filled.Settings, "Settings", { nav.push(Screen.Settings) }, toNotice)
             }
         }
         update?.let { u ->
@@ -99,7 +120,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                 UpdateNotice(u, {
                     container.updates.dismiss()
                     runCatching { firstFocus.requestFocus() }
-                }, Modifier.padding(horizontal = 48.dp))
+                }, Modifier.padding(horizontal = 48.dp).focusRequester(updateFocus))
             }
         }
         item(key = "tiles") {
@@ -121,12 +142,20 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                 nowPlaying?.let { np ->
                     StatusTile(Icons.Filled.PlayCircle, "Now playing", np.title, AppColors.Accent, Modifier.weight(1f)) { nav.push(Screen.Player) }
                 }
-                val s = source
-                if (s != null) {
-                    StatusTile(Icons.Filled.Cloud, "Jellyfin: ${s.displayName}", "Signed in", AppColors.Ready, Modifier.weight(1f)) { nav.push(Screen.JellyfinLogin) }
-                } else {
-                    StatusTile(Icons.Filled.Cloud, "Connect Jellyfin", "Browse your media server", AppColors.TextDim, Modifier.weight(1f)) { nav.push(Screen.JellyfinLogin) }
-                }
+                StatusTile(
+                    Icons.Filled.Cloud,
+                    serversTitle(JellyfinSource.KIND, jellyfin),
+                    if (jellyfin.isNotEmpty()) serversDetail(jellyfin) else "Browse your media server",
+                    if (jellyfin.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
+                    Modifier.weight(1f),
+                ) { nav.push(if (jellyfin.isEmpty()) Screen.JellyfinLogin else Screen.Servers) }
+                StatusTile(
+                    Icons.Filled.Cloud,
+                    serversTitle(PlexSource.KIND, plex),
+                    if (plex.isNotEmpty()) serversDetail(plex) else "Browse your Plex server",
+                    if (plex.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
+                    Modifier.weight(1f),
+                ) { nav.push(if (plex.isEmpty()) Screen.PlexLogin else Screen.Servers) }
             }
         }
         if (loadError != null) {
@@ -137,10 +166,10 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                 Column {
                     SectionTitle("Libraries", Modifier.padding(horizontal = 48.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp), contentPadding = PaddingValues(horizontal = 48.dp, vertical = 8.dp)) {
-                        items(libraries, key = { it.id }) { lib ->
+                        items(libraries, key = { it.uniqueKey }) { lib ->
                             PosterCard(
                                 title = lib.name,
-                                subtitle = null,
+                                subtitle = (source as? CompositeMediaSource)?.sourceOf(lib)?.displayName,
                                 imageUrl = source?.imageUrl(lib, 480),
                                 aspectRatio = 16f / 9f,
                                 placeholderIcon = when (lib.collectionType) {
@@ -157,26 +186,38 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
             }
         }
         if (recent.isNotEmpty()) {
-            item(key = "recent") {
-                Column {
-                    SectionTitle("Continue watching & recently added", Modifier.padding(horizontal = 48.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp), contentPadding = PaddingValues(horizontal = 48.dp, vertical = 8.dp)) {
-                        items(recent, key = { it.id }) { item ->
-                            PosterCard(
-                                title = item.seriesName ?: item.name,
-                                subtitle = if (item.type == MediaItemType.EPISODE) item.displayTitle else item.year?.toString(),
-                                imageUrl = source?.imageUrl(item, 480),
-                                aspectRatio = 16f / 9f,
-                                placeholderIcon = Icons.Filled.Movie,
-                                onClick = { openItem(container, nav, item) },
-                                modifier = Modifier.width(260.dp),
-                            )
-                        }
-                    }
+            item(key = "recent") { RecentRow(container, nav, "Continue watching & recently added", recent, source) }
+        }
+        serverRecents.forEach { row ->
+            if (row.items.isNotEmpty()) {
+                item(key = "recent_${row.server.key}") { RecentRow(container, nav, row.title, row.items, row.server) }
+            } else if (row.error != null) {
+                item(key = "recent_${row.server.key}") {
+                    Text("Couldn't load ${row.server.displayName}: ${row.error}", color = AppColors.Error, modifier = Modifier.padding(horizontal = 48.dp))
                 }
             }
         }
         item(key = "bottom") { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+@Composable
+private fun RecentRow(container: AppContainer, nav: Navigator, title: String, items: List<MediaItem>, source: MediaSource?) {
+    Column {
+        SectionTitle(title, Modifier.padding(horizontal = 48.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp), contentPadding = PaddingValues(horizontal = 48.dp, vertical = 8.dp)) {
+            items(items, key = { it.uniqueKey }) { item ->
+                PosterCard(
+                    title = item.seriesName ?: item.name,
+                    subtitle = if (item.type == MediaItemType.EPISODE) item.displayTitle else item.year?.toString(),
+                    imageUrl = source?.imageUrl(item, 480),
+                    aspectRatio = 16f / 9f,
+                    placeholderIcon = Icons.Filled.Movie,
+                    onClick = { openItem(container, nav, item) },
+                    modifier = Modifier.width(260.dp),
+                )
+            }
+        }
     }
 }
 

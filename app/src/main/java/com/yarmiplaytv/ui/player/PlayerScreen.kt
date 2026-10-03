@@ -266,7 +266,7 @@ private fun CenterStatus(
     val focus = remember { FocusRequester() }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         when (status) {
-            is PlaylistStatus.Resolving -> StatusCard("Finding in Jellyfin…", status.fileName)
+            is PlaylistStatus.Resolving -> StatusCard("Finding the file…", status.fileName)
             is PlaylistStatus.Loading -> if (!fileLoaded) StatusCard("Loading…", status.fileName)
             is PlaylistStatus.NotFound, is PlaylistStatus.Failed -> {
                 val (file, reason) = when (status) {
@@ -285,6 +285,7 @@ private fun CenterStatus(
                                 ActionButton("Pick manually", { nav.push(Screen.Search(pickFor = file)) }, Modifier.focusRequester(focus), icon = Icons.Filled.Search, primary = true)
                             } else {
                                 ActionButton("Connect Jellyfin", { nav.push(Screen.JellyfinLogin) }, Modifier.focusRequester(focus), primary = true)
+                                ActionButton("Connect Plex", { nav.push(Screen.PlexLogin) })
                             }
                             ActionButton("Dismiss", { container.playlist.dismissStatus() })
                         }
@@ -310,7 +311,7 @@ private fun CenterStatus(
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("Nothing playing", style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        if (inRoom) "Pick something from Jellyfin, or wait for someone in the room to choose a file." else "Pick something from Jellyfin to watch.",
+                        if (inRoom) "Pick something to watch, or wait for someone in the room to choose a file." else "Pick something to watch.",
                         color = AppColors.TextDim,
                     )
                     ActionButton("Browse", { nav.popTo(Screen.Home) }, Modifier.focusRequester(focus), icon = Icons.Filled.Home, primary = true)

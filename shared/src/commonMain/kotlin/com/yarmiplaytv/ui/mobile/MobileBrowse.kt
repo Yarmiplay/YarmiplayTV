@@ -52,6 +52,7 @@ import com.yarmiplaytv.media.MediaItemType
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.browse.aspectFor
 import com.yarmiplaytv.ui.browse.openItem
+import com.yarmiplaytv.ui.browse.serverNameOf
 import com.yarmiplaytv.ui.browse.subtitleFor
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
@@ -79,7 +80,7 @@ fun MobileTopBar(title: String, nav: Navigator, subtitle: String? = null, showBa
 }
 
 @Composable
-private fun MobileItemGrid(container: AppContainer, items: List<MediaItem>, kind: DeviceKind, onClick: (MediaItem) -> Unit) {
+private fun MobileItemGrid(container: AppContainer, items: List<MediaItem>, kind: DeviceKind, showServer: Boolean = false, onClick: (MediaItem) -> Unit) {
     val source by container.mediaSource.collectAsStateWithLifecycle()
     val aspect = aspectFor(items)
     val min = when {
@@ -95,10 +96,10 @@ private fun MobileItemGrid(container: AppContainer, items: List<MediaItem>, kind
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        items(items, key = { it.id }) { item ->
+        items(items, key = { it.uniqueKey }) { item ->
             PosterTile(
                 title = if (item.type == MediaItemType.EPISODE) item.displayTitle else item.name,
-                subtitle = subtitleFor(item),
+                subtitle = subtitleFor(item, if (showServer) serverNameOf(source, item) else null),
                 imageUrl = source?.imageUrl(item, if (aspect < 1f) 300 else 480),
                 aspectRatio = aspect,
                 placeholder = when (item.type) {
@@ -159,10 +160,10 @@ fun MobileSearchScreen(container: AppContainer, nav: Navigator, initialQuery: St
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("search_field"),
         )
         when {
-            source == null -> EmptyMessage("Connect Jellyfin first")
+            source == null -> EmptyMessage("Connect Jellyfin or Plex first")
             searching && results.isEmpty() -> EmptyMessage("Searching…")
             query.length >= 2 && results.isEmpty() -> EmptyMessage("No results")
-            else -> MobileItemGrid(container, results, kind) { item ->
+            else -> MobileItemGrid(container, results, kind, showServer = true) { item ->
                 if (pickFor != null && item.isPlayable) {
                     container.playlist.resolveManually(item)
                     nav.back()

@@ -10,7 +10,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,12 +28,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.ui.components.ActionButton
-import com.yarmiplaytv.ui.components.Panel
 import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.shared.rememberJellyfinLoginModel
@@ -42,7 +39,6 @@ import com.yarmiplaytv.ui.theme.AppColors
 
 @Composable
 fun JellyfinLoginScreen(container: AppContainer, nav: Navigator) {
-    val source by container.jellyfin.collectAsStateWithLifecycle()
     val model = rememberJellyfinLoginModel(container)
     var showPassword by rememberSaveable { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
@@ -61,17 +57,6 @@ fun JellyfinLoginScreen(container: AppContainer, nav: Navigator) {
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text("Jellyfin", style = MaterialTheme.typography.headlineMedium)
-        source?.let { s ->
-            Panel {
-                Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Signed in to ${s.displayName}", style = MaterialTheme.typography.titleMedium)
-                        Text("${s.session.userName} · ${s.session.serverUrl}", color = AppColors.TextDim)
-                    }
-                    ActionButton("Sign out", model::signOut, icon = Icons.Filled.Logout)
-                }
-            }
-        }
         Text("Server address, e.g. http://192.168.1.10:8096. Inside the emulator your PC is 10.0.2.2.", color = AppColors.TextDim)
         TvTextField(model.url, { model.url = it.trim() }, "Server", Modifier.focusRequester(firstFocus), placeholder = "http://192.168.1.10:8096", keyboardType = KeyboardType.Uri)
         if (model.discovered.isNotEmpty()) {

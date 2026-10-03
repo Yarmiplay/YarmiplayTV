@@ -6,6 +6,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -25,6 +26,7 @@ data class ClientInfo(
 )
 
 /** A logged-in Jellyfin session; persist this to skip login next time. */
+@Serializable
 data class JellyfinSession(
     val serverUrl: String,
     val serverName: String,

@@ -81,7 +81,7 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
                 }
                 Text(
                     "Media folders work like Syncplay's media directories: when the room's playlist moves to a file, " +
-                        "YarmiplayTV looks for it here first, then in Jellyfin.",
+                        "YarmiplayTV looks for it here first, then on Jellyfin and Plex.",
                     color = AppColors.TextDim,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(horizontal = 16.dp),
@@ -143,7 +143,7 @@ private fun LocalFileActions(container: AppContainer, uri: String, name: String,
         OutlinedButton({ container.playlist.playLocal(uri, inRoom = false); onDone() }, Modifier.fillMaxWidth()) {
             Icon(Icons.Filled.PlayArrow, contentDescription = null); Text("  Play only on this device")
         }
-        Text("Others need the same file (same name) in their Syncplay media folders or Jellyfin.", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+        Text("Others need the same file (same name) in their Syncplay media folders, Jellyfin or Plex.", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
     }
 }
 

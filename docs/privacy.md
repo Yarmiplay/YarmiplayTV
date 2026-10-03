@@ -6,8 +6,9 @@ and desktop.
 ## Summary
 
 YarmiplayTV doesn't collect any data. It has no accounts, no analytics, no advertising and no crash reporting,
-and the developer runs no servers that the app talks to. The app connects to the Syncplay and Jellyfin servers
-you enter or pick and, unless you turn it off, to GitHub to check for a new version.
+and the developer runs no servers that the app talks to. The app connects to the Syncplay, Jellyfin and Plex
+servers you enter or pick, to plex.tv when you sign in to Plex and, unless you turn it off, to GitHub to check
+for a new version.
 
 ## What the app sends, and to whom
 
@@ -18,9 +19,23 @@ you enter or pick and, unless you turn it off, to GitHub to check for a new vers
   can see it. The server is run by whoever hosts it, not by the developer of YarmiplayTV.
 - **Jellyfin servers you sign in to:** your Jellyfin user name and password (or a Quick Connect code) to sign
   in, then requests to browse, search and stream your library. Jellyfin shows the app as "YarmiplayTV" in its
-  list of devices.
+  list of devices. You can sign in to several Jellyfin and Plex servers; each one only gets the requests for
+  its own library, and signing out of one forgets its token.
+- **plex.tv, when you use Plex:** to sign in, the app asks plex.tv for a link code, which you enter at
+  plex.tv/link while signed in to your Plex account, and then gets a sign-in token for that account. It then
+  asks plex.tv for the servers on your account and their addresses, and asks again when a server can't be
+  reached at its saved address. These requests identify the app as "YarmiplayTV" with a device name and a
+  random device id, and Plex handles them under the [Plex Privacy Policy](https://www.plex.tv/about/privacy-legal/).
+- **Plex servers you pick:** requests to browse, search and stream your library, sent with the token for that
+  server. Plex shows the app as "YarmiplayTV" in its list of devices.
+- **Watch progress, to your own servers:** while you play a file that is on your Jellyfin or Plex server (also
+  when it plays from a folder on your device), the app tells that server which item is playing, how far along
+  it is and whether it's paused, and marks it watched once 90% is played. This goes only to the servers you
+  signed in to, so they can show "continue watching" and watched marks. When several of your servers have the
+  same file, each of them is told. Turn it off with **Report progress to your media servers** in Settings.
 - **Your local network:** when you look for Jellyfin servers, the app sends a discovery message on the local
-  network that Jellyfin servers answer.
+  network that Jellyfin servers answer. To connect to a Plex server, the app tries the addresses plex.tv lists
+  for it, local ones first.
 - **GitHub, to check for updates:** when it starts, the app from the download page (the APK and the desktop
   apps) reads the latest version number from the download page on GitHub Pages (yarmiplay.github.io). The
   request contains nothing about you, your settings or your device; like any web request it reaches GitHub
@@ -30,12 +45,13 @@ you enter or pick and, unless you turn it off, to GitHub to check for a new vers
   update on Windows, the installer is downloaded from the same page. The app from Google Play doesn't check:
   Google Play updates it.
 
-Connections are encrypted when the server supports it: Syncplay servers with TLS, and Jellyfin servers on
-HTTPS. Jellyfin servers on a home network often use plain HTTP, and the app allows that.
+Connections are encrypted when the server supports it: Syncplay servers with TLS, and Jellyfin and Plex
+servers on HTTPS. plex.tv is always HTTPS. Media servers on a home network often use plain HTTP, and the app
+allows that.
 
 ## What stays on your device
 
-Your settings (servers, name, room and its password, playback preferences), the Jellyfin sign-in token, saved playlists and the
+Your settings (servers, name, room and its password, playback preferences), the sign-in tokens of each Jellyfin and Plex server, saved playlists and the
 folders you add to your local library are stored only on your device. Video files you play from the device are
 read from the device and are never uploaded. On Android, uninstalling the app or clearing its storage deletes
 this data. On desktop it is in `%APPDATA%\YarmiplayTV` (Windows), `~/Library/Application Support/YarmiplayTV`
@@ -43,7 +59,7 @@ this data. On desktop it is in `%APPDATA%\YarmiplayTV` (Windows), `~/Library/App
 
 ## Permissions (Android)
 
-- **Internet and network state:** to connect to Syncplay and Jellyfin servers.
+- **Internet and network state:** to connect to Syncplay, Jellyfin and Plex servers and plex.tv.
 - **Wi-Fi multicast:** to find Jellyfin servers on the local network.
 - **Wake lock:** to keep the screen on during playback.
 - **Files:** only the videos and folders you pick in the system file picker.

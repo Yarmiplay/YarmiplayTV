@@ -47,7 +47,7 @@ tasks.test {
     testLogging { events("passed", "skipped", "failed") }
 }
 
-val appVersion = "1.3.0"
+val appVersion = "1.4.0"
 val libmpvDir = project(":player-mpv-desktop").layout.buildDirectory.dir("libmpv")
 
 /** Draws the app logo (the two play triangles of ic_logo.xml on the banner gradient) as png, ico and icns. */
@@ -62,6 +62,14 @@ abstract class GenerateAppIcons : DefaultTask() {
         dir.resolve("icon.icns").writeBytes(
             icns(listOf("icp4" to 16, "icp5" to 32, "icp6" to 64, "ic07" to 128, "ic08" to 256, "ic09" to 512, "ic10" to 1024)),
         )
+        // The logos desktop/msix/AppxManifest.xml names, for scripts/make-msix.ps1.
+        val msix = dir.resolve("msix").apply { mkdirs() }
+        listOf("Square44x44Logo" to 44, "StoreLogo" to 50, "Square150x150Logo" to 150).forEach { (name, size) ->
+            msix.resolve("$name.png").writeBytes(png(size))
+        }
+        val wide = BufferedImage(310, 150, BufferedImage.TYPE_INT_ARGB)
+        wide.createGraphics().apply { drawImage(render(150), 80, 0, null); dispose() }
+        msix.resolve("Wide310x150Logo.png").writeBytes(ByteArrayOutputStream().also { ImageIO.write(wide, "png", it) }.toByteArray())
     }
 
     private fun render(size: Int): BufferedImage {

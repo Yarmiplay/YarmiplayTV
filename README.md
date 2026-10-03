@@ -1,14 +1,24 @@
 # YarmiplayTV
 
 A [Syncplay](https://syncplay.pl/) client for Android TV / Google TV, phones, tablets and Windows, macOS and Linux
-desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin](https://jellyfin.org/) server on
-the local network or from files on the device.
+desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin](https://jellyfin.org/) and
+[Plex](https://www.plex.tv/) servers or from files on the device.
 
 - Joins any Syncplay server/room; play, pause and seek are synchronised with desktop Syncplay users.
 - Plays through libmpv (hardware decoding with software fallback, libass subtitles, audio/subtitle track switching).
-- Browses Jellyfin libraries (Quick Connect or username/password login).
-- Shared playlists: when someone selects an entry, the app finds that filename in your media folders or Jellyfin
-  and loads it automatically.
+- Browses Jellyfin libraries (Quick Connect or username/password login) and Plex libraries (link the device at
+  plex.tv/link, then pick a server). You can stay signed in to several Jellyfin and several Plex servers at once
+  (add or sign out of each under Media servers); their libraries show side by side, home has a "Continue
+  watching" row per server, and searches cover all of them. You still join one Syncplay room at a time. Files
+  are always played as the original file (direct play), so the name matches what other Syncplay users have.
+- Shared playlists: when someone selects an entry, the app finds that filename in your media folders or on your
+  servers and loads it automatically. Each file is streamed from one place only: your media folders first, then
+  a server with exactly that file name (Settings > Preferred server decides when several have it), and only if
+  no server has the exact name, a looser match (punctuation and case ignored, then a title search).
+- Reports what you watch back to your servers: progress while playing, and "watched" once 90% is played. When
+  several servers have the same file, each is told, also when the file plays from your media folders.
+  The app never jumps to a server's saved position, since the room decides where playback is. Turn reporting
+  off with Settings > Report progress to your media servers.
 - Like Syncplay, it warns when someone's copy of a file differs from yours: the playlist marks the entry when
   their file size differs (with both sizes when they're shared), and the room list says whether the name, size
   or duration differ. It's only a warning; playback and sync carry on as usual.
@@ -64,8 +74,9 @@ CI signs with a throwaway debug key.
 
 Installers come from the `desktop` CI job (and the download page):
 
-- **Windows:** `.msi` or `.exe`, installed per user; libmpv is included. Releases are code signed; uninstall
-  from Settings > Apps.
+- **Windows:** `.msi` or `.exe`, installed per user, or `winget install Yarmiplay.YarmiplayTV`; libmpv is
+  included. Releases are code signed when SignPath signing is set up (see below); uninstall from
+  Settings > Apps.
 - **macOS:** `.dmg` (Apple Silicon, not notarized: right-click the app and choose Open the first time).
   It uses Homebrew's libmpv, so run `brew install mpv` first.
 - **Linux:** `.deb` for Ubuntu 22.04+ and Debian 12+; `sudo apt install ./yarmiplaytv_*.deb` also installs
@@ -98,7 +109,7 @@ elsewhere):
 | Module | What it is |
 | --- | --- |
 | `syncplay-protocol` | Pure Kotlin Syncplay protocol client (JSON over TCP, optional TLS) |
-| `media-source` | `MediaSource` interface and the Jellyfin implementation (pure Kotlin, OkHttp) |
+| `media-source` | `MediaSource` interface with the Jellyfin and Plex implementations, and a combined view for browsing several servers (pure Kotlin, OkHttp) |
 | `player-mpv` | libmpv wrapper exposing a small `Player` interface |
 | `shared` | Kotlin Multiplatform (Android and desktop): phone/tablet/desktop UI, `SyncController`, `PlaylistController`, settings, local library |
 | `app` | The Android app: TV UI (Compose for TV) and the Android side of `shared` |
@@ -167,8 +178,8 @@ also run `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
 On a phone or tablet:
 
 - **Local files.** Use "Files on this device" to open a single video, or add a folder such as `Movies`.
-  When the room's playlist moves to a file, the app looks for that filename in your folders first, then in
-  Jellyfin, so a friend's desktop Syncplay sees the same file.
+  When the room's playlist moves to a file, the app looks for that filename in your folders first, then on
+  Jellyfin and Plex, so a friend's desktop Syncplay sees the same file.
 - **Player controls.** The player goes fullscreen in landscape. Tap to show the controls. Double-tap the
   left or right side to seek, or the middle to pause. The playlist, room, chat and track panels open as
   bottom sheets.
@@ -282,15 +293,44 @@ root (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). The store listin
 are in [docs/play](docs/play/README.md); the privacy policy is [docs/privacy.md](docs/privacy.md), published at
 `/privacy/` on the download page.
 
-The same tag builds the Windows installers and submits them to [SignPath](https://signpath.io) for signing.
-An approver accepts the request in SignPath (the job waits up to 6 hours), then the signed `.msi` and `.exe`
-are verified and attached to the tag's GitHub release, and the download page is republished with them.
-Signing needs the repository variable `SIGNPATH_ORGANIZATION_ID` and the secret `SIGNPATH_API_TOKEN` (a SignPath
-CI user with submitter rights), a SignPath project with the slug `YarmiplayTV` linked to the GitHub.com trusted
-build system, its `release-signing` policy, and [.github/signpath/artifact-configuration.xml](.github/signpath/artifact-configuration.xml)
-as its default artifact configuration. Without the variable the installers are built but not signed or
-released. SmartScreen may still warn about a newly signed release until it has been downloaded enough; the
-reputation then stays with the certificate for later releases.
+The same tag builds the Windows installers, attaches them to the tag's GitHub release and republishes the
+download page with them. With the repository variable `SIGNPATH_ORGANIZATION_ID` and the secret
+`SIGNPATH_API_TOKEN` (a SignPath CI user with submitter rights) they are first submitted to
+[SignPath](https://signpath.io) for signing: an approver accepts the request in SignPath (the job waits up to
+6 hours), then the signed `.msi` and `.exe` are verified and released. That also needs a SignPath project with
+the slug `YarmiplayTV` linked to the GitHub.com trusted build system, its `release-signing` policy, and
+[.github/signpath/artifact-configuration.xml](.github/signpath/artifact-configuration.xml) as its default
+artifact configuration. Without the variable the unsigned installers are released; browsers and SmartScreen
+warn about those, winget and the Store package don't. SmartScreen may also warn about a newly signed release
+until it has been downloaded enough; the reputation then stays with the certificate for later releases.
+
+### winget
+
+The first version is submitted by hand: with [wingetcreate](https://github.com/microsoft/winget-create)
+(`winget install Microsoft.WingetCreate`), run, for the latest release's version:
+
+```powershell
+wingetcreate new https://github.com/Yarmiplay/YarmiplayTV/releases/download/v1.4.0/YarmiplayTV-1.4.0.msi
+```
+
+with the identifier `Yarmiplay.YarmiplayTV`, scope `user` (the `.msi` installs per user) and the `.msi` only,
+and let it open the pull request to `microsoft/winget-pkgs`. Once that is merged, set the repository variable
+`WINGET_PACKAGE_ID` to `Yarmiplay.YarmiplayTV` and the secret `WINGET_TOKEN` to a classic personal access
+token with the `public_repo` scope of an account with a fork of `microsoft/winget-pkgs`; each release tag then
+opens the update pull request itself. Installs from winget update themselves like the downloaded `.msi`.
+
+### Microsoft Store
+
+The release run also has a `windows-store-msix-<version>` artifact: an unsigned `.msix` of the same app,
+which the Store signs when it is uploaded in [Partner Center](https://partner.microsoft.com/dashboard) (a free
+individual developer account). [desktop/msix/AppxManifest.xml](desktop/msix/AppxManifest.xml) needs the
+Identity Name, Publisher and PublisherDisplayName that Partner Center shows under Product identity for the
+reserved name. The submission asks for the privacy policy (`/privacy/` on the download page), a reason for the
+`runFullTrust` capability (a desktop media player built on libmpv), screenshots and the age rating. The Store
+build doesn't look for updates; the Store updates it.
+
+`scripts/make-msix.ps1` builds the same package locally (needs the Windows SDK), and
+`scripts/make-msix.ps1 -Register` installs it unpacked instead for a check (needs Developer Mode).
 
 ## Code signing policy
 
@@ -304,8 +344,8 @@ Only the Windows installers and the YarmiplayTV launcher in them are signed, bui
 `.github/workflows/release.yml` from a version tag of this repository. Bundled third-party files (the Java
 runtime, libmpv, Skia) are included as their projects publish them.
 
-Privacy: see the [privacy policy](docs/privacy.md). The program connects to the Syncplay and Jellyfin servers
-you enter and, when it starts, reads the latest version number from the download page on GitHub Pages; that
+Privacy: see the [privacy policy](docs/privacy.md). The program connects to the Syncplay, Jellyfin and Plex
+servers you enter or pick (and to plex.tv to sign in to Plex and find its servers) and, when it starts, reads the latest version number from the download page on GitHub Pages; that
 request carries no information about the user and can be turned off with "Check for updates" in Settings.
 
 ## License

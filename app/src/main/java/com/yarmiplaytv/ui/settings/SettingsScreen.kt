@@ -32,6 +32,9 @@ import com.yarmiplaytv.ui.components.SectionTitle
 import com.yarmiplaytv.ui.components.ToggleRow
 import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.components.ValueRow
+import com.yarmiplaytv.ui.shared.nextPreferred
+import com.yarmiplaytv.ui.shared.preferredOf
+import com.yarmiplaytv.ui.shared.serverLabel
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
@@ -45,6 +48,9 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
     fun saveSync(sync: SyncSettings = settings.sync, autoReady: Boolean = settings.autoReadyOnLoad) =
         container.scope.launch { container.settingsStore.saveSync(sync, autoReady) }
     fun savePlayback(p: PlaybackPrefs) = container.scope.launch { container.settingsStore.savePlayback(p) }
+    val servers by container.servers.collectAsStateWithLifecycle()
+    fun saveServerPrefs(preferred: String = settings.preferredServer, report: Boolean = settings.reportPlayback) =
+        container.scope.launch { container.settingsStore.saveServerPrefs(preferred, report) }
 
     val s = settings.sync
     val pb = settings.playback
@@ -69,12 +75,28 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
         ToggleRow("Rewind when I'm ahead", s.rewindOnDesync, { saveSync(s.copy(rewindOnDesync = !s.rewindOnDesync)) }, subtitle = "Seek back when more than ${s.rewindThreshold.toInt()} s ahead of the room")
         ToggleRow("Slow down to catch up", s.slowOnDesync, { saveSync(s.copy(slowOnDesync = !s.slowOnDesync)) }, subtitle = "Play at 0.95× when slightly ahead")
         ToggleRow("Ready when joining a room", s.readyAtStart, { saveSync(s.copy(readyAtStart = !s.readyAtStart)) })
-        ToggleRow("Ready after loading a playlist item", settings.autoReadyOnLoad, { saveSync(autoReady = !settings.autoReadyOnLoad) }, subtitle = "Mark yourself ready once the room's file is loaded from Jellyfin")
+        ToggleRow("Ready after loading a playlist item", settings.autoReadyOnLoad, { saveSync(autoReady = !settings.autoReadyOnLoad) }, subtitle = "Mark yourself ready once the room's file is loaded")
         ToggleRow(
             "Remember room playlists",
             settings.autosavePlaylists,
             { container.scope.launch { container.settingsStore.saveAutosavePlaylists(!settings.autosavePlaylists) } },
             subtitle = "Put a room's playlist back when you rejoin and it's empty",
+        )
+
+        SectionTitle("Media servers")
+        preferredOf(servers, settings.preferredServer)?.takeIf { servers.size > 1 }?.let { preferred ->
+            ValueRow(
+                "Preferred server",
+                serverLabel(preferred),
+                { saveServerPrefs(preferred = nextPreferred(servers, preferred.key)) },
+                subtitle = "Streams a room's file when several servers have it",
+            )
+        }
+        ToggleRow(
+            "Report progress to your media servers",
+            settings.reportPlayback,
+            { saveServerPrefs(report = !settings.reportPlayback) },
+            subtitle = "Send watched state and how far you got to the servers that have the file",
         )
 
         SectionTitle("Playback")

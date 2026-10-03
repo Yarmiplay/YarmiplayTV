@@ -23,6 +23,8 @@ import com.yarmiplaytv.ui.browse.ItemActionsDialog
 import com.yarmiplaytv.ui.browse.SearchScreen
 import com.yarmiplaytv.ui.components.ToastHost
 import com.yarmiplaytv.ui.connect.JellyfinLoginScreen
+import com.yarmiplaytv.ui.connect.PlexLoginScreen
+import com.yarmiplaytv.ui.connect.ServersScreen
 import com.yarmiplaytv.ui.connect.SyncplayConnectScreen
 import com.yarmiplaytv.ui.home.HomeScreen
 import com.yarmiplaytv.ui.nav.Navigator
@@ -61,6 +63,8 @@ fun TvRoot(container: AppContainer) {
                     Screen.Home -> HomeScreen(container, nav)
                     Screen.SyncplayConnect -> SyncplayConnectScreen(container, nav)
                     Screen.JellyfinLogin -> JellyfinLoginScreen(container, nav)
+                    Screen.PlexLogin -> PlexLoginScreen(container, nav)
+                    Screen.Servers -> ServersScreen(container, nav)
                     Screen.Player -> PlayerScreen(container, nav)
                     Screen.Settings, Screen.LocalFiles -> SettingsScreen(container, nav)
                     Screen.Licenses -> LicensesScreen()

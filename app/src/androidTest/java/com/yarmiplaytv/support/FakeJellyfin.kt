@@ -8,6 +8,7 @@ import android.graphics.Paint
 import android.graphics.Shader
 import android.util.Log
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
+import com.yarmiplaytv.media.jellyfin.JellyfinSource
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -28,7 +29,11 @@ import java.net.InetAddress
  * browse screens look the same on every run. `/hang/...` never answers and `/missing/...` is a 404,
  * for the player's loading and failed states.
  */
-class FakeJellyfin(port: Int = PORT) : AutoCloseable {
+class FakeJellyfin(
+    port: Int = PORT,
+    serverId: String = "fake-server",
+    serverName: String = "Screenshot Server",
+) : AutoCloseable {
     private data class Item(
         val id: String,
         val name: String,
@@ -73,12 +78,13 @@ class FakeJellyfin(port: Int = PORT) : AutoCloseable {
     val url: String = "http://127.0.0.1:$port"
     val session = JellyfinSession(
         serverUrl = url,
-        serverName = "Screenshot Server",
-        serverId = "fake-server",
+        serverName = serverName,
+        serverId = serverId,
         userId = "fake-user",
         userName = "viewer",
         accessToken = "fake-token",
     )
+    val key: String = JellyfinSource.keyOf(session)
 
     /** A stream that never starts (the player stays in "Loading…"). */
     val hangingStreamUrl = "$url/hang/Orbit%20Station%20S01E03.mkv"
@@ -106,6 +112,7 @@ class FakeJellyfin(port: Int = PORT) : AutoCloseable {
             }
             path == "/Items" -> json(result(query(q)))
             path.startsWith("/Shows/") && path.endsWith("/Episodes") -> json(result(items.filter { it.type == "Episode" && it.seriesId == path.split('/')[2] }))
+            path.startsWith("/Sessions/Playing") || path.startsWith("/UserPlayedItems/") -> MockResponse().setResponseCode(204)
             else -> MockResponse().setResponseCode(404)
         }
     }
@@ -159,19 +166,20 @@ class FakeJellyfin(port: Int = PORT) : AutoCloseable {
 
     private fun json(body: JsonObject) = MockResponse().setHeader("Content-Type", "application/json").setBody(body.toString())
 
-    /** A diagonal two-tone gradient with a circle, unique per item and identical on every run. */
-    private fun poster(item: Item): ByteArray {
-        val portrait = item.type in setOf("Series", "Movie")
-        val (w, h) = if (portrait) 300 to 450 else 480 to 270
-        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        val darker = Color.rgb(Color.red(item.color) / 3, Color.green(item.color) / 3, Color.blue(item.color) / 3)
-        canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), Paint().apply { shader = LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), item.color, darker, Shader.TileMode.CLAMP) })
-        canvas.drawCircle(w * 0.7f, h * 0.35f, minOf(w, h) * 0.18f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(140, 255, 255, 255) })
-        return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
-    }
+    private fun poster(item: Item): ByteArray = fakePoster(item.color, portrait = item.type in setOf("Series", "Movie"))
 
     companion object {
         const val PORT = 18096
     }
+}
+
+/** A diagonal two-tone gradient with a circle, unique per color and identical on every run. */
+internal fun fakePoster(color: Int, portrait: Boolean): ByteArray {
+    val (w, h) = if (portrait) 300 to 450 else 480 to 270
+    val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val darker = Color.rgb(Color.red(color) / 3, Color.green(color) / 3, Color.blue(color) / 3)
+    canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), Paint().apply { shader = LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), color, darker, Shader.TileMode.CLAMP) })
+    canvas.drawCircle(w * 0.7f, h * 0.35f, minOf(w, h) * 0.18f, Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = Color.argb(140, 255, 255, 255) })
+    return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
 }

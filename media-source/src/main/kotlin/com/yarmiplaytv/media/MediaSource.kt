@@ -1,10 +1,14 @@
 package com.yarmiplaytv.media
 
 /**
- * A browsable library of video files. Jellyfin is the first implementation; Plex or SMB can be
- * added behind the same interface. All methods are safe to call from any coroutine context.
+ * A browsable library of video files (Jellyfin, Plex). All methods are safe to call from any
+ * coroutine context.
  */
 interface MediaSource {
+    /** Identifies one server (e.g. "jellyfin:<server id>"); items and playables carry it as their `sourceKey`. */
+    val key: String
+    /** The backend: "jellyfin", "plex", or "all" for several servers browsed as one. */
+    val kind: String
     val displayName: String
 
     /** Top-level entry points (libraries / views). */
@@ -27,8 +31,29 @@ interface MediaSource {
      */
     suspend fun resolveByFilename(fileName: String): ResolveResult
 
+    /**
+     * The item whose file is named exactly [fileName] (case-insensitive), from the filename index
+     * only: never a title search, never a stream. Null when there's no such file.
+     */
+    suspend fun findExact(fileName: String): ResolveResult.Found?
+
+    /** Tells the server how far playback of one of its items got; failures throw [MediaSourceException]. */
+    suspend fun reportPlayback(report: PlaybackReport) {}
+
     fun imageUrl(item: MediaItem, maxWidth: Int = 400): String?
 }
+
+enum class ReportState { STARTED, PLAYING, PAUSED, STOPPED }
+
+data class PlaybackReport(
+    val itemId: String,
+    /** One per playback; Plex's X-Plex-Session-Identifier, Jellyfin's PlaySessionId. */
+    val sessionId: String,
+    val state: ReportState,
+    val positionSeconds: Double,
+    val durationSeconds: Double,
+    val markWatched: Boolean = false,
+)
 
 enum class MediaItemType { LIBRARY, FOLDER, SERIES, SEASON, EPISODE, MOVIE, VIDEO, OTHER }
 
@@ -49,7 +74,11 @@ data class MediaItem(
     val imageTag: String? = null,
     val played: Boolean = false,
     val resumeSeconds: Double = 0.0,
+    val sourceKey: String = "",
 ) {
+    /** Unique across servers (ids alone may collide between Jellyfin and Plex). */
+    val uniqueKey: String get() = "$sourceKey/$id"
+
     val isPlayable: Boolean get() = !isFolder && type in setOf(MediaItemType.EPISODE, MediaItemType.MOVIE, MediaItemType.VIDEO)
 
     /** Display title, e.g. "S01E01 · The Goddess (Neptune) Of Planeptune". */
@@ -70,6 +99,8 @@ data class PlayableMedia(
     val sizeBytes: Long,
     val durationSeconds: Double,
     val title: String,
+    /** The [MediaSource.key] this comes from; empty for local files. */
+    val sourceKey: String = "",
 )
 
 sealed interface ResolveResult {

@@ -338,7 +338,7 @@ private fun CenterStatus(container: AppContainer, nav: Navigator, status: Playli
                             if (status is PlaylistStatus.NotFound) {
                                 Button(pickFile, Modifier.testTag("pick_file")) { Text("Pick file") }
                                 if (container.mediaSource.value != null) {
-                                    FilledTonalButton({ nav.push(Screen.Search(pickFor = file)) }) { Text("Jellyfin") }
+                                    FilledTonalButton({ nav.push(Screen.Search(pickFor = file)) }) { Text("Search servers") }
                                 }
                             }
                             TextButton({ container.playlist.dismissStatus() }) { Text("Dismiss") }

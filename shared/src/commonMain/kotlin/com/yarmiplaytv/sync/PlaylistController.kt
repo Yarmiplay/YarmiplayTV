@@ -4,10 +4,10 @@ import com.yarmiplaytv.Logger
 import com.yarmiplaytv.local.LocalFile
 import com.yarmiplaytv.local.LocalLibrary
 import com.yarmiplaytv.local.LocalMatcher
+import com.yarmiplaytv.media.CompositeMediaSource
 import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.MediaSource
 import com.yarmiplaytv.media.PlayableMedia
-import com.yarmiplaytv.media.ResolveResult
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.PlayerEvent
 import com.yarmiplaytv.syncplay.FileInfo
@@ -18,6 +18,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** What the player is (about to be) showing. */
@@ -28,6 +29,8 @@ data class NowPlaying(
     val durationHint: Double,
     val url: String,
     val itemId: String? = null,
+    /** Server items that are this file (whichever copy is streamed); playback is reported to each. */
+    val copies: List<ServerCopy> = emptyList(),
 )
 
 sealed interface PlaylistStatus {
@@ -42,9 +45,9 @@ sealed interface PlaylistStatus {
 
 /**
  * Keeps the room's shared playlist and the local player in step: when the room selects an entry
- * (or playback reaches the end and advances) the entry's filename is resolved through the media
- * source (Jellyfin), streamed into mpv, reported to the room and marked ready — the TV equivalent
- * of the desktop client's media directories.
+ * (or playback reaches the end and advances) the entry's filename is found in the media folders or
+ * on the media servers ([MediaLocator]), played in mpv, reported to the room and marked ready — the
+ * TV equivalent of the desktop client's media directories.
  */
 class PlaylistController(
     private val scope: CoroutineScope,
@@ -52,6 +55,7 @@ class PlaylistController(
     private val player: Player,
     private val mediaSource: StateFlow<MediaSource?>,
     private val local: LocalLibrary,
+    private val locator: MediaLocator,
 ) {
     private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
     val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying.asStateFlow()
@@ -78,8 +82,10 @@ class PlaylistController(
     private var pending: PendingLoad? = null
     private var resolveJob: Job? = null
 
+    private data class Known(val playable: PlayableMedia, val copies: List<ServerCopy>)
+
     /** Items the user picked explicitly, so the room echo doesn't need a (possibly ambiguous) lookup. */
-    private val knownPlayables = LinkedHashMap<String, PlayableMedia>()
+    private val knownPlayables = LinkedHashMap<String, Known>()
 
     init {
         scope.launch { sync.events.collect(::onSyncEvent) }
@@ -130,45 +136,41 @@ class PlaylistController(
             return
         }
         knownPlayables.entries.firstOrNull { Filenames.same(it.key, filename) }?.value?.let {
-            load(it.toNowPlaying(), resetPosition, fromRoom = true)
+            load(it.playable.toNowPlaying(it.copies), resetPosition, fromRoom = true)
             return
         }
-        if (mediaSource.value == null && !local.hasFolders) {
-            _status.value = PlaylistStatus.NotFound(filename, "Connect to Jellyfin or add a media folder to auto-load playlist items")
-            sync.postLocal("Can't load '$filename': no Jellyfin server or media folders", isError = true)
+        if (!locator.hasServers && !local.hasFolders) {
+            _status.value = PlaylistStatus.NotFound(filename, "Connect a media server or add a media folder to auto-load playlist items")
+            sync.postLocal("Can't load '$filename': no media server or media folders", isError = true)
             return
         }
         _status.value = PlaylistStatus.Resolving(filename)
         resolveJob = scope.launch {
-            // Local media folders first (like desktop Syncplay), then the Jellyfin server.
-            local.resolve(filename)?.let { match ->
-                Logger.i(TAG, "Resolved '$filename' locally via ${match.kind} -> ${match.file.uri}")
-                load(match.file.toNowPlaying(), resetPosition, fromRoom = true)
-                return@launch
-            }
-            val source = mediaSource.value
-            if (source == null) {
-                _status.value = PlaylistStatus.NotFound(filename, "Not in your media folders (Jellyfin isn't connected)")
-                sync.postLocal("'$filename' not found in your media folders", isError = true)
-                return@launch
-            }
-            val result = runCatching { source.resolveByFilename(filename) }
-                .getOrElse { ResolveResult.NotFound(filename, it.message ?: "Lookup failed") }
-            when (result) {
-                is ResolveResult.Found -> {
-                    Logger.i(TAG, "Resolved '$filename' via ${result.matchedBy} -> ${result.item.id}")
-                    load(result.playable.toNowPlaying(), resetPosition, fromRoom = true)
+            when (val found = locator.locateForRoom(filename)) {
+                is RoomLocation.Local -> {
+                    Logger.i(TAG, "Resolved '$filename' locally via ${found.match.kind} -> ${found.match.file.uri}")
+                    val playable = found.match.file.toPlayable()
+                    load(playable.toNowPlaying(), resetPosition, fromRoom = true)
+                    findCopies(playable)
                 }
-                is ResolveResult.NotFound -> {
-                    val where = if (local.hasFolders) "${source.displayName} or your media folders" else source.displayName
-                    _status.value = PlaylistStatus.NotFound(filename, result.reason)
+                is RoomLocation.Server -> {
+                    Logger.i(TAG, "Resolved '$filename' via ${found.matchedBy} -> ${found.playable.sourceKey}/${found.playable.itemId}, copies ${found.copies}")
+                    load(found.playable.toNowPlaying(found.copies), resetPosition, fromRoom = true)
+                }
+                is RoomLocation.Missing -> {
+                    val servers = mediaSource.value?.let { s -> if (s is CompositeMediaSource && s.sources.size > 2) "your media servers" else s.displayName }
+                    val where = listOfNotNull(servers, "your media folders".takeIf { local.hasFolders }).joinToString(" or ")
+                    _status.value = PlaylistStatus.NotFound(filename, found.reason)
                     sync.postLocal("'$filename' not found in $where", isError = true)
                 }
             }
         }
     }
 
-    private fun load(media: NowPlaying, resetPosition: Boolean, fromRoom: Boolean) {
+    private fun load(picked: NowPlaying, resetPosition: Boolean, fromRoom: Boolean) {
+        // Copies may have been found since the caller took its snapshot.
+        val media = knownPlayables[picked.fileName]?.takeIf { it.playable.url == picked.url && it.copies.size > picked.copies.size }
+            ?.let { picked.copy(copies = it.copies) } ?: picked
         val alreadyLoading = pending?.media?.url == media.url
         pending = PendingLoad(media, resetPosition, fromRoom)
         // E.g. a reconnect replays the room's selection while a manual pick of the same file is opening.
@@ -193,13 +195,13 @@ class PlaylistController(
                 sync.postLocal("Can't play ${item.name}: ${it.message}", isError = true)
                 return@launch
             }
-            remember(playable)
+            val known = remember(playable)
             val client = sync.client
             if (client != null && sync.isActive) {
                 client.playInRoom(playable.fileName)
             } else {
                 _openPlayerRequests.value++
-                load(playable.toNowPlaying(), resetPosition = true, fromRoom = false)
+                load(known.toNowPlaying(), resetPosition = true, fromRoom = false)
             }
         }
     }
@@ -212,9 +214,9 @@ class PlaylistController(
                 sync.postLocal("Can't play ${item.name}: ${it.message}", isError = true)
                 return@launch
             }
-            remember(playable)
+            val known = remember(playable)
             _openPlayerRequests.value++
-            load(playable.toNowPlaying(), resetPosition = false, fromRoom = false)
+            load(known.toNowPlaying(), resetPosition = false, fromRoom = false)
         }
     }
 
@@ -237,7 +239,7 @@ class PlaylistController(
 
     /**
      * Whether this device can play a playlist entry without asking: a URL, a file picked here, or one in the
-     * media folders. Entries that aren't may still be found on the Jellyfin server when selected.
+     * media folders. Entries that aren't may still be found on a media server when selected.
      */
     fun isAvailable(fileName: String): Boolean =
         Filenames.isUrl(fileName) ||
@@ -251,7 +253,7 @@ class PlaylistController(
             return
         }
         scope.launch {
-            val names = uris.map { uri -> localPlayable(uri).also(::remember).fileName }
+            val names = uris.map { uri -> remember(localPlayable(uri)).playable.fileName }
             reportAdded(names.size, shared.add(names, at))
         }
     }
@@ -293,10 +295,10 @@ class PlaylistController(
                 sync.postLocal("Can't play ${item.name}: ${it.message}", isError = true)
                 return@launch
             }
-            remember(playable)
-            if (status != null) knownPlayables[status.fileName] = playable
+            val known = remember(playable)
+            if (status != null) knownPlayables[status.fileName] = known
             _openPlayerRequests.value++
-            load(playable.toNowPlaying(), resetPosition = true, fromRoom = true)
+            load(known.toNowPlaying(), resetPosition = true, fromRoom = true)
         }
     }
 
@@ -306,14 +308,13 @@ class PlaylistController(
      */
     fun playLocal(uri: String, inRoom: Boolean) {
         scope.launch {
-            val playable = localPlayable(uri)
-            remember(playable)
+            val known = remember(localPlayable(uri))
             val client = sync.client
             if (inRoom && client != null && sync.isActive) {
-                client.playInRoom(playable.fileName)
+                client.playInRoom(known.playable.fileName)
             } else {
                 _openPlayerRequests.value++
-                load(playable.toNowPlaying(), resetPosition = inRoom, fromRoom = false)
+                load(known.toNowPlaying(), resetPosition = inRoom, fromRoom = false)
             }
         }
     }
@@ -330,18 +331,14 @@ class PlaylistController(
     fun resolveManuallyLocal(uri: String) {
         val status = _status.value as? PlaylistStatus.NotFound
         scope.launch {
-            val playable = localPlayable(uri)
-            remember(playable)
-            if (status != null) knownPlayables[status.fileName] = playable
+            val known = remember(localPlayable(uri))
+            if (status != null) knownPlayables[status.fileName] = known
             _openPlayerRequests.value++
-            load(playable.toNowPlaying(), resetPosition = true, fromRoom = true)
+            load(known.toNowPlaying(), resetPosition = true, fromRoom = true)
         }
     }
 
-    private suspend fun localPlayable(uri: String): PlayableMedia {
-        val file = local.describe(uri)
-        return PlayableMedia(itemId = file.uri, url = file.uri, fileName = file.name, sizeBytes = file.sizeBytes, durationSeconds = 0.0, title = file.name)
-    }
+    private suspend fun localPlayable(uri: String): PlayableMedia = local.describe(uri).toPlayable()
 
     private fun addFileNameToPlaylist(fileName: String) {
         if (sync.client == null) {
@@ -372,13 +369,31 @@ class PlaylistController(
         sync.reportFile(null, resetPosition = false)
     }
 
-    private fun remember(playable: PlayableMedia) {
-        knownPlayables[playable.fileName] = playable
+    /** Remembers a file the user picked here and starts looking for the same file on the other servers. */
+    private fun remember(playable: PlayableMedia): Known {
+        val known = Known(playable, MediaLocator.ownCopy(playable))
+        knownPlayables[playable.fileName] = known
         while (knownPlayables.size > 200) knownPlayables.remove(knownPlayables.keys.first())
+        findCopies(playable)
+        return known
     }
 
-    private fun PlayableMedia.toNowPlaying() = NowPlaying(title, fileName, sizeBytes, durationSeconds, url, itemId)
-    private fun LocalFile.toNowPlaying() = NowPlaying(name, name, sizeBytes, 0.0, uri, uri)
+    /** Fills in the server copies of [playable] once found; never delays or changes playback. */
+    private fun findCopies(playable: PlayableMedia) {
+        if (!locator.hasServers) return
+        scope.launch {
+            val copies = runCatching { locator.copiesOf(playable) }.getOrElse { return@launch }
+            knownPlayables[playable.fileName]?.takeIf { it.playable.url == playable.url }?.let {
+                knownPlayables[playable.fileName] = it.copy(copies = copies)
+            }
+            _nowPlaying.update { np -> if (np?.url == playable.url) np.copy(copies = copies) else np }
+        }
+    }
+
+    private fun Known.toNowPlaying() = playable.toNowPlaying(copies)
+    private fun PlayableMedia.toNowPlaying(copies: List<ServerCopy> = MediaLocator.ownCopy(this)) =
+        NowPlaying(title, fileName, sizeBytes, durationSeconds, url, itemId, copies)
+    private fun LocalFile.toPlayable() = PlayableMedia(itemId = uri, url = uri, fileName = name, sizeBytes = sizeBytes, durationSeconds = 0.0, title = name)
 
     companion object {
         private const val TAG = "PlaylistController"

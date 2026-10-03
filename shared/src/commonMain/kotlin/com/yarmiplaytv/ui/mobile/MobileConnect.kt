@@ -24,6 +24,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,8 +46,13 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.shared.plexServerLabel
 import com.yarmiplaytv.ui.shared.rememberJellyfinLoginModel
+import com.yarmiplaytv.ui.shared.rememberPlexLoginModel
 import com.yarmiplaytv.ui.shared.rememberSyncplayConnectModel
+import com.yarmiplaytv.ui.shared.serverDetail
+import com.yarmiplaytv.ui.shared.serverTag
+import com.yarmiplaytv.ui.shared.signOutOfServer
 import com.yarmiplaytv.ui.theme.AppColors
 
 @Composable
@@ -115,20 +121,11 @@ private fun ConnectForm(container: AppContainer, model: com.yarmiplaytv.ui.share
 
 @Composable
 fun MobileJellyfinScreen(container: AppContainer, nav: Navigator) {
-    val source by container.mediaSource.collectAsStateWithLifecycle()
     val model = rememberJellyfinLoginModel(container)
     val onSignedIn = { nav.back(); Unit }
     Column(Modifier.fillMaxSize()) {
         MobileTopBar("Jellyfin", nav)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding()) {
-            val s = source
-            if (s != null) {
-                FormColumn {
-                    Text("Signed in to ${s.displayName}", style = MaterialTheme.typography.titleMedium)
-                    OutlinedButton({ model.signOut() }, Modifier.testTag("jellyfin_signout")) { Text("Sign out") }
-                }
-                return@Column
-            }
             FormColumn {
                 OutlinedTextField(model.url, { model.url = it.trim() }, label = { Text("Server address") }, placeholder = { Text("http://192.168.1.10:8096") },
                     singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth().testTag("jellyfin_url"))
@@ -166,6 +163,79 @@ fun MobileJellyfinScreen(container: AppContainer, nav: Navigator) {
                     Button({ model.login(onSignedIn) }, enabled = !model.busy && model.url.isNotBlank() && model.username.isNotBlank(), modifier = Modifier.testTag("jellyfin_login")) { Text("Sign in") }
                     if (model.busy) CircularProgressIndicator(Modifier.padding(start = 12.dp))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun MobilePlexScreen(container: AppContainer, nav: Navigator) {
+    val model = rememberPlexLoginModel(container)
+    val onSignedIn = { nav.back(); Unit }
+    LaunchedEffect(model) { model.useSavedAccount(onSignedIn) }
+    Column(Modifier.fillMaxSize()) {
+        MobileTopBar("Plex", nav)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            FormColumn {
+                Text("Link this device to your Plex account, then pick a server.", color = AppColors.TextDim)
+                val code = model.linkCode
+                if (code != null) {
+                    Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface), shape = RoundedCornerShape(16.dp)) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            model.status?.let { Text(it, color = AppColors.TextDim) }
+                            Text(
+                                code,
+                                style = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, letterSpacing = 8.sp, textDirection = TextDirection.Ltr),
+                                color = AppColors.Accent,
+                                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(AppColors.SurfaceHigh).padding(horizontal = 16.dp, vertical = 8.dp).testTag("plex_code"),
+                            )
+                            TextButton({ model.cancel() }) { Text("Cancel") }
+                        }
+                    }
+                } else {
+                    model.status?.let { Text(it, color = AppColors.TextDim) }
+                    if (model.savedAccount != null) {
+                        OutlinedButton({ model.startLink(onSignedIn) }, enabled = !model.busy, modifier = Modifier.testTag("plex_link")) { Text("Use a different Plex account") }
+                    } else if (model.servers.isEmpty()) {
+                        Button({ model.startLink(onSignedIn) }, enabled = !model.busy, modifier = Modifier.testTag("plex_link")) { Text("Get a link code") }
+                    }
+                }
+                model.servers.forEach { server ->
+                    val added = model.isAdded(server)
+                    OutlinedButton({ model.pick(server, onSignedIn) }, Modifier.fillMaxWidth().testTag("plex_server"), enabled = !model.busy && !added) {
+                        Text(plexServerLabel(server, added))
+                    }
+                }
+                if (model.busy) CircularProgressIndicator()
+                model.error?.let { Text(it, color = AppColors.Error) }
+            }
+        }
+    }
+}
+
+/** Every signed-in Jellyfin and Plex server, each with its own sign-out, and buttons to add more. */
+@Composable
+fun MobileServersScreen(container: AppContainer, nav: Navigator) {
+    val servers by container.servers.collectAsStateWithLifecycle()
+    Column(Modifier.fillMaxSize()) {
+        MobileTopBar("Media servers", nav)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp).testTag("servers")) {
+            if (servers.isEmpty()) EmptyMessage("No media servers yet")
+            servers.forEach { s ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).testTag("server_${serverTag(s.key)}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(s.displayName, style = MaterialTheme.typography.bodyLarge)
+                        Text(serverDetail(s), color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                    }
+                    OutlinedButton({ signOutOfServer(container, s.key) }, Modifier.testTag("signout_${serverTag(s.key)}")) { Text("Sign out") }
+                }
+            }
+            FormColumn {
+                Button({ nav.push(Screen.JellyfinLogin) }, Modifier.testTag("add_jellyfin")) { Text("Add Jellyfin server") }
+                Button({ nav.push(Screen.PlexLogin) }, Modifier.testTag("add_plex")) { Text("Add Plex server") }
             }
         }
     }
