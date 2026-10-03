@@ -199,7 +199,7 @@ jobs:
           msstore reconfigure --tenantId $env:TENANT_ID --sellerId $env:SELLER_ID --clientId $env:CLIENT_ID --clientSecret $env:CLIENT_SECRET
           if ($LASTEXITCODE -ne 0) { throw "msstore reconfigure failed" }
           $msix = (Get-Item msix\*.msix).FullName
-          msstore publish msix --inputFile $msix --appId 9PDBVR6W069J
+          msstore publish $msix --appId 9PDBVR6W069J
           if ($LASTEXITCODE -ne 0) { throw "msstore publish failed" }
 
   # Waits on a Linux runner while the signing request awaits manual approval in SignPath.
