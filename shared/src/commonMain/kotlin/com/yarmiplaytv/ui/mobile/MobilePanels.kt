@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,8 +57,9 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.Filenames
+import com.yarmiplaytv.ui.player.fileDifferenceNote
 import com.yarmiplaytv.ui.player.formatClock
-import com.yarmiplaytv.ui.player.sameFile
+import com.yarmiplaytv.ui.player.sizeWarning
 import com.yarmiplaytv.ui.theme.AppColors
 
 @Composable
@@ -104,7 +106,16 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
                 ) {
                     if (current) Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.width(28.dp))
                     else Text("${index + 1}.", color = AppColors.TextDim, modifier = Modifier.width(28.dp))
-                    Text(file, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = if (current) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f).padding(vertical = 12.dp))
+                    Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
+                        Text(file, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = if (current) FontWeight.Bold else FontWeight.Normal)
+                        room.sizeWarning(file)?.let { warning ->
+                            Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.Warning, contentDescription = null, tint = AppColors.NotReady, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(warning, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
                     IconButton({ container.playlist.move(index, index - 1) }, enabled = index > 0) { Icon(Icons.Filled.ArrowUpward, "Move up") }
                     IconButton({ container.playlist.move(index, index + 1) }, enabled = index < room.playlist.lastIndex) { Icon(Icons.Filled.ArrowDownward, "Move down") }
                     IconButton({ container.playlist.removeIndex(index) }) { Icon(Icons.Filled.Delete, "Remove", tint = AppColors.Error) }
@@ -129,7 +140,8 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
         val me = room.users.firstOrNull { it.name == room.username }
         room.users.forEach { user ->
             val isMe = user.name == room.username
-            val mismatch = !isMe && user.file != null && me?.file != null && !sameFile(user.file, me.file)
+            val difference = if (isMe) null else fileDifferenceNote(user.file, me?.file)
+            val mismatch = difference != null
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier.size(10.dp).clip(CircleShape).background(
@@ -150,7 +162,7 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (mismatch) Text("Different file than yours", color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
+                    if (difference != null) Text(difference, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }

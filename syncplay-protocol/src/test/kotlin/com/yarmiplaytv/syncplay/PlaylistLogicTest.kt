@@ -13,6 +13,7 @@ class PlaylistLogicTest {
         assertTrue(Filenames.same(ep1, "Hyperdimension_Neptunia_S01E01_The_Goddess_Neptune_Of_Planeptune.mkv"))
         assertTrue(Filenames.same(ep1, "http://10.0.2.2:8096/files/Hyperdimension%20Neptunia%20-%20S01E01%20-%20The%20Goddess%20(Neptune)%20Of%20Planeptune.mkv"))
         assertFalse(Filenames.same(ep1, ep1.replace("S01E01", "S01E02")))
+        assertTrue(Filenames.same(ep1, ep1.uppercase()))
     }
 
     @Test

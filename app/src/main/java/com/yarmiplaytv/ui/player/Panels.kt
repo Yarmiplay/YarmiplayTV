@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,6 +61,15 @@ private fun PanelHeader(title: String, subtitle: String? = null) {
     Column(Modifier.padding(bottom = 12.dp)) {
         Text(title, style = MaterialTheme.typography.headlineSmall)
         if (subtitle != null) Text(subtitle, color = AppColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun SizeWarning(text: String) {
+    Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Filled.Warning, contentDescription = null, tint = AppColors.NotReady, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(text, color = AppColors.NotReady, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -105,7 +116,10 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
                             } else {
                                 Text("${index + 1}.", color = AppColors.TextDim, modifier = Modifier.width(32.dp))
                             }
-                            Text(file, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = if (current) FontWeight.Bold else FontWeight.Normal)
+                            Column {
+                                Text(file, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = if (current) FontWeight.Bold else FontWeight.Normal)
+                                room.sizeWarning(file)?.let { SizeWarning(it) }
+                            }
                         }
                     }
                     IconAction(Icons.Filled.ArrowUpward, "Move up", { container.playlist.move(index, index - 1) }, enabled = index > 0)
@@ -141,7 +155,8 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(room.users, key = { it.name }) { user ->
                 val isMe = user.name == room.username
-                val mismatch = !isMe && user.file != null && me?.file != null && !sameFile(user.file, me.file)
+                val difference = if (isMe) null else fileDifferenceNote(user.file, me?.file)
+                val mismatch = difference != null
                 Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Dot(
                         when (user.isReady) {
@@ -163,7 +178,7 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
                             overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.bodySmall,
                         )
-                        if (mismatch) Text("Different file than yours", color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
+                        if (difference != null) Text(difference, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }

@@ -770,13 +770,15 @@ class SyncplayClient(
         private fun JsonObject.str(key: String): String? =
             (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
 
-        private fun parseFile(element: JsonElement?): FileInfo? {
+        internal fun parseFile(element: JsonElement?): FileInfo? {
             val o = element as? JsonObject ?: return null
             if (o.isEmpty()) return null
             val name = o.str("name") ?: return null
             val duration = (o["duration"] as? JsonPrimitive)?.doubleOrNull ?: 0.0
-            val size = (o["size"] as? JsonPrimitive)?.let { it.longOrNull ?: it.doubleOrNull?.toLong() } ?: 0L
-            return FileInfo(name, duration, size)
+            val sizeValue = o["size"] as? JsonPrimitive
+            val sizeHash = sizeValue?.takeIf { it.isString }?.content?.takeIf(Filenames::isHash)
+            val size = if (sizeHash != null) 0L else sizeValue?.let { it.longOrNull ?: it.doubleOrNull?.toLong() } ?: 0L
+            return FileInfo(name, duration, size, sizeHash)
         }
 
         private fun JsonElement.toPlain(): Any? = when (this) {

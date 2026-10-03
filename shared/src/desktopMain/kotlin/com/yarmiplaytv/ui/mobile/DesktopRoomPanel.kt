@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DropdownMenu
@@ -113,6 +114,7 @@ import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.sync.FeedMessage
 import com.yarmiplaytv.sync.PlaylistEdits
 import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.ui.player.sizeWarning
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 import java.awt.dnd.DropTargetDragEvent
@@ -388,6 +390,7 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
                     current = index == room.playlistIndex,
                     selected = index in selected,
                     available = available.getOrElse(index) { true },
+                    sizeWarning = room.sizeWarning(file),
                     modifier = Modifier
                         .zIndex(if (dragging) 1f else 0f)
                         .graphicsLayer { translationY = if (dragging) dragOffset else 0f }
@@ -458,7 +461,7 @@ internal fun playlistDropIndex(y: Float, height: Int, rows: List<LazyListItemInf
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PlaylistRow(index: Int, file: String, current: Boolean, selected: Boolean, available: Boolean, modifier: Modifier) {
+private fun PlaylistRow(index: Int, file: String, current: Boolean, selected: Boolean, available: Boolean, sizeWarning: String?, modifier: Modifier) {
     val background = when {
         selected -> AppColors.Accent.copy(alpha = 0.30f)
         current -> AppColors.Accent.copy(alpha = 0.14f)
@@ -480,6 +483,14 @@ private fun PlaylistRow(index: Int, file: String, current: Boolean, selected: Bo
             color = if (available) AppColors.Text else AppColors.TextDim,
             modifier = Modifier.weight(1f),
         )
+        if (sizeWarning != null) {
+            TooltipArea(tooltip = { Tooltip(sizeWarning) }) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 6.dp)) {
+                    Icon(Icons.Filled.Warning, sizeWarning, tint = AppColors.NotReady, modifier = Modifier.size(18.dp).testTag("playlist_size_warning_$index"))
+                    Text("Size differs", color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 4.dp, end = 4.dp))
+                }
+            }
+        }
         if (!available) {
             TooltipArea(tooltip = { Tooltip("Not in your media folders; it's looked up on Jellyfin when it's picked") }) {
                 Icon(Icons.Filled.SearchOff, "Not found here", tint = AppColors.TextDim, modifier = Modifier.size(18.dp))

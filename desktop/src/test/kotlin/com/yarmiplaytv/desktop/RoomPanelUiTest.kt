@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -40,6 +41,7 @@ import com.yarmiplaytv.player.PlayerEvent
 import com.yarmiplaytv.player.Track
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.syncplay.FileInfo
 import com.yarmiplaytv.syncplay.SyncplayConfig
 import com.yarmiplaytv.ui.mobile.DesktopRoomPanel
 import com.yarmiplaytv.ui.mobile.MobileTheme
@@ -179,6 +181,16 @@ class RoomPanelUiTest {
         awaitTrue("the playlist to come back") { bob.sync.room.value.playlist.size == 3 }
         onNodeWithTag("playlist_row_2").performMouseInput { doubleClick() }
         awaitTrue("bob to follow the pick") { bob.sync.room.value.playlistIndex == 2 }
+
+        // Playing the pick from files of different sizes marks its row, as Syncplay warns about it.
+        onMain {
+            alice.sync.reportFile(FileInfo("three.mkv", 100.0, 2048), resetPosition = false)
+            bob.sync.reportFile(FileInfo("three.mkv", 100.0, 4096), resetPosition = false)
+        }
+        waitUntil(timeoutMillis = 10_000) { onAllNodesWithTag("playlist_size_warning_2").fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag("playlist_size_warning_2").assert(hasContentDescription("File size differs from bob's: 4 KB vs your 2 KB"))
+        onNodeWithTag("playlist_size_warning_0").assertDoesNotExist()
+        screenshot("panel_playlist_size_warning")
 
         // Chat from the panel reaches bob; Up recalls what was sent.
         onNodeWithTag("panel_tab_CHAT").performClick()

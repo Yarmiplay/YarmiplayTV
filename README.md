@@ -9,6 +9,9 @@ the local network or from files on the device.
 - Browses Jellyfin libraries (Quick Connect or username/password login).
 - Shared playlists: when someone selects an entry, the app finds that filename in your media folders or Jellyfin
   and loads it automatically.
+- Like Syncplay, it warns when someone's copy of a file differs from yours: the playlist marks the entry when
+  their file size differs (with both sizes when they're shared), and the room list says whether the name, size
+  or duration differ. It's only a warning; playback and sync carry on as usual.
 - One APK: the remote-friendly TV UI on Google TV, a touch UI on phones (bottom navigation) and tablets
   (navigation rail). On phones and tablets you can also open a single video, use "Open with" from a file
   manager, or add media folders that work like Syncplay's media directories.

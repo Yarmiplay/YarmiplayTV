@@ -205,7 +205,8 @@ class TvNavigationTest {
             }
             tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
             when (button) {
-                "Shared playlist" -> tv.await("everyone sees these changes")
+                "Shared playlist" -> { tv.await("everyone sees these changes"); tv.await("File size differs from Alex's") }
+                "Room" -> tv.await("Different size than yours")
                 "Chat" -> tv.await("Give me a minute")
                 "Audio" -> tv.await("Audio")
                 else -> Unit

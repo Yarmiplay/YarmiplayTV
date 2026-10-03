@@ -43,7 +43,8 @@ class Scenarios(private val state: AppState, private val syncplay: FakeSyncplayS
         val feed = { container.sync.feed.value.size }
         var expected = feed()
         fun next() { expected++; waitUntil(5_000) { feed() >= expected } }
-        syncplay.addPeer("Alex", FakeSyncplayServer.PeerFile(CLIP_NAME, CLIP_DURATION, 0), ready = true)
+        // Alex's copy of the clip is a different size, so the playlist and room panel warn about it.
+        syncplay.addPeer("Alex", FakeSyncplayServer.PeerFile(CLIP_NAME, CLIP_DURATION, ALEX_CLIP_SIZE), ready = true)
         next(); next() // joined, is playing
         syncplay.addPeer("Jordan", FakeSyncplayServer.PeerFile("Orbit Station S01E02 [1080p].mkv", 1_440.0, 0), ready = false)
         next(); next()
@@ -134,6 +135,7 @@ class Scenarios(private val state: AppState, private val syncplay: FakeSyncplayS
     companion object {
         const val CLIP_NAME = "Orbit Station S01E02.mp4"
         const val CLIP_DURATION = 3.0
+        const val ALEX_CLIP_SIZE = 700L shl 20
 
         /**
          * Solid black: the emulators' decoders sometimes place video tiles wrongly on the first frame,

@@ -45,8 +45,10 @@ data class FileInfo(
     val name: String,
     /** Seconds. */
     val duration: Double,
-    /** Bytes; 0 when unknown. */
+    /** Bytes; 0 when unknown or not shared. */
     val size: Long,
+    /** Instead of [size], from a Syncplay client in "send hashed" privacy mode: see [Filenames.hashSize]. */
+    val sizeHash: String? = null,
 )
 
 data class RoomUser(
