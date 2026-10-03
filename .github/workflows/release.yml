@@ -17,6 +17,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      msstore:
+        description: Submit the Store package to Partner Center
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -172,7 +177,7 @@ jobs:
   # A draft submission started in Partner Center is discarded.
   msstore:
     needs: windows-installers
-    if: github.ref_type == 'tag' && vars.MSSTORE_CLIENT_ID != ''
+    if: (github.ref_type == 'tag' || inputs.msstore) && vars.MSSTORE_CLIENT_ID != ''
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
