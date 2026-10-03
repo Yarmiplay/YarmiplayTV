@@ -8,7 +8,7 @@ Files in --dist are sorted onto platforms by extension (.apk: TV and phone/table
 .dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as YarmiplayTV.apk, so links
 keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader, <site>/privacy/
 is docs/privacy.md (the Play Store privacy policy), and <site>/version.json lists each platform's package
-and version for the apps' update check. Platforms without a file show how to run from source. The Pages workflow publishes the result; scripts/apk_server.py serves the
+and version for the apps' update check. Platforms without a file or store listing show how to run from source. The Pages workflow publishes the result; scripts/apk_server.py serves the
 same page on the local network. Standard library only.
 """
 from __future__ import annotations
@@ -27,6 +27,10 @@ from dataclasses import dataclass
 NAME = "YarmiplayTV"
 REPO_URL = "https://github.com/Yarmiplay/YarmiplayTV"
 SERVER_URL = "https://yarmiplay.github.io/YarmiplayServerTV/"
+# Store listings, shown before the platform's files.
+STORE_LINKS = {
+    "windows": ("Microsoft Store", "https://apps.microsoft.com/detail/9PDBVR6W069J"),
+}
 
 # Lower-case extension -> platforms it installs on and the button label.
 EXTENSIONS = {
@@ -84,7 +88,7 @@ def platforms(short_link):
             "Open the file from the notification or <b>Downloads</b> and choose <b>Install</b>.",
         ], []),
         Platform("windows", "Windows", "Windows 10 or 11, 64-bit.", [
-            "Run the installer, then start YarmiplayTV from the Start menu.",
+            "Get it from the Microsoft Store, or run the installer, then start YarmiplayTV from the Start menu.",
         ], ["Install JDK 17, clone the repository, then:", "gradlew.bat :desktop:run"]),
         Platform("macos", "macOS", "Uses mpv from Homebrew.", [
             "Install mpv: <code>brew install mpv</code>",
@@ -125,10 +129,14 @@ def render_page(downloads, version, built, short_link=None, privacy=False):
     cards = []
     for p in platforms(short_link):
         files = downloads.get(p.key, [])
-        if files:
+        store = STORE_LINKS.get(p.key)
+        if files or store:
             buttons = "".join(
                 f'<a class="btn" href="{html.escape(d.href)}" download>{html.escape(d.label)}'
                 f'<small>{fmt_size(d.size)}</small></a>' for d in files)
+            if store:
+                buttons = (f'<a class="btn" href="{html.escape(store[1])}">{html.escape(store[0])}'
+                           f'<small>Updates automatically</small></a>' + buttons)
             steps = "".join(f"<li>{s}</li>" for s in p.steps)
             sums = "".join(f"<div>{html.escape(d.href.rsplit('/', 1)[-1])}<br><code>{d.sha256}</code></div>"
                            for d in files if d.sha256)

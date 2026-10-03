@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The Microsoft Store package of the desktop app; scripts/make-msix.ps1 fills in {VERSION}. Identity Name and
-  Publisher and PublisherDisplayName have to be the values Partner Center shows under Product identity for the
-  reserved app name, or the Store rejects the package. The file types follow videoTypes in build.gradle.kts.
+  The Microsoft Store package of the desktop app (Store ID 9PDBVR6W069J); scripts/make-msix.ps1 fills in
+  {VERSION}. Identity Name and Publisher and PublisherDisplayName are the values Partner Center shows under
+  Product identity; the Store rejects a package with any other. The file types follow videoTypes in
+  build.gradle.kts.
 -->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -10,7 +11,7 @@
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   IgnorableNamespaces="uap rescap">
 
-  <Identity Name="Yarmiplay.YarmiplayTV" Publisher="CN=Yarmiplay" Version="{VERSION}.0" ProcessorArchitecture="x64" />
+  <Identity Name="Yarmiplay.YarmiplayTV" Publisher="CN=0A2DDF62-27E6-4FED-9AD9-3EE32072AD56" Version="{VERSION}.0" ProcessorArchitecture="x64" />
 
   <Properties>
     <DisplayName>YarmiplayTV</DisplayName>

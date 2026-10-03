@@ -74,7 +74,8 @@ CI signs with a throwaway debug key.
 
 Installers come from the `desktop` CI job (and the download page):
 
-- **Windows:** `.msi` or `.exe`, installed per user, or `winget install Yarmiplay.YarmiplayTV`; libmpv is
+- **Windows:** the [Microsoft Store](https://apps.microsoft.com/detail/9PDBVR6W069J) (signed, updated by the
+  Store), or the `.msi` or `.exe`, installed per user, or `winget install Yarmiplay.YarmiplayTV`; libmpv is
   included. Releases are code signed when SignPath signing is set up (see below); uninstall from
   Settings > Apps.
 - **macOS:** `.dmg` (Apple Silicon, not notarized: right-click the app and choose Open the first time).
@@ -321,7 +322,8 @@ opens the update pull request itself. Installs from winget update themselves lik
 
 ### Microsoft Store
 
-The release run also has a `windows-store-msix-<version>` artifact: an unsigned `.msix` of the same app,
+The app is [YarmiplayTV on the Microsoft Store](https://apps.microsoft.com/detail/9PDBVR6W069J) (Store ID
+`9PDBVR6W069J`). The release run also has a `windows-store-msix-<version>` artifact: an unsigned `.msix` of the same app,
 which the Store signs when it is uploaded in [Partner Center](https://partner.microsoft.com/dashboard) (a free
 individual developer account). [desktop/msix/AppxManifest.xml](desktop/msix/AppxManifest.xml) needs the
 Identity Name, Publisher and PublisherDisplayName that Partner Center shows under Product identity for the

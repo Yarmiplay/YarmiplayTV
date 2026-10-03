@@ -42,8 +42,8 @@ for a new version.
   from your IP address, and GitHub handles it under the
   [GitHub Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
   The developer doesn't receive it. Turn it off with **Check for updates** in Settings. When you install an
-  update on Windows, the installer is downloaded from the same page. The app from Google Play doesn't check:
-  Google Play updates it.
+  update on Windows, the installer is downloaded from the same page. The apps from Google Play and the
+  Microsoft Store don't check: their store updates them.
 
 Connections are encrypted when the server supports it: Syncplay servers with TLS, and Jellyfin and Plex
 servers on HTTPS. plex.tv is always HTTPS. Media servers on a home network often use plain HTTP, and the app
