@@ -150,6 +150,11 @@ when Android asks, then open the file and choose Install. Re-run the script afte
 to update. Debug builds are signed with this PC's debug key, so an APK from CI (different key) can't update a
 locally built install without uninstalling first.
 
+In the TV player, OK, ↓ or Menu shows the controls and ↓ or Menu hides them again; with them hidden, ←/→ seek
+and ↑ opens the room panel. Back closes a panel and returns to the controls (on the button that opened it), then
+hides the controls. While a video plays they hide by themselves after 3 seconds; Settings > Playback > Hide
+player controls after offers 2, 3, 5 or 10 seconds, Never, or a custom time.
+
 ### Installing on a phone or tablet
 
 It's the same APK. With the server above running, open `http://<pc-ip>:8080/` in the phone's browser, tap
@@ -169,8 +174,8 @@ On a phone or tablet:
   automatically when you come back.
 
 Inside the emulator, the host PC is `10.0.2.2`, so a Jellyfin server on this PC is `http://10.0.2.2:8096`
-and a Syncplay server on this PC is `10.0.2.2:8999`. The player overlay auto-hides after 6 seconds, so
-send key sequences in a single `remote.ps1` call.
+and a Syncplay server on this PC is `10.0.2.2:8999`. The player overlay auto-hides after 3 seconds (by
+default), so send key sequences in a single `remote.ps1` call.
 
 ### Unit and integration tests
 

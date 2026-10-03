@@ -78,7 +78,8 @@ internal enum class PanelKind { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES }
 internal sealed interface Overlay {
     data object Hidden : Overlay
     data object Controls : Overlay
-    data class Side(val kind: PanelKind) : Overlay
+    /** [fromControls]: opened from the controls bar, which Back then returns to. */
+    data class Side(val kind: PanelKind, val fromControls: Boolean) : Overlay
 }
 
 @Composable
@@ -97,7 +98,11 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
     val rootFocus = remember { FocusRequester() }
     val controlsFocus = remember { FocusRequester() }
     val panelFocus = remember { FocusRequester() }
+    val panelButtons = remember { PanelKind.entries.associateWith { FocusRequester() } }
+    // The panel whose button gets the focus when Back returns from it to the controls bar.
+    var returnTo by remember { mutableStateOf<PanelKind?>(null) }
     val step = settings.playback.seekStepSeconds.toDouble()
+    val hideAfter = settings.playback.controlsHideSeconds
     val inRoom = room.status == ConnectionStatus.CONNECTED
 
     val view = LocalView.current
@@ -107,24 +112,37 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
     }
 
     LaunchedEffect(overlay) {
+        // A superseded run can still wake up after the overlay changed, before it's cancelled.
+        val target = overlay
         delay(30)
+        if (overlay != target) return@LaunchedEffect
         runCatching {
-            when (overlay) {
+            when (target) {
                 Overlay.Hidden -> rootFocus.requestFocus()
-                Overlay.Controls -> controlsFocus.requestFocus()
+                Overlay.Controls -> (returnTo?.let(panelButtons::getValue) ?: controlsFocus).requestFocus()
                 is Overlay.Side -> panelFocus.requestFocus()
             }
         }
+        if (target == Overlay.Controls) returnTo = null
     }
-    LaunchedEffect(overlay, interaction) {
-        if (overlay == Overlay.Controls && !state.paused) {
-            delay(6000)
+    LaunchedEffect(overlay, interaction, hideAfter) {
+        if (overlay == Overlay.Controls && !state.paused && hideAfter > 0) {
+            delay(hideAfter * 1000L)
             overlay = Overlay.Hidden
         }
     }
 
     BackHandler {
-        if (overlay != Overlay.Hidden) overlay = Overlay.Hidden else nav.back()
+        when (val current = overlay) {
+            Overlay.Hidden -> nav.back()
+            Overlay.Controls -> overlay = Overlay.Hidden
+            is Overlay.Side -> if (current.fromControls) {
+                returnTo = current.kind
+                overlay = Overlay.Controls
+            } else {
+                overlay = Overlay.Hidden
+            }
+        }
     }
 
     fun togglePause() = player.setPaused(!player.isPaused)
@@ -161,11 +179,18 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                     else -> false
                 }
                 if (global) return@onPreviewKeyEvent true
+                // Held keys repeat; only the first press toggles, or the bar would flicker.
+                val firstPress = down && ev.nativeKeyEvent.repeatCount == 0
+                // The button row is the bar's last row, so Down (like Menu) hides the bar again.
+                if (overlay == Overlay.Controls && (code == AndroidKeyEvent.KEYCODE_DPAD_DOWN || code == AndroidKeyEvent.KEYCODE_MENU)) {
+                    if (firstPress) overlay = Overlay.Hidden
+                    return@onPreviewKeyEvent true
+                }
                 if (overlay != Overlay.Hidden) return@onPreviewKeyEvent false
                 when (code) {
                     AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
-                    AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_MENU -> { if (down) overlay = Overlay.Controls; true }
-                    AndroidKeyEvent.KEYCODE_DPAD_UP -> { if (down) overlay = Overlay.Side(PanelKind.ROOM); true }
+                    AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_MENU -> { if (firstPress) overlay = Overlay.Controls; true }
+                    AndroidKeyEvent.KEYCODE_DPAD_UP -> { if (down) overlay = Overlay.Side(PanelKind.ROOM, fromControls = false); true }
                     AndroidKeyEvent.KEYCODE_DPAD_LEFT -> { if (down) seekBy(-step); true }
                     AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> { if (down) seekBy(step); true }
                     else -> false
@@ -203,9 +228,11 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 container = container,
                 title = nowPlaying?.title ?: "Nothing playing",
                 controlsFocus = controlsFocus,
+                panelButtons = panelButtons,
+                showHideHint = overlay == Overlay.Controls,
                 onTogglePause = ::togglePause,
                 onSeek = ::seekBy,
-                onOpenPanel = { overlay = Overlay.Side(it) },
+                onOpenPanel = { overlay = Overlay.Side(it, fromControls = true) },
                 onHome = { nav.popTo(Screen.Home) },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
@@ -318,6 +345,8 @@ private fun ControlsBar(
     container: AppContainer,
     title: String,
     controlsFocus: FocusRequester,
+    panelButtons: Map<PanelKind, FocusRequester>,
+    showHideHint: Boolean,
     onTogglePause: () -> Unit,
     onSeek: (Double) -> Unit,
     onOpenPanel: (PanelKind) -> Unit,
@@ -341,7 +370,13 @@ private fun ControlsBar(
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000))))
             .padding(horizontal = 56.dp, vertical = 32.dp),
     ) {
-        Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (showHideHint) {
+                Spacer(Modifier.width(24.dp))
+                Text("▼ Hide", style = MaterialTheme.typography.bodyMedium, color = AppColors.TextDim)
+            }
+        }
         Spacer(Modifier.height(12.dp))
         ProgressBar(position, state.duration, state.cacheSeconds)
         Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
@@ -371,11 +406,15 @@ private fun ControlsBar(
                 )
             }
             Spacer(Modifier.weight(1f))
-            IconAction(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist", { onOpenPanel(PanelKind.PLAYLIST) })
-            IconAction(Icons.Filled.Groups, "Room", { onOpenPanel(PanelKind.ROOM) })
-            IconAction(Icons.Filled.Forum, "Chat", { onOpenPanel(PanelKind.CHAT) })
-            IconAction(Icons.Filled.Audiotrack, "Audio", { onOpenPanel(PanelKind.AUDIO) })
-            IconAction(Icons.Filled.Subtitles, "Subtitles", { onOpenPanel(PanelKind.SUBTITLES) })
+            listOf(
+                Triple(PanelKind.PLAYLIST, Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist"),
+                Triple(PanelKind.ROOM, Icons.Filled.Groups, "Room"),
+                Triple(PanelKind.CHAT, Icons.Filled.Forum, "Chat"),
+                Triple(PanelKind.AUDIO, Icons.Filled.Audiotrack, "Audio"),
+                Triple(PanelKind.SUBTITLES, Icons.Filled.Subtitles, "Subtitles"),
+            ).forEach { (kind, icon, label) ->
+                IconAction(icon, label, { onOpenPanel(kind) }, Modifier.focusRequester(panelButtons.getValue(kind)))
+            }
             IconAction(Icons.Filled.Home, "Browse", onHome)
         }
     }

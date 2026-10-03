@@ -1,7 +1,10 @@
 package com.yarmiplaytv.tv
 
 import android.view.KeyEvent
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.yarmiplaytv.DeviceKind
@@ -92,6 +95,32 @@ class TvNavigationTest {
         waitUntil(5_000) { container.settings.value.sync.rewindOnDesync == before }
         tv.back()
         tv.awaitFocus("Join a Syncplay room")
+    }
+
+    @Test
+    fun controlsHideSettingPresetsAndCustom() {
+        launch()
+        tv.awaitFocus("Join a Syncplay room")
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("Settings")
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        tv.awaitFocus("When I unpause")
+        fun hideSeconds() = container.settings.value.playback.controlsHideSeconds
+        assertEquals(3, hideSeconds())
+        for (expected in listOf(5, 10, 0)) {
+            tv.click("Hide player controls after")
+            waitUntil(5_000) { hideSeconds() == expected }
+        }
+        tv.await("Never")
+        tv.click("Hide player controls after")
+        tv.await("Custom time (seconds)")
+        // The custom field comes before the language fields.
+        compose.onAllNodes(hasSetTextAction()).onFirst().performTextReplacement("7")
+        waitUntil(5_000) { hideSeconds() == 7 }
+        tv.await("7 s (custom)")
+        tv.click("Hide player controls after")
+        waitUntil(5_000) { hideSeconds() == 2 }
+        tv.awaitGone("Custom time (seconds)")
     }
 
     @Test
@@ -186,15 +215,31 @@ class TvNavigationTest {
                 "" -> Unit
                 else -> tv.awaitFocus(focused)
             }
+            // Back steps back: to the controls, on the button that opened the panel, then to the video.
             tv.back()
+            tv.awaitFocus(button)
+            tv.await(HIDE_HINT)
+            tv.back()
+            tv.awaitGone(HIDE_HINT)
             tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
             tv.awaitFocus("Play/pause")
         }
+        // Down and Menu each show and hide the controls.
+        for (key in listOf(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_MENU)) {
+            tv.key(key)
+            tv.awaitGone(HIDE_HINT)
+            tv.key(key)
+            tv.awaitFocus("Play/pause")
+            tv.await(HIDE_HINT)
+        }
         tv.back()
-        // D-pad up with the controls hidden opens the room panel directly.
+        tv.awaitGone(HIDE_HINT)
+        // D-pad up with the controls hidden opens the room panel directly, and Back returns to the video.
         tv.key(KeyEvent.KEYCODE_DPAD_UP)
         tv.awaitFocus("I'm ready")
         tv.back()
+        tv.awaitGone("I'm ready")
+        tv.awaitGone(HIDE_HINT)
         assertEquals(true, container.player.state.value.paused)
     }
 
@@ -207,7 +252,7 @@ class TvNavigationTest {
             container.playlist.playLocal(uri.toString(), inRoom = false)
             waitUntil(20_000) { container.player.state.value.fileLoaded }
             waitUntil(10_000) { !container.player.state.value.paused && container.player.currentPosition() > 0.5 }
-            // While playing, the controls hide after 6 s of the test clock, which the position ticker races through.
+            // While playing, the controls hide after 3 s of the test clock, which the position ticker races through.
             onMain { container.player.setPaused(true) }
             tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
             tv.awaitFocus("Play/pause")
@@ -219,6 +264,7 @@ class TvNavigationTest {
 
     companion object {
         private const val TEXT_FIELD = "<text field>"
+        private const val HIDE_HINT = "▼ Hide"
         private val state = AppState()
         private lateinit var syncplay: FakeSyncplayServer
         private lateinit var jellyfin: FakeJellyfin

@@ -42,6 +42,8 @@ data class PlaybackPrefs(
     val audioLanguages: String = "jpn,ja",
     val subtitleLanguages: String = "eng,en",
     val seekStepSeconds: Int = 10,
+    /** TV: how long the player's controls stay up while a video plays; 0 keeps them up. */
+    val controlsHideSeconds: Int = 3,
 )
 
 data class AppSettings(
@@ -100,6 +102,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val alang = stringPreferencesKey("pb_alang")
         val slang = stringPreferencesKey("pb_slang")
         val seekStep = intPreferencesKey("pb_seek_step")
+        val controlsHide = intPreferencesKey("pb_controls_hide")
 
         val jfUrl = stringPreferencesKey("jf_url")
         val jfServerName = stringPreferencesKey("jf_server_name")
@@ -145,6 +148,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
                 audioLanguages = p[Keys.alang] ?: defaults.playback.audioLanguages,
                 subtitleLanguages = p[Keys.slang] ?: defaults.playback.subtitleLanguages,
                 seekStepSeconds = p[Keys.seekStep] ?: 10,
+                controlsHideSeconds = p[Keys.controlsHide] ?: defaults.playback.controlsHideSeconds,
             ),
             jellyfin = if (token != null) JellyfinSession(
                 serverUrl = p[Keys.jfUrl] ?: "",
@@ -243,6 +247,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             it[Keys.alang] = prefs.audioLanguages
             it[Keys.slang] = prefs.subtitleLanguages
             it[Keys.seekStep] = prefs.seekStepSeconds
+            it[Keys.controlsHide] = prefs.controlsHideSeconds
         }
     }
 

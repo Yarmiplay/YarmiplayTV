@@ -9,11 +9,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
@@ -80,6 +83,7 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
             val steps = listOf(5, 10, 15, 30)
             savePlayback(pb.copy(seekStepSeconds = steps[(steps.indexOf(pb.seekStepSeconds) + 1) % steps.size]))
         }, subtitle = "D-pad left/right while the controls are hidden")
+        ControlsHideSetting(pb, ::savePlayback)
         TvTextField(pb.audioLanguages, { savePlayback(pb.copy(audioLanguages = it)) }, "Preferred audio languages (restart to apply)", placeholder = "jpn,ja,eng")
         TvTextField(pb.subtitleLanguages, { savePlayback(pb.copy(subtitleLanguages = it)) }, "Preferred subtitle languages (restart to apply)", placeholder = "eng,en")
 
@@ -94,5 +98,49 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
             )
         }
         ValueRow("Open-source licenses", "View", { nav.push(Screen.Licenses) }, subtitle = "mpv, FFmpeg and the other parts this app is built on")
+    }
+}
+
+/** 0 is "Never"; after it the row offers "Custom", which shows a field for any number of seconds. */
+private val controlsHidePresets = listOf(2, 3, 5, 10, 0)
+private const val CONTROLS_HIDE_MAX = 60
+
+@Composable
+private fun ControlsHideSetting(pb: PlaybackPrefs, save: (PlaybackPrefs) -> Unit) {
+    val seconds = pb.controlsHideSeconds
+    var customPicked by remember { mutableStateOf(false) }
+    val custom = customPicked || seconds !in controlsHidePresets
+    ValueRow(
+        "Hide player controls after",
+        when {
+            custom && seconds > 0 -> "$seconds s (custom)"
+            custom -> "Custom"
+            seconds == 0 -> "Never"
+            else -> "$seconds s"
+        },
+        {
+            val next = controlsHidePresets.indexOf(seconds) + 1
+            when {
+                custom -> { customPicked = false; save(pb.copy(controlsHideSeconds = controlsHidePresets.first())) }
+                next == controlsHidePresets.size -> customPicked = true
+                else -> save(pb.copy(controlsHideSeconds = controlsHidePresets[next]))
+            }
+        },
+        subtitle = "While a video plays; paused videos keep the controls up",
+    )
+    if (custom) {
+        var text by remember { mutableStateOf(if (seconds > 0) seconds.toString() else "") }
+        val valid = text.toIntOrNull()?.takeIf { it in 1..CONTROLS_HIDE_MAX }
+        TvTextField(
+            text,
+            {
+                customPicked = true
+                text = it.filter(Char::isDigit).take(3)
+                text.toIntOrNull()?.takeIf { s -> s in 1..CONTROLS_HIDE_MAX }?.let { s -> save(pb.copy(controlsHideSeconds = s)) }
+            },
+            if (valid != null || text.isEmpty()) "Custom time (seconds)" else "Custom time (seconds): enter 1 to $CONTROLS_HIDE_MAX",
+            placeholder = "7",
+            keyboardType = KeyboardType.Number,
+        )
     }
 }

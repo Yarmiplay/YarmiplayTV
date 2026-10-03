@@ -132,8 +132,8 @@ class TvScreenshotTest {
                 },
             )
             shot("player_panel_$slug")
-            tv.back() // closes the panel and the controls
-            tv.key(KeyEvent.KEYCODE_DPAD_CENTER); tv.await("0:00")
+            tv.back() // back to the controls, on this panel's button
+            tv.awaitFocus(label)
         }
         Screenshots.assertAllMatched()
     }
