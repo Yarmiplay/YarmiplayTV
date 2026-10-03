@@ -85,6 +85,16 @@ class MobileUiTest {
     }
 
     @Test
+    fun settingsOpensMediaServers() {
+        compose.onNodeWithTag("tab_Settings").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("settings_servers"), 5_000)
+        compose.onNodeWithTag("settings_servers").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("servers"), 5_000)
+        compose.onNodeWithTag("add_jellyfin").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("add_plex").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun addTwoServersAndSignOutOfOne() {
         val first = FakeJellyfin()
         val second = FakeJellyfin(FakeJellyfin.PORT + 1, serverId = "fake-server-2", serverName = "Bedroom Server")

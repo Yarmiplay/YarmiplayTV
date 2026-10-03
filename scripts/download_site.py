@@ -28,6 +28,17 @@ from dataclasses import dataclass
 NAME = "YarmiplayTV"
 REPO_URL = "https://github.com/Yarmiplay/YarmiplayTV"
 SERVER_URL = "https://yarmiplay.github.io/YarmiplayServerTV/"
+# The app icon as desktop/build.gradle.kts draws it: ic_logo.xml's triangles on the rounded gradient tile.
+LOGO_SVG = (
+    '<svg viewBox="0 0 108 108" aria-hidden="true">'
+    '<defs><linearGradient id="logo-bg" x1="0" y1="0" x2="108" y2="108" gradientUnits="userSpaceOnUse">'
+    '<stop offset="0" stop-color="#1B2A41"/><stop offset="1" stop-color="#0E1116"/></linearGradient></defs>'
+    '<rect x="6.48" y="6.48" width="95.04" height="95.04" rx="20.9" fill="url(#logo-bg)" '
+    'stroke="#fff" stroke-opacity=".11" stroke-width=".84"/>'
+    '<g transform="translate(54 54) scale(1.3) translate(-54 -54)">'
+    '<path d="M30 28V80L70 54Z" fill="#3DA5F4"/><path d="M46 34V74L78 54Z" fill="#fff" fill-opacity=".8"/></g>'
+    '</svg>'
+)
 # Store listings: the platform's main button, with its files as smaller buttons below.
 STORE_LINKS = {
     "windows": ("Microsoft Store", "https://apps.microsoft.com/detail/9PDBVR6W069J"),
@@ -168,7 +179,8 @@ def render_page(downloads, version, built, short_link=None, privacy=False):
  body {{ margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }}
  main {{ max-width:1100px; margin:0 auto; padding:6vh 4vw 4vh; }}
  header {{ text-align:center; margin-bottom:2.5em; }}
- h1 {{ font-size:clamp(2.2em,6vw,3.4em); margin:0; letter-spacing:-.02em; }}
+ h1 {{ font-size:clamp(2.2em,6vw,3.4em); margin:0; letter-spacing:-.02em; display:inline-flex; align-items:center; gap:.3em; }}
+ h1 svg {{ width:1.15em; height:1.15em; flex:none; }}
  header p {{ color:var(--muted); font-size:1.15em; margin:.4em auto; max-width:46em; }}
  .meta {{ font-size:.95em; }}
  a {{ color:var(--accent); }}
@@ -205,7 +217,7 @@ def render_page(downloads, version, built, short_link=None, privacy=False):
 </style></head>
 <body><main>
 <header>
- <h1>{NAME}</h1>
+ <h1>{LOGO_SVG}{NAME}</h1>
  <p>A Syncplay client with mpv built in. Watch in sync with desktop Syncplay users, from Jellyfin or your own files.</p>
  <p class="meta">{meta}</p>
 </header>

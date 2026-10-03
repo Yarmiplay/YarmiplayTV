@@ -37,8 +37,6 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
     val settings by container.settings.collectAsStateWithLifecycle()
     val folders by container.local.folders.collectAsStateWithLifecycle()
     val servers by container.servers.collectAsStateWithLifecycle()
-    val jellyfin by container.jellyfinServers.collectAsStateWithLifecycle()
-    val plex by container.plexServers.collectAsStateWithLifecycle()
     fun saveServerPrefs(preferred: String = settings.preferredServer, report: Boolean = settings.reportPlayback) =
         container.scope.launch { container.settingsStore.saveServerPrefs(preferred, report) }
 
@@ -52,12 +50,11 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
         MobileTopBar("Settings", nav, showBack = false)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(bottom = 24.dp).testTag("settings")) {
             SectionHeader("Media")
-            ValueSetting("Jellyfin", jellyfin.joinToString { it.displayName }.ifEmpty { "Not connected" }) {
-                nav.push(if (jellyfin.isEmpty()) Screen.JellyfinLogin else Screen.Servers)
-            }
-            ValueSetting("Plex", plex.joinToString { it.displayName }.ifEmpty { "Not connected" }) {
-                nav.push(if (plex.isEmpty()) Screen.PlexLogin else Screen.Servers)
-            }
+            ValueSetting(
+                "Media servers",
+                servers.joinToString { it.displayName }.ifEmpty { "Add a Jellyfin or Plex server" },
+                Modifier.testTag("settings_servers"),
+            ) { nav.push(Screen.Servers) }
             ValueSetting("Media folders on this device", if (folders.isEmpty()) "None" else folders.joinToString { it.name }) { nav.push(Screen.LocalFiles) }
             preferredOf(servers, settings.preferredServer)?.takeIf { servers.size > 1 }?.let { preferred ->
                 ValueSetting(
@@ -145,8 +142,8 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
 }
 
 @Composable
-private fun ValueSetting(title: String, value: String, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp)) {
+private fun ValueSetting(title: String, value: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Column(modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         Text(value, color = AppColors.Accent, style = MaterialTheme.typography.bodyMedium)
     }

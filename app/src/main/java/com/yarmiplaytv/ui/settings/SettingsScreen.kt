@@ -84,6 +84,12 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
         )
 
         SectionTitle("Media servers")
+        ValueRow(
+            "Media servers",
+            servers.joinToString { it.displayName }.ifEmpty { "None" },
+            { nav.push(Screen.Servers) },
+            subtitle = "Add Jellyfin and Plex servers, or sign out of one",
+        )
         preferredOf(servers, settings.preferredServer)?.takeIf { servers.size > 1 }?.let { preferred ->
             ValueRow(
                 "Preferred server",

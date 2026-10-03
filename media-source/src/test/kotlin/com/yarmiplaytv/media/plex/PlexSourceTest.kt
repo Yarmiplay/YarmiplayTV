@@ -37,6 +37,7 @@ class PlexSourceTest {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val url = request.requestUrl!!
                 if (revoked && url.encodedPath == "/identity") return MockResponse().setResponseCode(401)
+                if (url.encodedPath == "/notplex/identity") return MockResponse().setHeader("Content-Type", "text/html").setBody("<html>Router login</html>")
                 val body = when (url.encodedPath) {
                     "/api/v2/pins" -> """{"id":42,"code":"ABCD","expiresIn":900}"""
                     "/api/v2/pins/42" -> if (++pinPolls >= 2) """{"id":42,"code":"ABCD","authToken":"acct"}""" else """{"id":42,"code":"ABCD"}"""
@@ -102,6 +103,21 @@ class PlexSourceTest {
         assertEquals(baseUrl(), session.serverUrl)
         assertEquals("srvtok", session.serverToken)
         assertEquals("acct", session.accountToken)
+    }
+
+    @Test
+    fun connectSkipsAddressesThatAreNotPlexAndExplainsFailures() = runBlocking {
+        val html = PlexResourceConnection("${baseUrl()}/notplex", local = true)
+        val dead = PlexResourceConnection("http://127.0.0.1:1", local = true)
+        val good = PlexResourceConnection(baseUrl())
+        val server = PlexServer("Benny", "mid", "srvtok", owned = true, connections = listOf(html, dead, good))
+        assertEquals(baseUrl(), client.connect(server, "acct", "yarmi").serverUrl)
+
+        val error = runCatching { client.connect(server.copy(connections = listOf(html, dead)), "acct", "yarmi") }.exceptionOrNull()
+        val lines = error!!.message!!.lines()
+        assertEquals("Can't reach Benny; is it online?", lines[0])
+        assertTrue(lines[1], lines[1].startsWith("${html.uri}: not a Plex server"))
+        assertTrue(lines[2], lines[2].startsWith("${dead.uri}: Cannot reach 127.0.0.1:1"))
     }
 
     @Test

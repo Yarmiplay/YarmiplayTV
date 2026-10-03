@@ -164,6 +164,23 @@ class TvNavigationTest {
     }
 
     @Test
+    fun settingsOpensMediaServersWithDpad() {
+        launch()
+        tv.awaitFocus("Join a Syncplay room")
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("Settings")
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        tv.awaitFocus("When I unpause")
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = 6)
+        tv.awaitFocus("Add Jellyfin and Plex servers")
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        tv.await("No media servers yet")
+        tv.awaitFocus("Add Jellyfin server")
+        tv.back()
+        tv.await("When I unpause")
+    }
+
+    @Test
     fun browseLibraryWithDpad() {
         state.signInJellyfin(jellyfin)
         launch()

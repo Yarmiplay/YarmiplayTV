@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -113,12 +114,12 @@ class PlexClient(
 
     /** Probes the server's addresses (all at once) and returns a session on the best reachable one: local, remote, then relay. */
     suspend fun connect(server: PlexServer, accountToken: String, userName: String): PlexSession {
-        val ordered = server.connections.sortedBy { c -> if (c.relay) 2 else if (c.local) 0 else 1 }
-        val reachable = coroutineScope {
-            ordered.map { c -> async { c to probe(c.uri, server.accessToken, server.machineId) } }.awaitAll()
-        }
-        val best = reachable.firstOrNull { it.second }?.first
-            ?: throw MediaSourceException("Can't reach ${server.name}; is it online?")
+        val results = probeAll(server)
+        val best = results.firstOrNull { it.second == null }?.first
+            ?: throw MediaSourceException(
+                "Can't reach ${server.name}; is it online?" +
+                    results.joinToString("") { (c, why) -> "\n${c.uri}: $why" }.ifEmpty { "\nplex.tv lists no address for it" },
+            )
         return PlexSession(
             serverUrl = best.uri.trimEnd('/'),
             serverName = server.name,
@@ -129,11 +130,21 @@ class PlexClient(
         )
     }
 
-    private suspend fun probe(uri: String, token: String, machineId: String): Boolean = try {
+    /** Every address of [server], best first (local, remote, relay), each with null when it answered or why it didn't. */
+    internal suspend fun probeAll(server: PlexServer): List<Pair<PlexResourceConnection, String?>> {
+        val ordered = server.connections.sortedBy { c -> if (c.relay) 2 else if (c.local) 0 else 1 }
+        return coroutineScope {
+            ordered.map { c -> async { c to probe(c.uri, server.accessToken, server.machineId) } }.awaitAll()
+        }
+    }
+
+    private suspend fun probe(uri: String, token: String, machineId: String): String? = try {
         val identity: PlexResponse = json.decodeFromString(execute(probeHttp, uri, token, "identity") { })
-        identity.container.machineIdentifier.let { it == null || it == machineId }
+        identity.container.machineIdentifier.takeIf { it != null && it != machineId }?.let { "a different server answered ($it)" }
     } catch (e: MediaSourceException) {
-        false
+        e.message ?: e.toString()
+    } catch (e: SerializationException) {
+        "not a Plex server (${e.message?.take(80)})"
     }
 
     /**

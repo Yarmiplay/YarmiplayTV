@@ -121,7 +121,7 @@ class TvScreenshotTest {
         tv.await("Films"); tv.await("Continue watching · Screenshot Server")
         shot("home_both_servers")
         tv.click("Settings"); tv.awaitFocus("When I unpause")
-        tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = 6); tv.awaitFocus("Preferred server")
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = 7); tv.awaitFocus("Preferred server")
         shot("settings_both_servers")
         Screenshots.assertAllMatched()
     }

@@ -22,6 +22,9 @@ tasks.test {
     environment("JELLYFIN_URL", System.getenv("JELLYFIN_URL") ?: "")
     environment("JELLYFIN_TOKEN", System.getenv("JELLYFIN_TOKEN") ?: "")
     environment("JELLYFIN_USER_ID", System.getenv("JELLYFIN_USER_ID") ?: "")
+    // LivePlexTest: PLEX_LINK=1 signs in with a plex.tv/link code, PLEX_TOKEN uses an account token.
+    environment("PLEX_LINK", System.getenv("PLEX_LINK") ?: "")
+    environment("PLEX_TOKEN", System.getenv("PLEX_TOKEN") ?: "")
     testLogging {
         events("passed", "skipped", "failed")
         showStandardStreams = true
