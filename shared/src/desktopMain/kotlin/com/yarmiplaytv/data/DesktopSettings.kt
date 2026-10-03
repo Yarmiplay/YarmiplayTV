@@ -15,6 +15,19 @@ object DesktopPaths {
         home: String = System.getProperty("user.home").orEmpty(),
     ): File = dirNamed("YarmiplayTV", osName, env, home)
 
+    /**
+     * The portable Windows app's settings folder, data next to its launcher so the settings move with it;
+     * null for an installed app. The portable zip's launcher sets yarmiplaytv.portable, and every jpackage
+     * launcher sets jpackage.app-path.
+     */
+    fun portableDir(
+        portable: String? = System.getProperty("yarmiplaytv.portable"),
+        launcher: String? = System.getProperty("jpackage.app-path"),
+    ): File? {
+        if (portable.isNullOrEmpty() || launcher.isNullOrEmpty()) return null
+        return File(File(launcher).absoluteFile.parentFile, "data")
+    }
+
     /** The folder the app used while it was called SyncplayTV. */
     fun legacyConfigDir(
         osName: String = System.getProperty("os.name").orEmpty(),

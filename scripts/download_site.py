@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Builds the YarmiplayTV download page: one card per device type / OS, each with its download and install steps.
+Builds the YarmiplayTV download page: one card per OS (Android TVs, phones and tablets share one APK), each with
+its download and install steps.
 
   python scripts/download_site.py --dist dist --out _site [--version 0.1.0] [--site-url URL]
 
-Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .msi/.exe: Windows,
+Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .msi/.zip: Windows,
 .dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as YarmiplayTV.apk, so links
 keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader, <site>/privacy/
 is docs/privacy.md (the Play Store privacy policy), and <site>/version.json lists each platform's package
@@ -27,16 +28,17 @@ from dataclasses import dataclass
 NAME = "YarmiplayTV"
 REPO_URL = "https://github.com/Yarmiplay/YarmiplayTV"
 SERVER_URL = "https://yarmiplay.github.io/YarmiplayServerTV/"
-# Store listings, shown before the platform's files.
+# Store listings: the platform's main button, with its files as smaller buttons below.
 STORE_LINKS = {
     "windows": ("Microsoft Store", "https://apps.microsoft.com/detail/9PDBVR6W069J"),
 }
 
-# Lower-case extension -> platforms it installs on and the button label.
+# Lower-case extension -> platforms it installs on and the button label. Without a store listing the first
+# file is the platform's main button.
 EXTENSIONS = {
-    ".apk": (("tv", "android"), "APK"),
+    ".apk": (("android",), "APK"),
     ".msi": (("windows",), "Installer (.msi)"),
-    ".exe": (("windows",), "Installer (.exe)"),
+    ".zip": (("windows",), "Portable (.zip)"),
     ".dmg": (("macos",), "Disk image (.dmg)"),
     ".pkg": (("macos",), "Installer (.pkg)"),
     ".deb": (("linux",), "Debian / Ubuntu (.deb)"),
@@ -69,27 +71,29 @@ class Platform:
     blurb: str
     steps: list[str]
     source: list[str]
+    # Steps that are alternatives (one per device or package) rather than a sequence.
+    alternatives: bool = False
 
 
 def platforms(short_link):
-    downloader = (f"Enter <code>{html.escape(short_link)}</code> and download."
-                  if short_link else "Enter this page's address followed by <code>/a</code> and download.")
+    address = (f"<code>{html.escape(short_link)}</code>" if short_link
+               else "this page's address followed by <code>/a</code>")
     run = "./gradlew :desktop:run"
     return [
-        Platform("tv", "Google TV / Android TV", "Remote-friendly interface. Android TV 8.0 or newer.", [
-            "Install the free <b>Downloader</b> app (by AFTVnews) from the Play Store.",
-            downloader,
-            "Allow Downloader to install unknown apps when Android asks, then choose <b>Install</b>.",
-        ], []),
-        Platform("android", "Android phone &amp; tablet",
-                 "Touch interface; plays files on the device and from Jellyfin. Android 8.0 or newer.", [
-            "Tap the download button.",
-            "Allow the browser to install unknown apps when Android asks.",
-            "Open the file from the notification or <b>Downloads</b> and choose <b>Install</b>.",
-        ], []),
+        Platform("android", "Android",
+                 "Google TV / Android TV, phones and tablets: one app that picks the remote-friendly TV interface "
+                 "or the touch interface by itself. Android 8.0 or newer.", [
+            # The TV step stays last: on a TV the page's script moves it to the top.
+            '<b>Phone or tablet:</b> tap the download button, allow the browser to install unknown apps when '
+            'Android asks, then open the file from the notification or <b>Downloads</b> and choose <b>Install</b>.',
+            f'<b>Google TV / Android TV:</b> enter {address} in <b>Downloader</b>, allow it to install unknown '
+            f'apps when Android asks, then choose <b>Install</b>.',
+        ], [], alternatives=True),
         Platform("windows", "Windows", "Windows 10 or 11, 64-bit.", [
             "Get it from the Microsoft Store, or run the installer, then start YarmiplayTV from the Start menu.",
-        ], ["Install JDK 17, clone the repository, then:", "gradlew.bat :desktop:run"]),
+            "Or unzip the portable version anywhere and run <b>YarmiplayTV.exe</b>: nothing is installed, and its "
+            "settings stay in its folder.",
+        ], ["Install JDK 17, clone the repository, then:", "gradlew.bat :desktop:run"], alternatives=True),
         Platform("macos", "macOS", "Uses mpv from Homebrew.", [
             "Install mpv: <code>brew install mpv</code>",
             "Open the disk image and drag YarmiplayTV to Applications.",
@@ -131,16 +135,19 @@ def render_page(downloads, version, built, short_link=None, privacy=False):
         files = downloads.get(p.key, [])
         store = STORE_LINKS.get(p.key)
         if files or store:
-            buttons = "".join(
-                f'<a class="btn" href="{html.escape(d.href)}" download>{html.escape(d.label)}'
-                f'<small>{fmt_size(d.size)}</small></a>' for d in files)
-            if store:
-                buttons = (f'<a class="btn" href="{html.escape(store[1])}">{html.escape(store[0])}'
-                           f'<small>Updates automatically</small></a>' + buttons)
-            steps = "".join(f"<li>{s}</li>" for s in p.steps)
+            links = [(html.escape(store[1]), "", html.escape(store[0]), "Updates automatically")] if store else []
+            links += [(html.escape(d.href), " download", html.escape(d.label), fmt_size(d.size)) for d in files]
+            (href, attr, label, note), rest = links[0], links[1:]
+            buttons = f'<a class="btn" href="{href}"{attr}>{label}<small>{note}</small></a>'
+            if rest:
+                buttons += '<p class="more">' + " &middot; ".join(
+                    f'<span><a href="{href}"{attr}>{label}</a> <small>{note}</small></span>'
+                    for href, attr, label, note in rest) + "</p>"
+            tag = "ul" if p.alternatives else "ol"
+            steps = f"<{tag}>" + "".join(f"<li>{s}</li>" for s in p.steps) + f"</{tag}>"
             sums = "".join(f"<div>{html.escape(d.href.rsplit('/', 1)[-1])}<br><code>{d.sha256}</code></div>"
                            for d in files if d.sha256)
-            body = (f'<div class="dl">{buttons}</div><ol>{steps}</ol>'
+            body = (f'<div class="dl">{buttons}</div>{steps}'
                     + (f"<details><summary>SHA-256</summary>{sums}</details>" if sums else ""))
         else:
             intro, cmd = p.source
@@ -172,15 +179,18 @@ def render_page(downloads, version, built, short_link=None, privacy=False):
           font-size:.8em; font-weight:700; padding:.1em .7em; border-radius:99px; }}
  .card.here .badge {{ display:block; }}
  h2 {{ margin:0 0 .2em; font-size:1.35em; }}
- .blurb, .src, ol, details {{ color:var(--muted); }}
+ .blurb, .src, ol, ul, details {{ color:var(--muted); }}
  .blurb {{ margin:0 0 1em; }}
- .dl {{ display:flex; flex-wrap:wrap; gap:.6em; margin-bottom:.8em; }}
+ .dl {{ display:flex; flex-direction:column; align-items:flex-start; gap:.6em; margin-bottom:.8em; }}
+ .more {{ margin:0; color:var(--muted); font-size:.95em; }}
+ .more a {{ font-weight:600; text-decoration:none; }} .more a:hover {{ text-decoration:underline; }}
+ .more span {{ white-space:nowrap; }} .more small {{ font-size:.85em; }}
  .btn {{ display:inline-flex; flex-direction:column; padding:.6em 1.2em; border-radius:10px; background:var(--accent);
         color:var(--bg); text-decoration:none; font-weight:700; font-size:1.05em; }}
  .btn small {{ font-weight:500; opacity:.8; font-size:.8em; }}
  .btn:hover {{ filter:brightness(1.1); }}
  a:focus-visible, summary:focus-visible {{ outline:3px solid var(--text); outline-offset:3px; }}
- ol {{ padding-left:1.3em; margin:.4em 0; }}
+ ol, ul {{ padding-left:1.3em; margin:.4em 0; }} ul li + li {{ margin-top:.4em; }}
  code, pre {{ font-family:ui-monospace,Consolas,monospace; font-size:.9em; }}
  code {{ background:var(--bg); padding:.1em .35em; border-radius:4px; color:var(--text); overflow-wrap:anywhere; }}
  pre {{ background:var(--bg); padding:.7em 1em; border-radius:8px; overflow-x:auto; color:var(--text); margin:.3em 0 0; }}
@@ -207,14 +217,14 @@ def render_page(downloads, version, built, short_link=None, privacy=False):
  <strong>Host your own server</strong>
  <p><a href="{SERVER_URL}">YarmiplayServerTV</a> runs a Syncplay server and a Jellyfin server from your Windows, macOS or Linux computer.</p>
 </section>
-<footer>Phones, tablets and TVs use the same APK: it picks the TV or touch interface by itself.
- &middot; <a href="{REPO_URL}">Source</a>{' &middot; <a href="privacy/">Privacy</a>' if privacy else ''}
+<footer><a href="{REPO_URL}">Source</a>{' &middot; <a href="privacy/">Privacy</a>' if privacy else ''}
  &middot; <a href="{REPO_URL}#code-signing-policy">Code signing policy</a></footer>
 </main>
 <script>
 (function () {{
   var ua = navigator.userAgent, key = null;
-  if (/Android/i.test(ua)) key = /\\bTV\\b|GoogleTV|AFT[A-Z]|BRAVIA|SMART-TV|Large Screen/i.test(ua) ? "tv" : "android";
+  var tv = /Android/i.test(ua) && /\\bTV\\b|GoogleTV|AFT[A-Z]|BRAVIA|SMART-TV|Large Screen/i.test(ua);
+  if (/Android/i.test(ua)) key = "android";
   else if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) {{
     document.getElementById("ios").style.display = "block";
   }}
@@ -226,7 +236,11 @@ def render_page(downloads, version, built, short_link=None, privacy=False):
   card.classList.add("here");
   card.parentNode.insertBefore(card, card.parentNode.firstChild);
   var btn = card.querySelector(".btn");
-  if (btn && key === "tv") btn.focus();
+  if (tv) {{
+    var steps = card.querySelector("ul");
+    if (steps && steps.lastElementChild) steps.insertBefore(steps.lastElementChild, steps.firstElementChild);
+    if (btn) btn.focus();
+  }}
 }})();
 </script>
 </body></html>

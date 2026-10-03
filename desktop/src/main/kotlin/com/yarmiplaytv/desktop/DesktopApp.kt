@@ -56,7 +56,7 @@ import javax.swing.SwingUtilities
 import kotlin.system.exitProcess
 
 internal fun runApp(args: List<String>) {
-    val configDir = DesktopPaths.migrateLegacyConfig()
+    val configDir = DesktopPaths.portableDir() ?: DesktopPaths.migrateLegacyConfig()
     val boundsFile = File(configDir, "window.properties")
     var container: AppContainer? = null
     var failure: Throwable? = null

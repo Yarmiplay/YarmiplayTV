@@ -1,5 +1,6 @@
 package com.yarmiplaytv.desktop
 
+import com.yarmiplaytv.data.DesktopPaths
 import com.yarmiplaytv.update.Update
 import com.yarmiplaytv.update.UpdateInstaller
 import kotlinx.coroutines.Dispatchers
@@ -95,9 +96,12 @@ internal class WindowsUpdater private constructor(private val launcher: File) : 
     }
 
     companion object {
-        /** Only for the installed app on Windows; its jpackage launcher sets jpackage.app-path. */
+        /**
+         * Only for the installed app on Windows; its jpackage launcher sets jpackage.app-path. The portable app
+         * only points to the download page: the .msi would install a second copy next to it.
+         */
         fun createOrNull(): WindowsUpdater? {
-            if (updatePlatform() != "windows") return null
+            if (updatePlatform() != "windows" || DesktopPaths.portableDir() != null) return null
             val launcher = System.getProperty("jpackage.app-path")?.let(::File)?.takeIf { it.isFile } ?: return null
             return WindowsUpdater(launcher)
         }

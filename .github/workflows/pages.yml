@@ -58,8 +58,9 @@ jobs:
           gh run download "${{ steps.run.outputs.id }}" -R "$GITHUB_REPOSITORY" -p 'yarmiplaytv-*' -D artifacts
           mkdir dist
           find artifacts -type f -exec mv -t dist {} +
-          if gh release download -R "$GITHUB_REPOSITORY" -p '*.msi' -p '*.exe' -D signed; then
-            rm -f dist/*.msi dist/*.exe
+          # Releases before the portable zip only have the .msi; main's zip stays until one has both.
+          if gh release download -R "$GITHUB_REPOSITORY" -p '*.msi' -p '*-portable.zip' -D signed; then
+            for f in signed/*; do rm -f dist/*."${f##*.}"; done
             mv signed/* dist/
           else
             echo "::warning::No release with Windows installers; the page offers the unsigned ones from main"

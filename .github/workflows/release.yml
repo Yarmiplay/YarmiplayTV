@@ -3,10 +3,10 @@ name: Release
 # For a version tag (v1.1, v1.2.3), which has to match appVersion in app/build.gradle.kts:
 # - the Play upload bundle, signed with the upload key from the secrets YARMIPLAYTV_KEYSTORE_BASE64,
 #   YARMIPLAYTV_KEYSTORE_PASSWORD, YARMIPLAYTV_KEY_ALIAS and YARMIPLAYTV_KEY_PASSWORD;
-# - the Windows installers, attached to the tag's GitHub release, where the download page and winget take them
-#   from. With the variable SIGNPATH_ORGANIZATION_ID and the secret SIGNPATH_API_TOKEN they are first code
-#   signed through SignPath (certificate by SignPath Foundation), once an approver accepts the signing request;
-#   without them the unsigned installers are released;
+# - the Windows installer (.msi) and portable zip, attached to the tag's GitHub release, where the download
+#   page and winget take them from. With the variable SIGNPATH_ORGANIZATION_ID and the secret
+#   SIGNPATH_API_TOKEN they are first code signed through SignPath (certificate by SignPath Foundation), once
+#   an approver accepts the signing request; without them the unsigned files are released;
 # - the Microsoft Store package (.msix, unsigned: the Store signs it), attached to the run for uploading in
 #   Partner Center;
 # - with the variable WINGET_PACKAGE_ID and the secret WINGET_TOKEN, a pull request to microsoft/winget-pkgs
@@ -109,14 +109,14 @@ jobs:
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
-      # SignPath's artifact configuration (.github/signpath/artifact-configuration.xml) expects the two
-      # installers at the root of the artifact.
+      # SignPath's artifact configuration (.github/signpath/artifact-configuration.xml) expects the .msi and
+      # the portable zip at the root of the artifact.
       - name: Installers
         run: |
           chmod +x gradlew
-          ./gradlew --stacktrace :desktop:packageMsi :desktop:packageExe
+          ./gradlew --stacktrace :desktop:packageMsi :desktop:packagePortableZip
           mkdir windows
-          cp desktop/build/compose/binaries/main/msi/*.msi desktop/build/compose/binaries/main/exe/*.exe windows/
+          cp desktop/build/compose/binaries/main/msi/*.msi desktop/build/compose/binaries/main/portable/*.zip windows/
           ls -l windows
 
       - name: jpackage logs
@@ -171,8 +171,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Attaches the installers to the tag's release: the signed ones when SignPath is set up, checked the way
-  # Windows does (including the launcher inside the .msi), otherwise the unsigned ones.
+  # Attaches the .msi and portable zip to the tag's release: the signed ones when SignPath is set up, checked
+  # the way Windows does (the .msi and the launcher inside each), otherwise the unsigned ones.
   publish-windows:
     needs: [windows-installers, sign-windows]
     if: >-
@@ -196,8 +196,9 @@ jobs:
         run: |
           $msi = Get-Item windows\*.msi
           Start-Process msiexec -Wait -ArgumentList "/a `"$($msi.FullName)`" /qn TARGETDIR=`"$env:RUNNER_TEMP\msi`""
-          $files = @(Get-Item windows\*.msi, windows\*.exe) + @(Get-ChildItem "$env:RUNNER_TEMP\msi" -Recurse -Filter YarmiplayTV.exe)
-          if ($files.Count -ne 3) { throw "expected the .msi, the .exe and the launcher inside the .msi, found $($files.Count) files" }
+          Expand-Archive (Get-Item windows\*.zip).FullName "$env:RUNNER_TEMP\zip"
+          $files = @($msi) + @(Get-ChildItem "$env:RUNNER_TEMP\msi", "$env:RUNNER_TEMP\zip" -Recurse -Filter YarmiplayTV.exe)
+          if ($files.Count -ne 3) { throw "expected the .msi and the launchers inside the .msi and the zip, found $($files.Count) files" }
           foreach ($file in $files) {
             $sig = Get-AuthenticodeSignature $file.FullName
             "{0}: {1}, {2}" -f $file.Name, $sig.Status, $sig.SignerCertificate.Subject
@@ -215,7 +216,7 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" windows/* -R "$GITHUB_REPOSITORY" --clobber
           else
-            notes="Windows installers for YarmiplayTV $VERSION${WINGET_ID:+ (or \`winget install $WINGET_ID\`)}. Other platforms: https://yarmiplay.github.io/YarmiplayTV/"
+            notes="YarmiplayTV $VERSION for Windows: the installer (.msi${WINGET_ID:+, or \`winget install $WINGET_ID\`}) and a portable zip. Microsoft Store: https://apps.microsoft.com/detail/9PDBVR6W069J. Other platforms: https://yarmiplay.github.io/YarmiplayTV/"
             if [ "$SIGNED" = true ]; then
               notes="$notes
 

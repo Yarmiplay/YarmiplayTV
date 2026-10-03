@@ -46,6 +46,14 @@ class DesktopSettingsTest {
     }
 
     @Test
+    fun `portable app keeps its settings next to its launcher`() {
+        val launcher = File(tmp.root, "YarmiplayTV/YarmiplayTV.exe").path
+        assertEquals(File(tmp.root, "YarmiplayTV/data"), DesktopPaths.portableDir("true", launcher))
+        assertNull("installed app", DesktopPaths.portableDir(null, launcher))
+        assertNull("run from Gradle", DesktopPaths.portableDir("true", null))
+    }
+
+    @Test
     fun `settings survive a restart`() = runBlocking {
         val dir = tmp.newFolder("YarmiplayTV")
         val profile = SyncplayProfile(host = "syncplay.example.org", port = 8999, username = "Sam", room = "movie-night", useTls = false)

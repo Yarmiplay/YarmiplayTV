@@ -34,8 +34,9 @@ desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin]
 
 ## Download
 
-The [download page](https://yarmiplay.github.io/YarmiplayTV/) has a card per device type (Google TV, Android
-phone and tablet, Windows, macOS, Linux) and highlights the one for the device you open it on. On a TV, enter
+The [download page](https://yarmiplay.github.io/YarmiplayTV/) has a card per platform (Android, which covers
+Google TV, phones and tablets with one APK; Windows; macOS; Linux) and highlights the one for the device you
+open it on, with the TV steps first on a TV. On a TV, enter
 `https://yarmiplay.github.io/YarmiplayTV/a` in the Downloader app to get the APK directly.
 
 To host your own Syncplay and Jellyfin servers from a Windows, macOS or Linux computer, use
@@ -44,9 +45,10 @@ To host your own Syncplay and Jellyfin servers from a Windows, macOS or Linux co
 
 The page is built by `scripts/download_site.py` and published by `.github/workflows/pages.yml` after every
 green `Build` run on `main` and after every `Release` run (or by hand from the Actions tab). It contains every
-artifact of that run whose name starts with `yarmiplaytv-`, except that the Windows installers come from the
-latest GitHub release, where they are code signed (see [Code signing policy](#code-signing-policy)). Files are
-matched to platforms by extension (`.apk`, `.msi`/`.exe`, `.dmg`/`.pkg`, `.deb`/`.rpm`/`.AppImage`). Platforms
+artifact of that run whose name starts with `yarmiplaytv-`, except that the Windows `.msi` and portable zip
+come from the latest GitHub release, where they are code signed (see [Code signing policy](#code-signing-policy)).
+Files are matched to platforms by extension (`.apk`, `.msi`/`.zip`, `.dmg`/`.pkg`, `.deb`/`.rpm`/`.AppImage`).
+Each card's main button is its store listing or first file, with the other files as links below it. Platforms
 without a package show how to run from source. The page's `version.json` lists each platform's package,
 version and SHA-256 for the apps' update check (see [Updates](#updates)). To preview it locally:
 
@@ -62,8 +64,8 @@ its platform's package has a higher version than the one running (so only bumpin
 update; builds of the same version don't). Phones and tablets link to the download page, TVs show the
 Downloader short link, and the installed Windows app downloads the `.msi`, checks its SHA-256 and installs it
 (per user, no administrator prompt) with **Install**, or by itself with **Install updates on launch** in
-Settings: it downloads at startup and installs when the app closes. "Check for updates" in Settings turns it
-all off. Release builds, which go to Google Play, never check: Play doesn't allow apps to update outside it.
+Settings: it downloads at startup and installs when the app closes. The portable Windows app only links to the
+download page. "Check for updates" in Settings turns it all off. Release builds, which go to Google Play, never check: Play doesn't allow apps to update outside it.
 
 The download page's APK is signed with a fixed key from the repository secrets
 `YARMIPLAYTV_APK_KEYSTORE_BASE64` and `YARMIPLAYTV_APK_KEYSTORE_PASSWORD` (alias `yarmiplaytv-apk`), so a new
@@ -75,9 +77,11 @@ CI signs with a throwaway debug key.
 Installers come from the `desktop` CI job (and the download page):
 
 - **Windows:** the [Microsoft Store](https://apps.microsoft.com/detail/9PDBVR6W069J) (signed, updated by the
-  Store), or the `.msi` or `.exe`, installed per user, or `winget install Yarmiplay.YarmiplayTV`; libmpv is
-  included. Releases are code signed when SignPath signing is set up (see below); uninstall from
-  Settings > Apps.
+  Store), the `.msi`, installed per user, or `winget install Yarmiplay.YarmiplayTV`; uninstall from
+  Settings > Apps. Or the portable `YarmiplayTV-<version>-portable.zip` (`:desktop:packagePortableZip`):
+  unzip it anywhere and run `YarmiplayTV.exe`; it keeps its settings in the `data` folder next to it instead
+  of `%APPDATA%\YarmiplayTV`. libmpv is included in all of them. Releases are code signed when SignPath
+  signing is set up (see below).
 - **macOS:** `.dmg` (Apple Silicon, not notarized: right-click the app and choose Open the first time).
   It uses Homebrew's libmpv, so run `brew install mpv` first.
 - **Linux:** `.deb` for Ubuntu 22.04+ and Debian 12+; `sudo apt install ./yarmiplaytv_*.deb` also installs
@@ -294,11 +298,11 @@ root (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). The store listin
 are in [docs/play](docs/play/README.md); the privacy policy is [docs/privacy.md](docs/privacy.md), published at
 `/privacy/` on the download page.
 
-The same tag builds the Windows installers, attaches them to the tag's GitHub release and republishes the
+The same tag builds the Windows `.msi` and portable zip, attaches them to the tag's GitHub release and republishes the
 download page with them. With the repository variable `SIGNPATH_ORGANIZATION_ID` and the secret
 `SIGNPATH_API_TOKEN` (a SignPath CI user with submitter rights) they are first submitted to
 [SignPath](https://signpath.io) for signing: an approver accepts the request in SignPath (the job waits up to
-6 hours), then the signed `.msi` and `.exe` are verified and released. That also needs a SignPath project with
+6 hours), then the signed `.msi` and zip are verified and released. That also needs a SignPath project with
 the slug `YarmiplayTV` linked to the GitHub.com trusted build system, its `release-signing` policy, and
 [.github/signpath/artifact-configuration.xml](.github/signpath/artifact-configuration.xml) as its default
 artifact configuration. Without the variable the unsigned installers are released; browsers and SmartScreen
@@ -342,7 +346,7 @@ Free code signing provided by [SignPath.io](https://signpath.io), certificate by
 - Committers and reviewers: [Yarmiplay](https://github.com/Yarmiplay)
 - Approvers: [Yarmiplay](https://github.com/Yarmiplay)
 
-Only the Windows installers and the YarmiplayTV launcher in them are signed, built by
+Only the Windows installer (`.msi`) and the YarmiplayTV launcher in it and in the portable zip are signed, built by
 `.github/workflows/release.yml` from a version tag of this repository. Bundled third-party files (the Java
 runtime, libmpv, Skia) are included as their projects publish them.
 

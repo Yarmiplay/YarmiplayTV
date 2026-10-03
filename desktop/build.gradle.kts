@@ -166,7 +166,7 @@ compose.desktop {
         jvmArgs += "-Dyarmiplaytv.version=$appVersion"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb)
+            targetFormats(TargetFormat.Msi, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "YarmiplayTV"
             packageVersion = appVersion
             description = "Watch videos in sync with friends on Syncplay servers"
@@ -207,6 +207,18 @@ compose.desktop {
 // are, so a value with spaces needs its own quotes.
 tasks.withType<AbstractJPackageTask>().configureEach {
     if (targetFormat == TargetFormat.Deb) freeArgs.addAll("--linux-package-deps", "\"libmpv2 | libmpv1\"")
+}
+
+// The portable Windows app: the app image zipped, with its launcher marked portable so it keeps its settings
+// in its own folder and doesn't install updates (DesktopPaths.portableDir). The launcher reads the .cfg's
+// [JavaOptions] lines as JVM options.
+tasks.register<Zip>("packagePortableZip") {
+    from(tasks.named<AbstractJPackageTask>("createDistributable").flatMap { it.destinationDir })
+    filesMatching("*/app/*.cfg") {
+        filter { line: String -> if (line == "[JavaOptions]") "$line\r\njava-options=-Dyarmiplaytv.portable=true" else line }
+    }
+    archiveFileName.set("YarmiplayTV-$appVersion-portable.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("compose/binaries/main/portable"))
 }
 
 afterEvaluate {

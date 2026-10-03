@@ -134,7 +134,8 @@ jobs:
           EOF
           chmod +x gradlew
           display=""; [ "$RUNNER_OS" = Linux ] && display="xvfb-run -a"
-          $display ./gradlew --stacktrace :player-mpv-desktop:test :desktop:test :desktop:packageDistributionForCurrentOS
+          portable=""; [ "$RUNNER_OS" = Windows ] && portable=":desktop:packagePortableZip"
+          $display ./gradlew --stacktrace :player-mpv-desktop:test :desktop:test :desktop:packageDistributionForCurrentOS $portable
 
       # apt resolves the package's libmpv dependency; the benchmark's timing targets aren't met on a VM
       # without a GPU, so it only has to play.
@@ -164,7 +165,7 @@ jobs:
           name: yarmiplaytv-desktop-${{ runner.os }}
           path: |
             desktop/build/compose/binaries/main/msi/*.msi
-            desktop/build/compose/binaries/main/exe/*.exe
+            desktop/build/compose/binaries/main/portable/*.zip
             desktop/build/compose/binaries/main/dmg/*.dmg
             desktop/build/compose/binaries/main/deb/*.deb
           if-no-files-found: error

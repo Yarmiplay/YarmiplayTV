@@ -54,8 +54,9 @@ allows that.
 Your settings (servers, name, room and its password, playback preferences), the sign-in tokens of each Jellyfin and Plex server, saved playlists and the
 folders you add to your local library are stored only on your device. Video files you play from the device are
 read from the device and are never uploaded. On Android, uninstalling the app or clearing its storage deletes
-this data. On desktop it is in `%APPDATA%\YarmiplayTV` (Windows), `~/Library/Application Support/YarmiplayTV`
-(macOS) or `~/.config/yarmiplaytv` (Linux), and you can delete that folder.
+this data. On desktop it is in `%APPDATA%\YarmiplayTV` (Windows; the portable version uses the `data` folder
+next to `YarmiplayTV.exe`), `~/Library/Application Support/YarmiplayTV` (macOS) or `~/.config/yarmiplaytv`
+(Linux), and you can delete that folder.
 
 ## Permissions (Android)
 
