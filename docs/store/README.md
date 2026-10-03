@@ -103,9 +103,24 @@ sharing location, No to digital purchases. Expect a rating around PEGI 3 / Every
 
 1. Bump `appVersion` in `desktop/build.gradle.kts` (the Store needs a higher package version than the last
    one) and push the version tag.
-2. Download the `windows-store-msix-<version>` artifact from the Release run.
-3. In Partner Center, open the app, choose **Update** on the published submission (it copies everything),
-   replace the package under Packages, add "What's new" to the listing if you like, and submit.
+2. With [automatic submission](#automatic-submission) set up, the Release run's `msstore` job submits the
+   package for certification; otherwise download the `windows-store-msix-<version>` artifact from the run.
+3. By hand: in Partner Center, open the app, choose **Update** on the published submission (it copies
+   everything), replace the package under Packages, add "What's new" to the listing if you like, and submit.
+   With automatic submission, edit the listing only after the job has run: it discards a draft submission.
+
+## Automatic submission
+
+The `msstore` job of `.github/workflows/release.yml` uses the
+[Microsoft Store Developer CLI](https://learn.microsoft.com/windows/apps/publish/msstore-dev-cli/overview).
+Set it up once:
+
+1. Partner Center > Account settings > **Tenants**: associate a Microsoft Entra ID tenant (or create one).
+2. Account settings > User management > **Microsoft Entra applications**: add an application with the
+   **Manager** role, then create a key for it. Keys expire after one or two years; renew the secret then.
+3. Repository variables `MSSTORE_TENANT_ID` and `MSSTORE_CLIENT_ID` (from the application's page) and
+   `MSSTORE_SELLER_ID` (Account settings > Legal info > Developer), and the secret `MSSTORE_CLIENT_SECRET`
+   (the key).
 
 The Store build doesn't check the download page for updates (it runs with `-Dyarmiplaytv.store`); the Store
 updates it.

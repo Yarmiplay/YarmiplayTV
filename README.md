@@ -293,6 +293,8 @@ git tag v1.2; git push origin v1.2
 `.github/workflows/release.yml` builds the app bundle signed with the upload key from the repository secrets
 `YARMIPLAYTV_KEYSTORE_BASE64`, `YARMIPLAYTV_KEYSTORE_PASSWORD`, `YARMIPLAYTV_KEY_ALIAS` and
 `YARMIPLAYTV_KEY_PASSWORD`, and attaches `yarmiplaytv-<version>.aab` to the run for uploading in the Play Console.
+With the variable `PLAY_TRACK` and the secret `PLAY_SERVICE_ACCOUNT_JSON` it uploads the bundle to that track
+itself (see [automatic uploads](docs/play/README.md#automatic-uploads)).
 Locally, `:app:bundleRelease` signs with the key named in a gitignored `keystore.properties` at the repository
 root (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). The store listing, graphics and policy answers
 are in [docs/play](docs/play/README.md); the privacy policy is [docs/privacy.md](docs/privacy.md), published at
@@ -333,7 +335,9 @@ individual developer account). [desktop/msix/AppxManifest.xml](desktop/msix/Appx
 Identity Name, Publisher and PublisherDisplayName that Partner Center shows under Product identity for the
 reserved name. The submission asks for the privacy policy (`/privacy/` on the download page), a reason for the
 `runFullTrust` capability (a desktop media player built on libmpv), screenshots and the age rating. The Store
-build doesn't look for updates; the Store updates it.
+build doesn't look for updates; the Store updates it. With the variables `MSSTORE_TENANT_ID`,
+`MSSTORE_SELLER_ID` and `MSSTORE_CLIENT_ID` and the secret `MSSTORE_CLIENT_SECRET`, each release tag submits the
+package for certification itself (see [automatic submission](docs/store/README.md#automatic-submission)).
 
 `scripts/make-msix.ps1` builds the same package locally (needs the Windows SDK), and
 `scripts/make-msix.ps1 -Register` installs it unpacked instead for a check (needs Developer Mode).

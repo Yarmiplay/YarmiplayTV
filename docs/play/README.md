@@ -130,6 +130,21 @@ location).
    recruited, what feedback came in and what changed; answer from the test. Review takes up to about a week.
 4. **Production:** roll out, staged if you like. The TV opt-in is reviewed separately and can take longer.
 
+## Automatic uploads
+
+After the first bundle has been uploaded by hand, the Release run's `play` job can upload each version:
+
+1. In [Google Cloud](https://console.cloud.google.com/), enable the **Google Play Android Developer API** in a
+   project, create a service account there and download a JSON key for it.
+2. Play Console > Users and permissions > **Invite new users**: invite the service account's email with
+   access to YarmiplayTV and the release permissions (release to testing tracks, and to production once the
+   app is there).
+3. Repository secret `PLAY_SERVICE_ACCOUNT_JSON` (the JSON key) and variable `PLAY_TRACK`: `internal`, `alpha`
+   (closed testing), `beta` (open testing), `production`, or the name of a custom closed track.
+4. While the app has never passed review, Play only accepts draft releases: set the variable
+   `PLAY_RELEASE_STATUS` to `draft` and roll each one out in the Play Console. Remove it later so releases go
+   out straight away.
+
 ## Before each upload
 
 - Bump `appVersion` (Play rejects a `versionCode` it has seen before) and run the full

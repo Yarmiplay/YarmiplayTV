@@ -67,6 +67,14 @@ abstract class GenerateAppIcons : DefaultTask() {
         listOf("Square44x44Logo" to 44, "StoreLogo" to 50, "Square150x150Logo" to 150).forEach { (name, size) ->
             msix.resolve("$name.png").writeBytes(png(size))
         }
+        // Without unplated variants (resolved through the resources.pri make-msix.ps1 builds), the taskbar,
+        // Start and Settings draw the icon on an accent-coloured plate. Light taskbars look for lightunplated.
+        listOf(16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 256).forEach { size ->
+            val bytes = png(size)
+            listOf("", "_altform-unplated", "_altform-lightunplated").forEach { alt ->
+                msix.resolve("Square44x44Logo.targetsize-$size$alt.png").writeBytes(bytes)
+            }
+        }
         val wide = BufferedImage(310, 150, BufferedImage.TYPE_INT_ARGB)
         wide.createGraphics().apply { drawImage(render(150), 80, 0, null); dispose() }
         msix.resolve("Wide310x150Logo.png").writeBytes(ByteArrayOutputStream().also { ImageIO.write(wide, "png", it) }.toByteArray())

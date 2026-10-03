@@ -2,13 +2,15 @@ name: Release
 
 # For a version tag (v1.1, v1.2.3), which has to match appVersion in app/build.gradle.kts:
 # - the Play upload bundle, signed with the upload key from the secrets YARMIPLAYTV_KEYSTORE_BASE64,
-#   YARMIPLAYTV_KEYSTORE_PASSWORD, YARMIPLAYTV_KEY_ALIAS and YARMIPLAYTV_KEY_PASSWORD;
+#   YARMIPLAYTV_KEYSTORE_PASSWORD, YARMIPLAYTV_KEY_ALIAS and YARMIPLAYTV_KEY_PASSWORD; with the variable
+#   PLAY_TRACK and the secret PLAY_SERVICE_ACCOUNT_JSON it is uploaded to that Play Console track;
 # - the Windows installer (.msi) and portable zip, attached to the tag's GitHub release, where the download
 #   page and winget take them from. With the variable SIGNPATH_ORGANIZATION_ID and the secret
 #   SIGNPATH_API_TOKEN they are first code signed through SignPath (certificate by SignPath Foundation), once
 #   an approver accepts the signing request; without them the unsigned files are released;
-# - the Microsoft Store package (.msix, unsigned: the Store signs it), attached to the run for uploading in
-#   Partner Center;
+# - the Microsoft Store package (.msix, unsigned: the Store signs it), attached to the run; with the variables
+#   MSSTORE_TENANT_ID, MSSTORE_SELLER_ID and MSSTORE_CLIENT_ID and the secret MSSTORE_CLIENT_SECRET it is
+#   submitted to Partner Center for certification;
 # - with the variable WINGET_PACKAGE_ID and the secret WINGET_TOKEN, a pull request to microsoft/winget-pkgs
 #   with the release's .msi.
 on:
@@ -77,6 +79,28 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  # The app's first bundle has to be uploaded by hand; while the app has never been reviewed, Play only takes
+  # releases with the status draft (variable PLAY_RELEASE_STATUS).
+  play:
+    needs: bundle
+    if: github.ref_type == 'tag' && vars.PLAY_TRACK != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: play-bundle-*
+          merge-multiple: true
+          path: bundle
+
+      - uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.yarmiplaytv
+          releaseFiles: bundle/*.aab
+          track: ${{ vars.PLAY_TRACK }}
+          status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}
+
   windows-installers:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -143,6 +167,35 @@ jobs:
           path: desktop/build/msix/*.msix
           if-no-files-found: error
           retention-days: 90
+
+  # Replaces the package of the published submission (the listing stays) and commits it for certification.
+  # A draft submission started in Partner Center is discarded.
+  msstore:
+    needs: windows-installers
+    if: github.ref_type == 'tag' && vars.MSSTORE_CLIENT_ID != ''
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows-store-msix-${{ needs.windows-installers.outputs.version }}
+          path: msix
+
+      - uses: microsoft/setup-msstore-cli@v1
+
+      - name: Submit to the Microsoft Store
+        shell: pwsh
+        env:
+          TENANT_ID: ${{ vars.MSSTORE_TENANT_ID }}
+          SELLER_ID: ${{ vars.MSSTORE_SELLER_ID }}
+          CLIENT_ID: ${{ vars.MSSTORE_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
+        run: |
+          msstore reconfigure --tenantId $env:TENANT_ID --sellerId $env:SELLER_ID --clientId $env:CLIENT_ID --clientSecret $env:CLIENT_SECRET
+          if ($LASTEXITCODE -ne 0) { throw "msstore reconfigure failed" }
+          $msix = (Get-Item msix\*.msix).FullName
+          msstore publish msix --inputFile $msix --appId 9PDBVR6W069J
+          if ($LASTEXITCODE -ne 0) { throw "msstore publish failed" }
 
   # Waits on a Linux runner while the signing request awaits manual approval in SignPath.
   sign-windows:

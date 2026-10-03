@@ -51,6 +51,26 @@ if ($at -lt 0) { throw "No [JavaOptions] section in $cfg" }
 $lines.Insert($at + 1, "java-options=-Dyarmiplaytv.store=msstore")
 [System.IO.File]::WriteAllLines($cfg, $lines, $utf8)
 
+function Find-SdkTool($name) {
+    $tool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\$name" -ErrorAction SilentlyContinue |
+        Where-Object { $_.Directory.Parent.Name -match '^\d+(\.\d+)+$' } | Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
+    if (-not $tool) { throw "$name not found; install the Windows SDK." }
+    $tool.FullName
+}
+
+# Windows only finds the targetsize/altform-unplated logos through resources.pri. It is built from a copy
+# of just the Assets, so the index doesn't list every file of the app image.
+Write-Host "==> Indexing the logos" -ForegroundColor Cyan
+$makepri = Find-SdkTool "makepri.exe"
+$priRoot = "$out\pri"
+if (Test-Path $priRoot) { Remove-Item $priRoot -Recurse -Force }
+New-Item -ItemType Directory $priRoot | Out-Null
+Copy-Item "$layout\Assets" "$priRoot\Assets" -Recurse
+& $makepri createconfig /cf "$out\priconfig.xml" /dq en-US /pv 10.0.0 /o | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "makepri createconfig failed." }
+& $makepri new /pr $priRoot /cf "$out\priconfig.xml" /mn "$layout\AppxManifest.xml" /of "$layout\resources.pri" /o | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "makepri new failed." }
+
 if ($Register) {
     Write-Host "==> Registering the package" -ForegroundColor Cyan
     Add-AppxPackage -Register "$layout\AppxManifest.xml" -ForceApplicationShutdown
@@ -58,12 +78,10 @@ if ($Register) {
     return
 }
 
-$makeappx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue |
-    Where-Object { $_.Directory.Parent.Name -match '^\d+(\.\d+)+$' } | Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
-if (-not $makeappx) { throw "makeappx.exe not found; install the Windows SDK." }
+$makeappx = Find-SdkTool "makeappx.exe"
 
 $msix = "$out\YarmiplayTV-$version.msix"
 Write-Host "==> Packing $msix" -ForegroundColor Cyan
-& $makeappx.FullName pack /d $layout /p $msix /o
+& $makeappx pack /d $layout /p $msix /o
 if ($LASTEXITCODE -ne 0) { throw "makeappx failed." }
 $msix
