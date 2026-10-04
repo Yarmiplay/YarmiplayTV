@@ -22,6 +22,10 @@ on:
         description: Submit the Store package to Partner Center
         type: boolean
         default: false
+      play:
+        description: Upload the bundle to the Google Play track in PLAY_TRACK
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -85,10 +89,11 @@ jobs:
           retention-days: 90
 
   # The app's first bundle has to be uploaded by hand; while the app has never been reviewed, Play only takes
-  # releases with the status draft (variable PLAY_RELEASE_STATUS).
+  # releases with the status draft (variable PLAY_RELEASE_STATUS). Play rejects a version code it has seen, so a
+  # manual run only uploads a version that isn't on Play yet.
   play:
     needs: bundle
-    if: github.ref_type == 'tag' && vars.PLAY_TRACK != ''
+    if: (github.ref_type == 'tag' || inputs.play) && vars.PLAY_TRACK != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

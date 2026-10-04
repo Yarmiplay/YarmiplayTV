@@ -9,7 +9,8 @@ its download and install steps.
 Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .msi/.zip: Windows,
 .dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as YarmiplayTV.apk, so links
 keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader, <site>/privacy/
-is docs/privacy.md (the Play Store privacy policy), and <site>/version.json lists each platform's package
+is docs/privacy.md (the Play Store privacy policy), <site>/test/ is docs/testers.md (how to join the Google Play
+test), and <site>/version.json lists each platform's package
 and version for the apps' update check. With --site-url the pages carry canonical URLs and the site a
 sitemap.xml for search engines; --indexnow-key publishes the key file that lets the Pages workflow notify IndexNow.
 Platforms without a file or store listing show how to run from source. The Pages workflow publishes the result; scripts/apk_server.py serves the
@@ -47,6 +48,15 @@ LOGO_SVG = (
     '<g transform="translate(54 54) scale(1.3) translate(-54 -54)">'
     '<path d="M30 28V80L70 54Z" fill="#3DA5F4"/><path d="M46 34V74L78 54Z" fill="#fff" fill-opacity=".8"/></g>'
     '</svg>'
+)
+# Markdown docs published as pages: file in docs/, folder on the site, footer link, search description.
+DOCS = (
+    ("privacy.md", "privacy", "Privacy",
+     f"{NAME} privacy policy: the app collects no data, has no accounts, analytics or ads, and only connects to "
+     "the servers you choose."),
+    ("testers.md", "test", "Help test on Google Play",
+     f"Help test {NAME} on Google Play: join the testers group, opt in, install it on your Android phone, tablet "
+     "or Google TV and use it for 14 days."),
 )
 # Store listings: the platform's main button, with its files as smaller buttons below.
 STORE_LINKS = {
@@ -188,9 +198,9 @@ def app_head(version, site_url=None, preview=False):
     return "\n".join(tags)
 
 
-def render_page(downloads, version, built, short_link=None, privacy=False, site_url=None,
+def render_page(downloads, version, built, short_link=None, docs=(), site_url=None,
                 google_verification=None, preview=False):
-    """downloads: {platform key: [Download]}. Returns the page as a str."""
+    """downloads: {platform key: [Download]}; docs: the DOCS entries published next to it. Returns the page as a str."""
     cards = []
     for p in platforms(short_link):
         files = downloads.get(p.key, [])
@@ -280,7 +290,7 @@ def render_page(downloads, version, built, short_link=None, privacy=False, site_
  <strong>Host your own server</strong>
  <p><a href="{SERVER_URL}">YarmiplayServerTV</a> runs a Syncplay server and a Jellyfin server from your Windows, macOS or Linux computer.</p>
 </section>
-<footer><a href="{REPO_URL}">Source</a>{' &middot; <a href="privacy/">Privacy</a>' if privacy else ''}
+<footer><a href="{REPO_URL}">Source</a>{''.join(f' &middot; <a href="{folder}/">{label}</a>' for _, folder, label, _ in docs)}
  &middot; <a href="{REPO_URL}#code-signing-policy">Code signing policy</a></footer>
 </main>
 <script>
@@ -318,8 +328,9 @@ def inline_markdown(text):
 
 
 def markdown_to_html(md):
-    """The Markdown docs/privacy.md uses: # headings, paragraphs and "- " lists, lines wrapped freely."""
+    """The Markdown the docs pages use: # headings, paragraphs, "- " and "1. " lists, lines wrapped freely."""
     blocks, para, items = [], [], []
+    list_tag = "ul"
 
     def flush():
         if para:
@@ -327,22 +338,25 @@ def markdown_to_html(md):
             para.clear()
         if items:
             lis = "".join(f"<li>{inline_markdown(html.escape(i, quote=False))}</li>" for i in items)
-            blocks.append(f"<ul>{lis}</ul>")
+            blocks.append(f"<{list_tag}>{lis}</{list_tag}>")
             items.clear()
 
     for line in md.splitlines():
         stripped = line.strip()
         heading = re.match(r"(#{1,3}) (.+)", stripped)
+        item = re.match(r"(-|\d+\.) (.+)", stripped)
         if not stripped:
             flush()
         elif heading:
             flush()
             level = len(heading.group(1))
             blocks.append(f"<h{level}>{inline_markdown(html.escape(heading.group(2), quote=False))}</h{level}>")
-        elif stripped.startswith("- "):
-            if para:
+        elif item:
+            tag = "ul" if item.group(1) == "-" else "ol"
+            if para or (items and tag != list_tag):
                 flush()
-            items.append(stripped[2:])
+            list_tag = tag
+            items.append(item.group(2))
         elif items and line.startswith(" "):
             items[-1] += " " + stripped
         else:
@@ -442,15 +456,18 @@ def build(dist, out, version, site_url, desktop_version=None, google_verificatio
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     pages = [""]
-    privacy = os.path.join(root, "docs", "privacy.md")
-    if os.path.isfile(privacy):
-        os.makedirs(os.path.join(out, "privacy"))
-        with open(privacy, encoding="utf-8") as src, \
-                open(os.path.join(out, "privacy", "index.html"), "w", encoding="utf-8") as f:
-            f.write(render_doc(src.read(), f"{NAME} privacy policy: the app collects no data, has no accounts, "
-                               "analytics or ads, and only connects to the servers you choose.",
-                               site_url, "privacy/"))
-        pages.append("privacy/")
+    docs = []
+    for doc in DOCS:
+        name, folder, _, description = doc
+        md = os.path.join(root, "docs", name)
+        if not os.path.isfile(md):
+            continue
+        os.makedirs(os.path.join(out, folder))
+        with open(md, encoding="utf-8") as src, \
+                open(os.path.join(out, folder, "index.html"), "w", encoding="utf-8") as f:
+            f.write(render_doc(src.read(), description, site_url, f"{folder}/"))
+        pages.append(f"{folder}/")
+        docs.append(doc)
 
     with open(os.path.join(out, "favicon.svg"), "w", encoding="utf-8") as f:
         f.write(LOGO_SVG.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ', 1))
@@ -461,7 +478,7 @@ def build(dist, out, version, site_url, desktop_version=None, google_verificatio
     now = datetime.datetime.now(datetime.timezone.utc)
     built = now.strftime("%Y-%m-%d %H:%M UTC")
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
-        f.write(render_page(by_platform(downloads), version, built, short_link, os.path.isfile(privacy), site_url,
+        f.write(render_page(by_platform(downloads), version, built, short_link, docs, site_url,
                             google_verification, preview))
     if site_url:
         with open(os.path.join(out, "sitemap.xml"), "w", encoding="utf-8") as f:

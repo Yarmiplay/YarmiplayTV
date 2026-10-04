@@ -22,7 +22,7 @@ re-recording screenshots.
 
 **Short description** (80 max):
 
-> Watch videos in sync with friends. Works with Syncplay servers and Jellyfin.
+> Watch videos in sync with friends. Works with Syncplay, Jellyfin and Plex.
 
 **Full description:**
 
@@ -39,9 +39,10 @@ re-recording screenshots.
 > • Small drifts are corrected smoothly, big ones by jumping back in sync
 >
 > YOUR VIDEOS, YOUR WAY
-> • Browse and search your Jellyfin library, sign in with Quick Connect
+> • Browse and search your Jellyfin and Plex libraries, on several servers at once
+> • Sign in to Jellyfin with Quick Connect and to Plex at plex.tv/link, no typing on the TV
 > • Play files from your phone or tablet, or add whole folders
-> • When the room plays a file, YarmiplayTV finds it in your Jellyfin library or folders by itself
+> • When the room plays a file, YarmiplayTV finds it in your libraries or folders by itself
 >
 > A REAL PLAYER
 > • Built on mpv: plays almost any format, with hardware decoding
@@ -55,9 +56,9 @@ re-recording screenshots.
 > No accounts, no ads, no tracking. YarmiplayTV is open source:
 > https://github.com/Yarmiplay/YarmiplayTV
 >
-> YarmiplayTV is an independent app. It is not affiliated with or endorsed by the Syncplay project or
-> Jellyfin. Syncplay and Jellyfin are named only to describe compatibility. YarmiplayTV doesn't provide
-> any videos: you watch your own files and media servers.
+> YarmiplayTV is an independent app. It is not affiliated with or endorsed by the Syncplay project, Jellyfin
+> or Plex, which are named only to describe compatibility. YarmiplayTV doesn't provide any videos: you watch
+> your own files and media servers.
 
 **Category:** Video Players & Editors. **Tags:** video player, watch party (pick the closest offered).
 **Contact email:** required, shown publicly; use an address you're happy to publish.
@@ -72,7 +73,8 @@ re-recording screenshots.
 **App access:** "All functionality is available without special access." For the reviewer notes:
 "No account is needed. To try sync, open Room (or Join a Syncplay room on TV), keep the server syncplay.pl
 port 8999, enter any name and a room name such as reviewtest, and connect. Play a video from the device to
-see the shared player. Jellyfin is optional and needs the user's own server."
+see the shared player. Jellyfin and Plex are optional and need the user's own server (and, for Plex, a Plex
+account)."
 
 **Content rating questionnaire (IARC):** category "All other app types". Answer No to violence, sexuality,
 language, controlled substances, gambling. Answer **Yes** to "users can interact or exchange content" (room
@@ -86,16 +88,18 @@ doesn't apply. Answer No to "could unintentionally appeal to children".
 
 **Data safety:**
 - "Does your app collect or share any of the required user data types?" **No.** The developer receives
-  nothing; the app only connects to servers the user enters, like other Jellyfin and Syncplay clients. The
-  Play build (release) doesn't run the download page's update check.
+  nothing; the app only connects to servers the user enters or picks (and to plex.tv when the user signs in
+  to Plex), like other Syncplay, Jellyfin and Plex clients. Watch progress goes only to the user's own media
+  servers. The Play build (release) doesn't run the download page's update check.
 - "Is all of the user data collected by your app encrypted in transit?" isn't asked when nothing is
-  collected. If you choose to declare the room data instead (see below), answer No: plain Syncplay and
-  local Jellyfin servers aren't encrypted.
+  collected. If you choose to declare the room data instead (see below), answer No: plain Syncplay servers
+  and Jellyfin and Plex servers on a home network over HTTP aren't encrypted.
 - "Do you provide a way for users to request that their data is deleted?" Not asked when nothing is collected.
-- A more cautious alternative, because the default server syncplay.pl is run by a third party: declare
-  Personal info > Name and Messages > Other in-app messages as **shared**, not collected, for **App
-  functionality**, not optional, and not processed by the developer. Either way, keep it consistent with
-  `docs/privacy.md`.
+- A more cautious alternative, because the default server syncplay.pl and plex.tv are run by third parties:
+  declare Personal info > Name and Messages > Other in-app messages (the Syncplay room), and Device or other
+  IDs (the random device id plex.tv gets at sign-in), as **shared**, not collected, for **App
+  functionality**; Name and Messages not optional, the device id optional (only with Plex); none processed
+  by the developer. Either way, keep it consistent with `docs/privacy.md`.
 
 **Permissions declarations:** none needed (no SMS, call log, location, all-files access or background
 location).
@@ -113,26 +117,46 @@ location).
 1. **Internal testing:** upload the bundle from the `Release bundle` workflow (or a local
    `:app:bundleRelease`) and add yourself as a tester. Install from the opt-in link on a phone and on a Google
    TV to check that the Play build works.
-2. **Closed testing** (required for personal accounts created after November 2023): create a closed track with
-   a Google Group or an email list of at least **12 testers**, who must stay opted in for **14 days in a row**.
-   Google also looks at whether testers actually use the app, so ask them to join a room together a few times
-   during those two weeks, on phones and TVs. Fix anything in the pre-launch report (crashes, ANRs,
-   accessibility warnings worth fixing) and upload a new version if needed; the 14 days don't restart.
-   A message for testers:
-
-   > I'm testing my watch-together app YarmiplayTV before it goes on Google Play, and Google needs 12 people
-   > to try it for two weeks. 1) Join the testers group: <group link>. 2) Open <opt-in link> on your Android
-   > phone, tablet or Google TV and tap "Become a tester", then install from Play. 3) Keep it installed for 14
-   > days and join our room a few times (server syncplay.pl, port 8999, room <room>), so we can watch
-   > something together. Tell me anything that breaks or confuses you.
-
+2. **Closed testing** (required for personal accounts created after November 2023): the `alpha` track, with
+   the Google Group `yarmiplaytv-testers@googlegroups.com` as testers and all countries. It needs at least
+   **12 testers** who stay opted in for **14 days in a row**. Google also looks at whether testers actually
+   use the app, so ask them to join a room together a few times during those two weeks, on phones and TVs.
+   Fix anything in the pre-launch report (crashes, ANRs, accessibility warnings worth fixing) and upload a new
+   version if needed; the 14 days don't restart. See [Getting testers](#getting-testers).
 3. **Apply for production** (Dashboard > Apply for production) after the 14 days. It asks how testers were
    recruited, what feedback came in and what changed; answer from the test. Review takes up to about a week.
 4. **Production:** roll out, staged if you like. The TV opt-in is reviewed separately and can take longer.
+   Then set the variable `PLAY_TRACK` to `production`.
+
+## Getting testers
+
+Testers join on their own from the testers page, `https://yarmiplay.github.io/YarmiplayTV/test/` (from
+`docs/testers.md`, linked in the download page's footer). It walks them through joining the Google Group
+(`https://groups.google.com/g/yarmiplaytv-testers`: anyone can join, members can't see each other's
+addresses), the opt-in link `https://play.google.com/apps/testing/com.yarmiplaytv` and installing from Play,
+and asks people with the download page's APK to uninstall it first. The opt-in link only works once the
+closed track has passed review; until then the page tells people to come back later.
+
+- **Share the page** wherever friends and Syncplay users are: chats, the GitHub README or release notes,
+  forums. A message:
+
+  > I'm getting my watch-together app YarmiplayTV onto Google Play, and Google needs 12 people to test it for
+  > two weeks first. If you have an Android phone, tablet or Google TV, joining takes a few minutes:
+  > https://yarmiplay.github.io/YarmiplayTV/test/. Then keep it installed for 14 days and join our room a few
+  > times (server syncplay.pl, port 8999, room <room>), so we can watch something together. Tell me anything
+  > that breaks or confuses you.
+
+- **Count:** Play Console > Test and release > Testing > Closed testing > the track > **Testers** shows how
+  many people have opted in. Group members who never opened the opt-in link don't count.
+- **Apply for production** once at least 12 testers have stayed opted in for 14 days in a row: the Dashboard
+  then offers **Apply for production** (see Releases, step 3). Keep the closed track running while the
+  application is reviewed.
 
 ## Automatic uploads
 
-After the first bundle has been uploaded by hand, the Release run's `play` job can upload each version:
+After the first bundle has been uploaded by hand, the Release run's `play` job uploads each version tag's
+bundle. A manual Release run (Actions > Release > Run workflow) with **play** checked uploads the chosen
+branch's bundle without a tag, as long as its version code isn't on Play yet. Set it up once:
 
 1. In [Google Cloud](https://console.cloud.google.com/), enable the **Google Play Android Developer API** in a
    project, create a service account there and download a JSON key for it.
