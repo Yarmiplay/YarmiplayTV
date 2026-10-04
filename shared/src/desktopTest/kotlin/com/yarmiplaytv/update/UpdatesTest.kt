@@ -71,8 +71,8 @@ class UpdatesTest {
 
     @Test
     fun `reads this platform's package with paths relative to the manifest`() {
-        val update = UpdateChecker.parse(manifest(), "windows", "1.1.0", "https://yarmiplay.github.io/YarmiplayTV/version.json")
-        assertEquals(Update("1.2.0", "https://yarmiplay.github.io/YarmiplayTV/", "https://yarmiplay.github.io/YarmiplayTV/YarmiplayTV.msi", "bb"), update)
+        val update = UpdateChecker.parse(manifest(), "windows", "1.1.0", "https://tv.yarmiplay.com/version.json")
+        assertEquals(Update("1.2.0", "https://tv.yarmiplay.com/", "https://tv.yarmiplay.com/YarmiplayTV.msi", "bb"), update)
         assertNull(UpdateChecker.parse(manifest(), "android", "1.1", manifestUrl()))
         assertNull(UpdateChecker.parse(manifest(), "linux", "1.1.0", manifestUrl()))
     }

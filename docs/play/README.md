@@ -14,7 +14,7 @@ re-recording screenshots.
 | Phone screenshots | `screenshots/phone/` |
 | 7-inch and 10-inch tablet screenshots | `screenshots/tablet/` (the same set works for both) |
 | Android TV screenshots | `screenshots/tv/` |
-| Privacy policy URL | `https://yarmiplay.github.io/YarmiplayTV/privacy/` (from `docs/privacy.md`) |
+| Privacy policy URL | `https://tv.yarmiplay.com/privacy/` (from `docs/privacy.md`) |
 
 ## Store listing
 
@@ -62,7 +62,7 @@ re-recording screenshots.
 
 **Category:** Video Players & Editors. **Tags:** video player, watch party (pick the closest offered).
 **Contact email:** required, shown publicly; use an address you're happy to publish.
-**Website:** `https://yarmiplay.github.io/YarmiplayTV/`
+**Website:** `https://tv.yarmiplay.com/`
 
 ## App content (Policy > App content)
 
@@ -130,7 +130,7 @@ location).
 
 ## Getting testers
 
-Testers join on their own from the testers page, `https://yarmiplay.github.io/YarmiplayTV/test/` (from
+Testers join on their own from the testers page, `https://tv.yarmiplay.com/test/` (from
 `docs/testers.md`, linked in the download page's footer). It walks them through joining the Google Group
 (`https://groups.google.com/g/yarmiplaytv-testers`: anyone can join, members can't see each other's
 addresses), the opt-in link `https://play.google.com/apps/testing/com.yarmiplaytv` and installing from Play,
@@ -142,7 +142,7 @@ closed track has passed review; until then the page tells people to come back la
 
   > I'm getting my watch-together app YarmiplayTV onto Google Play, and Google needs 12 people to test it for
   > two weeks first. If you have an Android phone, tablet or Google TV, joining takes a few minutes:
-  > https://yarmiplay.github.io/YarmiplayTV/test/. Then keep it installed for 14 days and join our room a few
+  > https://tv.yarmiplay.com/test/. Then keep it installed for 14 days and join our room a few
   > times (server syncplay.pl, port 8999, room <room>), so we can watch something together. Tell me anything
   > that breaks or confuses you.
 

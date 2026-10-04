@@ -200,6 +200,6 @@ class MobileUiTest {
     }
 
     private companion object {
-        val TEST_UPDATE = Update("99.0", "https://yarmiplay.github.io/YarmiplayTV/", "https://yarmiplay.github.io/YarmiplayTV/YarmiplayTV.apk", null)
+        val TEST_UPDATE = Update("99.0", "https://tv.yarmiplay.com/", "https://tv.yarmiplay.com/YarmiplayTV.apk", null)
     }
 }

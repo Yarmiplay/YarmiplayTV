@@ -131,9 +131,9 @@ class TvNavigationTest {
     fun updateNoticeWithDpad() {
         launch()
         tv.awaitFocus("Join a Syncplay room")
-        onMain { container.updates.show(Update("99.0", "https://yarmiplay.github.io/YarmiplayTV/", "https://yarmiplay.github.io/YarmiplayTV/YarmiplayTV.apk", null)) }
+        onMain { container.updates.show(Update("99.0", "https://tv.yarmiplay.com/", "https://tv.yarmiplay.com/YarmiplayTV.apk", null)) }
         tv.await("YarmiplayTV 99.0 is available")
-        tv.await("To install it, open Downloader and enter yarmiplay.github.io/YarmiplayTV/a")
+        tv.await("To install it, open Downloader and enter tv.yarmiplay.com/a")
         tv.key(KeyEvent.KEYCODE_DPAD_UP)
         tv.awaitFocus("YarmiplayTV 99.0 is available")
         tv.key(KeyEvent.KEYCODE_DPAD_UP)

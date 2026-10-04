@@ -37,7 +37,7 @@ for a new version.
   network that Jellyfin servers answer. To connect to a Plex server, the app tries the addresses plex.tv lists
   for it, local ones first.
 - **GitHub, to check for updates:** when it starts, the app from the download page (the APK and the desktop
-  apps) reads the latest version number from the download page on GitHub Pages (yarmiplay.github.io). The
+  apps) reads the latest version number from the download page (tv.yarmiplay.com, hosted on GitHub Pages). The
   request contains nothing about you, your settings or your device; like any web request it reaches GitHub
   from your IP address, and GitHub handles it under the
   [GitHub Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).

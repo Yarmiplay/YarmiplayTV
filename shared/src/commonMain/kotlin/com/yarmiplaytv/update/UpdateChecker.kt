@@ -59,7 +59,7 @@ class UpdateChecker(
     }
 
     companion object {
-        const val MANIFEST_URL = "https://yarmiplay.github.io/YarmiplayTV/version.json"
+        const val MANIFEST_URL = "https://tv.yarmiplay.com/version.json"
 
         fun parse(json: String, platform: String, current: String, manifestUrl: String): Update? {
             val root = Json.parseToJsonElement(json).jsonObject

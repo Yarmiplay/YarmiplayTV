@@ -12,7 +12,7 @@ keep working across builds. <site>/a/ redirects to the APK for TV apps like Down
 is docs/privacy.md (the Play Store privacy policy), <site>/test/ is docs/testers.md (how to join the Google Play
 test), and <site>/version.json lists each platform's package
 and version for the apps' update check. With --site-url the pages carry canonical URLs and the site a
-sitemap.xml for search engines; --indexnow-key publishes the key file that lets the Pages workflow notify IndexNow.
+sitemap.xml and a robots.txt pointing to it for search engines; --indexnow-key publishes the key file that lets the Pages workflow notify IndexNow.
 Platforms without a file or store listing show how to run from source. The Pages workflow publishes the result; scripts/apk_server.py serves the
 same page on the local network. Standard library only.
 """
@@ -31,7 +31,7 @@ from dataclasses import dataclass
 
 NAME = "YarmiplayTV"
 REPO_URL = "https://github.com/Yarmiplay/YarmiplayTV"
-SERVER_URL = "https://yarmiplay.github.io/YarmiplayServerTV/"
+SERVER_URL = "https://servertv.yarmiplay.com/"
 TITLE = f"{NAME}: watch videos in sync with friends (Syncplay for Google TV, Android, Windows, macOS, Linux)"
 DESCRIPTION = ("Watch videos together with friends, wherever they are. A Syncplay client with mpv built in for "
                "Google TV, Android phones and tablets, Windows, macOS and Linux that plays from Jellyfin, Plex or "
@@ -483,6 +483,8 @@ def build(dist, out, version, site_url, desktop_version=None, google_verificatio
     if site_url:
         with open(os.path.join(out, "sitemap.xml"), "w", encoding="utf-8") as f:
             f.write(sitemap(site_url, pages, now.strftime("%Y-%m-%d")))
+        with open(os.path.join(out, "robots.txt"), "w", encoding="utf-8") as f:
+            f.write(f"User-agent: *\nAllow: /\n\nSitemap: {page_url(site_url, 'sitemap.xml')}\n")
     if indexnow_key:
         with open(os.path.join(out, f"{indexnow_key}.txt"), "w", encoding="utf-8") as f:
             f.write(indexnow_key)

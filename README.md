@@ -34,13 +34,13 @@ desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin]
 
 ## Download
 
-The [download page](https://yarmiplay.github.io/YarmiplayTV/) has a card per platform (Android, which covers
+The [download page](https://tv.yarmiplay.com/) has a card per platform (Android, which covers
 Google TV, phones and tablets with one APK; Windows; macOS; Linux) and highlights the one for the device you
 open it on, with the TV steps first on a TV. On a TV, enter
-`https://yarmiplay.github.io/YarmiplayTV/a` in the Downloader app to get the APK directly.
+`https://tv.yarmiplay.com/a` in the Downloader app to get the APK directly.
 
 To host your own Syncplay and Jellyfin servers from a Windows, macOS or Linux computer, use
-[YarmiplayServerTV](https://yarmiplay.github.io/YarmiplayServerTV/)
+[YarmiplayServerTV](https://servertv.yarmiplay.com/)
 ([source and setup guide](https://github.com/Yarmiplay/YarmiplayServerTV#readme)).
 
 The page is built by `scripts/download_site.py` and published by `.github/workflows/pages.yml` after every

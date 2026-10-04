@@ -279,7 +279,7 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" windows/* -R "$GITHUB_REPOSITORY" --clobber
           else
-            notes="YarmiplayTV $VERSION for Windows: the installer (.msi${WINGET_ID:+, or \`winget install $WINGET_ID\`}) and a portable zip. Microsoft Store: https://apps.microsoft.com/detail/9PDBVR6W069J. Other platforms: https://yarmiplay.github.io/YarmiplayTV/"
+            notes="YarmiplayTV $VERSION for Windows: the installer (.msi${WINGET_ID:+, or \`winget install $WINGET_ID\`}) and a portable zip. Microsoft Store: https://apps.microsoft.com/detail/9PDBVR6W069J. Other platforms: https://tv.yarmiplay.com/"
             if [ "$SIGNED" = true ]; then
               notes="$notes
 
