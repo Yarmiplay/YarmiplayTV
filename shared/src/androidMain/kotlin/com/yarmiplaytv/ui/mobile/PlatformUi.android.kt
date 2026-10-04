@@ -35,6 +35,10 @@ actual fun Modifier.exposeTestTags(): Modifier = semantics { testTagsAsResourceI
 @Composable
 actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) = BackHandler(enabled, onBack)
 
+actual val controlsHideMillis = 5000L
+
+actual val hideControlsButton = false
+
 @Composable
 actual fun Modifier.playerScreenInput(input: PlayerInput): Modifier = this
 

@@ -20,7 +20,7 @@ internal interface ShortcutTarget {
 /**
  * Window-level shortcuts. The window only passes keys nothing focused has used, and the side panel keeps its
  * keys to itself, so typing in a text field never triggers them. Esc leaves full screen, else goes back; the
- * rest only work on the player screen.
+ * rest only work on the player screen, and all but H (which hides or shows the controls) show the controls.
  */
 internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget): Boolean {
     if (key == Key.Escape) {
@@ -32,6 +32,10 @@ internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget)
     }
     val input = target.player ?: return false
     if (modified) return false
+    if (key == Key.H) {
+        input.toggleControls()
+        return true
+    }
     when (key) {
         Key.Spacebar, Key.K -> input.togglePause()
         Key.DirectionLeft, Key.J -> input.seekBy(-input.seekStep)

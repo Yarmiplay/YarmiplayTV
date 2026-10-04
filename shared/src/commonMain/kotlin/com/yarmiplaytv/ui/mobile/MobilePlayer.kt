@@ -4,6 +4,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +30,7 @@ import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Subtitles
@@ -91,12 +95,14 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     var interaction by remember { mutableLongStateOf(0L) }
     var sheet by remember { mutableStateOf<PlayerSheet?>(null) }
     var seekFlash by remember { mutableStateOf<String?>(null) }
+    val barsHover = remember { MutableInteractionSource() }
+    val onBars by barsHover.collectIsHoveredAsState()
 
     FullscreenLandscape()
 
-    LaunchedEffect(controls, interaction, state.paused, sheet) {
-        if (controls && !state.paused && sheet == null) {
-            delay(5000)
+    LaunchedEffect(controls, interaction, state.paused, sheet, onBars) {
+        if (controls && !state.paused && sheet == null && !onBars) {
+            delay(controlsHideMillis)
             controls = false
         }
     }
@@ -150,12 +156,19 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
             androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize().testTag("player_controls")) {
                     Row(
-                        Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(8.dp),
+                        Modifier.fillMaxWidth().hoverable(barsHover)
+                            .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(nav::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
                         Text(nowPlaying?.title ?: "Nothing playing", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         RoomStatusChip(room)
+                        if (hideControlsButton) {
+                            TextButton({ controls = false }, Modifier.testTag("hide_controls")) {
+                                Icon(Icons.Filled.KeyboardArrowDown, null, tint = AppColors.TextDim)
+                                Text("Hide (H)", color = AppColors.TextDim)
+                            }
+                        }
                     }
                     if (state.fileLoaded) {
                         Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -170,7 +183,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         ready = room.isReady == true,
                         onInteract = ::touch,
                         onSheet = ::openSheet,
-                        modifier = Modifier.align(Alignment.BottomCenter),
+                        modifier = Modifier.align(Alignment.BottomCenter).hoverable(barsHover),
                     )
                 }
             }

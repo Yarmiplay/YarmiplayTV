@@ -27,6 +27,12 @@ class PlayerInput(
     val seekBy: (Double) -> Unit,
 )
 
+/** How long the player controls stay up without input while a video plays and the pointer isn't on them. */
+expect val controlsHideMillis: Long
+
+/** Desktop: the player's top bar has a Hide button (and H hides), since a click on the video pauses instead. */
+expect val hideControlsButton: Boolean
+
 /** On the whole player screen: desktop mouse movement, scroll wheel and keyboard shortcuts. Nothing on Android. */
 @Composable
 expect fun Modifier.playerScreenInput(input: PlayerInput): Modifier

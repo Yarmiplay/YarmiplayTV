@@ -13,6 +13,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
@@ -26,6 +27,7 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.loadXmlImageVector
+import androidx.compose.ui.unit.dp
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.player.Player
@@ -81,6 +83,13 @@ private val hiddenCursor: PointerIcon by lazy {
     PointerIcon(Toolkit.getDefaultToolkit().createCustomCursor(BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), Point(0, 0), "hidden"))
 }
 
+actual val controlsHideMillis = 2000L
+
+actual val hideControlsButton = true
+
+/** How far the pointer has to move to bring hidden controls back, so a nudged mouse doesn't undo a hide. */
+private val SHOW_CONTROLS_DISTANCE = 12.dp
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 actual fun Modifier.playerScreenInput(input: PlayerInput): Modifier {
@@ -89,10 +98,30 @@ actual fun Modifier.playerScreenInput(input: PlayerInput): Modifier {
         DesktopPlayerInput.input = latest
         onDispose { if (DesktopPlayerInput.input === latest) DesktopPlayerInput.input = null }
     }
+    val showDistance = with(LocalDensity.current) { SHOW_CONTROLS_DISTANCE.toPx() }
+    // The pointer's last position, and where it was when the controls went away.
+    val pointer = remember { object { var last: Offset? = null; var hiddenAt: Offset? = null } }
     return this
         .pointerHoverIcon(if (input.controlsVisible) PointerIcon.Default else hiddenCursor)
         // Parents see pointer events after their children, so moving over the controls counts too.
-        .onPointerEvent(PointerEventType.Move) { latest.value.showControls() }
+        .onPointerEvent(PointerEventType.Move) { event ->
+            val position = event.changes.firstOrNull()?.position ?: return@onPointerEvent
+            if (latest.value.controlsVisible) {
+                pointer.hiddenAt = null
+                latest.value.showControls()
+            } else {
+                val from = pointer.hiddenAt ?: pointer.last ?: position
+                pointer.hiddenAt = from
+                if ((position - from).getDistance() > showDistance) {
+                    pointer.hiddenAt = null
+                    latest.value.showControls()
+                }
+            }
+            pointer.last = position
+        }
+        .onPointerEvent(PointerEventType.Enter) { event ->
+            event.changes.firstOrNull()?.let { pointer.last = it.position }
+        }
         .onPointerEvent(PointerEventType.Scroll) { event ->
             val dy = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
             if (dy != 0f) DesktopPlayerInput.changeVolume(-dy * VOLUME_STEP)

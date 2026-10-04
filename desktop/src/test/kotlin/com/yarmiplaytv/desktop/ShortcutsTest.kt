@@ -49,6 +49,14 @@ class ShortcutsTest {
     }
 
     @Test
+    fun hTogglesTheControlsWithoutShowingThem() {
+        assertTrue(handleShortcut(Key.H, false, Target()))
+        assertFalse(handleShortcut(Key.H, true, Target()))
+        assertFalse(handleShortcut(Key.H, false, Target(playerShowing = false)))
+        assertEquals(listOf("toggleControls"), log)
+    }
+
+    @Test
     fun escapeLeavesFullscreenBeforeGoingBack() {
         val t = Target(full = true)
         assertTrue(handleShortcut(Key.Escape, false, t))

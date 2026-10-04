@@ -100,7 +100,8 @@ In a room, the player's playlist, room and chat buttons open a side panel:
 - **Chat:** Enter in the player opens it; ↑/↓ recall what you sent.
 
 Player keys: Space or K pauses, ←/→ or J/L seek, ↑/↓ change the volume, F or F11 toggles full screen,
-Esc leaves full screen or goes back. The command line follows the official client:
+H hides or shows the controls (they also hide after 2 s unless the mouse is on them), Esc leaves full screen
+or goes back. The command line follows the official client:
 `YarmiplayTV [--host host[:port]] [--name name] [--room room] [--password pw] [file]`.
 
 From source (downloads the pinned libmpv on Windows; use `brew install mpv` or `sudo apt install libmpv2`
