@@ -6,12 +6,19 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toAwtImage
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performMouseInput
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -23,6 +30,7 @@ import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.ui.mobile.DesktopPlayerInput
+import com.yarmiplaytv.ui.mobile.DesktopVolume
 import com.yarmiplaytv.ui.mobile.MobilePlayerScreen
 import com.yarmiplaytv.ui.mobile.MobileTheme
 import com.yarmiplaytv.ui.nav.Navigator
@@ -34,18 +42,25 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 import java.util.concurrent.Executors
+import javax.imageio.ImageIO
 
-/** The player's controls on desktop: they hide quickly while a video plays, and can be hidden by hand. */
+/**
+ * The player's controls on desktop: they hide quickly while a video plays, can be hidden by hand, and have a
+ * volume control. A screenshot of the bar goes to the yarmiplaytv.screenshotDir system property.
+ */
 @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
 class PlayerControlsUiTest {
     @get:Rule val tmp = TemporaryFolder()
@@ -54,6 +69,13 @@ class PlayerControlsUiTest {
     private lateinit var storeScope: CoroutineScope
     private lateinit var app: AppContainer
     private val player = IdlePlayer()
+    private val volume = object : DesktopVolume {
+        override val volume = MutableStateFlow(80.0)
+        override val muted = MutableStateFlow(false)
+        override val max = 130.0
+        override fun setVolume(percent: Double) { volume.value = percent; muted.value = false }
+        override fun setMuted(muted: Boolean) { this.muted.value = muted }
+    }
 
     @Before
     fun setUp() {
@@ -68,10 +90,12 @@ class PlayerControlsUiTest {
             createLocalLibrary = { s, scope, folders -> FileLocalLibrary(s, scope, folders, watchForChanges = false) },
         )
         player.state.value = PlaybackState(fileLoaded = true, duration = 600.0, paused = false)
+        DesktopPlayerInput.volume = volume
     }
 
     @After
     fun tearDown() {
+        DesktopPlayerInput.volume = null
         app.scope.cancel()
         storeScope.cancel()
         Dispatchers.resetMain()
@@ -100,6 +124,35 @@ class PlayerControlsUiTest {
     }
 
     private fun ComposeUiTest.controlsShowing() = onAllNodesWithTag("player_controls").fetchSemanticsNodes().isNotEmpty()
+
+    @Test
+    fun `the volume control shows the level, mutes and sets the volume`() = runComposeUiTest {
+        player.state.value = player.state.value.copy(paused = true)
+        showPlayer()
+        onNodeWithTag("volume_label").assertTextEquals("80%")
+        screenshot("player_controls")
+
+        onNodeWithTag("volume_mute").performMouseInput { click() }
+        settle()
+        assertTrue(volume.muted.value)
+        onNodeWithTag("volume_label").assertTextEquals("Muted")
+        onNodeWithTag("volume_mute").assertContentDescriptionEquals("Unmute (M)")
+        onNodeWithTag("volume_mute").performMouseInput { click() }
+        settle()
+        assertFalse(volume.muted.value)
+
+        onNodeWithTag("volume_slider").performSemanticsAction(SemanticsActions.SetProgress) { it(65f) }
+        settle()
+        assertEquals(65.0, volume.volume.value, 0.0)
+        onNodeWithTag("volume_label").assertTextEquals("65%")
+    }
+
+    private fun ComposeUiTest.screenshot(name: String) {
+        val dir = System.getProperty("yarmiplaytv.screenshotDir") ?: return
+        val file = File(dir, "${System.getProperty("os.name").substringBefore(' ').lowercase()}/$name.png")
+        file.parentFile.mkdirs()
+        ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", file)
+    }
 
     @Test
     fun `controls hide after 2 seconds of playing, but not while the mouse is on them`() = runComposeUiTest {

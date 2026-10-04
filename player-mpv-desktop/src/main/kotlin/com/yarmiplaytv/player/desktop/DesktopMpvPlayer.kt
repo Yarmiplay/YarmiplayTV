@@ -74,6 +74,9 @@ class DesktopMpvPlayer(
     private val _volume = MutableStateFlow(100.0)
     /** mpv volume in percent (0-130). */
     val volume: StateFlow<Double> = _volume.asStateFlow()
+    private val _muted = MutableStateFlow(false)
+    /** mpv's mute, which keeps [volume] for when it's turned off again. */
+    val muted: StateFlow<Boolean> = _muted.asStateFlow()
 
     @Volatile private var cachedPosition = 0.0
     @Volatile private var cachedPositionAt = 0L
@@ -97,6 +100,7 @@ class DesktopMpvPlayer(
             "eof-reached" to LibMpv.FORMAT_FLAG,
             "speed" to LibMpv.FORMAT_DOUBLE,
             "volume" to LibMpv.FORMAT_DOUBLE,
+            "mute" to LibMpv.FORMAT_FLAG,
             "demuxer-cache-duration" to LibMpv.FORMAT_DOUBLE,
             "track-list" to LibMpv.FORMAT_NONE,
             "video-codec" to LibMpv.FORMAT_STRING,
@@ -179,13 +183,20 @@ class DesktopMpvPlayer(
         core.command("show-text", text, durationMs.toString())
     }
 
+    /** Also unmutes, since a muted player would ignore the new volume. */
     fun setVolume(percent: Double) {
         val value = percent.coerceIn(0.0, MAX_VOLUME)
         _volume.value = value
         core.setDouble("volume", value)
+        if (_muted.value) setMuted(false)
     }
 
     fun changeVolume(delta: Double) = setVolume(_volume.value + delta)
+
+    fun setMuted(muted: Boolean) {
+        _muted.value = muted
+        core.setFlag("mute", muted)
+    }
 
     /** The user's audio delay in seconds, on top of the automatic display-latency compensation. */
     fun setAudioDelay(seconds: Double) {
@@ -263,6 +274,7 @@ class DesktopMpvPlayer(
                 _state.update { it.copy(speed = v) }
             }
             "volume" -> (value as? Double)?.let { _volume.value = it }
+            "mute" -> (value as? Boolean)?.let { _muted.value = it }
             "demuxer-cache-duration" -> (value as? Double)?.let { v -> _state.update { it.copy(cacheSeconds = v) } }
             "pause" -> (value as? Boolean)?.let { v ->
                 if (v != cachedPaused) snapshotPosition()

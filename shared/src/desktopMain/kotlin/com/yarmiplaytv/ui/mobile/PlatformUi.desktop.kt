@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.player.Player
+import kotlinx.coroutines.flow.StateFlow
 import org.xml.sax.InputSource
 
 actual fun Modifier.exposeTestTags(): Modifier = this
@@ -77,6 +78,18 @@ object DesktopPlayerInput {
     var toggleFullscreen: () -> Unit = {}
     /** Changes the volume by the given percentage points. */
     var changeVolume: (Double) -> Unit = {}
+    /** The player's volume for the player bar's volume control; without it the control isn't shown. */
+    var volume: DesktopVolume? = null
+}
+
+interface DesktopVolume {
+    /** In percent, 0 to [max]. */
+    val volume: StateFlow<Double>
+    val muted: StateFlow<Boolean>
+    val max: Double
+    /** Also unmutes. */
+    fun setVolume(percent: Double)
+    fun setMuted(muted: Boolean)
 }
 
 private val hiddenCursor: PointerIcon by lazy {

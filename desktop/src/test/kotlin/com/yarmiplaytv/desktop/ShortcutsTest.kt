@@ -17,6 +17,7 @@ class ShortcutsTest {
         override fun back(): Boolean { log += "back"; return canGoBack }
         override val player: PlayerInput? get() = if (playerShowing) input else null
         override fun changeVolume(delta: Double) { log += "volume $delta" }
+        override fun toggleMute() { log += "mute" }
         override fun focusChat() { log += "chat" }
     }
 
@@ -37,12 +38,13 @@ class ShortcutsTest {
         assertTrue(handleShortcut(Key.DirectionRight, false, t))
         assertTrue(handleShortcut(Key.DirectionUp, false, t))
         assertTrue(handleShortcut(Key.DirectionDown, false, t))
+        assertTrue(handleShortcut(Key.M, false, t))
         assertTrue(handleShortcut(Key.F, false, t))
         assertTrue(handleShortcut(Key.Enter, false, t))
         assertEquals(
             listOf(
                 "pause", "show", "seek -10.0", "show", "seek 10.0", "show", "volume 5.0", "show", "volume -5.0", "show",
-                "fullscreen true", "show", "chat", "show",
+                "mute", "show", "fullscreen true", "show", "chat", "show",
             ),
             log,
         )

@@ -40,6 +40,9 @@ actual val controlsHideMillis = 5000L
 actual val hideControlsButton = false
 
 @Composable
+actual fun PlayerVolumeControl(onInteract: () -> Unit, modifier: Modifier) = Unit
+
+@Composable
 actual fun Modifier.playerScreenInput(input: PlayerInput): Modifier = this
 
 @Composable

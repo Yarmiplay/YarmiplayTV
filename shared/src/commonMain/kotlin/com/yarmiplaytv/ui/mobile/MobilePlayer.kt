@@ -253,6 +253,7 @@ private fun BottomControls(
             Text(formatClock(duration), color = AppColors.Text, style = MaterialTheme.typography.labelMedium)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
+            PlayerVolumeControl(onInteract, Modifier.padding(end = 8.dp))
             if (inRoom) ReadyChip(ready, { container.sync.toggleReady(); onInteract() }, Modifier.testTag("player_ready"))
             Spacer(Modifier.weight(1f))
             SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist") { onSheet(PlayerSheet.PLAYLIST) }

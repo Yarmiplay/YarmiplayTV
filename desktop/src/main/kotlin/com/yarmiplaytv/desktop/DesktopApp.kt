@@ -43,6 +43,7 @@ import com.yarmiplaytv.ui.mobile.DesktopDialogs
 import com.yarmiplaytv.ui.mobile.DesktopRoomPanel
 import com.yarmiplaytv.ui.mobile.DesktopPlayerInput
 import com.yarmiplaytv.ui.mobile.DesktopVideo
+import com.yarmiplaytv.ui.mobile.DesktopVolume
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
 import com.yarmiplaytv.ui.mobile.appLogoPainter
@@ -76,6 +77,13 @@ internal fun runApp(args: List<String>) {
     DesktopPlayerInput.changeVolume = { delta ->
         player.changeVolume(delta)
         player.showText("Volume ${player.volume.value.toInt()}%", 1000)
+    }
+    DesktopPlayerInput.volume = object : DesktopVolume {
+        override val volume = player.volume
+        override val muted = player.muted
+        override val max = DesktopMpvPlayer.MAX_VOLUME
+        override fun setVolume(percent: Double) = player.setVolume(percent)
+        override fun setMuted(muted: Boolean) = player.setMuted(muted)
     }
     val launch = LaunchOptions.parse(args)
     // macOS hands files opened from Finder to the app as events rather than arguments.
@@ -146,6 +154,12 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             override fun back() = DesktopBack.dispatch()
             override val player get() = DesktopPlayerInput.input?.value
             override fun changeVolume(delta: Double) = DesktopPlayerInput.changeVolume(delta)
+            override fun toggleMute() {
+                val volume = DesktopPlayerInput.volume ?: return
+                val mute = !volume.muted.value
+                volume.setMuted(mute)
+                container.player.showText(if (mute) "Muted" else "Volume ${volume.volume.value.toInt()}%", 1000)
+            }
             override fun focusChat() = DesktopRoomPanel.focusChat()
         }
     }

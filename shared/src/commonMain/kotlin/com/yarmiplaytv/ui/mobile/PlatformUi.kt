@@ -33,6 +33,10 @@ expect val controlsHideMillis: Long
 /** Desktop: the player's top bar has a Hide button (and H hides), since a click on the video pauses instead. */
 expect val hideControlsButton: Boolean
 
+/** Desktop: mute button and volume slider in the player's bar. Nothing on Android, where the device's buttons do it. */
+@Composable
+expect fun PlayerVolumeControl(onInteract: () -> Unit, modifier: Modifier = Modifier)
+
 /** On the whole player screen: desktop mouse movement, scroll wheel and keyboard shortcuts. Nothing on Android. */
 @Composable
 expect fun Modifier.playerScreenInput(input: PlayerInput): Modifier

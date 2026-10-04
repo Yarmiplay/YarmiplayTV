@@ -99,7 +99,8 @@ In a room, the player's playlist, room and chat buttons open a side panel:
   double-click to play, shuffle, loop options, and save/load the list as a text file.
 - **Chat:** Enter in the player opens it; ↑/↓ recall what you sent.
 
-Player keys: Space or K pauses, ←/→ or J/L seek, ↑/↓ change the volume, F or F11 toggles full screen,
+Player keys: Space or K pauses, ←/→ or J/L seek, ↑/↓ change the volume (also the scroll wheel and the volume
+slider in the player's bar), M mutes, F or F11 toggles full screen,
 H hides or shows the controls (they also hide after 2 s unless the mouse is on them), Esc leaves full screen
 or goes back. The command line follows the official client:
 `YarmiplayTV [--host host[:port]] [--name name] [--room room] [--password pw] [file]`.

@@ -130,4 +130,16 @@ class DesktopMpvPlayerTest {
         withTimeout(2_000) { player.volume.first { it == 0.0 } }
         Unit
     }
+
+    @Test
+    fun muteKeepsTheVolumeAndChangingItUnmutes() = runBlocking {
+        player.setVolume(60.0)
+        player.setMuted(true)
+        withTimeout(2_000) { player.muted.first { it } }
+        assertEquals(60.0, player.volume.value, 0.0)
+        player.changeVolume(5.0)
+        withTimeout(2_000) { player.muted.first { !it } }
+        withTimeout(2_000) { player.volume.first { it == 65.0 } }
+        Unit
+    }
 }
