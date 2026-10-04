@@ -32,6 +32,7 @@ from dataclasses import dataclass
 NAME = "YarmiplayTV"
 REPO_URL = "https://github.com/Yarmiplay/YarmiplayTV"
 SERVER_URL = "https://servertv.yarmiplay.com/"
+HOME_URL = "https://yarmiplay.com/"
 TITLE = f"{NAME}: watch videos in sync with friends (Syncplay for Google TV, Android, Windows, macOS, Linux)"
 DESCRIPTION = ("Watch videos together with friends, wherever they are. A Syncplay client with mpv built in for "
                "Google TV, Android phones and tablets, Windows, macOS and Linux that plays from Jellyfin, Plex or "
@@ -290,7 +291,7 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
  <strong>Host your own server</strong>
  <p><a href="{SERVER_URL}">YarmiplayServerTV</a> runs a Syncplay server and a Jellyfin server from your Windows, macOS or Linux computer.</p>
 </section>
-<footer><a href="{REPO_URL}">Source</a>{''.join(f' &middot; <a href="{folder}/">{label}</a>' for _, folder, label, _ in docs)}
+<footer><a href="{HOME_URL}">yarmiplay.com</a> &middot; <a href="{REPO_URL}">Source</a>{''.join(f' &middot; <a href="{folder}/">{label}</a>' for _, folder, label, _ in docs)}
  &middot; <a href="{REPO_URL}#code-signing-policy">Code signing policy</a></footer>
 </main>
 <script>
@@ -387,7 +388,7 @@ def render_doc(md, description, site_url=None, path=""):
 </style></head>
 <body><main>
 {markdown_to_html(md)}
-<p><a href="../">{NAME} downloads</a></p>
+<p><a href="../">{NAME} downloads</a> &middot; <a href="{HOME_URL}">yarmiplay.com</a></p>
 </main></body></html>
 """
 
