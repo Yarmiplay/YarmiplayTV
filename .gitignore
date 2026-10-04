@@ -23,6 +23,8 @@ keystore.properties
 *.iml
 .vscode/
 .kotlin/
+# Java language server (Gradle import) output
+bin/
 
 # OS
 .DS_Store
