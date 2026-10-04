@@ -19,6 +19,10 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+env:
+  # Not a secret: IndexNow checks it against the <key>.txt the site publishes.
+  INDEXNOW_KEY: 761915e208733cc08f178728fc5e703f
+
 jobs:
   build:
     # A Release run counts even when it failed: its Play bundle can fail after the Windows installers were
@@ -29,6 +33,8 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')))
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      site_url: ${{ steps.pages.outputs.base_url }}
     steps:
       - name: Pick the Build run
         id: run
@@ -70,9 +76,14 @@ jobs:
       - id: pages
         uses: actions/configure-pages@v6
 
+      # The Search Console token is the repository variable GOOGLE_SITE_VERIFICATION (HTML-tag method).
       - name: Build the site
+        env:
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+          GOOGLE_SITE_VERIFICATION: ${{ vars.GOOGLE_SITE_VERIFICATION }}
         run: >
-          python3 scripts/download_site.py --dist dist --out _site --site-url "${{ steps.pages.outputs.base_url }}"
+          python3 scripts/download_site.py --dist dist --out _site --site-url "$SITE_URL"
+          --indexnow-key "$INDEXNOW_KEY" ${GOOGLE_SITE_VERIFICATION:+--google-verification "$GOOGLE_SITE_VERIFICATION"}
 
       - uses: actions/upload-pages-artifact@v5
         with:
@@ -87,3 +98,17 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
+
+      # Bing, DuckDuckGo, Yandex and others recrawl the page without a webmaster account. A failure only warns.
+      - name: Notify IndexNow
+        env:
+          SITE_URL: ${{ needs.build.outputs.site_url }}
+        run: |
+          site="${SITE_URL%/}"
+          host=$(echo "$site" | sed -E 's#^https?://([^/]+).*#\1#')
+          body=$(printf '{"host":"%s","key":"%s","keyLocation":"%s/%s.txt","urlList":["%s/","%s/privacy/"]}' \
+            "$host" "$INDEXNOW_KEY" "$site" "$INDEXNOW_KEY" "$site" "$site")
+          code=$(curl -s -o response.txt -w '%{http_code}' -X POST https://api.indexnow.org/indexnow \
+            -H 'Content-Type: application/json; charset=utf-8' -d "$body" || true)
+          echo "IndexNow answered HTTP $code"; cat response.txt 2>/dev/null || true
+          case "$code" in 200|202) ;; *) echo "::warning::IndexNow answered HTTP $code" ;; esac

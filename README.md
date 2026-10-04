@@ -50,7 +50,11 @@ come from the latest GitHub release, where they are code signed (see [Code signi
 Files are matched to platforms by extension (`.apk`, `.msi`/`.zip`, `.dmg`/`.pkg`, `.deb`/`.rpm`/`.AppImage`).
 Each card's main button is its store listing or first file, with the other files as links below it. Platforms
 without a package show how to run from source. The page's `version.json` lists each platform's package,
-version and SHA-256 for the apps' update check (see [Updates](#updates)). To preview it locally:
+version and SHA-256 for the apps' update check (see [Updates](#updates)). For search engines the page has
+a description, canonical URL, link-preview image and app structured data, and the site a `sitemap.xml`; it
+is registered in Google Search Console, whose HTML-tag token is the repository variable
+`GOOGLE_SITE_VERIFICATION`. After each deploy the workflow notifies [IndexNow](https://www.indexnow.org/)
+(Bing, DuckDuckGo, Yandex) with the key in `pages.yml`, published as `<key>.txt`. To preview it locally:
 
 ```powershell
 python scripts/download_site.py --dist app/build/outputs/apk/debug --out build/site

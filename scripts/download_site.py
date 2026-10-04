@@ -4,12 +4,15 @@ Builds the YarmiplayTV download page: one card per OS (Android TVs, phones and t
 its download and install steps.
 
   python scripts/download_site.py --dist dist --out _site [--version 0.1.0] [--site-url URL]
+      [--google-verification TOKEN] [--indexnow-key KEY]
 
 Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .msi/.zip: Windows,
 .dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as YarmiplayTV.apk, so links
 keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader, <site>/privacy/
 is docs/privacy.md (the Play Store privacy policy), and <site>/version.json lists each platform's package
-and version for the apps' update check. Platforms without a file or store listing show how to run from source. The Pages workflow publishes the result; scripts/apk_server.py serves the
+and version for the apps' update check. With --site-url the pages carry canonical URLs and the site a
+sitemap.xml for search engines; --indexnow-key publishes the key file that lets the Pages workflow notify IndexNow.
+Platforms without a file or store listing show how to run from source. The Pages workflow publishes the result; scripts/apk_server.py serves the
 same page on the local network. Standard library only.
 """
 from __future__ import annotations
@@ -28,6 +31,12 @@ from dataclasses import dataclass
 NAME = "YarmiplayTV"
 REPO_URL = "https://github.com/Yarmiplay/YarmiplayTV"
 SERVER_URL = "https://yarmiplay.github.io/YarmiplayServerTV/"
+TITLE = f"{NAME}: watch videos in sync with friends (Syncplay for Google TV, Android, Windows, macOS, Linux)"
+DESCRIPTION = ("Watch videos together with friends, wherever they are. A Syncplay client with mpv built in for "
+               "Google TV, Android phones and tablets, Windows, macOS and Linux that plays from Jellyfin, Plex or "
+               "your own files. Free and open source.")
+# Link previews (Open Graph) need a raster image; this is the Play Store feature graphic.
+PREVIEW_IMAGE = os.path.join("docs", "play", "feature-graphic-1024x500.png")
 # The app icon as desktop/build.gradle.kts draws it: ic_logo.xml's triangles on the rounded gradient tile.
 LOGO_SVG = (
     '<svg viewBox="0 0 108 108" aria-hidden="true">'
@@ -139,7 +148,48 @@ def fmt_size(n):
     return f"{n / 1e6:.1f} MB"
 
 
-def render_page(downloads, version, built, short_link=None, privacy=False):
+def page_url(site_url, path=""):
+    return site_url.rstrip("/") + "/" + path
+
+
+def search_head(description, site_url=None, path="", google_verification=None):
+    """Description, canonical URL and Search Console verification tags for a page at site_url + path."""
+    tags = [f'<meta name="description" content="{html.escape(description)}">']
+    if site_url:
+        tags.append(f'<link rel="canonical" href="{html.escape(page_url(site_url, path))}">')
+    if google_verification:
+        tags.append(f'<meta name="google-site-verification" content="{html.escape(google_verification)}">')
+    return "\n".join(tags)
+
+
+def app_head(version, site_url=None, preview=False):
+    """Favicon, Open Graph / Twitter card tags and SoftwareApplication structured data for the main page."""
+    tags = ['<link rel="icon" href="favicon.svg" type="image/svg+xml">',
+            '<meta property="og:type" content="website">',
+            f'<meta property="og:site_name" content="{NAME}">',
+            f'<meta property="og:title" content="{html.escape(TITLE)}">',
+            f'<meta property="og:description" content="{html.escape(DESCRIPTION)}">']
+    app = {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": NAME,
+           "description": DESCRIPTION, "operatingSystem": "Android, Windows, macOS, Linux",
+           "applicationCategory": "MultimediaApplication", "softwareVersion": version,
+           "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}
+    if site_url:
+        tags.append(f'<meta property="og:url" content="{html.escape(page_url(site_url))}">')
+        app["url"] = page_url(site_url)
+        if preview:
+            image = page_url(site_url, "preview.png")
+            tags += [f'<meta property="og:image" content="{html.escape(image)}">',
+                     '<meta property="og:image:width" content="1024">',
+                     '<meta property="og:image:height" content="500">',
+                     '<meta name="twitter:card" content="summary_large_image">']
+            app["image"] = image
+    data = json.dumps(app, ensure_ascii=False).replace("</", "<\\/")
+    tags.append(f'<script type="application/ld+json">{data}</script>')
+    return "\n".join(tags)
+
+
+def render_page(downloads, version, built, short_link=None, privacy=False, site_url=None,
+                google_verification=None, preview=False):
     """downloads: {platform key: [Download]}. Returns the page as a str."""
     cards = []
     for p in platforms(short_link):
@@ -171,8 +221,9 @@ def render_page(downloads, version, built, short_link=None, privacy=False):
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{NAME} downloads</title>
-<meta name="description" content="Syncplay client with mpv built in, for Google TV, Android phones and tablets, and desktop.">
+<title>{html.escape(TITLE)}</title>
+{search_head(DESCRIPTION, site_url, "", google_verification)}
+{app_head(version, site_url, preview)}
 <style>
  :root {{ --bg:#0E1116; --card:#171B22; --line:#262C36; --text:#E8EAED; --muted:#9AA0A6; --accent:#3DA5F4; }}
  * {{ box-sizing:border-box; }}
@@ -302,13 +353,15 @@ def markdown_to_html(md):
     return "\n".join(blocks)
 
 
-def render_doc(md):
-    """A Markdown document as a page in the download page's style."""
+def render_doc(md, description, site_url=None, path=""):
+    """A Markdown document as a page in the download page's style, one folder below the main page."""
     title = next((l[2:].strip() for l in md.splitlines() if l.startswith("# ")), NAME)
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)}</title>
+{search_head(description, site_url, path)}
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <style>
  body {{ margin:0; background:#0E1116; color:#E8EAED; font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }}
  main {{ max-width:760px; margin:0 auto; padding:6vh 5vw; }}
@@ -350,7 +403,14 @@ def update_manifest(found, downloads, version, desktop_version):
     return {"page": "./", "platforms": platforms}
 
 
-def build(dist, out, version, site_url, desktop_version=None):
+def sitemap(site_url, paths, day):
+    urls = "".join(f"<url><loc>{html.escape(page_url(site_url, p))}</loc><lastmod>{day}</lastmod></url>\n"
+                   for p in paths)
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n{urls}</urlset>\n')
+
+
+def build(dist, out, version, site_url, desktop_version=None, google_verification=None, indexnow_key=None):
     found = {}
     for name in sorted(os.listdir(dist)):
         path = os.path.join(dist, name)
@@ -380,16 +440,35 @@ def build(dist, out, version, site_url, desktop_version=None):
         if site_url:
             short_link = site_url.rstrip("/") + "/a"
 
-    privacy = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "privacy.md")
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    pages = [""]
+    privacy = os.path.join(root, "docs", "privacy.md")
     if os.path.isfile(privacy):
         os.makedirs(os.path.join(out, "privacy"))
         with open(privacy, encoding="utf-8") as src, \
                 open(os.path.join(out, "privacy", "index.html"), "w", encoding="utf-8") as f:
-            f.write(render_doc(src.read()))
+            f.write(render_doc(src.read(), f"{NAME} privacy policy: the app collects no data, has no accounts, "
+                               "analytics or ads, and only connects to the servers you choose.",
+                               site_url, "privacy/"))
+        pages.append("privacy/")
 
-    built = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    with open(os.path.join(out, "favicon.svg"), "w", encoding="utf-8") as f:
+        f.write(LOGO_SVG.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ', 1))
+    preview = os.path.isfile(os.path.join(root, PREVIEW_IMAGE))
+    if preview:
+        shutil.copyfile(os.path.join(root, PREVIEW_IMAGE), os.path.join(out, "preview.png"))
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    built = now.strftime("%Y-%m-%d %H:%M UTC")
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
-        f.write(render_page(by_platform(downloads), version, built, short_link, os.path.isfile(privacy)))
+        f.write(render_page(by_platform(downloads), version, built, short_link, os.path.isfile(privacy), site_url,
+                            google_verification, preview))
+    if site_url:
+        with open(os.path.join(out, "sitemap.xml"), "w", encoding="utf-8") as f:
+            f.write(sitemap(site_url, pages, now.strftime("%Y-%m-%d")))
+    if indexnow_key:
+        with open(os.path.join(out, f"{indexnow_key}.txt"), "w", encoding="utf-8") as f:
+            f.write(indexnow_key)
     with open(os.path.join(out, "version.json"), "w", encoding="utf-8") as f:
         json.dump(update_manifest(found, downloads, version, desktop_version or version), f, indent=1)
     open(os.path.join(out, ".nojekyll"), "w").close()
@@ -408,9 +487,13 @@ def main():
     ap.add_argument("--dist", required=True, help="folder with the built packages")
     ap.add_argument("--out", required=True, help="site folder to (re)create")
     ap.add_argument("--version", default=None, help="defaults to the app's appVersion")
-    ap.add_argument("--site-url", default=None, help="public URL of the site, shown as the TV short link")
+    ap.add_argument("--site-url", default=None,
+                    help="public URL of the site: the TV short link, canonical URLs and sitemap.xml")
+    ap.add_argument("--google-verification", default=None, help="Google Search Console HTML-tag token")
+    ap.add_argument("--indexnow-key", default=None, help="IndexNow key, published as <key>.txt")
     a = ap.parse_args()
-    build(a.dist, a.out, a.version or app_version(root), a.site_url, app_version(root, "desktop"))
+    build(a.dist, a.out, a.version or app_version(root), a.site_url, app_version(root, "desktop"),
+          a.google_verification, a.indexnow_key)
 
 
 if __name__ == "__main__":
