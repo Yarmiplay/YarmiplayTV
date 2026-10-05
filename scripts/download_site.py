@@ -251,7 +251,8 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
                     f'<span><a href="{href}"{attr}>{label}</a> <small>{note}</small></span>'
                     for href, attr, label, note in rest) + "</p>"
             tag = "ul" if p.alternatives else "ol"
-            steps = f"<{tag}>" + "".join(f"<li>{s}</li>" for s in p.steps) + f"</{tag}>"
+            steps = (f'<details class="steps"><summary>How to install</summary><{tag}>'
+                     + "".join(f"<li>{s}</li>" for s in p.steps) + f"</{tag}></details>")
             sums = "".join(f"<div>{html.escape(d.href.rsplit('/', 1)[-1])}<br><code>{d.sha256}</code></div>"
                            for d in files if d.sha256)
             body = (f'<div class="dl">{buttons}</div>{steps}'
@@ -306,6 +307,7 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
  pre {{ background:var(--bg); padding:.7em 1em; border-radius:8px; overflow-x:auto; color:var(--text); margin:.3em 0 0; }}
  .none {{ margin:0 0 .3em; }}
  details {{ margin-top:.8em; font-size:.85em; }} details div {{ margin-top:.5em; }}
+ details.steps {{ margin-top:0; font-size:1em; }}
  summary {{ cursor:pointer; }}
  .host {{ margin-top:1.6em; text-align:center; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:1.2em 1.5em; }}
  .host p {{ color:var(--muted); margin:.3em 0 0; }}
