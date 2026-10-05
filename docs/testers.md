@@ -12,7 +12,7 @@ tablet or Google TV? Joining takes two minutes.
    Sign in with the same account.
    [Become a tester](https://play.google.com/apps/testing/com.yarmiplaytv)
 3. **Install YarmiplayTV**
-   Wait about 15 minutes after step 2: until then Google Play may show an error.
+   Wait about 15 minutes after step 2 and then install the app from the direct link here.
    [Open Google Play](https://play.google.com/store/apps/details?id=com.yarmiplaytv)
 
 ## Then
