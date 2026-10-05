@@ -43,6 +43,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.lang.management.ManagementFactory
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 import kotlin.math.abs
 import kotlin.system.exitProcess
 
@@ -72,6 +73,7 @@ internal class BenchmarkOptions(args: List<String>) {
 }
 
 private const val WARMUP_MS = 3_000L
+private const val EXIT_WATCHDOG_MS = 15_000L
 private val SEEK_TARGETS = listOf(20, 60, 5, 90, 40)
 
 private var focusThief: javax.swing.JFrame? = null
@@ -170,6 +172,11 @@ internal fun runBenchmark(options: BenchmarkOptions) {
             println(report.text)
             options.out?.let { File(it).writeText(report.text) }
             exitCode = if (report.passed) 0 else 1
+            // Closing the window or a shutdown hook can block under some software GL stacks; the report is out.
+            thread(isDaemon = true, name = "benchmark-exit-watchdog") {
+                Thread.sleep(EXIT_WATCHDOG_MS)
+                Runtime.getRuntime().halt(exitCode)
+            }
             exitApplication()
         }
     }
