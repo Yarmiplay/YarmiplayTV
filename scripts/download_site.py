@@ -426,6 +426,16 @@ def render_doc(md, description, site_url=None, path=""):
  p, li {{ color:#C4C7CC; }}
  a {{ color:#3DA5F4; }}
  code {{ font-family:ui-monospace,Consolas,monospace; font-size:.9em; background:#171B22; padding:.1em .35em; border-radius:4px; }}
+ ol {{ list-style:none; counter-reset:step; padding:0; }}
+ ol li {{ counter-increment:step; position:relative; background:#171B22; border:1px solid #262C36; border-radius:14px;
+         padding:1em 1.2em 1.1em 3.8em; margin:.8em 0; }}
+ ol li::before {{ content:counter(step); position:absolute; left:1.1em; top:1em; width:1.8em; height:1.8em; border-radius:50%;
+                 background:#3DA5F4; color:#0E1116; font-weight:700; display:flex; align-items:center; justify-content:center; }}
+ ol li b {{ display:block; color:#E8EAED; font-size:1.1em; }}
+ ol li a {{ display:block; width:max-content; margin-top:.7em; padding:.5em 1.1em; border-radius:10px; background:#3DA5F4; color:#0E1116;
+           font-weight:700; text-decoration:none; }}
+ ol li a:hover {{ filter:brightness(1.1); }}
+ a:focus-visible {{ outline:3px solid #E8EAED; outline-offset:3px; }}
 </style></head>
 <body><main>
 {markdown_to_html(md)}
