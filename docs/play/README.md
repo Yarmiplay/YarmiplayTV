@@ -145,8 +145,8 @@ Testers join on their own from the testers page, `https://tv.yarmiplay.com/test/
 `docs/testers.md`, linked in the download page's footer). It walks them through joining the Google Group
 (`https://groups.google.com/g/yarmiplaytv-testers`: anyone can join, members can't see each other's
 addresses), the opt-in link `https://play.google.com/apps/testing/com.yarmiplaytv` and installing from Play,
-and asks people with the download page's APK to uninstall it first. The opt-in link only works once the
-closed track has passed review; until then the page tells people to come back later.
+and asks people with the download page's APK to uninstall it first. Play only lets a new tester install
+about 15 minutes after opting in (before that it shows an error), which the page tells them.
 
 - **Share the page** wherever friends and Syncplay users are: chats, the GitHub README or release notes,
   forums. A message:
