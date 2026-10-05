@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.4.5" date="2026-10-05">
+      <description>
+        <p>Linux: .deb downloads and the Snap Store. Fixes the desktop app not starting on Linux systems set to a language locale such as en_US.UTF-8 (mpv_create failed). Volume control in the desktop player.</p>
+      </description>
+    </release>
     <release version="1.4.4" date="2026-10-04">
       <description>
         <p>Volume control in the player bar: a mute button, a slider and the level. M mutes.</p>
