@@ -51,6 +51,8 @@ class AppState {
             store.saveAutosavePlaylists(saved.autosavePlaylists)
             store.saveUpdatePrefs(saved.checkForUpdates, saved.installUpdatesOnLaunch)
             store.saveDismissedUpdate(saved.dismissedUpdate)
+            store.saveShowRoomChat(saved.showRoomChat)
+            store.saveAcceptedRoomRules(saved.acceptedRoomRules)
             store.saveServerPrefs(saved.preferredServer, saved.reportPlayback)
             store.replaceRoomPlaylists(savedRoomPlaylists)
         }
@@ -79,6 +81,8 @@ class AppState {
             store.saveLastJellyfinUrl(LAST_JELLYFIN_URL)
             store.saveAutosavePlaylists(true)
             store.saveUpdatePrefs(check = true, installOnLaunch = false)
+            store.saveShowRoomChat(true)
+            store.saveAcceptedRoomRules(true)
             store.saveServerPrefs("", reportPlayback = true)
             store.replaceRoomPlaylists(emptyMap())
         }
@@ -88,7 +92,7 @@ class AppState {
         waitUntil(5_000) {
             val s = container.settings.value
             s.syncplay == PROFILE && s.jellyfinServers.isEmpty() && s.plexServers.isEmpty() && container.mediaSource.value == null &&
-                s.lastJellyfinUrl == LAST_JELLYFIN_URL
+                s.lastJellyfinUrl == LAST_JELLYFIN_URL && s.showRoomChat && s.acceptedRoomRules
         }
         clearFeed()
     }

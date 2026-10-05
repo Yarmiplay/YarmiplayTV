@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -46,6 +47,9 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.shared.ROOM_PRIVACY_HINT
+import com.yarmiplaytv.ui.shared.ROOM_RULES
+import com.yarmiplaytv.ui.shared.ROOM_RULES_URL
 import com.yarmiplaytv.ui.shared.plexServerLabel
 import com.yarmiplaytv.ui.shared.rememberJellyfinLoginModel
 import com.yarmiplaytv.ui.shared.rememberPlexLoginModel
@@ -112,11 +116,30 @@ private fun ConnectForm(container: AppContainer, model: com.yarmiplaytv.ui.share
             }
         }
         Text(
-            "Use the same server and room as your friends' desktop Syncplay. The public servers are syncplay.pl ports 8995–8999.",
+            "Use the same server and room as your friends' desktop Syncplay. The public servers are syncplay.pl ports 8995–8999. " +
+                ROOM_PRIVACY_HINT,
             color = AppColors.TextDim,
             style = MaterialTheme.typography.bodySmall,
         )
     }
+    if (model.askRules) RoomRulesDialog(onAgree = { if (model.acceptRules()) onConnected() }, onDecline = model::declineRules)
+}
+
+@Composable
+private fun RoomRulesDialog(onAgree: () -> Unit, onDecline: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDecline,
+        title = { Text("Community rules") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ROOM_RULES.forEach { Text("• $it") }
+                Text("Also at $ROOM_RULES_URL", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { Button(onAgree, Modifier.testTag("agree_rules")) { Text("I agree") } },
+        dismissButton = { TextButton(onDecline) { Text("Cancel") } },
+        modifier = Modifier.testTag("room_rules"),
+    )
 }
 
 @Composable

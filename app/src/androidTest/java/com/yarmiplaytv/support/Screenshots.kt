@@ -81,16 +81,22 @@ object Screenshots {
     fun prepareDevice() {
         listOf("window_animation_scale", "transition_animation_scale", "animator_duration_scale").forEach { shell("settings put global $it 0") }
         shell("settings put global sysui_demo_allowed 1")
+        enterDemo()
+        // Right after a boot System UI can drop the network command while its Wi-Fi state is still loading, or
+        // show a second Wi-Fi icon; a fresh demo session once it has settled shows exactly one.
+        Thread.sleep(1_000)
+        demo("exit")
+        enterDemo()
+        automation.setRotation(UiAutomation.ROTATION_FREEZE_0)
+    }
+
+    private fun enterDemo() {
         demo("enter")
         demo("clock -e hhmm 1200")
         demo("battery -e level 100 -e plugged false -e powersave false")
         demo("network -e wifi show -e level 4 -e fully true -e mobile hide -e airplane hide")
         demo("notifications -e visible false")
         demo("status -e volume hide -e bluetooth hide -e location hide -e alarm hide -e sync hide -e mute hide -e speakerphone hide")
-        // Right after a cold boot System UI can drop the network command while its Wi-Fi state is still loading.
-        Thread.sleep(1_000)
-        demo("network -e wifi show -e level 4 -e fully true -e mobile hide -e airplane hide")
-        automation.setRotation(UiAutomation.ROTATION_FREEZE_0)
     }
 
     fun restoreDevice() {

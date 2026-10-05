@@ -64,6 +64,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
 import org.junit.After
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
@@ -210,6 +211,22 @@ class RoomPanelUiTest {
         waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("hi alice", substring = true).fetchSemanticsNodes().isNotEmpty() }
         onNodeWithText("1").assertDoesNotExist()
         screenshot("panel_chat")
+
+        // Blocking bob in the room list hides his lines, the one already shown too. Alice's own line comes back
+        // through the server after bob's, so once it's there bob's has arrived and been dropped.
+        onNodeWithTag("panel_tab_ROOM").performClick()
+        onNodeWithTag("block_bob").performClick()
+        awaitTrue("bob's lines to be hidden") { alice.sync.feed.value.none { it.from == "bob" } }
+        onMain { bob.sync.sendChat("can you hear me?") }
+        onMain { alice.sync.sendChat("quiet now") }
+        awaitTrue("alice's own line") { alice.sync.feed.value.any { it.from == "alice" && it.text == "quiet now" } }
+        assertTrue(onMain { alice.sync.feed.value.none { it.from == "bob" } })
+
+        // Hiding chat removes every line and the message field.
+        onNodeWithTag("panel_tab_CHAT").performClick()
+        onNodeWithTag("toggle_chat").performClick()
+        awaitTrue("chat to be hidden") { !alice.settings.value.showRoomChat && alice.sync.feed.value.none { it.from != null } }
+        onNodeWithTag("chat_field").assertDoesNotExist()
     }
 }
 

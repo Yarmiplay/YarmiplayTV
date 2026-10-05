@@ -82,6 +82,12 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
             { container.scope.launch { container.settingsStore.saveAutosavePlaylists(!settings.autosavePlaylists) } },
             subtitle = "Put a room's playlist back when you rejoin and it's empty",
         )
+        ToggleRow(
+            "Show room chat",
+            settings.showRoomChat,
+            { container.scope.launch { container.settingsStore.saveShowRoomChat(!settings.showRoomChat) } },
+            subtitle = "Off hides everyone's chat messages in rooms, whatever name they use",
+        )
 
         SectionTitle("Media servers")
         ValueRow(

@@ -93,6 +93,7 @@ class AppContainerTest {
             desktopSettingsStore(tmp.root.resolve("config"), storeScope).apply {
                 saveSyncplay(SyncplayProfile(host = "syncplay.example.org", username = "Sam", room = "movie-night"))
                 saveSync(SyncSettings(unpauseMode = UnpauseMode.ALWAYS), autoReady = false)
+                saveShowRoomChat(false)
             }
         }
         storeScope.cancel()
@@ -103,6 +104,7 @@ class AppContainerTest {
         assertEquals("Sam", app.settings.value.syncplay.username)
         awaitTrue { !app.playlist.autoReady && app.sync.syncSettings.unpauseMode == UnpauseMode.ALWAYS }
         assertFalse(app.sync.isActive)
+        assertFalse(app.sync.showChat)
         app.scope.cancel()
     }
 }

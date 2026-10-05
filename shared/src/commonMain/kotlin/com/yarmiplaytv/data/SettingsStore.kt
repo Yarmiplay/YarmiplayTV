@@ -81,6 +81,10 @@ data class AppSettings(
     val installUpdatesOnLaunch: Boolean = false,
     /** The update version the user dismissed; it isn't shown again. */
     val dismissedUpdate: String = "",
+    /** Show other people's chat in rooms; off hides all of it, whatever names they use. */
+    val showRoomChat: Boolean = true,
+    /** The user agreed to the community rules, asked once before the first room join. */
+    val acceptedRoomRules: Boolean = false,
 )
 
 class SettingsStore(private val dataStore: DataStore<Preferences>) {
@@ -107,6 +111,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val checkForUpdates = booleanPreferencesKey("update_check")
         val installUpdatesOnLaunch = booleanPreferencesKey("update_install_on_launch")
         val dismissedUpdate = stringPreferencesKey("update_dismissed")
+        val showRoomChat = booleanPreferencesKey("chat_show")
+        val acceptedRoomRules = booleanPreferencesKey("room_rules_accepted")
         /** Followed by "host:port/room"; the value is the playlist, one entry per line. */
         const val ROOM_PLAYLIST_PREFIX = "room_playlist:"
         fun roomPlaylist(key: String) = stringPreferencesKey(ROOM_PLAYLIST_PREFIX + key)
@@ -196,6 +202,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             checkForUpdates = p[Keys.checkForUpdates] ?: true,
             installUpdatesOnLaunch = p[Keys.installUpdatesOnLaunch] ?: false,
             dismissedUpdate = p[Keys.dismissedUpdate] ?: "",
+            showRoomChat = p[Keys.showRoomChat] ?: true,
+            acceptedRoomRules = p[Keys.acceptedRoomRules] ?: false,
         )
     }
 
@@ -250,6 +258,10 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
     }
 
     suspend fun saveDismissedUpdate(version: String) = dataStore.edit { it[Keys.dismissedUpdate] = version }
+
+    suspend fun saveShowRoomChat(on: Boolean) = dataStore.edit { it[Keys.showRoomChat] = on }
+
+    suspend fun saveAcceptedRoomRules(accepted: Boolean) = dataStore.edit { it[Keys.acceptedRoomRules] = accepted }
 
     /** The playlist saved for [room] ("host:port/room"), or empty. */
     suspend fun roomPlaylist(room: String): List<String> =

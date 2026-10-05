@@ -9,7 +9,8 @@ its download and install steps.
 Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .msi/.zip: Windows,
 .dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as YarmiplayTV.apk, so links
 keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader, <site>/privacy/
-is docs/privacy.md (the Play Store privacy policy), <site>/test/ is docs/testers.md (how to join the Google Play
+is docs/privacy.md (the Play Store privacy policy), <site>/terms/ is docs/terms.md (the community rules the
+apps ask users to agree to), <site>/test/ is docs/testers.md (how to join the Google Play
 test), <site>/screenshots/ holds the desktop screenshots the Linux metainfo points to, and <site>/version.json
 lists each platform's package
 and version for the apps' update check. With --site-url the pages carry canonical URLs and the site a
@@ -56,6 +57,9 @@ DOCS = (
     ("privacy.md", "privacy", "Privacy",
      f"{NAME} privacy policy: the app collects no data, has no accounts, analytics or ads, and only connects to "
      "the servers you choose."),
+    ("terms.md", "terms", "Community rules",
+     f"{NAME} community rules: what's not allowed in Syncplay rooms, and how to block names, hide chat or leave a "
+     "room."),
     ("testers.md", "test", "Help test on Google Play",
      f"Help test {NAME} on Google Play: join the testers group, opt in, install it on your Android phone, tablet "
      "or Google TV and use it for 14 days."),

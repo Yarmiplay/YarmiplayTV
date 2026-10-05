@@ -15,6 +15,7 @@ re-recording screenshots.
 | 7-inch and 10-inch tablet screenshots | `screenshots/tablet/` (the same set works for both) |
 | Android TV screenshots | `screenshots/tv/` |
 | Privacy policy URL | `https://tv.yarmiplay.com/privacy/` (from `docs/privacy.md`) |
+| Community rules (reviewer notes) | `https://tv.yarmiplay.com/terms/` (from `docs/terms.md`) |
 
 ## Store listing
 
@@ -72,9 +73,19 @@ re-recording screenshots.
 
 **App access:** "All functionality is available without special access." For the reviewer notes:
 "No account is needed. To try sync, open Room (or Join a Syncplay room on TV), keep the server syncplay.pl
-port 8999, enter any name and a room name such as reviewtest, and connect. Play a video from the device to
-see the shared player. Jellyfin and Plex are optional and need the user's own server (and, for Plex, a Plex
-account)."
+port 8999, enter any name and a room name such as reviewtest, agree to the community rules, and connect. Play
+a video from the device to see the shared player. Jellyfin and Plex are optional and need the user's own
+server (and, for Plex, a Plex account).
+
+Room chat and moderation: YarmiplayTV is a client for the open Syncplay protocol, like an IRC, email or Matrix
+client. It has no accounts: a user is only the name typed when joining a room, and anyone can change it at any
+time. Every server is run by a third party (the default, syncplay.pl, by the Syncplay project) and the
+developer runs none, so there is nobody the app could send a report to who could act on it. The moderation
+tools are: Show room chat (Settings, and Hide chat in the chat panel), which hides all incoming chat whatever
+name is used; Block next to each person in the room's list of people (on phones, tablets and desktop also by
+tapping one of their messages), which hides their messages until the room is left; leaving or switching the
+room; and the community rules, agreed to before the first join and published at
+https://tv.yarmiplay.com/terms/. Abuse on a server goes to that server's operator."
 
 **Content rating questionnaire (IARC):** category "All other app types". Answer No to violence, sexuality,
 language, controlled substances, gambling. Answer **Yes** to "users can interact or exchange content" (room

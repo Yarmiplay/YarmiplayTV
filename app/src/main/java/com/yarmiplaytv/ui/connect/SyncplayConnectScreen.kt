@@ -1,14 +1,18 @@
 package com.yarmiplaytv.ui.connect
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.runtime.Composable
@@ -16,10 +20,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -30,8 +36,12 @@ import com.yarmiplaytv.ui.components.Pill
 import com.yarmiplaytv.ui.components.ToggleRow
 import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.nav.Navigator
+import com.yarmiplaytv.ui.shared.ROOM_PRIVACY_HINT
+import com.yarmiplaytv.ui.shared.ROOM_RULES
+import com.yarmiplaytv.ui.shared.ROOM_RULES_URL
 import com.yarmiplaytv.ui.shared.rememberSyncplayConnectModel
 import com.yarmiplaytv.ui.theme.AppColors
+import kotlinx.coroutines.delay
 
 @Composable
 fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
@@ -58,7 +68,8 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
             }
         }
         Text(
-            "Everyone in the same room on the same server watches in sync. Use the public server syncplay.pl (ports 8995–8999) or your own.",
+            "Everyone in the same room on the same server watches in sync. Use the public server syncplay.pl (ports 8995–8999) or your own. " +
+                ROOM_PRIVACY_HINT,
             color = AppColors.TextDim,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -79,6 +90,26 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
         }
         if (connected && room.motd != null) {
             Text(room.motd ?: "", color = AppColors.TextDim, modifier = Modifier.width(900.dp))
+        }
+    }
+    if (model.askRules) RoomRulesDialog(onAgree = { if (model.acceptRules()) nav.back() }, onDecline = model::declineRules)
+}
+
+@Composable
+private fun RoomRulesDialog(onAgree: () -> Unit, onDecline: () -> Unit) {
+    val agree = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { delay(50); agree.requestFocus() } }
+    Dialog(onDismissRequest = onDecline) {
+        Box(Modifier.width(820.dp).clip(RoundedCornerShape(20.dp)).background(AppColors.Surface).padding(32.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("Community rules", style = MaterialTheme.typography.headlineSmall)
+                ROOM_RULES.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                Text("Also at $ROOM_RULES_URL", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    ActionButton("I agree", onAgree, Modifier.focusRequester(agree), icon = Icons.Filled.Check, primary = true)
+                    ActionButton("Cancel", onDecline)
+                }
+            }
         }
     }
 }

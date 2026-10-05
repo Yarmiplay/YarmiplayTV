@@ -26,17 +26,21 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,7 +64,10 @@ import com.yarmiplaytv.syncplay.Filenames
 import com.yarmiplaytv.ui.player.fileDifferenceNote
 import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.player.sizeWarning
+import com.yarmiplaytv.ui.shared.BLOCKED_NOTE
+import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
 import com.yarmiplaytv.ui.theme.AppColors
+import kotlinx.coroutines.launch
 
 @Composable
 private fun SheetTitle(title: String, subtitle: String? = null) {
@@ -137,6 +144,7 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
         }
         SheetTitle(room.room, "${container.sync.client?.config?.host ?: ""} · Syncplay ${room.serverVersion ?: ""}")
         ReadyChip(room.isReady == true, { container.sync.toggleReady() }, Modifier.testTag("ready_toggle"))
+        val blocked by container.sync.blocked.collectAsStateWithLifecycle()
         val me = room.users.firstOrNull { it.name == room.username }
         room.users.forEach { user ->
             val isMe = user.name == room.username
@@ -163,6 +171,20 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (difference != null) Text(difference, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
+                    if (user.name in blocked) Text(BLOCKED_NOTE, color = AppColors.Error, style = MaterialTheme.typography.labelSmall)
+                }
+                if (!isMe) {
+                    val isBlocked = user.name in blocked
+                    IconButton(
+                        { if (isBlocked) container.sync.unblock(user.name) else container.sync.block(user.name) },
+                        Modifier.testTag("block_${user.name}"),
+                    ) {
+                        Icon(
+                            Icons.Filled.Block,
+                            if (isBlocked) "Unblock ${user.name}" else "Block ${user.name} (hide their messages)",
+                            tint = if (isBlocked) AppColors.Error else AppColors.TextDim,
+                        )
+                    }
                 }
             }
         }
@@ -185,6 +207,9 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
 @Composable
 fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeight: androidx.compose.ui.unit.Dp = 420.dp) {
     val feed by container.sync.feed.collectAsStateWithLifecycle()
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val room by container.sync.room.collectAsStateWithLifecycle()
+    val showChat = settings.showRoomChat
     var message by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     LaunchedEffect(feed.size) { if (feed.isNotEmpty()) listState.scrollToItem(feed.lastIndex) }
@@ -195,28 +220,44 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
         }
     }
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp).imePadding()) {
-        SheetTitle("Chat")
+        Row(verticalAlignment = Alignment.Top) {
+            Box(Modifier.weight(1f)) { SheetTitle("Chat") }
+            TextButton(
+                { container.scope.launch { container.settingsStore.saveShowRoomChat(!showChat) } },
+                Modifier.testTag("toggle_chat"),
+            ) { Text(if (showChat) "Hide chat" else "Show chat") }
+        }
+        if (!showChat) Text(HIDDEN_CHAT_NOTE, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
         LazyColumn(Modifier.heightIn(max = maxHeight), state = listState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(feed) { msg ->
-                Row {
-                    if (msg.from != null) Text("${msg.from}: ", color = AppColors.Accent, fontWeight = FontWeight.Bold)
-                    Text(
-                        msg.text,
-                        color = when {
-                            msg.isError -> AppColors.Error
-                            msg.from == null -> AppColors.TextDim
-                            else -> AppColors.Text
-                        },
-                    )
+                val from = msg.from
+                var menu by remember { mutableStateOf(false) }
+                Box {
+                    Row(if (from != null && from != room.username) Modifier.clickable { menu = true } else Modifier) {
+                        if (from != null) Text("$from: ", color = AppColors.Accent, fontWeight = FontWeight.Bold)
+                        Text(
+                            msg.text,
+                            color = when {
+                                msg.isError -> AppColors.Error
+                                from == null -> AppColors.TextDim
+                                else -> AppColors.Text
+                            },
+                        )
+                    }
+                    if (from != null) {
+                        DropdownMenu(menu, { menu = false }) {
+                            DropdownMenuItem({ Text("Block $from (hide their messages)") }, { menu = false; container.sync.block(from) })
+                        }
+                    }
                 }
             }
         }
         if (feed.isEmpty()) Text("No messages yet.", color = AppColors.TextDim)
-        OutlinedTextField(
+        if (showChat) OutlinedTextField(
             message, { message = it.take(container.sync.maxChatLength) },
             label = { Text("Message") },
             singleLine = true,
-            enabled = container.sync.room.value.status == ConnectionStatus.CONNECTED,
+            enabled = room.status == ConnectionStatus.CONNECTED,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
             keyboardActions = KeyboardActions(onSend = { send() }),
             trailingIcon = { IconButton(::send) { Icon(Icons.AutoMirrored.Filled.Send, "Send") } },

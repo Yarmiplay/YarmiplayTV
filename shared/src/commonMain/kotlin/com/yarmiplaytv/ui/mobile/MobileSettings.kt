@@ -92,6 +92,12 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                 settings.autosavePlaylists,
                 Modifier.testTag("toggle_autosave_playlists"),
             ) { container.scope.launch { container.settingsStore.saveAutosavePlaylists(it) } }
+            ToggleSetting(
+                "Show room chat",
+                "Off hides everyone's chat messages in rooms, whatever name they use",
+                settings.showRoomChat,
+                Modifier.testTag("toggle_show_chat"),
+            ) { container.scope.launch { container.settingsStore.saveShowRoomChat(it) } }
 
             SectionHeader("Playback")
             ToggleSetting("Hardware decoding", "MediaCodec with software fallback. Takes effect after restarting the app", pb.hardwareDecoding) {

@@ -38,9 +38,38 @@ class SyncplayConnectModel(private val container: AppContainer) {
     var autoConnect by mutableStateOf(saved.autoConnect)
     var error by mutableStateOf<String?>(null)
         private set
+    /** Set when [connect] needs the community rules agreed first; answered with [acceptRules] or [declineRules]. */
+    var askRules by mutableStateOf(false)
+        private set
 
-    /** Validates, saves and connects. Returns false (with [error] set) when the form is incomplete. */
+    /**
+     * Validates, saves and connects. Returns false when the form is incomplete (with [error] set) or the rules
+     * haven't been agreed to yet (with [askRules] set).
+     */
     fun connect(): Boolean {
+        val profile = validProfile() ?: return false
+        if (!container.settings.value.acceptedRoomRules) {
+            askRules = true
+            return false
+        }
+        join(profile)
+        return true
+    }
+
+    /** Agrees to the rules and connects; returns whether it connected. */
+    fun acceptRules(): Boolean {
+        askRules = false
+        container.scope.launch { container.settingsStore.saveAcceptedRoomRules(true) }
+        val profile = validProfile() ?: return false
+        join(profile)
+        return true
+    }
+
+    fun declineRules() {
+        askRules = false
+    }
+
+    private fun validProfile(): SyncplayProfile? {
         val p = port.toIntOrNull()
         error = when {
             host.isBlank() -> "Enter a server"
@@ -49,11 +78,12 @@ class SyncplayConnectModel(private val container: AppContainer) {
             room.isBlank() -> "Enter a room name"
             else -> null
         }
-        if (error != null) return false
-        val profile = SyncplayProfile(host.trim(), p!!, username.trim(), room.trim(), password, tls)
+        return if (error == null) SyncplayProfile(host.trim(), p!!, username.trim(), room.trim(), password, tls) else null
+    }
+
+    private fun join(profile: SyncplayProfile) {
         container.scope.launch { container.settingsStore.saveSyncplay(profile, autoConnect) }
         container.sync.connect(profile.toConfig())
-        return true
     }
 
     fun disconnect() {

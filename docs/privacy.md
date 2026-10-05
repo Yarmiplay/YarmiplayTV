@@ -52,7 +52,8 @@ allows that.
 ## What stays on your device
 
 Your settings (servers, name, room and its password, playback preferences), the sign-in tokens of each Jellyfin and Plex server, saved playlists and the
-folders you add to your local library are stored only on your device. Video files you play from the device are
+folders you add to your local library are stored only on your device. Names you block in a room are kept only
+in memory and forgotten when you leave the room. Video files you play from the device are
 read from the device and are never uploaded. On Android, uninstalling the app or clearing its storage deletes
 this data. On desktop it is in `%APPDATA%\YarmiplayTV` (Windows; the portable version uses the `data` folder
 next to `YarmiplayTV.exe`), `~/Library/Application Support/YarmiplayTV` (macOS) or `~/.config/yarmiplaytv`
@@ -68,6 +69,8 @@ next to `YarmiplayTV.exe`), `~/Library/Application Support/YarmiplayTV` (macOS) 
 ## Children
 
 The app isn't directed at children. Rooms include chat with other people, so it is rated for ages 13 and up.
+The [community rules](https://tv.yarmiplay.com/terms/) say what's not allowed in rooms and how to block names
+or hide chat.
 
 ## Changes and contact
 

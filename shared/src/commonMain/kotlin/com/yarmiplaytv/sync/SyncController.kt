@@ -63,6 +63,20 @@ class SyncController(
     private val _toasts = MutableSharedFlow<FeedMessage>(extraBufferCapacity = 32)
     val toasts: SharedFlow<FeedMessage> = _toasts.asSharedFlow()
 
+    /** Off drops all room chat, including what's already in the feed; room notifications still show. */
+    var showChat: Boolean = true
+        set(value) {
+            field = value
+            if (!value) _feed.value = _feed.value.filter { it.from == null }
+        }
+
+    private val _blocked = MutableStateFlow<Set<String>>(emptySet())
+    /**
+     * Names whose chat is hidden until the room is left. Syncplay names aren't identities (anyone can rejoin under
+     * another one, or take a name someone used before), so these are never saved.
+     */
+    val blocked: StateFlow<Set<String>> = _blocked.asStateFlow()
+
     val isActive: Boolean get() = clientFlow.value != null && room.value.status != ConnectionStatus.DISCONNECTED
 
     var syncSettings: SyncSettings = SyncSettings()
@@ -91,7 +105,7 @@ class SyncController(
             newClient.events.collect { event ->
                 _events.emit(event)
                 when (event) {
-                    is SyncplayEvent.Chat -> post(FeedMessage(event.message, from = event.username))
+                    is SyncplayEvent.Chat -> receiveChat(event.username, event.message)
                     is SyncplayEvent.Notification -> post(FeedMessage(event.message, isError = event.isError))
                     is SyncplayEvent.Connected -> {
                         post(FeedMessage("Joined room '${event.room}' as ${event.username}" + if (event.tls) " (TLS)" else ""))
@@ -114,6 +128,21 @@ class SyncController(
         clientFlow.value?.close()
         clientFlow.value = null
         player.setSpeed(1.0)
+        _blocked.value = emptySet()
+    }
+
+    /** Hides [name]'s chat, also the lines already shown, until the room is left. */
+    fun block(name: String) {
+        _blocked.value += name
+        _feed.value = _feed.value.filterNot { it.from == name }
+    }
+
+    fun unblock(name: String) {
+        _blocked.value -= name
+    }
+
+    internal fun receiveChat(from: String, text: String) {
+        if (showChat && from !in _blocked.value) post(FeedMessage(text, from = from))
     }
 
     /** Report that mpv started opening a file; the room ignores the player until [reportFile]. */
@@ -136,7 +165,10 @@ class SyncController(
     /** The server's chat message limit (it cuts longer messages off), or Syncplay's default before joining. */
     val maxChatLength: Int
         get() = (room.value.serverFeatures["maxChatMessageLength"] as? Number)?.toInt()?.takeIf { it > 0 } ?: DEFAULT_MAX_CHAT_LENGTH
-    fun changeRoom(room: String) = clientFlow.value?.changeRoom(room.trim())
+    fun changeRoom(room: String) {
+        _blocked.value = emptySet()
+        clientFlow.value?.changeRoom(room.trim())
+    }
 
     private fun post(message: FeedMessage) {
         _feed.value = (_feed.value + message).takeLast(MAX_FEED)

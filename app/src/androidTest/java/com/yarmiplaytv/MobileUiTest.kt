@@ -134,6 +134,9 @@ class MobileUiTest {
 
     @Test
     fun connectFormValidatesAndPersistsProfile() {
+        val accepted = container.settings.value.acceptedRoomRules
+        runBlocking { container.settingsStore.saveAcceptedRoomRules(false) }
+        compose.waitUntil(5_000) { !container.settings.value.acceptedRoomRules }
         compose.onNodeWithTag("tab_Room").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("field_room"), 5_000)
 
@@ -146,11 +149,27 @@ class MobileUiTest {
         compose.onNodeWithTag("field_name").performTextReplacement("Instrumented")
         compose.onNodeWithTag("field_room").performTextReplacement("instrumented-room")
         compose.onNodeWithTag("connect").performClick()
+        // The first join asks for the community rules; nothing is saved or joined until they're agreed to.
+        compose.waitUntilExactlyOneExists(hasTestTag("agree_rules"), 5_000)
+        compose.onNodeWithTag("agree_rules").performClick()
         compose.waitUntil(5_000) {
             val p = container.settings.value.syncplay
-            p.host == "127.0.0.1" && p.port == 9 && p.username == "Instrumented" && p.room == "instrumented-room"
+            p.host == "127.0.0.1" && p.port == 9 && p.username == "Instrumented" && p.room == "instrumented-room" &&
+                container.settings.value.acceptedRoomRules
         }
         container.sync.disconnect()
+        runBlocking { container.settingsStore.saveAcceptedRoomRules(accepted) }
+    }
+
+    @Test
+    fun hidingChatIsPersisted() {
+        compose.onNodeWithTag("tab_Settings").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("settings"), 5_000)
+        val before = container.settings.value.showRoomChat
+        compose.onNodeWithTag("toggle_show_chat").performScrollTo().performClick()
+        compose.waitUntil(5_000) { container.settings.value.showRoomChat == !before && container.sync.showChat == !before }
+        compose.onNodeWithTag("toggle_show_chat").performClick()
+        compose.waitUntil(5_000) { container.settings.value.showRoomChat == before && container.sync.showChat == before }
     }
 
     @Test

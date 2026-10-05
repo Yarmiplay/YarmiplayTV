@@ -3,6 +3,7 @@ package com.yarmiplaytv.ui.mobile
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -115,6 +116,7 @@ import com.yarmiplaytv.sync.FeedMessage
 import com.yarmiplaytv.sync.PlaylistEdits
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.player.sizeWarning
+import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 import java.awt.dnd.DropTargetDragEvent
@@ -526,6 +528,8 @@ private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
 private fun DesktopChat(container: AppContainer, modifier: Modifier) {
     val feed by container.sync.feed.collectAsState()
     val room by container.sync.room.collectAsState()
+    val settings by container.settings.collectAsState()
+    val showChat = settings.showRoomChat
     val panel = DesktopRoomPanel
     var message by remember { mutableStateOf(TextFieldValue("")) }
     var recalled by remember { mutableStateOf<Int?>(null) }
@@ -556,11 +560,20 @@ private fun DesktopChat(container: AppContainer, modifier: Modifier) {
     }
 
     Column(modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (showChat) Spacer(Modifier.weight(1f))
+            else Text(HIDDEN_CHAT_NOTE, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            TextButton({ container.scope.launch { container.settingsStore.saveShowRoomChat(!showChat) } }, Modifier.testTag("toggle_chat")) {
+                Text(if (showChat) "Hide chat" else "Show chat")
+            }
+        }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), state = listState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            items(feed) { ChatLine(it) }
+            items(feed) { msg ->
+                ChatLine(msg, onBlock = msg.from?.takeIf { it != room.username }?.let { from -> { container.sync.block(from) } })
+            }
         }
         if (feed.isEmpty()) Text("No messages yet.", color = AppColors.TextDim, modifier = Modifier.padding(horizontal = 16.dp))
-        OutlinedTextField(
+        if (showChat) OutlinedTextField(
             message, { message = it.copy(text = it.text.take(max)) },
             placeholder = { Text(if (connected) "Message (Enter sends, Esc leaves)" else "Join a room to chat") },
             singleLine = true,
@@ -583,27 +596,35 @@ private fun DesktopChat(container: AppContainer, modifier: Modifier) {
 }
 
 @Composable
-private fun ChatLine(msg: FeedMessage) {
+private fun ChatLine(msg: FeedMessage, onBlock: (() -> Unit)?) {
     val time = Instant.ofEpochMilli(msg.at).atZone(ZoneId.systemDefault()).format(timeFormat)
-    Row {
-        Text(time, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(44.dp).padding(top = 2.dp))
-        Text(
-            buildAnnotatedString {
-                if (msg.from != null) {
-                    withStyle(SpanStyle(color = AppColors.Accent, fontWeight = FontWeight.Bold)) { append(msg.from) }
-                    append(": ")
-                    append(msg.text)
-                } else {
-                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(msg.text) }
-                }
-            },
-            color = when {
-                msg.isError -> AppColors.Error
-                msg.from == null -> AppColors.TextDim
-                else -> AppColors.Text
-            },
-            style = MaterialTheme.typography.bodyMedium,
-        )
+    var menu by remember { mutableStateOf(false) }
+    Box {
+        Row(if (onBlock != null) Modifier.clickable { menu = true } else Modifier) {
+            Text(time, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(44.dp).padding(top = 2.dp))
+            Text(
+                buildAnnotatedString {
+                    if (msg.from != null) {
+                        withStyle(SpanStyle(color = AppColors.Accent, fontWeight = FontWeight.Bold)) { append(msg.from) }
+                        append(": ")
+                        append(msg.text)
+                    } else {
+                        withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(msg.text) }
+                    }
+                },
+                color = when {
+                    msg.isError -> AppColors.Error
+                    msg.from == null -> AppColors.TextDim
+                    else -> AppColors.Text
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        if (onBlock != null) {
+            DropdownMenu(menu, { menu = false }) {
+                DropdownMenuItem({ Text("Block ${msg.from} (hide their messages)") }, { menu = false; onBlock() })
+            }
+        }
     }
 }
 

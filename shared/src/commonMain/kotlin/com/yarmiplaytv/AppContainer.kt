@@ -81,7 +81,7 @@ class AppContainer(
     val mediaSource: StateFlow<MediaSource?> = servers.map(::browsable).stateIn(scope, SharingStarted.Eagerly, browsable(servers.value))
 
     val local: LocalLibrary = createLocalLibrary(settingsStore, scope, initial.localFolders)
-    val sync = SyncController(scope, player)
+    val sync = SyncController(scope, player).apply { showChat = initial.showRoomChat }
     private val locator = MediaLocator(local, servers).apply { preferredServer = initial.preferredServer }
     val playlist = PlaylistController(scope, sync, player, mediaSource, local, locator)
     private val reporter = PlaybackReporter(scope, player, playlist.nowPlaying, servers).apply { enabled = initial.reportPlayback }
@@ -93,6 +93,7 @@ class AppContainer(
         scope.launch {
             settings.collect { s ->
                 sync.syncSettings = s.sync
+                sync.showChat = s.showRoomChat
                 playlist.autoReady = s.autoReadyOnLoad
                 playlist.trustedDomains = s.trustedDomains
                 playlist.onlySwitchToTrustedDomains = s.onlySwitchToTrustedDomains

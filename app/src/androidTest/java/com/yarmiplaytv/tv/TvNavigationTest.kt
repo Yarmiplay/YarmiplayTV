@@ -171,7 +171,7 @@ class TvNavigationTest {
         tv.awaitFocus("Settings")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
         tv.awaitFocus("When I unpause")
-        tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = 6)
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = 7)
         tv.awaitFocus("Add Jellyfin and Plex servers")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
         tv.await("No media servers yet")

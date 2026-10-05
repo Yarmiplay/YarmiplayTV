@@ -184,6 +184,8 @@ function Wait-Boot([string]$serial) {
         Start-Sleep -Seconds 2
     }
     & $adb -s $serial shell settings put secure stylus_handwriting_enabled 0 2>$null
+    # A fresh device covers the first full-screen player with a one-time "Viewing full screen" hint.
+    & $adb -s $serial shell settings put secure immersive_mode_confirmations confirmed 2>$null
 }
 
 Push-Location $root

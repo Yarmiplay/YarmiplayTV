@@ -18,12 +18,15 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,7 +57,10 @@ import com.yarmiplaytv.ui.components.Dot
 import com.yarmiplaytv.ui.components.IconAction
 import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.components.TvTile
+import com.yarmiplaytv.ui.shared.BLOCKED_NOTE
+import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
 import com.yarmiplaytv.ui.theme.AppColors
+import kotlinx.coroutines.launch
 
 @Composable
 private fun PanelHeader(title: String, subtitle: String? = null) {
@@ -143,6 +149,7 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
             return@Column
         }
         PanelHeader(room.room, "${container.sync.client?.config?.host ?: ""} · Syncplay ${room.serverVersion ?: ""}")
+        val blocked by container.sync.blocked.collectAsStateWithLifecycle()
         val me = room.users.firstOrNull { it.name == room.username }
         val ready = room.isReady == true
         ActionButton(
@@ -179,6 +186,16 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
                             style = MaterialTheme.typography.bodySmall,
                         )
                         if (difference != null) Text(difference, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
+                        if (user.name in blocked) Text(BLOCKED_NOTE, color = AppColors.Error, style = MaterialTheme.typography.labelSmall)
+                    }
+                    if (!isMe) {
+                        val isBlocked = user.name in blocked
+                        IconAction(
+                            Icons.Filled.Block,
+                            if (isBlocked) "Unblock ${user.name}" else "Block ${user.name} (hide their messages)",
+                            { if (isBlocked) container.sync.unblock(user.name) else container.sync.block(user.name) },
+                            tint = if (isBlocked) AppColors.Error else AppColors.TextDim,
+                        )
                     }
                 }
             }
@@ -195,6 +212,8 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
 @Composable
 internal fun ChatPanel(container: AppContainer, focus: FocusRequester) {
     val feed by container.sync.feed.collectAsStateWithLifecycle()
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val showChat = settings.showRoomChat
     var message by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     LaunchedEffect(feed.size) { if (feed.isNotEmpty()) listState.scrollToItem(feed.lastIndex) }
@@ -205,7 +224,16 @@ internal fun ChatPanel(container: AppContainer, focus: FocusRequester) {
         }
     }
     Column(Modifier.fillMaxSize().padding(24.dp)) {
-        PanelHeader("Chat")
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) { PanelHeader("Chat") }
+            ActionButton(
+                if (showChat) "Hide chat" else "Show chat",
+                { container.scope.launch { container.settingsStore.saveShowRoomChat(!showChat) } },
+                if (showChat) Modifier else Modifier.focusRequester(focus),
+                icon = if (showChat) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+            )
+        }
+        if (!showChat) Text(HIDDEN_CHAT_NOTE, color = AppColors.TextDim, modifier = Modifier.padding(bottom = 12.dp))
         LazyColumn(Modifier.weight(1f), state = listState, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(feed) { msg ->
                 Row {
@@ -218,9 +246,11 @@ internal fun ChatPanel(container: AppContainer, focus: FocusRequester) {
                 }
             }
         }
-        Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TvTextField(message, { message = it.take(500) }, "Message", Modifier.weight(1f).focusRequester(focus), onSubmit = ::send)
-            IconAction(Icons.AutoMirrored.Filled.Send, "Send", ::send)
+        if (showChat) {
+            Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TvTextField(message, { message = it.take(500) }, "Message", Modifier.weight(1f).focusRequester(focus), onSubmit = ::send)
+                IconAction(Icons.AutoMirrored.Filled.Send, "Send", ::send)
+            }
         }
     }
 }
