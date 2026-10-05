@@ -1,0 +1,39 @@
+# Maintainer: Yarmiplay <Yarmiplay@users.noreply.github.com>
+#
+# Repackages the .deb from the GitHub release. release.yml's aur job sets pkgver (the desktop version) and _tag
+# (the release tag without the v; it follows the Android version), fills in the checksums, writes .SRCINFO and
+# pushes both to the AUR (scripts/aur-package.sh).
+
+pkgname=yarmiplaytv-bin
+pkgver=1.4.4
+_tag=1.4.4
+pkgrel=1
+pkgdesc="Watch videos in sync with friends: a Syncplay client with mpv built in, for Jellyfin, Plex and local files"
+arch=('x86_64')
+url="https://tv.yarmiplay.com/"
+license=('Apache-2.0')
+depends=('mpv' 'alsa-lib' 'fontconfig' 'freetype2' 'hicolor-icon-theme' 'libglvnd' 'libx11' 'libxext' 'libxi'
+         'libxrender' 'libxtst' 'zlib')
+provides=('yarmiplaytv')
+conflicts=('yarmiplaytv')
+options=('!strip' '!debug')
+_raw="https://raw.githubusercontent.com/Yarmiplay/YarmiplayTV/v${_tag}/packaging/linux"
+source=("https://github.com/Yarmiplay/YarmiplayTV/releases/download/v${_tag}/yarmiplaytv_${pkgver}_amd64.deb"
+        "com.yarmiplay.TV-${pkgver}.desktop::${_raw}/com.yarmiplay.TV.desktop"
+        "com.yarmiplay.TV-${pkgver}.metainfo.xml::${_raw}/com.yarmiplay.TV.metainfo.xml")
+sha256sums=('SKIP'
+            'SKIP'
+            'SKIP')
+
+package() {
+  bsdtar -xf data.tar.* -C "$pkgdir"
+  # pacman updates the app, so it doesn't look for updates on the download page.
+  sed -i 's/^\[JavaOptions\]$/&\njava-options=-Dyarmiplaytv.store=aur/' "$pkgdir/opt/yarmiplaytv/lib/app/YarmiplayTV.cfg"
+  # The .deb registers these from its postinst; the package installs its own instead.
+  rm -f "$pkgdir"/opt/yarmiplaytv/lib/yarmiplaytv-YarmiplayTV{.desktop,-MimeInfo.xml}
+  install -d "$pkgdir/usr/bin"
+  ln -s /opt/yarmiplaytv/bin/YarmiplayTV "$pkgdir/usr/bin/yarmiplaytv"
+  install -Dm644 "com.yarmiplay.TV-${pkgver}.desktop" "$pkgdir/usr/share/applications/com.yarmiplay.TV.desktop"
+  install -Dm644 "com.yarmiplay.TV-${pkgver}.metainfo.xml" "$pkgdir/usr/share/metainfo/com.yarmiplay.TV.metainfo.xml"
+  install -Dm644 "$pkgdir/opt/yarmiplaytv/lib/YarmiplayTV.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/com.yarmiplay.TV.png"
+}

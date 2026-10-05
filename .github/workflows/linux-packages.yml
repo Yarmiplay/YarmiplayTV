@@ -1,0 +1,174 @@
+name: Linux packages
+
+# Builds the Linux store packages from this commit the way release.yml publishes them, without publishing: the
+# .deb, the AUR package (installed and played in Arch Linux), the snap (installed and played) and the Flatpak
+# (Flathub's runtime, then Flathub's linter). Runs when the packaging changes, and by hand.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - packaging/**
+      - snap/**
+      - scripts/aur-package.sh
+      - scripts/snap-smoke-test.sh
+      - scripts/flatpak_gradle_sources.py
+      - settings.gradle.kts
+      - .github/workflows/linux-packages.yml
+  push:
+    branches: [main]
+    paths:
+      - packaging/**
+      - snap/**
+      - scripts/aur-package.sh
+      - scripts/snap-smoke-test.sh
+      - scripts/flatpak_gradle_sources.py
+      - settings.gradle.kts
+      - .github/workflows/linux-packages.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-packages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deb:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: .deb
+        id: build
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q fakeroot
+          chmod +x gradlew
+          ./gradlew --stacktrace -PdesktopOnly :desktop:packageDeb
+          version=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' desktop/build.gradle.kts)
+          mkdir linux
+          cp desktop/build/compose/binaries/main/deb/*.deb "linux/yarmiplaytv_${version}_amd64.deb"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-deb
+          path: linux/
+          if-no-files-found: error
+          retention-days: 7
+
+  aur:
+    needs: deb
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-deb
+          path: deb
+
+      - name: Build, install and play the package in Arch Linux
+        env:
+          VERSION: ${{ needs.deb.outputs.version }}
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src archlinux:latest \
+            bash scripts/aur-package.sh "$VERSION" "$VERSION" "deb/yarmiplaytv_${VERSION}_amd64.deb"
+
+  snap:
+    needs: deb
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-deb
+          path: deb
+
+      - run: cp deb/*.deb yarmiplaytv.deb
+
+      - uses: snapcore/action-build@v1
+        id: build
+
+      - name: Install the snap and play a clip
+        run: bash scripts/snap-smoke-test.sh "${{ steps.build.outputs.snap }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: snap
+          path: ${{ steps.build.outputs.snap }}
+          retention-days: 7
+
+  # A build with an empty Gradle home downloads exactly what the Flatpak build needs.
+  flatpak-sources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: List the Gradle files
+        env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-configuration-cache --no-build-cache -PdesktopOnly :desktop:createDistributable
+          python3 scripts/flatpak_gradle_sources.py "$GRADLE_USER_HOME" gradle-sources.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gradle-sources
+          path: gradle-sources.json
+          retention-days: 7
+
+  flatpak:
+    needs: flatpak-sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: gradle-sources
+          path: packaging/flatpak
+
+      # flatpak-builder clones the checkout (the manifest's git source), which the container user doesn't own.
+      - run: git config --global --add safe.directory '*'
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: packaging/flatpak/com.yarmiplay.TV.yml
+          bundle: yarmiplaytv.flatpak
+          cache-key: flatpak-builder-${{ hashFiles('packaging/flatpak/com.yarmiplay.TV.yml') }}
+          # As Flathub's builder does; its linter checks for the mirrored screenshots.
+          mirror-screenshots-url: https://dl.flathub.org/media
+
+      - name: Flathub's linter
+        run: |
+          flatpak install -y --noninteractive flathub org.flatpak.Builder
+          flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest packaging/flatpak/com.yarmiplay.TV.yml || true
+          flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo

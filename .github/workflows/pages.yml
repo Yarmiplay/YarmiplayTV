@@ -1,7 +1,7 @@
 name: Download page
 
 # Publishes the download page (scripts/download_site.py) with the packages of the latest green Build on main,
-# except for Windows, whose installers come from the latest release. Release runs are for tags,
+# except for the Windows installers and the .deb, which come from the latest release. Release runs are for tags,
 # so the branch is checked in the job's condition rather than filtered here.
 on:
   workflow_run:
@@ -64,8 +64,9 @@ jobs:
           gh run download "${{ steps.run.outputs.id }}" -R "$GITHUB_REPOSITORY" -p 'yarmiplaytv-*' -D artifacts
           mkdir dist
           find artifacts -type f -exec mv -t dist {} +
-          # Releases before the portable zip only have the .msi; main's zip stays until one has both.
-          if gh release download -R "$GITHUB_REPOSITORY" -p '*.msi' -p '*-portable.zip' -D release; then
+          # Only the release's file types replace main's: releases before the portable zip only have the .msi,
+          # and releases before the .deb none.
+          if gh release download -R "$GITHUB_REPOSITORY" -p '*.msi' -p '*-portable.zip' -p '*_amd64.deb' -D release; then
             for f in release/*; do rm -f dist/*."${f##*.}"; done
             mv release/* dist/
           else
@@ -76,14 +77,20 @@ jobs:
       - id: pages
         uses: actions/configure-pages@v6
 
-      # The Search Console token is the repository variable GOOGLE_SITE_VERIFICATION (HTML-tag method).
+      # The Search Console token is the repository variable GOOGLE_SITE_VERIFICATION (HTML-tag method). The
+      # Linux store links appear with the variables that switch on release.yml's store jobs.
       - name: Build the site
         env:
           SITE_URL: ${{ steps.pages.outputs.base_url }}
           GOOGLE_SITE_VERIFICATION: ${{ vars.GOOGLE_SITE_VERIFICATION }}
+          FLATHUB_REPO: ${{ vars.FLATHUB_REPO }}
+          SNAP_NAME: ${{ vars.SNAP_NAME }}
+          AUR_PACKAGE: ${{ vars.AUR_PACKAGE }}
         run: >
           python3 scripts/download_site.py --dist dist --out _site --site-url "$SITE_URL"
           --indexnow-key "$INDEXNOW_KEY" ${GOOGLE_SITE_VERIFICATION:+--google-verification "$GOOGLE_SITE_VERIFICATION"}
+          ${FLATHUB_REPO:+--flathub-id "${FLATHUB_REPO##*/}"} ${SNAP_NAME:+--snap-name "$SNAP_NAME"}
+          ${AUR_PACKAGE:+--aur-package "$AUR_PACKAGE"}
 
       - uses: actions/upload-pages-artifact@v5
         with:

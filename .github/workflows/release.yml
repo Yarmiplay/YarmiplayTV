@@ -12,7 +12,17 @@ name: Release
 #   MSSTORE_TENANT_ID, MSSTORE_SELLER_ID and MSSTORE_CLIENT_ID and the secret MSSTORE_CLIENT_SECRET it is
 #   submitted to Partner Center for certification;
 # - with the variable WINGET_PACKAGE_ID and the secret WINGET_TOKEN, a pull request to microsoft/winget-pkgs
-#   with the release's .msi.
+#   with the release's .msi;
+# - the Linux .deb (yarmiplaytv_<desktop version>_amd64.deb and its .sha256), attached to the release. The
+#   metainfo (packaging/linux) needs a <release> for the desktop version (scripts/bump-version.py adds it). From
+#   the release's .deb, each switched on by its variable:
+#   - AUR_PACKAGE (yarmiplaytv-bin) and the secret AUR_SSH_PRIVATE_KEY: the AUR package, tested in Arch Linux;
+#   - SNAP_NAME (yarmiplaytv) and the secret SNAPCRAFT_STORE_CREDENTIALS: the snap, released to the channel in
+#     SNAP_CHANNEL (default stable);
+#   - FLATHUB_REPO (flathub/com.yarmiplay.TV) and the secret FLATHUB_TOKEN: a pull request to the app's Flathub
+#     repository with the manifest pointing at the tag, merged automatically when the repository allows it.
+# A manual run builds everything again; its inputs submit or publish to a store, the Linux ones for the latest
+# release.
 on:
   push:
     tags: ["v*"]
@@ -24,6 +34,18 @@ on:
         default: false
       play:
         description: Upload the bundle to the Google Play track in PLAY_TRACK
+        type: boolean
+        default: false
+      aur:
+        description: Push the latest release to the AUR
+        type: boolean
+        default: false
+      snap:
+        description: Publish the latest release to the Snap Store
+        type: boolean
+        default: false
+      flathub:
+        description: Update Flathub to the latest release (without FLATHUB_REPO, only the files as an artifact)
         type: boolean
         default: false
 
@@ -248,6 +270,10 @@ jobs:
     env:
       SIGNED: ${{ needs.sign-windows.result == 'success' }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+
       - uses: actions/download-artifact@v8
         with:
           name: ${{ needs.sign-windows.result == 'success' && 'windows-installers-signed' || 'windows-installers-unsigned' }}
@@ -268,6 +294,7 @@ jobs:
             if ($sig.Status -ne 'Valid' -or -not $sig.TimeStamperCertificate) { throw "$($file.Name) isn't validly signed and timestamped" }
           }
 
+      # Rewrites the notes too: the Linux job may have created the release without knowing about signing.
       - name: Attach the installers to the release
         if: github.ref_type == 'tag'
         shell: bash
@@ -275,19 +302,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.windows-installers.outputs.version }}
           WINGET_ID: ${{ vars.WINGET_PACKAGE_ID }}
-        run: |
-          if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" windows/* -R "$GITHUB_REPOSITORY" --clobber
-          else
-            notes="YarmiplayTV $VERSION for Windows: the installer (.msi${WINGET_ID:+, or \`winget install $WINGET_ID\`}) and a portable zip. Microsoft Store: https://apps.microsoft.com/detail/9PDBVR6W069J. Other platforms: https://tv.yarmiplay.com/"
-            if [ "$SIGNED" = true ]; then
-              notes="$notes
-
-          Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See the [code signing policy](https://github.com/$GITHUB_REPOSITORY#code-signing-policy)."
-            fi
-            gh release create "$GITHUB_REF_NAME" windows/* -R "$GITHUB_REPOSITORY" --verify-tag \
-              --title "YarmiplayTV $GITHUB_REF_NAME" --notes "$notes"
-          fi
+          AUR_PACKAGE: ${{ vars.AUR_PACKAGE }}
+          SNAP_NAME: ${{ vars.SNAP_NAME }}
+          FLATHUB_REPO: ${{ vars.FLATHUB_REPO }}
+          SET_NOTES: true
+        run: bash scripts/publish-release.sh windows/*
 
   # Opens the pull request that adds the release's .msi to winget, from the token owner's fork of
   # microsoft/winget-pkgs. The package has to be in winget already (the first version is submitted by hand
@@ -307,3 +326,231 @@ jobs:
           release-tag: ${{ github.ref_name }}
           installers-regex: '\.msi$'
           token: ${{ secrets.WINGET_TOKEN }}
+
+  # The .deb, built on the oldest supported Ubuntu so its library dependencies install on newer ones too, and
+  # installed once to check that it starts.
+  linux-installers:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the tag against appVersion, and the metainfo
+        id: version
+        run: |
+          version=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' app/build.gradle.kts)
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match appVersion $version"; exit 1
+          fi
+          desktop=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' desktop/build.gradle.kts)
+          echo "desktop appVersion $desktop"
+          if ! grep -q "<release version=\"$desktop\"" packaging/linux/com.yarmiplay.TV.metainfo.xml; then
+            echo "::error::packaging/linux/com.yarmiplay.TV.metainfo.xml has no <release version=\"$desktop\">; scripts/bump-version.py adds it"
+            exit 1
+          fi
+          echo "VERSION=$desktop" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: .deb
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q fakeroot
+          chmod +x gradlew
+          ./gradlew --stacktrace -PdesktopOnly :desktop:packageDeb
+          mkdir linux
+          name="yarmiplaytv_${VERSION}_amd64.deb"
+          cp desktop/build/compose/binaries/main/deb/*.deb "linux/$name"
+          (cd linux && sha256sum "$name" > "$name.sha256")
+          dpkg-deb -f "linux/$name" Version Depends
+
+      # The package registers its menu entry with xdg-desktop-menu, which needs the menu directories a desktop
+      # install has and the runner image lacks.
+      - name: Install the .deb and start it
+        run: |
+          sudo mkdir -p /etc/xdg/menus/applications-merged /usr/share/applications /usr/share/desktop-directories
+          sudo apt-get install -y -q ./linux/*.deb
+          /opt/yarmiplaytv/bin/YarmiplayTV --version | tee "$RUNNER_TEMP/version.txt"
+          grep -q "YarmiplayTV $VERSION, libmpv [0-9]" "$RUNNER_TEMP/version.txt"
+
+      - name: jpackage logs
+        if: failure()
+        run: cat desktop/build/compose/logs/*/*.txt || true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-deb-${{ env.VERSION }}
+          path: linux/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attach the .deb to the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WINGET_ID: ${{ vars.WINGET_PACKAGE_ID }}
+          AUR_PACKAGE: ${{ vars.AUR_PACKAGE }}
+          SNAP_NAME: ${{ vars.SNAP_NAME }}
+          FLATHUB_REPO: ${{ vars.FLATHUB_REPO }}
+        run: bash scripts/publish-release.sh linux/*
+
+  # Builds the package from the release's .deb in Arch Linux, installs it and plays a clip, then pushes the
+  # PKGBUILD and .SRCINFO to the AUR. The first push creates the package. AUR_PACKAGE has to be the PKGBUILD's
+  # pkgname (yarmiplaytv-bin).
+  aur:
+    needs: linux-installers
+    if: (github.ref_type == 'tag' || inputs.aur) && vars.AUR_PACKAGE != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/release-deb.sh
+
+      - name: Build and test the package in Arch Linux
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: docker run --rm -v "$PWD:/src" -w /src archlinux:latest bash scripts/aur-package.sh "$VERSION" "${TAG#v}"
+
+      - name: Push to the AUR
+        env:
+          AUR_PACKAGE: ${{ vars.AUR_PACKAGE }}
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          grep -qx "pkgname=$AUR_PACKAGE" aur-out/PKGBUILD ||
+            { echo "::error::AUR_PACKAGE $AUR_PACKAGE isn't the PKGBUILD's pkgname"; exit 1; }
+          [ -n "$AUR_SSH_PRIVATE_KEY" ] || { echo "::error::The AUR_SSH_PRIVATE_KEY secret isn't set"; exit 1; }
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur && chmod 600 ~/.ssh/aur
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts 2> /dev/null
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes"
+          git clone "ssh://aur@aur.archlinux.org/$AUR_PACKAGE.git" aur-repo
+          cp aur-out/PKGBUILD aur-out/.SRCINFO aur-repo/
+          cd aur-repo
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then echo "The AUR already has this version"; exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "Update to $VERSION"
+          git push origin HEAD:master
+
+  # Builds the snap from the release's .deb, installs it and plays a clip, then releases it to SNAP_CHANNEL.
+  # SNAP_NAME has to be snap/snapcraft.yaml's name (yarmiplaytv), registered with snapcraft register.
+  snap:
+    needs: linux-installers
+    if: (github.ref_type == 'tag' || inputs.snap) && vars.SNAP_NAME != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash scripts/release-deb.sh
+          cp deb/*.deb yarmiplaytv.deb
+
+      - uses: snapcore/action-build@v1
+        id: build
+
+      - name: Install the snap and play a clip
+        run: bash scripts/snap-smoke-test.sh "${{ steps.build.outputs.snap }}"
+
+      - uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.build.outputs.snap }}
+          release: ${{ vars.SNAP_CHANNEL || 'stable' }}
+
+  # Points the Flatpak manifest at the release tag, lists the Gradle files its offline build needs, and opens a
+  # pull request with them on the app's Flathub repository; Flathub builds the pull request as its test, and it
+  # is merged automatically when the repository allows auto-merge. A manual run without FLATHUB_REPO (before
+  # the app is on Flathub) only uploads the files: the first submission to flathub/flathub is made of them.
+  flathub:
+    needs: linux-installers
+    if: (github.ref_type == 'tag' && vars.FLATHUB_REPO != '') || inputs.flathub
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash scripts/release-deb.sh
+          git checkout "$(sed -n 's/^tag=//p' "$GITHUB_OUTPUT")"
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # A build with an empty Gradle home downloads exactly what the Flatpak build needs.
+      - name: List the Gradle files
+        env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-configuration-cache --no-build-cache -PdesktopOnly :desktop:createDistributable
+          python3 scripts/flatpak_gradle_sources.py "$GRADLE_USER_HOME" packaging/flatpak/gradle-sources.json
+
+      - name: Point the manifest at the tag
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          mkdir flathub-files
+          sed -E "s#^( +)path: \.\./\.\.\$#\1url: https://github.com/$GITHUB_REPOSITORY.git\n\1tag: $TAG\n\1commit: $(git rev-parse HEAD)#" \
+            packaging/flatpak/com.yarmiplay.TV.yml > flathub-files/com.yarmiplay.TV.yml
+          grep -q "^ *commit: [0-9a-f]\{40\}$" flathub-files/com.yarmiplay.TV.yml
+          cp packaging/flatpak/gradle-sources.json packaging/flatpak/flathub.json flathub-files/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: flathub-${{ steps.release.outputs.version }}
+          path: flathub-files/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Open the pull request on Flathub
+        if: vars.FLATHUB_REPO != ''
+        env:
+          GH_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
+          FLATHUB_REPO: ${{ vars.FLATHUB_REPO }}
+          VERSION: ${{ steps.release.outputs.version }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          [ -n "$GH_TOKEN" ] || { echo "::error::The FLATHUB_TOKEN secret isn't set"; exit 1; }
+          gh auth setup-git
+          gh repo clone "$FLATHUB_REPO" flathub-repo -- --depth 1
+          cd flathub-repo
+          branch="release-$VERSION"
+          git checkout -b "$branch"
+          cp ../flathub-files/* .
+          git add -A
+          if git diff --cached --quiet; then echo "Flathub already has this version"; exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "Update to $VERSION ($TAG)"
+          git push --force origin "$branch"
+          url=$(gh pr view "$branch" -R "$FLATHUB_REPO" --json url -q .url 2> /dev/null ||
+            gh pr create -R "$FLATHUB_REPO" --head "$branch" --title "Update to $VERSION" \
+              --body "YarmiplayTV $VERSION: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG")
+          echo "Pull request: $url"
+          gh pr merge "$url" --auto --merge ||
+            echo "::warning::$FLATHUB_REPO doesn't allow auto-merge; merge $url once Flathub's test build passes"

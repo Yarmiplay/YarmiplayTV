@@ -14,14 +14,16 @@ import java.util.Base64
 import java.util.concurrent.TimeUnit
 
 /**
- * The download page's name for this OS, which picks the package in its version.json; null in a store build
- * (the Microsoft Store package sets yarmiplaytv.store), which mustn't update outside its store.
+ * The download page's name for this OS, which picks the package in its version.json; null in a store build,
+ * which mustn't update outside its store. The Microsoft Store and AUR packages set yarmiplaytv.store; Flatpak
+ * and Snap are recognised by the variables their sandboxes set.
  */
 internal fun updatePlatform(
     osName: String = System.getProperty("os.name").orEmpty(),
     store: String? = System.getProperty("yarmiplaytv.store"),
+    env: (String) -> String? = System::getenv,
 ): String? {
-    if (!store.isNullOrEmpty()) return null
+    if (!store.isNullOrEmpty() || listOf("FLATPAK_ID", "SNAP").any { !env(it).isNullOrEmpty() }) return null
     val os = osName.lowercase()
     return when {
         os.startsWith("windows") -> "windows"

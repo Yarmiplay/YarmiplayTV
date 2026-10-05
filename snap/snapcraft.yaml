@@ -1,0 +1,76 @@
+# The Snap Store package, built from the release's .deb (copied to yarmiplaytv.deb at the root of the checkout
+# by release.yml's snap job and the Linux packages workflow) with Ubuntu's libmpv. Its version is the desktop
+# version the .deb's launcher carries; summary, description and links come from the AppStream metainfo.
+name: yarmiplaytv
+title: YarmiplayTV
+base: core24
+grade: stable
+confinement: strict
+license: Apache-2.0
+adopt-info: metadata
+platforms:
+  amd64:
+
+apps:
+  yarmiplaytv:
+    command: opt/yarmiplaytv/bin/YarmiplayTV
+    desktop: usr/share/applications/com.yarmiplay.TV.desktop
+    common-id: com.yarmiplay.TV
+    extensions: [gnome]
+    environment:
+      # libmpv refuses to start under a locale with another decimal separator.
+      LC_NUMERIC: C
+      # Debian's alternatives links (blas, lapack) don't exist in a snap.
+      LD_LIBRARY_PATH: $SNAP/usr/lib/x86_64-linux-gnu:$SNAP/usr/lib/x86_64-linux-gnu/blas:$SNAP/usr/lib/x86_64-linux-gnu/lapack:$SNAP/usr/lib/x86_64-linux-gnu/pulseaudio
+    plugs:
+      - network
+      - network-bind
+      - opengl
+      - audio-playback
+      - x11
+      - wayland
+      - desktop
+      - home
+      - removable-media
+
+parts:
+  yarmiplaytv:
+    plugin: dump
+    source: yarmiplaytv.deb
+    source-type: deb
+    stage-packages: [libmpv2]
+    prime:
+      - -usr/share/doc
+      - -usr/share/man
+      # Mesa comes from the gpu-2404 interface the GNOME extension connects.
+      - -usr/lib/*/dri
+      - -usr/lib/*/libLLVM*
+      - -usr/lib/*/libgallium*
+      # The .deb's own menu entry; the snap uses packaging/linux's.
+      - -opt/yarmiplaytv/lib/yarmiplaytv-YarmiplayTV.desktop
+      - -opt/yarmiplaytv/lib/yarmiplaytv-YarmiplayTV-MimeInfo.xml
+
+  metadata:
+    after: [yarmiplaytv]
+    plugin: nil
+    source: packaging/linux
+    parse-info: [usr/share/metainfo/com.yarmiplay.TV.metainfo.xml]
+    override-build: |
+      install -Dm644 com.yarmiplay.TV.metainfo.xml "$CRAFT_PART_INSTALL/usr/share/metainfo/com.yarmiplay.TV.metainfo.xml"
+      install -d "$CRAFT_PART_INSTALL/usr/share/applications"
+      sed 's|^Icon=.*|Icon=${SNAP}/meta/gui/yarmiplaytv.png|' com.yarmiplay.TV.desktop \
+        > "$CRAFT_PART_INSTALL/usr/share/applications/com.yarmiplay.TV.desktop"
+      version=$(sed -n 's/^java-options=-Dyarmiplaytv.version=//p' "$CRAFT_STAGE/opt/yarmiplaytv/lib/app/YarmiplayTV.cfg")
+      [ -n "$version" ]
+      craftctl set version="$version"
+
+  # Drops the libraries the GNOME extension's content snaps already provide.
+  cleanup:
+    after: [yarmiplaytv, metadata]
+    plugin: nil
+    build-snaps: [core24, gtk-common-themes, gnome-46-2404]
+    override-prime: |
+      set -eux
+      for snap in core24 gtk-common-themes gnome-46-2404; do
+        cd "/snap/$snap/current" && find . -type f,l -exec rm -f "$CRAFT_PRIME/{}" \;
+      done

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for Flathub, the Snap Store and software centres. scripts/bump-version.py adds a
+     <release> for each desktop version; the release workflow fails if the version being released has none. -->
+<component type="desktop-application">
+  <id>com.yarmiplay.TV</id>
+  <name>YarmiplayTV</name>
+  <summary>Watch videos in sync with friends</summary>
+  <developer id="com.yarmiplay">
+    <name>Yarmiplay</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+
+  <description>
+    <p>
+      YarmiplayTV lets you watch videos together with friends, wherever they are. Everyone in a room plays the
+      same video at the same moment: when someone pauses, seeks or starts the next episode, everybody follows.
+    </p>
+    <p>
+      It works with Syncplay servers, so you can watch with friends who use the Syncplay desktop client, or with
+      others on YarmiplayTV on their TV, phone or computer. Join the free public servers or your own.
+    </p>
+    <ul>
+      <li>Play, pause and seek stay in sync for the whole room</li>
+      <li>Shared playlist: drag to reorder, shuffle, loop, save and load lists</li>
+      <li>Room chat and a "ready" check before you start</li>
+      <li>Open files, drop folders on the window, or use "Open with" on a video</li>
+      <li>Browse and search your Jellyfin and Plex libraries</li>
+      <li>Finds the room's file in your libraries or folders by itself</li>
+      <li>Built on mpv: plays almost any format, with styled subtitles and track switching</li>
+    </ul>
+    <p>
+      No accounts, no ads, no tracking. YarmiplayTV is an independent app, not affiliated with or endorsed by
+      the Syncplay project, Jellyfin or Plex, and it doesn't provide any videos: you watch your own files and
+      media servers.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">com.yarmiplay.TV.desktop</launchable>
+  <provides>
+    <binary>yarmiplaytv</binary>
+  </provides>
+
+  <url type="homepage">https://tv.yarmiplay.com/</url>
+  <url type="bugtracker">https://github.com/Yarmiplay/YarmiplayTV/issues</url>
+  <url type="vcs-browser">https://github.com/Yarmiplay/YarmiplayTV</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Join a room, or open videos from Jellyfin, Plex or your own folders</caption>
+      <image type="source" width="1024" height="576">https://tv.yarmiplay.com/screenshots/1-home.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The player in a Syncplay room</caption>
+      <image type="source" width="1024" height="576">https://tv.yarmiplay.com/screenshots/2-player-in-room.png</image>
+    </screenshot>
+  </screenshots>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#3DA5F4</color>
+    <color type="primary" scheme_preference="dark">#1B2A41</color>
+  </branding>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Video</category>
+    <category>Player</category>
+  </categories>
+  <keywords>
+    <keyword>syncplay</keyword>
+    <keyword>watch party</keyword>
+    <keyword>watch together</keyword>
+    <keyword>jellyfin</keyword>
+    <keyword>plex</keyword>
+    <keyword>mpv</keyword>
+  </keywords>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <!-- Room chat between users isn't moderated. -->
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">moderate</content_attribute>
+  </content_rating>
+
+  <releases>
+    <release version="1.4.4" date="2026-10-04">
+      <description>
+        <p>Volume control in the player bar: a mute button, a slider and the level. M mutes.</p>
+      </description>
+    </release>
+    <release version="1.4.3" date="2026-10-04">
+      <description>
+        <p>The player controls hide after two seconds unless the mouse is on them; the Hide button and H hide them by hand.</p>
+      </description>
+    </release>
+    <release version="1.4.2" date="2026-10-03">
+      <description>
+        <p>Several Jellyfin and Plex servers at once.</p>
+      </description>
+    </release>
+  </releases>
+</component>

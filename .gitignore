@@ -34,6 +34,16 @@ desktop.ini
 # Tooling downloaded by scripts
 .tools/
 
+# Linux packaging (release.yml, linux-packages.yml)
+/yarmiplaytv.deb
+/deb/
+/aur-out/
+*.snap
+packaging/flatpak/gradle-sources.json
+.flatpak-builder/
+flatpak_app/
+/repo/
+
 # Logs
 *.log
 

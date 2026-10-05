@@ -88,8 +88,12 @@ Installers come from the `desktop` CI job (and the download page):
   browsers and SmartScreen warn about them; the Store and winget copies don't.
 - **macOS:** `.dmg` (Apple Silicon, not notarized: right-click the app and choose Open the first time).
   It uses Homebrew's libmpv, so run `brew install mpv` first.
-- **Linux:** `.deb` for Ubuntu 22.04+ and Debian 12+; `sudo apt install ./yarmiplaytv_*.deb` also installs
-  libmpv.
+- **Linux:** `.deb` for Ubuntu 22.04+ and Debian 12+ (also on each GitHub release from the next one on);
+  `sudo apt install ./yarmiplaytv_*.deb` also installs libmpv. Store packages are on their way (see
+  [Linux stores](#linux-stores)); once they are listed, they install with
+  `flatpak install flathub com.yarmiplay.TV`, `sudo snap install yarmiplaytv` or, on Arch,
+  `yay -S yarmiplaytv-bin`. The Flatpak and the snap include libmpv; all three update with the system and
+  don't check the download page.
 
 Open a video from the home screen, drop files or folders on the window, or use "Open with" on a video.
 In a room, the player's playlist, room and chat buttons open a side panel:
@@ -289,11 +293,13 @@ then follow the peer's unpause and seek, slow down for small drifts and rewind f
 
 ## Releasing to Google Play
 
-Bump `appVersion` in `app/build.gradle.kts` (the Android `versionCode` follows from it), run the full
-`scripts/android-safety-net.ps1`, then push a matching tag:
+Bump the version with `python scripts/bump-version.py 1.5.0 --notes "What changed"`: it sets `appVersion` in
+`app/build.gradle.kts` (the Android `versionCode` follows from it) and `desktop/build.gradle.kts`, and adds the
+release to the Linux metainfo, which the release needs (`--android-only` / `--desktop-only` bump one of them).
+Run the full `scripts/android-safety-net.ps1`, then push a tag matching the Android version:
 
 ```powershell
-git tag v1.2; git push origin v1.2
+git tag v1.5.0; git push origin v1.5.0
 ```
 
 `.github/workflows/release.yml` builds the app bundle signed with the upload key from the repository secrets
@@ -351,6 +357,39 @@ package for certification itself (see [automatic submission](docs/store/README.m
 
 `scripts/make-msix.ps1` builds the same package locally (needs the Windows SDK), and
 `scripts/make-msix.ps1 -Register` installs it unpacked instead for a check (needs Developer Mode).
+
+### Linux stores
+
+The tag also builds `yarmiplaytv_<desktop version>_amd64.deb` (on Ubuntu 22.04, so it installs on newer
+releases too) and attaches it with its `.sha256` to the release, where the download page takes it from. The
+AUR package and the snap repackage that `.deb`; the Flatpak builds the tag from source. Their metadata is in
+[packaging/linux](packaging/linux) (AppStream metainfo with a `<release>` per desktop version, and the desktop
+entry), and the [Linux packages](.github/workflows/linux-packages.yml) workflow builds all of them from a
+commit, installs them and plays a clip, without publishing. Each store job in the release workflow stays off
+until its variable is set; a manual Release run with the `aur`, `snap` or `flathub` input publishes the latest
+release again.
+
+- **AUR** ([packaging/aur/PKGBUILD](packaging/aur/PKGBUILD)): create an account on
+  [aur.archlinux.org](https://aur.archlinux.org/register) and add the public half of a new SSH key (without a
+  passphrase) to it. Set the secret `AUR_SSH_PRIVATE_KEY` to the private half and the variable `AUR_PACKAGE`
+  to `yarmiplaytv-bin`; the next release creates the package.
+- **Snap Store** ([snap/snapcraft.yaml](snap/snapcraft.yaml)): with a [Snapcraft](https://snapcraft.io)
+  account, run `snapcraft register yarmiplaytv`, then
+  `snapcraft export-login --snaps yarmiplaytv --acls package_access,package_push,package_update,package_release -`
+  and set its output as the secret `SNAPCRAFT_STORE_CREDENTIALS` (it expires after a year by default), and the
+  variable `SNAP_NAME` to `yarmiplaytv` (`SNAP_CHANNEL` picks another channel than `stable`).
+- **Flathub** ([packaging/flatpak](packaging/flatpak)): the first version goes through a pull request to
+  [flathub/flathub](https://github.com/flathub/flathub) (branch `new-pr`, see Flathub's
+  [submission guide](https://docs.flathub.org/docs/for-app-authors/submission)). Run Release by hand with the
+  `flathub` input to get the `flathub-<version>` artifact (the manifest pointing at the latest tag,
+  `gradle-sources.json` and `flathub.json`) and submit those files. The app ID `com.yarmiplay.TV` needs
+  yarmiplay.com verified on Flathub (a token served at
+  `https://yarmiplay.com/.well-known/org.flathub.VerifiedApps.txt`). Once the app's repository exists, set the
+  variable `FLATHUB_REPO` to `flathub/com.yarmiplay.TV` and the secret `FLATHUB_TOKEN` to a classic personal
+  access token with the `public_repo` scope of an account with write access to it; each release then opens
+  the update pull request there, merged automatically if the repository allows auto-merge.
+
+The download page links the stores whose variable is set.
 
 ## Privacy
 

@@ -1,0 +1,115 @@
+# The Flathub manifest. As it is here it builds this checkout's last commit (the git source's path), after
+# scripts/flatpak_gradle_sources.py has written gradle-sources.json next to it:
+#
+#   flatpak-builder --user --install --force-clean build-dir packaging/flatpak/com.yarmiplay.TV.yml
+#
+# release.yml's flathub job points the git source at the release tag and copies this file, gradle-sources.json
+# and flathub.json to the app's Flathub repository.
+id: com.yarmiplay.TV
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.openjdk17
+command: yarmiplaytv
+
+finish-args:
+  - --share=network
+  - --share=ipc
+  # Java's AWT only draws through X11 (XWayland on Wayland desktops).
+  - --socket=x11
+  - --device=dri
+  - --socket=pulseaudio
+  # Videos to open or add as media folders; the file chooser isn't a portal one.
+  - --filesystem=xdg-videos:ro
+  - --filesystem=xdg-download:ro
+  # libmpv refuses to start under a locale with another decimal separator.
+  - --env=LC_NUMERIC=C
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/man
+  - '*.a'
+  - '*.la'
+
+modules:
+  - name: ffmpeg
+    config-opts:
+      - --enable-shared
+      - --disable-static
+      - --enable-gnutls
+      - --enable-gpl
+      - --disable-doc
+      - --disable-programs
+      - --disable-encoders
+      - --disable-muxers
+      - --enable-encoder=png
+      - --enable-libdav1d
+    cleanup:
+      - /share/ffmpeg
+    sources:
+      - type: archive
+        url: https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz
+        sha256: 8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+
+  - name: libass
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        url: https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz
+        sha256: 2dca25c0e0c837ddf00b52011b3f82cac1e4ddd3ad018227806b0c2288864acc
+
+  - name: libplacebo
+    buildsystem: meson
+    sources:
+      - type: git
+        url: https://github.com/haasn/libplacebo.git
+        tag: v7.360.1
+        commit: cee9b076f2c63104ccfd497fa79c39a867293ec4
+
+  - name: libmpv
+    buildsystem: meson
+    config-opts:
+      - -Dlibmpv=true
+      - -Dcplayer=false
+      - -Dbuild-date=false
+      - -Dlua=disabled
+      - -Djavascript=disabled
+      - -Dmanpage-build=disabled
+      - -Dhtml-build=disabled
+    cleanup:
+      - /share
+    sources:
+      - type: archive
+        url: https://github.com/mpv-player/mpv/archive/v0.41.0.tar.gz
+        sha256: ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209
+
+  - name: yarmiplaytv
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/openjdk17/bin
+      env:
+        JAVA_HOME: /usr/lib/sdk/openjdk17/jvm/openjdk-17
+        GRADLE_USER_HOME: /run/build/yarmiplaytv/gradle-home
+    build-commands:
+      - >-
+        gradle/bin/gradle --offline --no-daemon --no-configuration-cache --no-build-cache
+        -Dorg.gradle.java.installations.auto-download=false -Pkotlin.compiler.execution.strategy=in-process
+        -PdesktopOnly -PofflineRepo="$PWD/offline-repository" :desktop:createDistributable
+      - mkdir -p /app/opt /app/bin
+      - cp -a desktop/build/compose/binaries/main/app/YarmiplayTV /app/opt/yarmiplaytv
+      - rm -f /app/opt/yarmiplaytv/lib/*.desktop /app/opt/yarmiplaytv/lib/*-MimeInfo.xml
+      - ln -s ../opt/yarmiplaytv/bin/YarmiplayTV /app/bin/yarmiplaytv
+      - install -Dm644 packaging/linux/com.yarmiplay.TV.desktop -t /app/share/applications
+      - install -Dm644 packaging/linux/com.yarmiplay.TV.metainfo.xml -t /app/share/metainfo
+      - cp -r desktop/build/icons/hicolor /app/share/icons/
+    sources:
+      - type: git
+        path: ../..
+      - type: archive
+        url: https://services.gradle.org/distributions/gradle-8.13-bin.zip
+        sha256: 20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78
+        dest: gradle
+      - gradle-sources.json

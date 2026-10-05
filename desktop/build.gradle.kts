@@ -62,6 +62,10 @@ abstract class GenerateAppIcons : DefaultTask() {
         dir.resolve("icon.icns").writeBytes(
             icns(listOf("icp4" to 16, "icp5" to 32, "icp6" to 64, "ic07" to 128, "ic08" to 256, "ic09" to 512, "ic10" to 1024)),
         )
+        // The Linux store packages install these under their app ID (packaging/linux).
+        listOf(128, 256, 512).forEach { size ->
+            dir.resolve("hicolor/${size}x$size/apps").apply { mkdirs() }.resolve("com.yarmiplay.TV.png").writeBytes(png(size))
+        }
         // The logos desktop/msix/AppxManifest.xml names, for scripts/make-msix.ps1.
         val msix = dir.resolve("msix").apply { mkdirs() }
         listOf("Square44x44Logo" to 44, "StoreLogo" to 50, "Square150x150Logo" to 150).forEach { (name, size) ->

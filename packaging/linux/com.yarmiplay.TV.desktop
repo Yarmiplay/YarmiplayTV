@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=YarmiplayTV
+GenericName=Video Player
+Comment=Watch videos in sync with friends
+Exec=yarmiplaytv %f
+Icon=com.yarmiplay.TV
+Terminal=false
+Categories=AudioVideo;Video;Player;
+Keywords=syncplay;watch party;watch together;jellyfin;plex;mpv;
+MimeType=video/x-matroska;video/mp4;video/x-m4v;video/x-msvideo;video/quicktime;video/webm;video/x-ms-wmv;video/x-flv;video/mpeg;video/ogg;
+StartupWMClass=com-yarmiplaytv-desktop-MainKt

@@ -4,13 +4,14 @@ Builds the YarmiplayTV download page: one card per OS (Android TVs, phones and t
 its download and install steps.
 
   python scripts/download_site.py --dist dist --out _site [--version 0.1.0] [--site-url URL]
-      [--google-verification TOKEN] [--indexnow-key KEY]
+      [--google-verification TOKEN] [--indexnow-key KEY] [--flathub-id ID] [--snap-name NAME] [--aur-package NAME]
 
 Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .msi/.zip: Windows,
 .dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as YarmiplayTV.apk, so links
 keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader, <site>/privacy/
 is docs/privacy.md (the Play Store privacy policy), <site>/test/ is docs/testers.md (how to join the Google Play
-test), and <site>/version.json lists each platform's package
+test), <site>/screenshots/ holds the desktop screenshots the Linux metainfo points to, and <site>/version.json
+lists each platform's package
 and version for the apps' update check. With --site-url the pages carry canonical URLs and the site a
 sitemap.xml and a robots.txt pointing to it for search engines; --indexnow-key publishes the key file that lets the Pages workflow notify IndexNow.
 Platforms without a file or store listing show how to run from source. The Pages workflow publishes the result; scripts/apk_server.py serves the
@@ -59,10 +60,34 @@ DOCS = (
      f"Help test {NAME} on Google Play: join the testers group, opt in, install it on your Android phone, tablet "
      "or Google TV and use it for 14 days."),
 )
-# Store listings: the platform's main button, with its files as smaller buttons below.
+# Store listings: the platform's first one is its main button, the rest and its files smaller links below.
 STORE_LINKS = {
-    "windows": ("Microsoft Store", "https://apps.microsoft.com/detail/9PDBVR6W069J"),
+    "windows": [("Microsoft Store", "https://apps.microsoft.com/detail/9PDBVR6W069J")],
 }
+# The desktop app's store screenshots, published under <site>/screenshots/ for the Linux packages' metainfo
+# (packaging/linux/com.yarmiplay.TV.metainfo.xml).
+SCREENSHOTS = os.path.join("docs", "store", "screenshots")
+
+
+def linux_stores(flathub_id=None, snap_name=None, aur_package=None):
+    """The Linux store listings that exist (the release workflow's variables):
+    [(label, name in a sentence, url, install command)]."""
+    stores = []
+    if flathub_id:
+        stores.append(("Flathub", "Flathub", f"https://flathub.org/apps/{flathub_id}",
+                       f"flatpak install flathub {flathub_id}"))
+    if snap_name:
+        stores.append(("Snap Store", "the Snap Store", f"https://snapcraft.io/{snap_name}",
+                       f"sudo snap install {snap_name}"))
+    if aur_package:
+        stores.append(("AUR", "the AUR (Arch Linux)", f"https://aur.archlinux.org/packages/{aur_package}",
+                       f"yay -S {aur_package}"))
+    return stores
+
+
+def either(items):
+    """"a", "a or b", "a, b or c"."""
+    return " or ".join(filter(None, [", ".join(items[:-1]), items[-1]]))
 
 # Lower-case extension -> platforms it installs on and the button label. Without a store listing the first
 # file is the platform's main button.
@@ -106,10 +131,23 @@ class Platform:
     alternatives: bool = False
 
 
-def platforms(short_link):
+def platforms(short_link, stores=()):
+    """stores: linux_stores()."""
     address = (f"<code>{html.escape(short_link)}</code>" if short_link
                else "this page's address followed by <code>/a</code>")
     run = "./gradlew :desktop:run"
+    linux_steps = [
+        "Install libmpv: <code>sudo apt install libmpv2</code> (Debian / Ubuntu) or "
+        "<code>sudo dnf install mpv-libs</code> (Fedora).",
+        "Install the package with your package manager, or mark the AppImage executable and run it.",
+    ]
+    if stores:
+        names = either([name for _, name, _, _ in stores])
+        commands = either([f"<code>{html.escape(cmd)}</code>" for _, _, _, cmd in stores])
+        keep = "keeps" if len(stores) == 1 else "keep"
+        linux_steps = [f"Get it from {names}, which {keep} it up to date, or from a terminal: {commands}.",
+                       "For the .deb, install libmpv first: <code>sudo apt install libmpv2</code>, then the package "
+                       "with your package manager."]
     return [
         Platform("android", "Android",
                  "Google TV / Android TV, phones and tablets: one app that picks the remote-friendly TV interface "
@@ -129,11 +167,9 @@ def platforms(short_link):
             "Install mpv: <code>brew install mpv</code>",
             "Open the disk image and drag YarmiplayTV to Applications.",
         ], ["Install JDK 17 and mpv (<code>brew install mpv</code>), clone the repository, then:", run]),
-        Platform("linux", "Linux", "Uses your distribution's libmpv.", [
-            "Install libmpv: <code>sudo apt install libmpv2</code> (Debian / Ubuntu) or "
-            "<code>sudo dnf install mpv-libs</code> (Fedora).",
-            "Install the package with your package manager, or mark the AppImage executable and run it.",
-        ], ["Install JDK 17 and libmpv, clone the repository, then:", run]),
+        Platform("linux", "Linux",
+                 "64-bit." if stores else "Uses your distribution's libmpv.", linux_steps,
+                 ["Install JDK 17 and libmpv, clone the repository, then:", run], alternatives=bool(stores)),
     ]
 
 
@@ -200,14 +236,16 @@ def app_head(version, site_url=None, preview=False):
 
 
 def render_page(downloads, version, built, short_link=None, docs=(), site_url=None,
-                google_verification=None, preview=False):
-    """downloads: {platform key: [Download]}; docs: the DOCS entries published next to it. Returns the page as a str."""
+                google_verification=None, preview=False, stores=()):
+    """downloads: {platform key: [Download]}; docs: the DOCS entries published next to it; stores: linux_stores().
+    Returns the page as a str."""
     cards = []
-    for p in platforms(short_link):
+    store_links = dict(STORE_LINKS, linux=[(label, url) for label, _, url, _ in stores])
+    for p in platforms(short_link, stores):
         files = downloads.get(p.key, [])
-        store = STORE_LINKS.get(p.key)
-        if files or store:
-            links = [(html.escape(store[1]), "", html.escape(store[0]), "Updates automatically")] if store else []
+        listings = store_links.get(p.key, [])
+        if files or listings:
+            links = [(html.escape(url), "", html.escape(label), "Updates automatically") for label, url in listings]
             links += [(html.escape(d.href), " download", html.escape(d.label), fmt_size(d.size)) for d in files]
             (href, attr, label, note), rest = links[0], links[1:]
             buttons = f'<a class="btn" href="{href}"{attr}>{label}<small>{note}</small></a>'
@@ -222,9 +260,10 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
             body = (f'<div class="dl">{buttons}</div>{steps}'
                     + (f"<details><summary>SHA-256</summary>{sums}</details>" if sums else ""))
         else:
-            intro, cmd = p.source
-            body = (f'<p class="none">No package for this platform yet.</p>'
-                    f'<p class="src">{intro}</p><pre>{html.escape(cmd)}</pre>')
+            body = '<p class="none">No package for this platform yet.</p>'
+            if p.source:
+                intro, cmd = p.source
+                body += f'<p class="src">{intro}</p><pre>{html.escape(cmd)}</pre>'
         cards.append(f'<section class="card" data-platform="{p.key}"><span class="badge">For this device</span>'
                      f'<h2>{p.title}</h2><p class="blurb">{p.blurb}</p>{body}</section>')
 
@@ -424,7 +463,8 @@ def sitemap(site_url, paths, day):
             f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n{urls}</urlset>\n')
 
 
-def build(dist, out, version, site_url, desktop_version=None, google_verification=None, indexnow_key=None):
+def build(dist, out, version, site_url, desktop_version=None, google_verification=None, indexnow_key=None,
+          stores=()):
     found = {}
     for name in sorted(os.listdir(dist)):
         path = os.path.join(dist, name)
@@ -474,12 +514,14 @@ def build(dist, out, version, site_url, desktop_version=None, google_verificatio
     preview = os.path.isfile(os.path.join(root, PREVIEW_IMAGE))
     if preview:
         shutil.copyfile(os.path.join(root, PREVIEW_IMAGE), os.path.join(out, "preview.png"))
+    if os.path.isdir(os.path.join(root, SCREENSHOTS)):
+        shutil.copytree(os.path.join(root, SCREENSHOTS), os.path.join(out, "screenshots"))
 
     now = datetime.datetime.now(datetime.timezone.utc)
     built = now.strftime("%Y-%m-%d %H:%M UTC")
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
         f.write(render_page(by_platform(downloads), version, built, short_link, docs, site_url,
-                            google_verification, preview))
+                            google_verification, preview, stores))
     if site_url:
         with open(os.path.join(out, "sitemap.xml"), "w", encoding="utf-8") as f:
             f.write(sitemap(site_url, pages, now.strftime("%Y-%m-%d")))
@@ -510,9 +552,12 @@ def main():
                     help="public URL of the site: the TV short link, canonical URLs and sitemap.xml")
     ap.add_argument("--google-verification", default=None, help="Google Search Console HTML-tag token")
     ap.add_argument("--indexnow-key", default=None, help="IndexNow key, published as <key>.txt")
+    ap.add_argument("--flathub-id", default=None, help="Flathub app ID, once the app is on Flathub")
+    ap.add_argument("--snap-name", default=None, help="Snap Store name, once the snap is published")
+    ap.add_argument("--aur-package", default=None, help="AUR package name, once it is published")
     a = ap.parse_args()
     build(a.dist, a.out, a.version or app_version(root), a.site_url, app_version(root, "desktop"),
-          a.google_verification, a.indexnow_key)
+          a.google_verification, a.indexnow_key, linux_stores(a.flathub_id, a.snap_name, a.aur_package))
 
 
 if __name__ == "__main__":
