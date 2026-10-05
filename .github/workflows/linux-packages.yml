@@ -130,7 +130,7 @@ jobs:
           GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
         run: |
           chmod +x gradlew
-          ./gradlew --no-configuration-cache --no-build-cache -PdesktopOnly :desktop:createDistributable
+          ./gradlew --no-configuration-cache --no-build-cache -PdesktopOnly :desktop:generateAppIcons :desktop:createDistributable
           python3 scripts/flatpak_gradle_sources.py "$GRADLE_USER_HOME" gradle-sources.json
 
       - uses: actions/upload-artifact@v7
@@ -144,7 +144,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
       options: --privileged
     steps:
       - uses: actions/checkout@v7

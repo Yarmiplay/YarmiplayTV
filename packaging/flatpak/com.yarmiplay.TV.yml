@@ -8,7 +8,7 @@
 # Flathub repository.
 id: com.yarmiplay.TV
 runtime: org.freedesktop.Platform
-runtime-version: '25.08'
+runtime-version: '26.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.openjdk17
@@ -98,13 +98,14 @@ modules:
       - >-
         gradle/bin/gradle --offline --no-daemon --no-configuration-cache --no-build-cache
         -Dorg.gradle.java.installations.auto-download=false -Pkotlin.compiler.execution.strategy=in-process
-        -PdesktopOnly -PofflineRepo="$PWD/offline-repository" :desktop:createDistributable
+        -PdesktopOnly -PofflineRepo="$PWD/offline-repository" :desktop:generateAppIcons :desktop:createDistributable
       - mkdir -p /app/opt /app/bin
       - cp -a desktop/build/compose/binaries/main/app/YarmiplayTV /app/opt/yarmiplaytv
       - rm -f /app/opt/yarmiplaytv/lib/*.desktop /app/opt/yarmiplaytv/lib/*-MimeInfo.xml
       - ln -s ../opt/yarmiplaytv/bin/YarmiplayTV /app/bin/yarmiplaytv
       - install -Dm644 packaging/linux/com.yarmiplay.TV.desktop -t /app/share/applications
       - install -Dm644 packaging/linux/com.yarmiplay.TV.metainfo.xml -t /app/share/metainfo
+      - install -d /app/share/icons
       - cp -r desktop/build/icons/hicolor /app/share/icons/
     sources:
       - type: git

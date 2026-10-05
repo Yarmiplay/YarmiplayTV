@@ -508,7 +508,7 @@ jobs:
           GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
         run: |
           chmod +x gradlew
-          ./gradlew --no-configuration-cache --no-build-cache -PdesktopOnly :desktop:createDistributable
+          ./gradlew --no-configuration-cache --no-build-cache -PdesktopOnly :desktop:generateAppIcons :desktop:createDistributable
           python3 scripts/flatpak_gradle_sources.py "$GRADLE_USER_HOME" packaging/flatpak/gradle-sources.json
 
       - name: Point the manifest at the tag
