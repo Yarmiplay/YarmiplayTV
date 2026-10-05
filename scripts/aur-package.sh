@@ -35,9 +35,8 @@ sudo -u builder makepkg --printsrcinfo > .SRCINFO
 sudo -u builder makepkg -si --noconfirm
 
 # Desktops run with a language locale, which libmpv refuses unless the app resets it.
-sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
-grep -q '^en_US.UTF-8 UTF-8' /etc/locale.gen || echo 'en_US.UTF-8 UTF-8' >> /etc/locale.gen
-locale-gen
+localedef --no-archive -i en_US -f UTF-8 en_US.UTF-8
+locale -a | grep -qi '^en_US\.utf-\?8$'
 export LC_ALL=en_US.UTF-8
 
 yarmiplaytv --version | tee /tmp/version.txt
