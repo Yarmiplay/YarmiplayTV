@@ -291,8 +291,7 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
  <strong>Host your own server</strong>
  <p><a href="{SERVER_URL}">YarmiplayServerTV</a> runs a Syncplay server and a Jellyfin server from your Windows, macOS or Linux computer.</p>
 </section>
-<footer><a href="{HOME_URL}">yarmiplay.com</a> &middot; <a href="{REPO_URL}">Source</a>{''.join(f' &middot; <a href="{folder}/">{label}</a>' for _, folder, label, _ in docs)}
- &middot; <a href="{REPO_URL}#code-signing-policy">Code signing policy</a></footer>
+<footer><a href="{HOME_URL}">yarmiplay.com</a> &middot; <a href="{REPO_URL}">Source</a>{''.join(f' &middot; <a href="{folder}/">{label}</a>' for _, folder, label, _ in docs)}</footer>
 </main>
 <script>
 (function () {{

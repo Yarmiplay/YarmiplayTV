@@ -1,7 +1,7 @@
 name: Download page
 
 # Publishes the download page (scripts/download_site.py) with the packages of the latest green Build on main,
-# except for Windows, whose code-signed installers come from the latest release. Release runs are for tags,
+# except for Windows, whose installers come from the latest release. Release runs are for tags,
 # so the branch is checked in the job's condition rather than filtered here.
 on:
   workflow_run:
@@ -65,11 +65,11 @@ jobs:
           mkdir dist
           find artifacts -type f -exec mv -t dist {} +
           # Releases before the portable zip only have the .msi; main's zip stays until one has both.
-          if gh release download -R "$GITHUB_REPOSITORY" -p '*.msi' -p '*-portable.zip' -D signed; then
-            for f in signed/*; do rm -f dist/*."${f##*.}"; done
-            mv signed/* dist/
+          if gh release download -R "$GITHUB_REPOSITORY" -p '*.msi' -p '*-portable.zip' -D release; then
+            for f in release/*; do rm -f dist/*."${f##*.}"; done
+            mv release/* dist/
           else
-            echo "::warning::No release with Windows installers; the page offers the unsigned ones from main"
+            echo "::warning::No release with Windows installers; the page offers the ones from main"
           fi
           ls -l dist
 

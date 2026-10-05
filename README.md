@@ -46,7 +46,7 @@ To host your own Syncplay and Jellyfin servers from a Windows, macOS or Linux co
 The page is built by `scripts/download_site.py` and published by `.github/workflows/pages.yml` after every
 green `Build` run on `main` and after every `Release` run (or by hand from the Actions tab). It contains every
 artifact of that run whose name starts with `yarmiplaytv-`, except that the Windows `.msi` and portable zip
-come from the latest GitHub release, where they are code signed (see [Code signing policy](#code-signing-policy)).
+come from the latest GitHub release.
 Files are matched to platforms by extension (`.apk`, `.msi`/`.zip`, `.dmg`/`.pkg`, `.deb`/`.rpm`/`.AppImage`).
 Each card's main button is its store listing or first file, with the other files as links below it. Platforms
 without a package show how to run from source. The page's `version.json` lists each platform's package,
@@ -84,8 +84,8 @@ Installers come from the `desktop` CI job (and the download page):
   Store), the `.msi`, installed per user, or `winget install Yarmiplay.YarmiplayTV`; uninstall from
   Settings > Apps. Or the portable `YarmiplayTV-<version>-portable.zip` (`:desktop:packagePortableZip`):
   unzip it anywhere and run `YarmiplayTV.exe`; it keeps its settings in the `data` folder next to it instead
-  of `%APPDATA%\YarmiplayTV`. libmpv is included in all of them. Releases are code signed when SignPath
-  signing is set up (see below).
+  of `%APPDATA%\YarmiplayTV`. libmpv is included in all of them. The `.msi` and zip aren't code signed, so
+  browsers and SmartScreen warn about them; the Store and winget copies don't.
 - **macOS:** `.dmg` (Apple Silicon, not notarized: right-click the app and choose Open the first time).
   It uses Homebrew's libmpv, so run `brew install mpv` first.
 - **Linux:** `.deb` for Ubuntu 22.04+ and Debian 12+; `sudo apt install ./yarmiplaytv_*.deb` also installs
@@ -307,15 +307,8 @@ are in [docs/play](docs/play/README.md); the privacy policy is [docs/privacy.md]
 `/privacy/` on the download page.
 
 The same tag builds the Windows `.msi` and portable zip, attaches them to the tag's GitHub release and republishes the
-download page with them. With the repository variable `SIGNPATH_ORGANIZATION_ID` and the secret
-`SIGNPATH_API_TOKEN` (a SignPath CI user with submitter rights) they are first submitted to
-[SignPath](https://signpath.io) for signing: an approver accepts the request in SignPath (the job waits up to
-6 hours), then the signed `.msi` and zip are verified and released. That also needs a SignPath project with
-the slug `YarmiplayTV` linked to the GitHub.com trusted build system, its `release-signing` policy, and
-[.github/signpath/artifact-configuration.xml](.github/signpath/artifact-configuration.xml) as its default
-artifact configuration. Without the variable the unsigned installers are released; browsers and SmartScreen
-warn about those, winget and the Store package don't. SmartScreen may also warn about a newly signed release
-until it has been downloaded enough; the reputation then stays with the certificate for later releases.
+download page with them. They aren't code signed: browsers and SmartScreen warn about them, winget and the
+Store package don't.
 
 ### winget
 
@@ -348,19 +341,9 @@ package for certification itself (see [automatic submission](docs/store/README.m
 `scripts/make-msix.ps1` builds the same package locally (needs the Windows SDK), and
 `scripts/make-msix.ps1 -Register` installs it unpacked instead for a check (needs Developer Mode).
 
-## Code signing policy
+## Privacy
 
-Free code signing provided by [SignPath.io](https://signpath.io), certificate by
-[SignPath Foundation](https://signpath.org).
-
-- Committers and reviewers: [Yarmiplay](https://github.com/Yarmiplay)
-- Approvers: [Yarmiplay](https://github.com/Yarmiplay)
-
-Only the Windows installer (`.msi`) and the YarmiplayTV launcher in it and in the portable zip are signed, built by
-`.github/workflows/release.yml` from a version tag of this repository. Bundled third-party files (the Java
-runtime, libmpv, Skia) are included as their projects publish them.
-
-Privacy: see the [privacy policy](docs/privacy.md). The program connects to the Syncplay, Jellyfin and Plex
+See the [privacy policy](docs/privacy.md). The program connects to the Syncplay, Jellyfin and Plex
 servers you enter or pick (and to plex.tv to sign in to Plex and find its servers) and, when it starts, reads the latest version number from the download page on GitHub Pages; that
 request carries no information about the user and can be turned off with "Check for updates" in Settings.
 
