@@ -5,8 +5,8 @@ network) finds them in a local Maven folder: run the build once with an empty Gr
 
   python3 scripts/flatpak_gradle_sources.py GRADLE_USER_HOME packaging/flatpak/gradle-sources.json
 
-Each file in the Gradle cache becomes a "file" source with its URL on the first repository that has it (Maven
-Central, Google, the Gradle Plugin Portal: settings.gradle.kts's repositories) and its sha256, saved under
+Each file in the Gradle cache becomes a "file" source with its URL on the first repository serving the same bytes
+(Maven Central, Google, the Gradle Plugin Portal: settings.gradle.kts's repositories) and its sha256, saved under
 offline-repository/ in Maven layout. The manifest builds with -PofflineRepo pointing there. Standard library only.
 """
 from __future__ import annotations
@@ -28,7 +28,8 @@ DEST = "offline-repository"
 
 
 def cached_files(gradle_home):
-    """(Maven path, local file) for each file in Gradle's module cache, one per Maven path."""
+    """Maven path -> {sha1: local file} for each file in Gradle's module cache, whose directory names are the
+    files' SHA-1 in hex without leading zeros."""
     root = os.path.join(gradle_home, "caches", "modules-2", "files-2.1")
     found = {}
     for group in sorted(os.listdir(root)):
@@ -38,26 +39,40 @@ def cached_files(gradle_home):
                 for digest in sorted(os.listdir(version_dir)):
                     for name in sorted(os.listdir(os.path.join(version_dir, digest))):
                         path = f"{group.replace('.', '/')}/{module}/{version}/{name}"
-                        found.setdefault(path, os.path.join(version_dir, digest, name))
+                        found.setdefault(path, {})[digest.lstrip("0")] = os.path.join(version_dir, digest, name)
     return found
 
 
-def exists(url):
-    request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "flatpak-gradle-sources"})
+def fetch(url, method="GET"):
+    """The response body (b"" for HEAD), or None if the repository doesn't have it."""
+    request = urllib.request.Request(url, method=method, headers={"User-Agent": "flatpak-gradle-sources"})
     for attempt in range(3):
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
-                return response.status == 200
+                return response.read()
         except urllib.error.HTTPError as e:
             if e.code in (403, 404):
-                return False
+                return None
         except (urllib.error.URLError, TimeoutError):
             pass
     raise RuntimeError(f"couldn't reach {url}")
 
 
-def locate(path):
-    return next((repo + path for repo in REPOSITORIES if exists(repo + path)), None)
+def locate(item):
+    """(URL, local file) on the first repository serving the same bytes as one of the cached copies. Some
+    artifacts differ between repositories, so each one's .sha1 is compared; a repository without one only counts
+    when none matches."""
+    path, copies = item
+    unverified = None
+    for repo in REPOSITORIES:
+        sha1 = fetch(repo + path + ".sha1")
+        if sha1 is not None:
+            digest = sha1.decode("ascii", "replace").split()[0].lower().lstrip("0") if sha1.strip() else ""
+            if digest in copies:
+                return repo + path, copies[digest]
+        elif unverified is None and len(copies) == 1 and fetch(repo + path, "HEAD") is not None:
+            unverified = repo + path, next(iter(copies.values()))
+    return unverified
 
 
 def sha256_of(file):
@@ -74,14 +89,14 @@ def main():
     gradle_home, out = sys.argv[1:]
     files = cached_files(gradle_home)
     with concurrent.futures.ThreadPoolExecutor(32) as pool:
-        urls = dict(zip(files, pool.map(locate, files)))
-    missing = [path for path, url in urls.items() if url is None]
+        located = dict(zip(files, pool.map(locate, files.items())))
+    missing = [path for path, found in located.items() if found is None]
     if missing:
         sys.exit("Not on any repository:\n  " + "\n  ".join(missing))
     sources = []
-    for path, file in sorted(files.items()):
+    for path, (url, file) in sorted(located.items()):
         directory, name = path.rsplit("/", 1)
-        sources.append({"type": "file", "url": urls[path], "sha256": sha256_of(file),
+        sources.append({"type": "file", "url": url, "sha256": sha256_of(file),
                         "dest": f"{DEST}/{directory}", "dest-filename": name})
     with open(out, "w", encoding="utf-8") as f:
         json.dump(sources, f, indent=1)

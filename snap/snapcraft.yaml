@@ -20,8 +20,9 @@ apps:
     environment:
       # libmpv refuses to start under a locale with another decimal separator.
       LC_NUMERIC: C
-      # Debian's alternatives links (blas, lapack) don't exist in a snap.
-      LD_LIBRARY_PATH: $SNAP/usr/lib/x86_64-linux-gnu:$SNAP/usr/lib/x86_64-linux-gnu/blas:$SNAP/usr/lib/x86_64-linux-gnu/lapack:$SNAP/usr/lib/x86_64-linux-gnu/pulseaudio
+      # Debian's alternatives links (blas, lapack) don't exist in a snap; the cleanup part leaves libmpv's
+      # blas and lapack to gnome-46-2404, whose subdirectories the extension doesn't put on the path.
+      LD_LIBRARY_PATH: $SNAP/usr/lib/x86_64-linux-gnu:$SNAP/usr/lib/x86_64-linux-gnu/blas:$SNAP/usr/lib/x86_64-linux-gnu/lapack:$SNAP/usr/lib/x86_64-linux-gnu/pulseaudio:$SNAP/gnome-platform/usr/lib/x86_64-linux-gnu/blas:$SNAP/gnome-platform/usr/lib/x86_64-linux-gnu/lapack
     plugs:
       - network
       - network-bind
