@@ -156,8 +156,12 @@ jobs:
           name: gradle-sources
           path: packaging/flatpak
 
-      # flatpak-builder clones the checkout (the manifest's git source), which the container user doesn't own.
-      - run: git config --global --add safe.directory '*'
+      # flatpak-builder clones the checkout (the manifest's git source), which the container user doesn't own;
+      # it builds this commit instead of main.
+      - run: |
+          git config --global --add safe.directory '*'
+          sed -i -E "s#^( +)branch: main\$#\1commit: $(git rev-parse HEAD)#" packaging/flatpak/com.yarmiplay.TV.yml
+          grep -q "^ *commit: [0-9a-f]\{40\}$" packaging/flatpak/com.yarmiplay.TV.yml
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:

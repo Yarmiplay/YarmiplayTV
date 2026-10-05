@@ -13,7 +13,8 @@ version=$1
 tag=$2
 local_deb=${3:-}
 
-pacman -Syu --noconfirm --needed base-devel pacman-contrib xorg-server-xvfb mesa
+# A desktop has fonts; the container needs one for the app to draw text.
+pacman -Syu --noconfirm --needed base-devel pacman-contrib xorg-server-xvfb mesa ttf-dejavu
 useradd -m builder
 echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
 

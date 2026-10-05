@@ -57,8 +57,10 @@ parts:
     parse-info: [usr/share/metainfo/com.yarmiplay.TV.metainfo.xml]
     override-build: |
       install -Dm644 com.yarmiplay.TV.metainfo.xml "$CRAFT_PART_INSTALL/usr/share/metainfo/com.yarmiplay.TV.metainfo.xml"
+      icon=usr/share/icons/hicolor/512x512/apps/com.yarmiplay.TV.png
+      install -Dm644 "$CRAFT_STAGE/opt/yarmiplaytv/lib/YarmiplayTV.png" "$CRAFT_PART_INSTALL/$icon"
       install -d "$CRAFT_PART_INSTALL/usr/share/applications"
-      sed 's|^Icon=.*|Icon=${SNAP}/meta/gui/yarmiplaytv.png|' com.yarmiplay.TV.desktop \
+      sed "s|^Icon=.*|Icon=\${SNAP}/$icon|" com.yarmiplay.TV.desktop \
         > "$CRAFT_PART_INSTALL/usr/share/applications/com.yarmiplay.TV.desktop"
       version=$(sed -n 's/^java-options=-Dyarmiplaytv.version=//p' "$CRAFT_STAGE/opt/yarmiplaytv/lib/app/YarmiplayTV.cfg")
       [ -n "$version" ]

@@ -15,7 +15,10 @@ sudo snap connect yarmiplaytv:gtk-3-themes gtk-common-themes:gtk-3-themes
 snap connections yarmiplaytv
 
 /snap/bin/yarmiplaytv --version | tee "$HOME/snap-version.txt"
-grep -q "libmpv [0-9]" "$HOME/snap-version.txt"
+if ! grep -q "libmpv [0-9]" "$HOME/snap-version.txt"; then
+  snap run --shell yarmiplaytv -c 'echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"; ldd "$SNAP/usr/lib/x86_64-linux-gnu/libmpv.so.2" | grep -v "=> /"' || true
+  exit 1
+fi
 
 command -v xvfb-run > /dev/null || { sudo apt-get update -q && sudo apt-get install -y -q xvfb; }
 cp app/src/androidTest/assets/yarmiplaytv-sync-clip.mp4 "$HOME/clip.mp4"

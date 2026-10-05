@@ -516,8 +516,10 @@ jobs:
           TAG: ${{ steps.release.outputs.tag }}
         run: |
           mkdir flathub-files
-          sed -E "s#^( +)path: \.\./\.\.\$#\1url: https://github.com/$GITHUB_REPOSITORY.git\n\1tag: $TAG\n\1commit: $(git rev-parse HEAD)#" \
+          sed -E -e "s#^( +)path: \.\./\.\.\$#\1url: https://github.com/$GITHUB_REPOSITORY.git#" \
+            -e "s#^( +)branch: main\$#\1tag: $TAG\n\1commit: $(git rev-parse HEAD)#" \
             packaging/flatpak/com.yarmiplay.TV.yml > flathub-files/com.yarmiplay.TV.yml
+          ! grep -q "path: \.\./\.\.\|branch: main" flathub-files/com.yarmiplay.TV.yml
           grep -q "^ *commit: [0-9a-f]\{40\}$" flathub-files/com.yarmiplay.TV.yml
           cp packaging/flatpak/gradle-sources.json packaging/flatpak/flathub.json flathub-files/
 

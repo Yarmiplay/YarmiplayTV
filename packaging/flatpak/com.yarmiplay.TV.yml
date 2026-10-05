@@ -1,10 +1,11 @@
-# The Flathub manifest. As it is here it builds this checkout's last commit (the git source's path), after
+# The Flathub manifest. As it is here it builds this checkout's main branch (the git source's path), after
 # scripts/flatpak_gradle_sources.py has written gradle-sources.json next to it:
 #
 #   flatpak-builder --user --install --force-clean build-dir packaging/flatpak/com.yarmiplay.TV.yml
 #
-# release.yml's flathub job points the git source at the release tag and copies this file, gradle-sources.json
-# and flathub.json to the app's Flathub repository.
+# The Linux packages workflow builds the commit it runs for instead, and release.yml's flathub job points the
+# git source at the release tag and copies this file, gradle-sources.json and flathub.json to the app's
+# Flathub repository.
 id: com.yarmiplay.TV
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
@@ -108,6 +109,7 @@ modules:
     sources:
       - type: git
         path: ../..
+        branch: main
       - type: archive
         url: https://services.gradle.org/distributions/gradle-8.13-bin.zip
         sha256: 20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78
