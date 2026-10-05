@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The default artifact configuration of the YarmiplayTV project in SignPath (paste it there when it changes).
+  release.yml submits the windows-installers-unsigned artifact (the .msi and the portable zip at its root) with
+  the desktop appVersion as the version parameter. Only our own binaries get signed: the JDK runtime's files
+  are signed by their vendor, and libmpv-2.dll and skiko-windows-x64.dll are upstream builds shipped as they are.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <msi-file path="YarmiplayTV-${version}.msi" author="Yarmiplay">
+      <pe-file path="**/YarmiplayTV.exe" product-name="YarmiplayTV" product-version="${version}">
+        <authenticode-sign />
+      </pe-file>
+      <authenticode-sign />
+    </msi-file>
+    <zip-file path="YarmiplayTV-${version}-portable.zip">
+      <pe-file path="YarmiplayTV/YarmiplayTV.exe" product-name="YarmiplayTV" product-version="${version}">
+        <authenticode-sign />
+      </pe-file>
+    </zip-file>
+  </zip-file>
+</artifact-configuration>

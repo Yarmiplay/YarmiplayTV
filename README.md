@@ -310,6 +310,17 @@ The same tag builds the Windows `.msi` and portable zip, attaches them to the ta
 download page with them. They aren't code signed: browsers and SmartScreen warn about them, winget and the
 Store package don't.
 
+The workflow is ready for code signing through [SignPath](https://signpath.io), which isn't set up yet. To turn
+it on: create a SignPath project with the slug `YarmiplayTV`, linked to the GitHub.com trusted build system,
+with a `release-signing` policy and
+[.github/signpath/artifact-configuration.xml](.github/signpath/artifact-configuration.xml) as its default
+artifact configuration. Then set the repository variable `SIGNPATH_ORGANIZATION_ID` and the secret
+`SIGNPATH_API_TOKEN` (a SignPath CI user with submitter rights). Each release then waits up to 6 hours for an
+approver to accept the signing request, checks the signed `.msi` and launchers, and releases those. Signing
+through the SignPath Foundation also needs a "Code signing policy" section in this README (who commits,
+reviews and approves, and what gets signed), linked from the download page's footer in
+`scripts/download_site.py`.
+
 ### winget
 
 The first version is submitted by hand: with [wingetcreate](https://github.com/microsoft/winget-create)

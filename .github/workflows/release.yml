@@ -4,8 +4,10 @@ name: Release
 # - the Play upload bundle, signed with the upload key from the secrets YARMIPLAYTV_KEYSTORE_BASE64,
 #   YARMIPLAYTV_KEYSTORE_PASSWORD, YARMIPLAYTV_KEY_ALIAS and YARMIPLAYTV_KEY_PASSWORD; with the variable
 #   PLAY_TRACK and the secret PLAY_SERVICE_ACCOUNT_JSON it is uploaded to that Play Console track;
-# - the Windows installer (.msi) and portable zip (not code signed), attached to the tag's GitHub release,
-#   where the download page and winget take them from;
+# - the Windows installer (.msi) and portable zip, attached to the tag's GitHub release, where the download
+#   page and winget take them from. They are released unsigned for now; once the variable
+#   SIGNPATH_ORGANIZATION_ID and the secret SIGNPATH_API_TOKEN are set, they are first code signed through
+#   SignPath (certificate by SignPath Foundation) after an approver accepts the signing request;
 # - the Microsoft Store package (.msix, unsigned: the Store signs it), attached to the run; with the variables
 #   MSSTORE_TENANT_ID, MSSTORE_SELLER_ID and MSSTORE_CLIENT_ID and the secret MSSTORE_CLIENT_SECRET it is
 #   submitted to Partner Center for certification;
@@ -117,6 +119,7 @@ jobs:
         shell: bash
     outputs:
       version: ${{ steps.version.outputs.version }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v7
 
@@ -140,6 +143,8 @@ jobs:
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
+      # SignPath's artifact configuration (.github/signpath/artifact-configuration.xml) expects the .msi and
+      # the portable zip at the root of the artifact.
       - name: Installers
         run: |
           chmod +x gradlew
@@ -152,14 +157,15 @@ jobs:
         if: failure()
         run: cat desktop/build/compose/logs/*/*.txt || true
 
-      - uses: actions/upload-artifact@v7
+      - id: upload
+        uses: actions/upload-artifact@v7
         with:
-          name: windows-installers
+          name: windows-installers-unsigned
           path: windows/
           if-no-files-found: error
           retention-days: 7
 
-      # The Store signs the package itself when it is uploaded.
+      # Kept out of the SignPath artifact: the Store signs the package itself when it is uploaded.
       - name: Store package
         run: |
           ./gradlew --stacktrace :desktop:createDistributable
@@ -201,18 +207,66 @@ jobs:
           msstore publish $msix --appId 9PDBVR6W069J
           if ($LASTEXITCODE -ne 0) { throw "msstore publish failed" }
 
-  # Attaches the .msi and portable zip to the tag's release.
-  publish-windows:
+  # Waits on a Linux runner while the signing request awaits manual approval in SignPath.
+  sign-windows:
     needs: windows-installers
+    if: vars.SIGNPATH_ORGANIZATION_ID != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Submit the signing request and wait for its approval
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: YarmiplayTV
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ needs.windows-installers.outputs.artifact-id }}
+          parameters: |
+            version: ${{ toJSON(needs.windows-installers.outputs.version) }}
+          wait-for-completion-timeout-in-seconds: 21000
+          output-artifact-directory: signed
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-installers-signed
+          path: signed/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Attaches the .msi and portable zip to the tag's release: the signed ones when SignPath is set up, checked
+  # the way Windows does (the .msi and the launcher inside each), otherwise the unsigned ones.
+  publish-windows:
+    needs: [windows-installers, sign-windows]
+    if: >-
+      always() && needs.windows-installers.result == 'success' &&
+      (needs.sign-windows.result == 'success' || needs.sign-windows.result == 'skipped')
+    runs-on: windows-latest
     timeout-minutes: 15
     permissions:
       contents: write
+    env:
+      SIGNED: ${{ needs.sign-windows.result == 'success' }}
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: windows-installers
+          name: ${{ needs.sign-windows.result == 'success' && 'windows-installers-signed' || 'windows-installers-unsigned' }}
           path: windows
+
+      - name: Verify the signatures
+        if: env.SIGNED == 'true'
+        shell: pwsh
+        run: |
+          $msi = Get-Item windows\*.msi
+          Start-Process msiexec -Wait -ArgumentList "/a `"$($msi.FullName)`" /qn TARGETDIR=`"$env:RUNNER_TEMP\msi`""
+          Expand-Archive (Get-Item windows\*.zip).FullName "$env:RUNNER_TEMP\zip"
+          $files = @($msi) + @(Get-ChildItem "$env:RUNNER_TEMP\msi", "$env:RUNNER_TEMP\zip" -Recurse -Filter YarmiplayTV.exe)
+          if ($files.Count -ne 3) { throw "expected the .msi and the launchers inside the .msi and the zip, found $($files.Count) files" }
+          foreach ($file in $files) {
+            $sig = Get-AuthenticodeSignature $file.FullName
+            "{0}: {1}, {2}" -f $file.Name, $sig.Status, $sig.SignerCertificate.Subject
+            if ($sig.Status -ne 'Valid' -or -not $sig.TimeStamperCertificate) { throw "$($file.Name) isn't validly signed and timestamped" }
+          }
 
       - name: Attach the installers to the release
         if: github.ref_type == 'tag'
@@ -226,6 +280,11 @@ jobs:
             gh release upload "$GITHUB_REF_NAME" windows/* -R "$GITHUB_REPOSITORY" --clobber
           else
             notes="YarmiplayTV $VERSION for Windows: the installer (.msi${WINGET_ID:+, or \`winget install $WINGET_ID\`}) and a portable zip. Microsoft Store: https://apps.microsoft.com/detail/9PDBVR6W069J. Other platforms: https://tv.yarmiplay.com/"
+            if [ "$SIGNED" = true ]; then
+              notes="$notes
+
+          Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See the [code signing policy](https://github.com/$GITHUB_REPOSITORY#code-signing-policy)."
+            fi
             gh release create "$GITHUB_REF_NAME" windows/* -R "$GITHUB_REPOSITORY" --verify-tag \
               --title "YarmiplayTV $GITHUB_REF_NAME" --notes "$notes"
           fi
@@ -235,7 +294,9 @@ jobs:
   # with wingetcreate, see the README).
   winget:
     needs: [windows-installers, publish-windows]
-    if: github.ref_type == 'tag' && vars.WINGET_PACKAGE_ID != ''
+    if: >-
+      always() && needs.publish-windows.result == 'success' && github.ref_type == 'tag' &&
+      vars.WINGET_PACKAGE_ID != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
