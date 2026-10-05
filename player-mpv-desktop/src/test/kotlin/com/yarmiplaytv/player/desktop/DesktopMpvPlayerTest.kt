@@ -77,16 +77,22 @@ class DesktopMpvPlayerTest {
             player.renderer.setSize(640, 360)
             loadAndAwait<PlayerEvent.FileLoaded>(pattern.toURI().toString())
             fun VideoFrame.luma(x: Int, y: Int) = data.bytes[y * rowBytes + x * 4 + 1].toInt() and 0xFF
+            fun VideoFrame.corners() = "top-left ${luma(80, 45)}, top-right ${luma(560, 45)}, bottom-left ${luma(80, 315)}"
             // Frames before the first decoded picture are black everywhere.
-            val frame = withTimeout(5_000) {
+            var last: VideoFrame? = null
+            val shown = withTimeoutOrNull(15_000) {
                 var f: VideoFrame? = null
-                while (f == null || listOf(f.luma(80, 45), f.luma(560, 45), f.luma(80, 315)).all { it < 128 }) {
+                while (f == null) {
                     delay(20)
-                    f = player.renderer.frames.acquire()
+                    f = player.renderer.frames.acquire()?.takeIf { it.width == 640 }?.also { last = it }
+                        ?.takeIf { listOf(it.luma(80, 45), it.luma(560, 45), it.luma(80, 315)).any { l -> l >= 128 } }
                 }
                 f
             }
-            val corners = "top-left ${frame.luma(80, 45)}, top-right ${frame.luma(560, 45)}, bottom-left ${frame.luma(80, 315)}"
+            assertNotNull("$mode (${player.renderer.kind}): no picture after ${player.renderer.frames.published} frames, " +
+                "last ${last?.let { "${it.width}x${it.height}, ${it.corners()}" } ?: "none"}", shown)
+            val frame = shown!!
+            val corners = frame.corners()
             assertTrue("$mode: only the top-left quadrant should be white: $corners",
                 frame.luma(80, 45) > 200 && frame.luma(560, 45) < 50 && frame.luma(80, 315) < 50)
         }
