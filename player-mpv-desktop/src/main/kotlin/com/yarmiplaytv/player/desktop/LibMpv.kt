@@ -3,6 +3,7 @@ package com.yarmiplaytv.player.desktop
 import com.sun.jna.Callback
 import com.sun.jna.Library
 import com.sun.jna.Native
+import com.sun.jna.Platform
 import com.sun.jna.Pointer
 import com.sun.jna.Structure
 import com.sun.jna.ptr.DoubleByReference
@@ -146,6 +147,30 @@ interface LibMpv : Library {
 }
 
 class MpvUnavailableException(val hint: String, details: String) : RuntimeException("$hint\n$details")
+
+/**
+ * The C library's LC_NUMERIC. mpv_create() refuses anything but "C", and the JVM sets the user's locale
+ * (e.g. en_US.UTF-8) at startup. Changing it doesn't affect Java's own Locale.
+ */
+internal object NumericLocale {
+    private interface LibC : Library {
+        fun setlocale(category: Int, locale: String?): String?
+    }
+
+    private val supported = !Platform.isWindows()
+    private val lcNumeric = if (Platform.isLinux()) 1 else 4
+    private val libc: LibC? by lazy { if (supported) Native.load(Platform.C_LIBRARY_NAME, LibC::class.java) else null }
+
+    /** The current setting, or null on Windows (libmpv there doesn't check). */
+    fun current(): String? = libc?.setlocale(lcNumeric, null)
+
+    /** Switches to [locale]; returns the new setting, or null if it isn't installed (or on Windows). */
+    fun set(locale: String): String? = libc?.setlocale(lcNumeric, locale)
+
+    fun useC() {
+        if (current().let { it != null && it != "C" }) set("C")
+    }
+}
 
 /** mpv_event field offsets (64-bit): int event_id; int error; uint64 reply_userdata; void *data. */
 internal object MpvEventLayout {

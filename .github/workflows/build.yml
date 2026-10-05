@@ -149,6 +149,9 @@ jobs:
           sudo mkdir -p /etc/xdg/menus/applications-merged /usr/share/applications /usr/share/desktop-directories
           sudo apt-get install -y -q "./$deb"
           app=$(dpkg -L yarmiplaytv | grep '/bin/YarmiplayTV$')
+          # Desktops run with a language locale, which libmpv refuses unless the app resets it.
+          locale -a | grep -qi '^en_US\.utf-\?8$' || sudo locale-gen en_US.UTF-8
+          export LC_ALL=en_US.UTF-8
           "$app" --version | tee "$RUNNER_TEMP/version.txt"
           grep -q "libmpv [0-9]" "$RUNNER_TEMP/version.txt"
           xvfb-run -a -s "-screen 0 1920x1080x24" "$app" --benchmark app/src/androidTest/assets/yarmiplaytv-sync-clip.mp4 \

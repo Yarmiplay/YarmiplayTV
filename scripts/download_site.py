@@ -136,18 +136,15 @@ def platforms(short_link, stores=()):
     address = (f"<code>{html.escape(short_link)}</code>" if short_link
                else "this page's address followed by <code>/a</code>")
     run = "./gradlew :desktop:run"
-    linux_steps = [
-        "Install libmpv: <code>sudo apt install libmpv2</code> (Debian / Ubuntu) or "
-        "<code>sudo dnf install mpv-libs</code> (Fedora).",
-        "Install the package with your package manager, or mark the AppImage executable and run it.",
-    ]
+    deb_step = ("Debian / Ubuntu: in the folder you downloaded it to, run "
+                "<code>sudo apt install ./YarmiplayTV.deb</code> (installs libmpv too).")
+    linux_steps = [deb_step]
     if stores:
         names = either([name for _, name, _, _ in stores])
         commands = either([f"<code>{html.escape(cmd)}</code>" for _, _, _, cmd in stores])
         keep = "keeps" if len(stores) == 1 else "keep"
         linux_steps = [f"Get it from {names}, which {keep} it up to date, or from a terminal: {commands}.",
-                       "For the .deb, install libmpv first: <code>sudo apt install libmpv2</code>, then the package "
-                       "with your package manager."]
+                       deb_step]
     return [
         Platform("android", "Android",
                  "Google TV / Android TV, phones and tablets: one app that picks the remote-friendly TV interface "

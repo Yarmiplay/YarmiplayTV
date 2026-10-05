@@ -14,6 +14,10 @@ sudo snap connect yarmiplaytv:gpu-2404 mesa-2404:gpu-2404
 sudo snap connect yarmiplaytv:gtk-3-themes gtk-common-themes:gtk-3-themes
 snap connections yarmiplaytv
 
+# Desktops run with a language locale, which libmpv refuses unless the app resets it.
+locale -a | grep -qi '^en_US\.utf-\?8$' || sudo locale-gen en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
 /snap/bin/yarmiplaytv --version | tee "$HOME/snap-version.txt"
 if ! grep -q "libmpv [0-9]" "$HOME/snap-version.txt"; then
   snap run --shell yarmiplaytv -c 'echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"; ldd "$SNAP/usr/lib/x86_64-linux-gnu/libmpv.so.2" | grep -v "=> /"' || true

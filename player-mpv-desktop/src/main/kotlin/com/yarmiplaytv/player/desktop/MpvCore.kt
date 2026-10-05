@@ -24,7 +24,10 @@ sealed interface MpvEvent {
  */
 class MpvCore(options: Map<String, String> = emptyMap(), logLevel: String = "warn") : AutoCloseable {
     val lib: LibMpv = LibMpv.load()
-    val handle: Pointer = lib.mpv_create() ?: error("mpv_create failed")
+    val handle: Pointer = run {
+        NumericLocale.useC()
+        lib.mpv_create() ?: error("mpv_create failed (C number locale: ${NumericLocale.current() ?: "n/a"})")
+    }
     @Volatile private var closed = false
     private var eventThread: Thread? = null
 

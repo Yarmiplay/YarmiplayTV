@@ -92,6 +92,24 @@ class DesktopMpvPlayerTest {
         }
     }
 
+    /** Kali and most desktops start the JVM with en_US.UTF-8 or similar; libmpv only accepts "C". */
+    @Test
+    fun startsWhenTheNumberLocaleIsNotC() = runBlocking {
+        val previous = NumericLocale.current()
+        val locale = listOf("en_US.UTF-8", "C.UTF-8", "en_US.utf8").firstNotNullOfOrNull { NumericLocale.set(it) }
+        try {
+            assumeTrue("no non-C locale installed", locale != null)
+            player.close()
+            assertEquals(locale, NumericLocale.current())
+            player = DesktopMpvPlayer()
+            player.renderer.setSize(640, 360)
+            loadAndAwait<PlayerEvent.FileLoaded>(clip.toURI().toString())
+            assertEquals("C", NumericLocale.current())
+        } finally {
+            previous?.let { NumericLocale.set(it) }
+        }
+    }
+
     @Test
     fun playsAndSeeks() = runBlocking {
         val loaded = loadAndAwait<PlayerEvent.FileLoaded>(clip.toURI().toString(), paused = false)
