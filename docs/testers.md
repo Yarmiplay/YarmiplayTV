@@ -20,7 +20,6 @@ tablet or Google TV? Joining takes two minutes.
 - Keep the app for 14 days. Google only counts testers who stay that long.
 - Open it now and then: watch something with friends, or join the same room from two devices (server
   `syncplay.pl`, port `8999`, any room name).
-- Installed YarmiplayTV from our download page before? Uninstall that version first.
 
 ## Feedback or leaving
 

@@ -144,8 +144,8 @@ location).
 Testers join on their own from the testers page, `https://tv.yarmiplay.com/test/` (from
 `docs/testers.md`, linked in the download page's footer). It walks them through joining the Google Group
 (`https://groups.google.com/g/yarmiplaytv-testers`: anyone can join, members can't see each other's
-addresses), the opt-in link `https://play.google.com/apps/testing/com.yarmiplaytv` and installing from Play,
-and asks people with the download page's APK to uninstall it first. Play only lets a new tester install
+addresses), the opt-in link `https://play.google.com/apps/testing/com.yarmiplaytv` and installing from Play.
+Play only lets a new tester install
 about 15 minutes after opting in (before that it shows an error), which the page tells them.
 
 - **Share the page** wherever friends and Syncplay users are: chats, the GitHub README or release notes,
@@ -187,5 +187,3 @@ branch's bundle without a tag, as long as its version code isn't on Play yet. Se
 - Smoke-test the signed bundle on the emulators with bundletool:
   `java -jar .tools/bundletool.jar build-apks --bundle app/build/outputs/bundle/release/app-release.aab --output build/app.apks --connected-device --ks <upload.jks> --ks-key-alias upload`
   then `java -jar .tools/bundletool.jar install-apks --apks build/app.apks`.
-- People who installed the APK from the download page have to uninstall it before installing from Play:
-  the download page's APK is signed with a different key.
