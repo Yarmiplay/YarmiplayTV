@@ -64,10 +64,13 @@ DOCS = (
      f"Help test {NAME} on Google Play: join the testers group, opt in, install it on your Android phone, tablet "
      "or Google TV and use it for 14 days."),
 )
-# Store listings: the platform's first one is its main button, the rest and its files smaller links below.
+# Store listings (label, url, note): the platform's first one is its main button, the rest and its files smaller
+# links below.
 STORE_LINKS = {
-    "windows": [("Microsoft Store", "https://apps.microsoft.com/detail/9PDBVR6W069J")],
+    "windows": [("Microsoft Store", "https://apps.microsoft.com/detail/9PDBVR6W069J", "Updates automatically")],
 }
+# Until the app is public on Google Play, Android's main button is the testers page (the "test" DOCS folder).
+PLAY_TEST = ("Google Play", "test/", "Join the test")
 # The desktop app's store screenshots, published under <site>/screenshots/ for the Linux packages' metainfo
 # (packaging/linux/com.yarmiplay.TV.metainfo.xml).
 SCREENSHOTS = os.path.join("docs", "store", "screenshots")
@@ -135,8 +138,8 @@ class Platform:
     alternatives: bool = False
 
 
-def platforms(short_link, stores=()):
-    """stores: linux_stores()."""
+def platforms(short_link, stores=(), play_test=False):
+    """stores: linux_stores(); play_test: Android's main button is the Google Play testers page."""
     address = (f"<code>{html.escape(short_link)}</code>" if short_link
                else "this page's address followed by <code>/a</code>")
     run = "./gradlew :desktop:run"
@@ -149,12 +152,14 @@ def platforms(short_link, stores=()):
         keep = "keeps" if len(stores) == 1 else "keep"
         linux_steps = [f"Get it from {names}, which {keep} it up to date, or from a terminal: {commands}.",
                        deb_step]
+    play_steps = (['<b>Google Play:</b> follow the testers page\'s three steps on your phone, tablet or Google TV; '
+                   'Google Play then keeps it up to date.'] if play_test else [])
     return [
         Platform("android", "Android",
                  "Google TV / Android TV, phones and tablets: one app that picks the remote-friendly TV interface "
-                 "or the touch interface by itself. Android 8.0 or newer.", [
+                 "or the touch interface by itself. Android 8.0 or newer.", play_steps + [
             # The TV step stays last: on a TV the page's script moves it to the top.
-            '<b>Phone or tablet:</b> tap the download button, allow the browser to install unknown apps when '
+            '<b>Phone or tablet:</b> tap <b>APK</b>, allow the browser to install unknown apps when '
             'Android asks, then open the file from the notification or <b>Downloads</b> and choose <b>Install</b>.',
             f'<b>Google TV / Android TV:</b> enter {address} in <b>Downloader</b>, allow it to install unknown '
             f'apps when Android asks, then choose <b>Install</b>.',
@@ -241,12 +246,15 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
     """downloads: {platform key: [Download]}; docs: the DOCS entries published next to it; stores: linux_stores().
     Returns the page as a str."""
     cards = []
-    store_links = dict(STORE_LINKS, linux=[(label, url) for label, _, url, _ in stores])
-    for p in platforms(short_link, stores):
+    play_test = any(folder == PLAY_TEST[1].rstrip("/") for _, folder, _, _ in docs)
+    store_links = dict(STORE_LINKS, linux=[(label, url, "Updates automatically") for label, _, url, _ in stores])
+    if play_test:
+        store_links["android"] = [PLAY_TEST]
+    for p in platforms(short_link, stores, play_test):
         files = downloads.get(p.key, [])
         listings = store_links.get(p.key, [])
         if files or listings:
-            links = [(html.escape(url), "", html.escape(label), "Updates automatically") for label, url in listings]
+            links = [(html.escape(url), "", html.escape(label), html.escape(note)) for label, url, note in listings]
             links += [(html.escape(d.href), " download", html.escape(d.label), fmt_size(d.size)) for d in files]
             (href, attr, label, note), rest = links[0], links[1:]
             buttons = f'<a class="btn" href="{href}"{attr}>{label}<small>{note}</small></a>'

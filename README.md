@@ -48,7 +48,8 @@ green `Build` run on `main` and after every `Release` run (or by hand from the A
 artifact of that run whose name starts with `yarmiplaytv-`, except that the Windows `.msi` and portable zip
 come from the latest GitHub release.
 Files are matched to platforms by extension (`.apk`, `.msi`/`.zip`, `.dmg`/`.pkg`, `.deb`/`.rpm`/`.AppImage`).
-Each card's main button is its store listing or first file, with the other files as links below it. Platforms
+Each card's main button is its store listing or first file, with the other files as links below it; Android's
+is the Google Play testers page (`/test/`) while the app is in its closed test. Platforms
 without a package show how to run from source. The page's `version.json` lists each platform's package,
 version and SHA-256 for the apps' update check (see [Updates](#updates)). For search engines the page has
 a description, canonical URL, link-preview image and app structured data, and the site a `sitemap.xml`; it
