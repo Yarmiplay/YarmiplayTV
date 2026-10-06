@@ -176,9 +176,10 @@ branch's bundle without a tag, as long as its version code isn't on Play yet. Se
    app is there).
 3. Repository secret `PLAY_SERVICE_ACCOUNT_JSON` (the JSON key) and variable `PLAY_TRACK`: `internal`, `alpha`
    (closed testing), `beta` (open testing), `production`, or the name of a custom closed track.
-4. While the app has never passed review, Play only accepts draft releases: set the variable
-   `PLAY_RELEASE_STATUS` to `draft` and roll each one out in the Play Console. Remove it later so releases go
-   out straight away.
+4. Releases roll out to the track straight away. While the app has never passed review, Play only accepts
+   draft releases: the job then uploads a draft instead, with a warning on the run, to roll out in the Play
+   Console. The variable `PLAY_RELEASE_STATUS` (e.g. `draft`) forces a status. With managed publishing on
+   (Publishing overview), reviewed releases still wait for **Publish**.
 
 ## Before each upload
 

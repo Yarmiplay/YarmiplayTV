@@ -110,8 +110,9 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-  # The app's first bundle has to be uploaded by hand; while the app has never been reviewed, Play only takes
-  # releases with the status draft (variable PLAY_RELEASE_STATUS). Play rejects a version code it has seen, so a
+  # The app's first bundle has to be uploaded by hand. Releases are rolled out to the track straight away, or get
+  # the status in the variable PLAY_RELEASE_STATUS; without it, a release Play refuses (it only takes drafts while
+  # the app has never been reviewed) is uploaded again as a draft. Play rejects a version code it has seen, so a
   # manual run only uploads a version that isn't on Play yet.
   play:
     needs: bundle
@@ -125,13 +126,29 @@ jobs:
           merge-multiple: true
           path: bundle
 
-      - uses: r0adkll/upload-google-play@v1
+      - id: upload
+        uses: r0adkll/upload-google-play@v1
+        continue-on-error: ${{ vars.PLAY_RELEASE_STATUS == '' }}
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.yarmiplaytv
           releaseFiles: bundle/*.aab
           track: ${{ vars.PLAY_TRACK }}
           status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}
+
+      - name: Upload as a draft instead
+        if: steps.upload.outcome == 'failure'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.yarmiplaytv
+          releaseFiles: bundle/*.aab
+          track: ${{ vars.PLAY_TRACK }}
+          status: draft
+
+      - name: Draft warning
+        if: steps.upload.outcome == 'failure'
+        run: echo "::warning::Play refused a rolled-out release, so it was uploaded as a draft; roll it out in the Play Console"
 
   windows-installers:
     runs-on: windows-latest
