@@ -3,6 +3,7 @@ package com.yarmiplaytv.local
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import com.yarmiplaytv.Logger
@@ -10,6 +11,8 @@ import com.yarmiplaytv.data.SettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.IOException
+import java.nio.channels.FileChannel
 
 /**
  * Media folders picked with the system folder picker (access persisted) and indexed through the
@@ -57,6 +60,11 @@ class SafLocalLibrary(
         LocalFile(name ?: parsed.lastPathSegment?.substringAfterLast('/') ?: uri, size, uri)
     }
 
+    override fun openChannel(uri: String): FileChannel {
+        val pfd = resolver.openFileDescriptor(Uri.parse(uri), "r") ?: throw IOException("Can't open $uri")
+        return ParcelFileDescriptor.AutoCloseInputStream(pfd).channel
+    }
+
     override fun scan(folder: LocalFolder): List<LocalFile> {
         val treeUri = Uri.parse(folder.uri)
         val out = ArrayList<LocalFile>()
@@ -66,6 +74,7 @@ class SafLocalLibrary(
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
             DocumentsContract.Document.COLUMN_MIME_TYPE,
             DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
         )
         while (pending.isNotEmpty() && out.size < MAX_FILES) {
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, pending.removeFirst())
@@ -78,7 +87,8 @@ class SafLocalLibrary(
                         if (!name.startsWith(".")) pending.add(id)
                     } else if (LocalMatcher.isVideo(name, mime)) {
                         val size = if (c.isNull(3)) 0L else c.getLong(3)
-                        out += LocalFile(name, size, DocumentsContract.buildDocumentUriUsingTree(treeUri, id).toString(), folder.name)
+                        val modified = if (c.isNull(4)) 0L else c.getLong(4)
+                        out += LocalFile(name, size, DocumentsContract.buildDocumentUriUsingTree(treeUri, id).toString(), folder.name, modified)
                     }
                 }
             }

@@ -85,6 +85,21 @@ data class AppSettings(
     val showRoomChat: Boolean = true,
     /** The user agreed to the community rules, asked once before the first room join. */
     val acceptedRoomRules: Boolean = false,
+    /** The name YarmiplayServerTV hosts see when approving this device; empty uses the platform's. */
+    val deviceName: String = "",
+    /** Add the Jellyfin a YarmiplayServerTV host shares with their room. */
+    val addSharedServers: Boolean = true,
+    /** What each Syncplay server ("host:port") turned out to be when last joined. */
+    val knownServers: Map<String, KnownServer> = emptyMap(),
+)
+
+/** What a Syncplay server was last time: a YarmiplayServerTV (with its id and access mode) or a stock one. */
+data class KnownServer(
+    val yarmiplay: Boolean,
+    /** The server's id from its device challenge; this device has a key for it. */
+    val serverId: String = "",
+    /** `open`, `password` or `approved`. */
+    val access: String = "",
 )
 
 class SettingsStore(private val dataStore: DataStore<Preferences>) {
@@ -148,6 +163,11 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
 
         val deviceId = stringPreferencesKey("device_id")
         val localFolders = stringPreferencesKey("local_folders")
+
+        val deviceName = stringPreferencesKey("device_name")
+        val addSharedServers = booleanPreferencesKey("add_shared_servers")
+        /** One [KnownServer] per line: "host:port", "yarmiplay" or "syncplay", server id and access, tab-separated. */
+        val knownServers = stringPreferencesKey("sp_known_servers")
     }
 
     val settings: Flow<AppSettings> = dataStore.data.map(::read)
@@ -204,7 +224,30 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             dismissedUpdate = p[Keys.dismissedUpdate] ?: "",
             showRoomChat = p[Keys.showRoomChat] ?: true,
             acceptedRoomRules = p[Keys.acceptedRoomRules] ?: false,
+            deviceName = p[Keys.deviceName] ?: "",
+            addSharedServers = p[Keys.addSharedServers] ?: true,
+            knownServers = p[Keys.knownServers]?.let(::decodeKnown) ?: emptyMap(),
         )
+    }
+
+    private fun decodeKnown(text: String): Map<String, KnownServer> = text.lines().mapNotNull { line ->
+        val f = line.split('\t')
+        if (f.size < 4 || f[0].isEmpty()) null else f[0] to KnownServer(f[1] == "yarmiplay", f[2], f[3])
+    }.toMap()
+
+    private fun encodeKnown(map: Map<String, KnownServer>): String = map.entries.joinToString("\n") { (server, k) ->
+        listOf(server, if (k.yarmiplay) "yarmiplay" else "syncplay", k.serverId, k.access).joinToString("\t") { it.replace('\t', ' ').replace('\n', ' ') }
+    }
+
+    suspend fun saveDeviceName(name: String) = dataStore.edit { it[Keys.deviceName] = name.take(60) }
+
+    suspend fun saveAddSharedServers(on: Boolean) = dataStore.edit { it[Keys.addSharedServers] = on }
+
+    /** Remembers what [server] ("host:port") is; null forgets it. */
+    suspend fun saveKnownServer(server: String, known: KnownServer?) = dataStore.edit {
+        val map = read(it).knownServers.toMutableMap()
+        if (known == null) map.remove(server) else map[server] = known
+        it[Keys.knownServers] = encodeKnown(map)
     }
 
     suspend fun saveSyncplay(profile: SyncplayProfile, autoConnect: Boolean? = null) {

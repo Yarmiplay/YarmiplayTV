@@ -9,6 +9,8 @@ actual object DevicePlatform {
             ?: runCatching { InetAddress.getLocalHost().hostName.substringBefore('.') }.getOrDefault("")
     }
 
+    actual val deviceName: String get() = deviceModel
+
     actual val isEmulator: Boolean get() = false
 
     actual suspend fun <T> withMulticastLock(tag: String, block: suspend () -> T): T = block()

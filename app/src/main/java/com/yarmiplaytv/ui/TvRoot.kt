@@ -22,6 +22,7 @@ import com.yarmiplaytv.ui.browse.BrowseScreen
 import com.yarmiplaytv.ui.browse.ItemActionsDialog
 import com.yarmiplaytv.ui.browse.SearchScreen
 import com.yarmiplaytv.ui.components.ToastHost
+import com.yarmiplaytv.ui.connect.DeviceAccessDialog
 import com.yarmiplaytv.ui.connect.JellyfinLoginScreen
 import com.yarmiplaytv.ui.connect.PlexLoginScreen
 import com.yarmiplaytv.ui.connect.ServersScreen
@@ -78,6 +79,7 @@ fun TvRoot(container: AppContainer) {
             nav.actionItem?.let { item ->
                 ItemActionsDialog(container, item, onDismiss = { nav.actionItem = null })
             }
+            DeviceAccessDialog(container)
         }
     }
 }

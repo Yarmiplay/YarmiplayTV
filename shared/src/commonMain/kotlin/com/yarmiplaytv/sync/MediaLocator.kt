@@ -6,6 +6,7 @@ import com.yarmiplaytv.media.MatchKind
 import com.yarmiplaytv.media.MediaSource
 import com.yarmiplaytv.media.PlayableMedia
 import com.yarmiplaytv.media.ResolveResult
+import com.yarmiplaytv.syncplay.RelayFile
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -19,6 +20,8 @@ sealed interface RoomLocation {
     data class Local(val match: LocalMatcher.Match) : RoomLocation
     /** [copies] are every server item that is this exact file, the streamed one included. */
     data class Server(val playable: PlayableMedia, val matchedBy: MatchKind, val copies: List<ServerCopy>) : RoomLocation
+    /** Only another viewer has it; it can be played through the YarmiplayServerTV file relay. */
+    data class Relay(val file: RelayFile) : RoomLocation
     data class Missing(val reason: String) : RoomLocation
 }
 
@@ -29,6 +32,8 @@ sealed interface RoomLocation {
 class MediaLocator(
     private val local: LocalLibrary,
     private val servers: StateFlow<List<MediaSource>>,
+    /** The room's relay entry for a file name, when the server relays files between viewers. */
+    private val relay: (String) -> RelayFile? = { null },
 ) {
     /** [MediaSource.key] of the server that streams a room's file when several have it exactly; empty = the first. */
     @Volatile var preferredServer: String = ""
@@ -38,12 +43,13 @@ class MediaLocator(
     /**
      * A file someone in the room picked: local media folders first; then an exact filename on any
      * server (the preferred one breaks ties); only when no server has it exactly, a looser match
-     * (normalized name, then title search) on the preferred server, then the others.
+     * (normalized name, then title search) on the preferred server, then the others; last, another viewer's copy
+     * through the Syncplay server's file relay.
      */
     suspend fun locateForRoom(fileName: String): RoomLocation {
         local.resolve(fileName)?.let { return RoomLocation.Local(it) }
         val servers = ordered(servers.value)
-        if (servers.isEmpty()) return RoomLocation.Missing("Not in your media folders")
+        if (servers.isEmpty()) return relayOr(fileName, "Not in your media folders")
 
         val exact = coroutineScope {
             servers.map { s -> async { runCatching { s.findExact(fileName) }.getOrNull()?.let { s to it } } }.awaitAll()
@@ -63,8 +69,14 @@ class MediaLocator(
                 is ResolveResult.NotFound -> reasons += r.reason
             }
         }
-        return RoomLocation.Missing(reasons.joinToString("; "))
+        return relayOr(fileName, reasons.joinToString("; "))
     }
+
+    /** Whether another viewer's copy of [fileName] can be played through the file relay. */
+    fun hasRelay(fileName: String): Boolean = relay(fileName) != null
+
+    private fun relayOr(fileName: String, reason: String): RoomLocation =
+        relay(fileName)?.let { RoomLocation.Relay(it) } ?: RoomLocation.Missing(reason)
 
     /**
      * Every server item that is exactly [playable]'s file (same name, and same size when both are

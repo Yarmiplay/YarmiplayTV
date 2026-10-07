@@ -10,6 +10,7 @@ import com.yarmiplaytv.media.MediaSource
 import com.yarmiplaytv.media.PlayableMedia
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.PlayerEvent
+import com.yarmiplaytv.relay.RelayManager
 import com.yarmiplaytv.syncplay.FileInfo
 import com.yarmiplaytv.syncplay.Filenames
 import com.yarmiplaytv.syncplay.SyncplayEvent
@@ -56,6 +57,7 @@ class PlaylistController(
     private val mediaSource: StateFlow<MediaSource?>,
     private val local: LocalLibrary,
     private val locator: MediaLocator,
+    private val relay: RelayManager? = null,
 ) {
     private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
     val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying.asStateFlow()
@@ -90,6 +92,17 @@ class PlaylistController(
     init {
         scope.launch { sync.events.collect(::onSyncEvent) }
         scope.launch { player.events.collect(::onPlayerEvent) }
+        // A viewer who has the room's file joining (or seeding it) makes "not found" playable.
+        relay?.let { r ->
+            scope.launch {
+                r.files.collect {
+                    val missing = _status.value as? PlaylistStatus.NotFound ?: return@collect
+                    if (missing.fileName == sync.room.value.currentPlaylistFile && r.find(missing.fileName) != null) {
+                        loadFromRoom(missing.fileName, resetPosition = false)
+                    }
+                }
+            }
+        }
     }
 
     private fun onSyncEvent(event: SyncplayEvent) {
@@ -139,7 +152,7 @@ class PlaylistController(
             load(it.playable.toNowPlaying(it.copies), resetPosition, fromRoom = true)
             return
         }
-        if (!locator.hasServers && !local.hasFolders) {
+        if (!locator.hasServers && !local.hasFolders && !locator.hasRelay(filename)) {
             _status.value = PlaylistStatus.NotFound(filename, "Connect a media server or add a media folder to auto-load playlist items")
             sync.postLocal("Can't load '$filename': no media server or media folders", isError = true)
             return
@@ -156,6 +169,13 @@ class PlaylistController(
                 is RoomLocation.Server -> {
                     Logger.i(TAG, "Resolved '$filename' via ${found.matchedBy} -> ${found.playable.sourceKey}/${found.playable.itemId}, copies ${found.copies}")
                     load(found.playable.toNowPlaying(found.copies), resetPosition, fromRoom = true)
+                }
+                is RoomLocation.Relay -> {
+                    val r = relay ?: return@launch
+                    Logger.i(TAG, "Resolved '$filename' via the room's file relay (${found.file.sources} source(s))")
+                    val url = r.open(found.file)
+                    val name = found.file.name
+                    load(NowPlaying(name, name, found.file.size, found.file.duration, url), resetPosition, fromRoom = true)
                 }
                 is RoomLocation.Missing -> {
                     val servers = mediaSource.value?.let { s -> if (s is CompositeMediaSource && s.sources.size > 2) "your media servers" else s.displayName }
@@ -244,7 +264,8 @@ class PlaylistController(
     fun isAvailable(fileName: String): Boolean =
         Filenames.isUrl(fileName) ||
             knownPlayables.keys.any { Filenames.same(it, fileName) } ||
-            LocalMatcher.find(local.files.value, fileName) != null
+            LocalMatcher.find(local.files.value, fileName) != null ||
+            locator.hasRelay(fileName)
 
     /** Adds files from this device to the shared playlist in one edit, before index [at] or at the end, skipping ones already in it. */
     fun addLocalFilesToRoomPlaylist(uris: List<String>, at: Int? = null) {

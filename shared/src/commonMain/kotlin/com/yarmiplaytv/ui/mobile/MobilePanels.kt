@@ -66,6 +66,8 @@ import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.player.sizeWarning
 import com.yarmiplaytv.ui.shared.BLOCKED_NOTE
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
+import com.yarmiplaytv.ui.shared.relayNote
+import com.yarmiplaytv.ui.shared.serverStatusLine
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
@@ -143,6 +145,14 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
             return@Column
         }
         SheetTitle(room.room, "${container.sync.client?.config?.host ?: ""} · Syncplay ${room.serverVersion ?: ""}")
+        serverStatusLine(room.yarmiplay)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall) }
+        container.relay?.let { relay ->
+            val relayStatus by relay.status.collectAsStateWithLifecycle()
+            relayStatus?.let { s ->
+                Text(s.text, color = AppColors.Accent, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("relay_status"))
+                s.error?.let { Text(it, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall) }
+            }
+        }
         ReadyChip(room.isReady == true, { container.sync.toggleReady() }, Modifier.testTag("ready_toggle"))
         val blocked by container.sync.blocked.collectAsStateWithLifecycle()
         val me = room.users.firstOrNull { it.name == room.username }
@@ -171,6 +181,7 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (difference != null) Text(difference, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
+                    relayNote(room, user)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall) }
                     if (user.name in blocked) Text(BLOCKED_NOTE, color = AppColors.Error, style = MaterialTheme.typography.labelSmall)
                 }
                 if (!isMe) {

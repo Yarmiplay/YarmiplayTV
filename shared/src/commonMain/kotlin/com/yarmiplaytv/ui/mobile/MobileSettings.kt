@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.data.PlaybackPrefs
 import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.UnpauseMode
@@ -68,6 +69,12 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                 settings.reportPlayback,
                 Modifier.testTag("toggle_report_playback"),
             ) { saveServerPrefs(report = it) }
+            ToggleSetting(
+                "Add media servers shared by Syncplay hosts",
+                "When a YarmiplayServerTV host shares their Jellyfin, sign in to it automatically",
+                settings.addSharedServers,
+                Modifier.testTag("toggle_add_shared_servers"),
+            ) { container.scope.launch { container.settingsStore.saveAddSharedServers(it) } }
 
             SectionHeader("Syncing")
             ValueSetting(
@@ -98,6 +105,13 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                 settings.showRoomChat,
                 Modifier.testTag("toggle_show_chat"),
             ) { container.scope.launch { container.settingsStore.saveShowRoomChat(it) } }
+            if (container.supportsDeviceAccess) {
+                OutlinedTextField(
+                    settings.deviceName, { name -> container.scope.launch { container.settingsStore.saveDeviceName(name) } },
+                    label = { Text("Device name (shown to YarmiplayServerTV hosts)") }, placeholder = { Text(DevicePlatform.deviceName) }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).testTag("device_name"),
+                )
+            }
 
             SectionHeader("Playback")
             ToggleSetting("Hardware decoding", "MediaCodec with software fallback. Takes effect after restarting the app", pb.hardwareDecoding) {

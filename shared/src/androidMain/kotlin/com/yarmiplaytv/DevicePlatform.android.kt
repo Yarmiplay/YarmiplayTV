@@ -3,6 +3,7 @@ package com.yarmiplaytv
 import android.content.Context
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.provider.Settings
 
 actual object DevicePlatform {
     private var appContext: Context? = null
@@ -13,6 +14,10 @@ actual object DevicePlatform {
     }
 
     actual val deviceModel: String get() = Build.MODEL.orEmpty()
+
+    actual val deviceName: String
+        get() = appContext?.let { runCatching { Settings.Global.getString(it.contentResolver, Settings.Global.DEVICE_NAME) }.getOrNull() }
+            ?.takeIf { it.isNotBlank() } ?: Build.MODEL.orEmpty()
 
     actual val isEmulator: Boolean
         get() = Build.FINGERPRINT.contains("generic") || Build.HARDWARE.contains("ranchu") || Build.PRODUCT.contains("sdk")

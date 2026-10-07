@@ -11,6 +11,18 @@ data class SyncplayConfig(
     /** Try STARTTLS first and fall back to plain TCP if the server doesn't support it. */
     val useTls: Boolean = true,
     val autoReconnect: Boolean = true,
+    /**
+     * This device's keys; with it the Hello opts in to the YarmiplayServerTV extensions (a client that opts in
+     * must be able to answer the device challenge). Null leaves the client a plain Syncplay client.
+     */
+    val deviceAuth: DeviceAuth? = null,
+    /** Sent with the extension opt-in. */
+    val appVersion: String = "",
+    /**
+     * Ask the host to approve this device when its key isn't approved yet: true when the user chose to connect,
+     * false for a silent check. Reconnects never ask.
+     */
+    val requestAccess: Boolean = true,
 )
 
 /** The desktop client's sync tuning, with the same defaults. */
@@ -58,6 +70,8 @@ data class RoomUser(
     /** null when the user's client doesn't support readiness. */
     val isReady: Boolean? = null,
     val isController: Boolean = false,
+    /** The user's client has a YarmiplayServerTV extension session, so it can seed and fetch relayed files. */
+    val yarmiplay: Boolean = false,
 )
 
 enum class ConnectionStatus { DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING }
@@ -82,6 +96,7 @@ data class RoomState(
     val lastSetBy: String? = null,
     val serverFeatures: Map<String, Any?> = emptyMap(),
     val rttMillis: Double = 0.0,
+    val yarmiplay: YarmiplayInfo = YarmiplayInfo(),
 ) {
     val others: List<RoomUser> get() = users.filter { it.name != username }
     val currentPlaylistFile: String? get() = playlistIndex?.let { playlist.getOrNull(it) }
@@ -99,6 +114,8 @@ object Constants {
     const val SLOWDOWN_RESET_THRESHOLD = 0.1
     const val DIFFERENT_DURATION_THRESHOLD = 2.5
     const val PROTOCOL_TIMEOUT = 12.5
+    /** While a device waits for approval the server repeats its status every 60 s; this much silence is a lost connection. */
+    const val PENDING_TIMEOUT = 90.0
     const val PING_MOVING_AVERAGE_WEIGHT = 0.85
     const val PLAYER_ASK_DELAY_MS = 100L
     const val PLAYLIST_LOAD_NEXT_FILE_MINIMUM_LENGTH = 10.0

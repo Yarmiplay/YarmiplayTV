@@ -29,6 +29,15 @@ desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin]
   desktop Syncplay client does.
 - Each room's playlist is remembered per server and put back when you rejoin a room whose playlist is empty
   (Settings > Remember room playlists).
+- On a [YarmiplayServerTV](https://servertv.yarmiplay.com/) server (1.6.0 or later) it also uses that server's
+  extensions; on any other Syncplay server it behaves exactly as above:
+  - Device access: the host approves each device once (it shows a code to compare), after which it joins
+    without the password. Settings > Device name sets what the host sees; the connect screen can forget the key.
+  - File relay: someone who doesn't have the playlist's file streams it from a viewer who does, through the
+    Syncplay server, or downloads it first when the connection is too slow to play it smoothly. Relayed files
+    are cached for at most 24 hours (up to 4 GB) and deleted when you leave the room.
+  - A Jellyfin server the host shares is added automatically, as "<name> (via <server>)"
+    (Settings > Add media servers shared by Syncplay hosts).
 
 ![Tablet: room, shared playlist and chat](docs/screenshots/tablet-room.png)
 
@@ -220,6 +229,19 @@ $env:SYNCPLAY_TEST_SERVER = "127.0.0.1:8999"; ./gradlew :syncplay-protocol:test
 $env:JELLYFIN_URL = "http://localhost:8096"; $env:JELLYFIN_TOKEN = "..."; $env:JELLYFIN_USER_ID = "..."
 $env:JELLYFIN_RESOLVE = "Some Show - S01E01 - Title.mkv"
 ./gradlew :media-source:test --tests "*LiveJellyfinTest*"
+
+# YarmiplayServerTV extensions against real servers (each variable is optional; unset ones skip their tests).
+# Needs a YarmiplayServerTV checkout next to this repo. The relay server is its example; the device-access
+# servers are scripts/yarmiplay-device-server, which approves devices named "...approve...", denies
+# "...deny..." and revokes users named "...revoke...".
+# Each server in its own terminal:
+cd ../YarmiplayServerTV/src-tauri; cargo run --example syncplay_server -- 18999       # file relay
+cd scripts/yarmiplay-device-server; cargo run -- 18997 password secret                 # password or approval
+cd scripts/yarmiplay-device-server; cargo run -- 18996 approved                        # approved devices only
+$env:YARMIPLAY_TEST_SERVER = "127.0.0.1:18999"
+$env:YARMIPLAY_FAKE_PEER = "../YarmiplayServerTV/scripts/fake_peer.py"
+$env:YARMIPLAY_PASSWORD_SERVER = "127.0.0.1:18997:secret"; $env:YARMIPLAY_APPROVED_SERVER = "127.0.0.1:18996"
+./gradlew :shared:desktopTest --tests "*YarmiplayServerTest*"
 ```
 
 ### Instrumented tests (phone emulator)

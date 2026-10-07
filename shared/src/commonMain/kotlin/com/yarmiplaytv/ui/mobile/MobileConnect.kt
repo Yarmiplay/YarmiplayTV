@@ -50,10 +50,12 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.ROOM_PRIVACY_HINT
 import com.yarmiplaytv.ui.shared.ROOM_RULES
 import com.yarmiplaytv.ui.shared.ROOM_RULES_URL
+import com.yarmiplaytv.ui.shared.approvedOnly
 import com.yarmiplaytv.ui.shared.plexServerLabel
 import com.yarmiplaytv.ui.shared.rememberJellyfinLoginModel
 import com.yarmiplaytv.ui.shared.rememberPlexLoginModel
 import com.yarmiplaytv.ui.shared.rememberSyncplayConnectModel
+import com.yarmiplaytv.ui.shared.isSharedServer
 import com.yarmiplaytv.ui.shared.serverDetail
 import com.yarmiplaytv.ui.shared.serverTag
 import com.yarmiplaytv.ui.shared.signOutOfServer
@@ -101,8 +103,11 @@ private fun ConnectForm(container: AppContainer, model: com.yarmiplaytv.ui.share
         }
         OutlinedTextField(model.username, { model.username = it.take(16) }, label = { Text("Your name") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("field_name"))
         OutlinedTextField(model.room, { model.room = it.take(60) }, label = { Text("Room") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("field_room"))
-        OutlinedTextField(model.password, { model.password = it }, label = { Text("Server password (optional)") }, singleLine = true,
-            visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
+        val settings by container.settings.collectAsStateWithLifecycle()
+        if (!approvedOnly(settings.knownServers, model.host, model.port)) {
+            OutlinedTextField(model.password, { model.password = it }, label = { Text("Server password (optional)") }, singleLine = true,
+                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Connect automatically on start", Modifier.weight(1f))
             Switch(model.autoConnect, { model.autoConnect = it }, Modifier.testTag("auto_connect"))
@@ -114,6 +119,9 @@ private fun ConnectForm(container: AppContainer, model: com.yarmiplaytv.ui.share
                 CircularProgressIndicator(Modifier.padding(start = 8.dp))
                 TextButton({ model.disconnect() }) { Text("Cancel") }
             }
+        }
+        model.serverKey?.takeIf(container::hasDeviceKey)?.let { server ->
+            TextButton({ container.forgetDeviceKey(server) }, Modifier.testTag("forget_device_key")) { Text("Forget this device's key") }
         }
         Text(
             "Use the same server and room as your friends' desktop Syncplay. The public servers are syncplay.pl ports 8995–8999. " +
@@ -253,7 +261,9 @@ fun MobileServersScreen(container: AppContainer, nav: Navigator) {
                         Text(s.displayName, style = MaterialTheme.typography.bodyLarge)
                         Text(serverDetail(s), color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
                     }
-                    OutlinedButton({ signOutOfServer(container, s.key) }, Modifier.testTag("signout_${serverTag(s.key)}")) { Text("Sign out") }
+                    OutlinedButton({ signOutOfServer(container, s.key) }, Modifier.testTag("signout_${serverTag(s.key)}")) {
+                        Text(if (isSharedServer(s)) "Remove" else "Sign out")
+                    }
                 }
             }
             FormColumn {

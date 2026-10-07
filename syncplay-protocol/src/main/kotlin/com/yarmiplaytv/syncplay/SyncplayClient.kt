@@ -96,6 +96,19 @@ class SyncplayClient(
     private var myReady: Boolean? = null
     private val users = LinkedHashMap<String, RoomUser>()
 
+    /** Logged in at least once: from then on reconnects check the device key silently. */
+    private var hadLogin = false
+    private var sessionToken: String? = null
+    private var sessionProtocol = 0
+    private val _session = MutableStateFlow<YarmiplaySession?>(null)
+
+    /** The live extension session, for the relay's and the shared Jellyfin's HTTP requests; null on stock servers. */
+    val session: StateFlow<YarmiplaySession?> = _session.asStateFlow()
+
+    /** What this device offers to the room's relay, and what the server currently holds (null: nothing). */
+    private var offer: List<RelayOffer> = emptyList()
+    private var offerSent: List<RelayOffer>? = null
+
     var settings: SyncSettings
         get() = engine.settings
         set(value) { scope.launch { engine.settings = value } }
@@ -162,8 +175,8 @@ class SyncplayClient(
         scope.launch { engine.onFileLoading() }
     }
 
-    fun setReady(ready: Boolean) {
-        scope.launch { changeReadyState(ready, manuallyInitiated = true) }
+    fun setReady(ready: Boolean, manuallyInitiated: Boolean = true) {
+        scope.launch { changeReadyState(ready, manuallyInitiated) }
     }
 
     fun toggleReady() {
@@ -177,13 +190,53 @@ class SyncplayClient(
     fun changeRoom(room: String) {
         scope.launch {
             config = config.copy(room = room)
-            _state.update { it.copy(room = room, playlist = emptyList(), playlistReceived = false, playlistIndex = null) }
+            _state.update {
+                it.copy(
+                    room = room, playlist = emptyList(), playlistReceived = false, playlistIndex = null,
+                    yarmiplay = it.yarmiplay.copy(relayFiles = emptyList()),
+                )
+            }
+            // The server forgets offers on a room change; the new room's playlist decides the next one.
+            offer = emptyList()
+            offerSent = null
             if (!logged) return@launch
             hadFirstPlaylistIndex = false
             awaitingRoomPlaylist = true
             users.clear()
             sendSet { putJsonObject("room") { put("name", room) } }
             sendList()
+        }
+    }
+
+    // --- YarmiplayServerTV extensions ----------------------------------------------
+
+    /**
+     * Offer [files] to the room's file relay, replacing the previous offer (empty withdraws it). Sent only while
+     * the relay is on, and again whenever the server has forgotten it (room change, relay switched back on).
+     */
+    fun offerFiles(files: List<RelayOffer>) {
+        scope.launch {
+            offer = files.take(Yarmiplay.MAX_OFFERED_FILES)
+            sendOfferIfNeeded()
+        }
+    }
+
+    /** Tell the server this device can't serve upload [id], so it asks another seeder at once. */
+    fun reportUploadFailed(id: String, error: String) {
+        scope.launch {
+            if (!sessionActive) return@launch
+            sendYarmiplay { putJsonObject("uploadFailed") { put("id", id); put("error", error) } }
+        }
+    }
+
+    /** Ask the server to approve Jellyfin Quick Connect [code] for its guest account; answered with [SyncplayEvent.JellyfinAuthorized]. */
+    fun authorizeJellyfin(code: String) {
+        scope.launch {
+            if (!sessionActive || !state.value.yarmiplay.capabilities.jellyfin) {
+                emit(SyncplayEvent.JellyfinAuthorized(code, ok = false, error = "The host isn't sharing Jellyfin"))
+                return@launch
+            }
+            sendYarmiplay { putJsonObject("jellyfinAuthorize") { put("code", code) } }
         }
     }
 
@@ -269,6 +322,7 @@ class SyncplayClient(
         transport = t
         val out = Channel<String>(Channel.UNLIMITED)
         outgoing = out
+        _state.update { it.copy(yarmiplay = YarmiplayInfo()) }
         t.connect()
         lastMessageTime = clock.now()
         log("Connected to ${config.host}:${config.port}")
@@ -287,7 +341,7 @@ class SyncplayClient(
                 val line = t.readLine() ?: throw IOException("Server closed the connection")
                 lastMessageTime = clock.now()
                 if (line.isBlank()) continue
-                log("<< $line")
+                log("<< ${redact(line)}")
                 handleLine(line)
                 if (fatalError != null) throw IOException(fatalError)
             }
@@ -321,11 +375,19 @@ class SyncplayClient(
         clientIgnoringOnTheFly = 0
         serverIgnoringOnTheFly = 0
         hadFirstPlaylistIndex = false
+        sessionToken = null
+        refreshSession()
         engine.onDisconnected()
     }
 
     private fun tick() {
-        if (!logged) return
+        if (!logged) {
+            if (state.value.yarmiplay.device is DeviceState.Pending && clock.now() - lastMessageTime > Constants.PENDING_TIMEOUT) {
+                log("No word from the server while waiting for approval")
+                transport?.close()
+            }
+            return
+        }
         if (engine.hasGlobalState && clock.now() - lastMessageTime > Constants.PROTOCOL_TIMEOUT) {
             log("Server timed out")
             transport?.close()
@@ -350,6 +412,7 @@ class SyncplayClient(
                 "Chat" -> handleChat(value)
                 "Error" -> handleError(value)
                 "TLS" -> Unit
+                "Yarmiplay" -> (value as? JsonObject)?.let { handleYarmiplay(it) }
                 else -> log("Unknown command $command")
             }
         }
@@ -360,11 +423,15 @@ class SyncplayClient(
         val room = (hello["room"] as? JsonObject)?.str("name") ?: config.room
         val version = hello.str("realversion") ?: hello.str("version")
         val motd = hello.str("motd")?.takeIf { it.isNotBlank() }
-        val features = (hello["features"] as? JsonObject)?.mapValues { (_, v) -> v.toPlain() } ?: emptyMap()
+        val featuresObj = hello["features"] as? JsonObject
+        val features = featuresObj?.mapValues { (_, v) -> v.toPlain() } ?: emptyMap()
+        val marker = (featuresObj?.get("yarmiplay") as? JsonObject)?.takeIf { it.str("server") == Yarmiplay.SERVER_NAME }
         logged = true
+        hadLogin = true
         users.clear()
         users[username] = RoomUser(username, room, currentFile, myReady)
         _state.update {
+            val ext = it.yarmiplay
             it.copy(
                 status = ConnectionStatus.CONNECTED,
                 username = username,
@@ -373,6 +440,18 @@ class SyncplayClient(
                 motd = motd,
                 tls = transport?.isTls == true,
                 serverFeatures = features,
+                yarmiplay = when {
+                    marker != null -> ext.copy(
+                        serverKind = ServerKind.YARMIPLAY,
+                        serverVersion = marker.str("version"),
+                        access = marker.str("access"),
+                        approvedDevice = marker.str("device") == "approved",
+                        capabilities = parseCapabilities(marker["capabilities"]) ?: ext.capabilities,
+                    )
+                    // A challenge already said who this is (it only comes from YarmiplayServerTV).
+                    ext.serverKind == ServerKind.YARMIPLAY -> ext
+                    else -> ext.copy(serverKind = ServerKind.SYNCPLAY)
+                },
             )
         }
         publishUsers()
@@ -407,7 +486,8 @@ class SyncplayClient(
             when {
                 event?.containsKey("joined") == true -> {
                     if (room == myRoom) {
-                        users[name] = RoomUser(name, room, file)
+                        val features = (event["features"] ?: settings["features"]) as? JsonObject
+                        users[name] = RoomUser(name, room, file, yarmiplay = features?.get("yarmiplay") is JsonObject)
                         if (name != state.value.username) notify("$name joined the room")
                     }
                 }
@@ -457,6 +537,7 @@ class SyncplayClient(
                 file = parseFile(u["file"]),
                 isReady = u["isReady"]?.jsonPrimitive?.booleanOrNull,
                 isController = u["controller"]?.jsonPrimitive?.booleanOrNull ?: false,
+                yarmiplay = (u["features"] as? JsonObject)?.get("yarmiplay") is JsonObject,
             )
         }
         val me = state.value.username
@@ -519,6 +600,165 @@ class SyncplayClient(
         if ("startTLS" in message && !logged) return
         log("Server error: $message")
         fatalError = message
+    }
+
+    // --- YarmiplayServerTV extension messages ---------------------------------------
+
+    /** Live session: a token, and the host hasn't switched every extension off. */
+    private val sessionActive: Boolean get() = _session.value != null
+
+    private fun handleYarmiplay(message: JsonObject) {
+        // Only YarmiplayServerTV sends these, and only to clients that opted in.
+        if (config.deviceAuth == null) return
+        updateExt { it.copy(serverKind = ServerKind.YARMIPLAY) }
+        (message["challenge"] as? JsonObject)?.let { answerChallenge(it) }
+        (message["status"] as? JsonObject)?.let { handleDeviceStatus(it) }
+        (message["session"] as? JsonObject)?.let { s ->
+            if (logged) {
+                sessionToken = s.str("token")?.takeIf { it.isNotEmpty() }
+                sessionProtocol = minOf(Yarmiplay.PROTOCOL, (s["protocol"] as? JsonPrimitive)?.intOrNull ?: Yarmiplay.PROTOCOL)
+            }
+        }
+        val wasRelayOn = state.value.yarmiplay.capabilities.fileRelay
+        parseCapabilities(message["capabilities"])?.let { caps ->
+            updateExt {
+                it.copy(
+                    capabilities = caps,
+                    relayFiles = if (caps.fileRelay) it.relayFiles else emptyList(),
+                    // Vanilla mode revokes with capabilities alone; from then on the connection is plain Syncplay.
+                    serverKind = if (caps.allOff && "jellyfin" !in message && "session" !in message) ServerKind.SYNCPLAY else it.serverKind,
+                )
+            }
+            // The server forgets offers while the relay is off.
+            if (!caps.fileRelay) offerSent = null
+        }
+        (message["jellyfin"] as? JsonObject)?.let { j -> updateExt { it.copy(jellyfin = parseSharedJellyfin(j)) } }
+        (message["files"] as? JsonArray)?.let { files ->
+            if (state.value.yarmiplay.capabilities.fileRelay) updateExt { it.copy(relayFiles = files.mapNotNull(::parseRelayFile)) }
+        }
+        refreshSession()
+        if (!wasRelayOn && state.value.yarmiplay.capabilities.fileRelay) offerSent = null
+        sendOfferIfNeeded()
+
+        if (!sessionActive) return
+        (message["upload"] as? JsonObject)?.let { u -> parseUpload(u)?.let { emit(SyncplayEvent.UploadRequested(it)) } }
+        (message["uploadCancel"] as? JsonObject)?.str("id")?.let { emit(SyncplayEvent.UploadCancelled(it)) }
+        (message["jellyfinAuthorize"] as? JsonObject)?.let { a ->
+            val code = a.str("code") ?: return@let
+            val ok = (a["ok"] as? JsonPrimitive)?.booleanOrNull ?: false
+            emit(SyncplayEvent.JellyfinAuthorized(code, ok, a.str("error")))
+        }
+    }
+
+    private fun answerChallenge(challenge: JsonObject) {
+        val auth = config.deviceAuth ?: return
+        if (logged) return
+        val serverId = challenge.str("serverId").orEmpty()
+        val nonce = challenge.str("nonce")
+        if (!Yarmiplay.isValidServerId(serverId) || nonce.isNullOrEmpty()) {
+            fatalError = "The server sent an invalid device challenge"
+            return
+        }
+        val signed = runCatching {
+            val publicKey = auth.publicKey(serverId)
+            publicKey to auth.sign(serverId, Yarmiplay.signedMessage(serverId, nonce))
+        }.getOrElse {
+            log("Device key failed: $it")
+            fatalError = "This device's key for the server couldn't be used"
+            return
+        }
+        val (publicKey, signature) = signed
+        updateExt { it.copy(serverId = serverId, access = challenge.str("access") ?: it.access) }
+        val askAccess = config.requestAccess && !hadLogin
+        val b64 = java.util.Base64.getEncoder()
+        sendYarmiplay {
+            putJsonObject("auth") {
+                put("publicKey", b64.encodeToString(publicKey))
+                put("signature", b64.encodeToString(signature))
+                put("deviceName", auth.deviceName.take(60))
+                put("requestAccess", askAccess)
+            }
+        }
+        lastFingerprint = Yarmiplay.fingerprint(publicKey)
+    }
+
+    private var lastFingerprint = ""
+
+    private fun handleDeviceStatus(status: JsonObject) {
+        val fingerprint = status.str("fingerprint") ?: lastFingerprint
+        val device = when (status.str("state")) {
+            "approved" -> DeviceState.Approved
+            "pending" -> DeviceState.Pending(fingerprint)
+            "denied" -> DeviceState.Denied
+            "expired" -> DeviceState.Expired
+            "required" -> DeviceState.Required
+            "revoked" -> DeviceState.Revoked
+            else -> return
+        }
+        if (device == state.value.yarmiplay.device) return
+        updateExt { it.copy(device = device) }
+        emit(SyncplayEvent.DeviceStateChanged(device))
+    }
+
+    /** Starts or ends the HTTP session when the token or the capabilities changed. */
+    private fun refreshSession() {
+        val ext = state.value.yarmiplay
+        val token = sessionToken
+        val active = logged && token != null && ext.serverKind == ServerKind.YARMIPLAY && !ext.capabilities.allOff
+        val current = _session.value
+        val baseUrl = if (active) httpBase(ext.capabilities.https) else null
+        when {
+            active && (current == null || current.baseUrl != baseUrl) -> {
+                val session = YarmiplaySession(token!!, sessionProtocol, baseUrl!!)
+                _session.value = session
+                if (current == null) offerSent = null
+                updateExt { it.copy(session = true, protocol = sessionProtocol) }
+                emit(SyncplayEvent.SessionStarted(session))
+            }
+            !active && current != null -> {
+                _session.value = null
+                offerSent = null
+                updateExt { it.copy(session = false, protocol = 0, relayFiles = emptyList()) }
+                emit(SyncplayEvent.SessionEnded)
+            }
+        }
+    }
+
+    private fun httpBase(https: Boolean): String {
+        val host = config.host.trim().let { if (':' in it && !it.startsWith("[")) "[$it]" else it }
+        val scheme = if (https && transport?.isTls == true) "https" else "http"
+        return "$scheme://$host:${config.port}"
+    }
+
+    private fun sendOfferIfNeeded() {
+        if (!logged || !sessionActive || !state.value.yarmiplay.capabilities.fileRelay) return
+        val files = offer
+        if (files == offerSent || (files.isEmpty() && offerSent == null)) return
+        sendYarmiplay {
+            putJsonObject("offer") {
+                putJsonArray("files") {
+                    files.forEach { f ->
+                        add(buildJsonObject {
+                            put("name", f.name)
+                            put("size", f.size)
+                            put("duration", f.duration)
+                            put("quickHash", f.quickHash)
+                        })
+                    }
+                }
+            }
+        }
+        offerSent = files
+    }
+
+    /** The one way out for `Yarmiplay` commands: never to a server that hasn't shown it's YarmiplayServerTV. */
+    private inline fun sendYarmiplay(crossinline block: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit) {
+        if (config.deviceAuth == null || state.value.yarmiplay.serverKind != ServerKind.YARMIPLAY) return
+        send(obj { putJsonObject("Yarmiplay") { block() } })
+    }
+
+    private inline fun updateExt(crossinline change: (YarmiplayInfo) -> YarmiplayInfo) {
+        _state.update { it.copy(yarmiplay = change(it.yarmiplay)) }
     }
 
     // --- Playlist ----------------------------------------------------------------
@@ -631,6 +871,13 @@ class SyncplayClient(
                     put("managedRooms", true)
                     put("persistentRooms", true)
                     put("setOthersReadiness", true)
+                    if (config.deviceAuth != null) {
+                        putJsonObject("yarmiplay") {
+                            put("protocol", Yarmiplay.PROTOCOL)
+                            put("client", "YarmiplayTV")
+                            if (config.appVersion.isNotEmpty()) put("version", config.appVersion)
+                        }
+                    }
                 }
             }
         })
@@ -779,6 +1026,52 @@ class SyncplayClient(
             val sizeHash = sizeValue?.takeIf { it.isString }?.content?.takeIf(Filenames::isHash)
             val size = if (sizeHash != null) 0L else sizeValue?.let { it.longOrNull ?: it.doubleOrNull?.toLong() } ?: 0L
             return FileInfo(name, duration, size, sizeHash)
+        }
+
+        private val tokenPattern = Regex("(\"token\"\\s*:\\s*\")[^\"]*\"")
+
+        /** [line] for the log, without session tokens. */
+        internal fun redact(line: String): String =
+            if ("\"token\"" in line) tokenPattern.replace(line) { "${it.groupValues[1]}…\"" } else line
+
+        private fun JsonObject.bool(key: String): Boolean = (this[key] as? JsonPrimitive)?.booleanOrNull ?: false
+        private fun JsonObject.long(key: String): Long =
+            (this[key] as? JsonPrimitive)?.let { it.longOrNull ?: it.doubleOrNull?.toLong() } ?: 0L
+        private fun JsonObject.double(key: String): Double = (this[key] as? JsonPrimitive)?.doubleOrNull ?: 0.0
+
+        internal fun parseCapabilities(element: JsonElement?): YarmiplayCapabilities? {
+            val o = element as? JsonObject ?: return null
+            return YarmiplayCapabilities(fileRelay = o.bool("fileRelay"), jellyfin = o.bool("jellyfin"), https = o.bool("https"))
+        }
+
+        internal fun parseSharedJellyfin(o: JsonObject): SharedJellyfin = SharedJellyfin(
+            available = o.bool("available"),
+            serverId = o.str("serverId").orEmpty(),
+            serverName = o.str("serverName").orEmpty(),
+            proxy = o.bool("proxy"),
+            addresses = (o["addresses"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }.orEmpty(),
+        )
+
+        internal fun parseRelayFile(element: JsonElement): RelayFile? {
+            val o = element as? JsonObject ?: return null
+            val id = o.str("id")?.takeIf { it.isNotEmpty() } ?: return null
+            val name = o.str("name")?.takeIf { it.isNotEmpty() } ?: return null
+            return RelayFile(
+                id = id,
+                name = name,
+                size = o.long("size"),
+                duration = o.double("duration"),
+                quickHash = o.str("quickHash").orEmpty(),
+                sources = o.long("sources").toInt(),
+                cachedBytes = o.long("cachedBytes"),
+                rate = o.long("rate"),
+            )
+        }
+
+        internal fun parseUpload(o: JsonObject): UploadRequest? {
+            val id = o.str("id")?.takeIf { it.isNotEmpty() } ?: return null
+            val length = o.long("length").takeIf { it > 0 } ?: return null
+            return UploadRequest(id, o.str("file").orEmpty(), o.long("size"), o.str("quickHash").orEmpty(), o.long("offset"), length)
         }
 
         private fun JsonElement.toPlain(): Any? = when (this) {

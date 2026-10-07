@@ -59,6 +59,8 @@ import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.components.TvTile
 import com.yarmiplaytv.ui.shared.BLOCKED_NOTE
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
+import com.yarmiplaytv.ui.shared.relayNote
+import com.yarmiplaytv.ui.shared.serverStatusLine
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
@@ -149,6 +151,14 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
             return@Column
         }
         PanelHeader(room.room, "${container.sync.client?.config?.host ?: ""} · Syncplay ${room.serverVersion ?: ""}")
+        serverStatusLine(room.yarmiplay)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall) }
+        container.relay?.let { relay ->
+            val relayStatus by relay.status.collectAsStateWithLifecycle()
+            relayStatus?.let { s ->
+                Text(s.text, color = AppColors.Accent, style = MaterialTheme.typography.bodySmall)
+                s.error?.let { Text(it, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall) }
+            }
+        }
         val blocked by container.sync.blocked.collectAsStateWithLifecycle()
         val me = room.users.firstOrNull { it.name == room.username }
         val ready = room.isReady == true
@@ -186,6 +196,7 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
                             style = MaterialTheme.typography.bodySmall,
                         )
                         if (difference != null) Text(difference, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
+                        relayNote(room, user)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall) }
                         if (user.name in blocked) Text(BLOCKED_NOTE, color = AppColors.Error, style = MaterialTheme.typography.labelSmall)
                     }
                     if (!isMe) {

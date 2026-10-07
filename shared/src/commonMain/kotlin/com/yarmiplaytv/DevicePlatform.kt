@@ -5,6 +5,9 @@ expect object DevicePlatform {
     /** Device model on Android, host name on desktop; part of the default Syncplay name. */
     val deviceModel: String
 
+    /** What the user calls this device (Android's device name, the desktop's host name); shown to Syncplay hosts. */
+    val deviceName: String
+
     /** True on the Android emulator, where the host machine is reachable at 10.0.2.2. */
     val isEmulator: Boolean
 

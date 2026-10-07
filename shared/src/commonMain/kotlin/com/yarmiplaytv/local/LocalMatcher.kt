@@ -4,7 +4,14 @@ import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.media.MatchKind
 
 /** A video file on this device (from a media folder or picked directly). [uri] is a content:// URI. */
-data class LocalFile(val name: String, val sizeBytes: Long, val uri: String, val folder: String = "")
+data class LocalFile(
+    val name: String,
+    val sizeBytes: Long,
+    val uri: String,
+    val folder: String = "",
+    /** Last modified, in milliseconds since the epoch; 0 when unknown. */
+    val modified: Long = 0L,
+)
 
 /** Finds the local file for a shared-playlist entry, the way desktop Syncplay searches its media directories. */
 object LocalMatcher {

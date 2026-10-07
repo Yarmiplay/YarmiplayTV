@@ -26,4 +26,22 @@ sealed interface SyncplayEvent {
 
     /** Playback reached the end of the file and the next playlist entry should be loaded locally. */
     data class AdvancePlaylist(val nextIndex: Int, val filename: String) : SyncplayEvent
+
+    // --- YarmiplayServerTV extensions ------------------------------------------------
+
+    /** The device state changed (see [YarmiplayInfo.device]); pending, approved and the refusals each come once. */
+    data class DeviceStateChanged(val state: DeviceState) : SyncplayEvent
+
+    /** A new extension session started; the HTTP side is reachable with [YarmiplaySession]. */
+    data class SessionStarted(val session: YarmiplaySession) : SyncplayEvent
+
+    /** The session ended: vanilla mode switched on, or the connection closed. Stop all relay and Jellyfin work. */
+    data object SessionEnded : SyncplayEvent
+
+    /** The server wants bytes of a file this device offered. */
+    data class UploadRequested(val request: UploadRequest) : SyncplayEvent
+    data class UploadCancelled(val id: String) : SyncplayEvent
+
+    /** The server's answer to [SyncplayClient.authorizeJellyfin]. */
+    data class JellyfinAuthorized(val code: String, val ok: Boolean, val error: String?) : SyncplayEvent
 }

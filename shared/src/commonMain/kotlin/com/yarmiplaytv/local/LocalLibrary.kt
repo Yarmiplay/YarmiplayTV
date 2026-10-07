@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.nio.channels.FileChannel
 
 data class LocalFolder(val uri: String, val name: String)
 
@@ -92,6 +93,9 @@ abstract class LocalLibrary(
 
     /** Name and size of a single file URI. */
     abstract suspend fun describe(uri: String): LocalFile
+
+    /** Opens [uri] for reading at any offset (to serve it to the room's file relay); blocking, call on IO. */
+    abstract fun openChannel(uri: String): FileChannel
 
     /** Videos inside [folder] and its subfolders (at most [MAX_FILES]); runs on the IO dispatcher. */
     protected abstract fun scan(folder: LocalFolder): List<LocalFile>

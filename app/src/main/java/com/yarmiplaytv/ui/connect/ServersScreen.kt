@@ -28,6 +28,7 @@ import com.yarmiplaytv.ui.components.ActionButton
 import com.yarmiplaytv.ui.components.Panel
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.shared.isSharedServer
 import com.yarmiplaytv.ui.shared.serverDetail
 import com.yarmiplaytv.ui.shared.signOutOfServer
 import com.yarmiplaytv.ui.theme.AppColors
@@ -54,7 +55,7 @@ fun ServersScreen(container: AppContainer, nav: Navigator) {
                         Text(serverDetail(s), color = AppColors.TextDim)
                     }
                     ActionButton(
-                        "Sign out",
+                        if (isSharedServer(s)) "Remove" else "Sign out",
                         { signOutOfServer(container, s.key) },
                         if (i == 0) Modifier.focusRequester(firstFocus) else Modifier,
                         icon = Icons.Filled.Logout,

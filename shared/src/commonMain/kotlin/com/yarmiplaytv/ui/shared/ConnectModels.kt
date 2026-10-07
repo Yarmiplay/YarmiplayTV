@@ -20,6 +20,7 @@ import com.yarmiplaytv.media.plex.PlexLinkState
 import com.yarmiplaytv.media.plex.PlexServer
 import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
+import com.yarmiplaytv.sync.SyncController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -38,6 +39,10 @@ class SyncplayConnectModel(private val container: AppContainer) {
     var autoConnect by mutableStateOf(saved.autoConnect)
     var error by mutableStateOf<String?>(null)
         private set
+    /** The form's server as "host:port", or null while it's incomplete. */
+    val serverKey: String?
+        get() = port.toIntOrNull()?.takeIf { host.isNotBlank() }?.let { SyncController.serverKey(host, it) }
+
     /** Set when [connect] needs the community rules agreed first; answered with [acceptRules] or [declineRules]. */
     var askRules by mutableStateOf(false)
         private set

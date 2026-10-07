@@ -34,7 +34,15 @@ data class JellyfinSession(
     val userId: String,
     val userName: String,
     val accessToken: String,
-)
+    /** The Syncplay server whose host shares this Jellyfin with us; empty for servers the user signed in to. */
+    val sharedBy: String = "",
+    /** Every address the sharing host gave for it, tried again when [serverUrl] stops answering. */
+    val candidateUrls: List<String> = emptyList(),
+    /** The host stopped sharing it: its guest account answers 401. */
+    val noLongerShared: Boolean = false,
+) {
+    val isShared: Boolean get() = sharedBy.isNotEmpty()
+}
 
 sealed interface QuickConnectState {
     data class WaitingForApproval(val code: String) : QuickConnectState

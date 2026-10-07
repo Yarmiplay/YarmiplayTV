@@ -3,7 +3,6 @@ package com.yarmiplaytv.tv
 import android.view.KeyEvent
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
-import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -118,8 +117,8 @@ class TvNavigationTest {
         tv.await("Never")
         tv.click("Hide player controls after")
         tv.await("Custom time (seconds)")
-        // The custom field comes before the language fields.
-        compose.onAllNodes(hasSetTextAction()).onFirst().performTextReplacement("7")
+        // The device name field comes first, then the custom field, then the language fields.
+        compose.onAllNodes(hasSetTextAction())[1].performTextReplacement("7")
         waitUntil(5_000) { hideSeconds() == 7 }
         tv.await("7 s (custom)")
         tv.click("Hide player controls after")
@@ -171,7 +170,7 @@ class TvNavigationTest {
         tv.awaitFocus("Settings")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
         tv.awaitFocus("When I unpause")
-        tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = 7)
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = 8)
         tv.awaitFocus("Add Jellyfin and Plex servers")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
         tv.await("No media servers yet")

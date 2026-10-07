@@ -41,6 +41,21 @@ object DesktopPaths {
         return target
     }
 
+    /** Disposable data (the file relay's cache): never roams, and the OS may clear it. */
+    fun cacheDir(
+        osName: String = System.getProperty("os.name").orEmpty(),
+        env: (String) -> String? = System::getenv,
+        home: String = System.getProperty("user.home").orEmpty(),
+    ): File {
+        val os = osName.lowercase()
+        return when {
+            os.startsWith("windows") ->
+                File(env("LOCALAPPDATA")?.takeIf { it.isNotBlank() } ?: File(home, "AppData/Local").path, "YarmiplayTV/cache")
+            os.startsWith("mac") || os.startsWith("darwin") -> File(home, "Library/Caches/YarmiplayTV")
+            else -> File(env("XDG_CACHE_HOME")?.takeIf { it.isNotBlank() } ?: File(home, ".cache").path, "yarmiplaytv")
+        }
+    }
+
     private fun dirNamed(name: String, osName: String, env: (String) -> String?, home: String): File {
         val os = osName.lowercase()
         return when {

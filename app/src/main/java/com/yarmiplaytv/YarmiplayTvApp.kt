@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import androidx.datastore.preferences.preferencesDataStore
 import com.yarmiplaytv.data.SettingsStore
+import com.yarmiplaytv.device.AndroidDeviceKeyStore
 import com.yarmiplaytv.local.SafLocalLibrary
 import com.yarmiplaytv.player.MpvOptions
 import com.yarmiplaytv.player.MpvPlayer
@@ -33,6 +34,8 @@ class YarmiplayTvApp : Application() {
                 )
             },
             createLocalLibrary = { store, scope, folders -> SafLocalLibrary(this, store, scope, folders) },
+            deviceKeys = AndroidDeviceKeyStore(),
+            cacheDir = cacheDir,
         )
         if (BuildConfig.UPDATE_CHECK) {
             container.updates.platform = "android"

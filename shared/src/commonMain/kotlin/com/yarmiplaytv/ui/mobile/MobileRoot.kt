@@ -106,6 +106,7 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind) {
             nav.actionItem?.let { item ->
                 MobileItemActionsSheet(container, item, onDismiss = { nav.actionItem = null })
             }
+            MobileDeviceAccessDialog(container)
         }
     }
 }

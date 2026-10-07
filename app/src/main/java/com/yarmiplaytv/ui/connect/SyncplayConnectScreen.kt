@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.runtime.Composable
@@ -39,13 +40,16 @@ import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.shared.ROOM_PRIVACY_HINT
 import com.yarmiplaytv.ui.shared.ROOM_RULES
 import com.yarmiplaytv.ui.shared.ROOM_RULES_URL
+import com.yarmiplaytv.ui.shared.approvedOnly
 import com.yarmiplaytv.ui.shared.rememberSyncplayConnectModel
+import com.yarmiplaytv.ui.shared.serverStatusLine
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.delay
 
 @Composable
 fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
     val room by container.sync.room.collectAsStateWithLifecycle()
+    val settings by container.settings.collectAsStateWithLifecycle()
     val model = rememberSyncplayConnectModel(container)
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
@@ -67,6 +71,7 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
                 ConnectionStatus.DISCONNECTED -> Unit
             }
         }
+        if (connected) serverStatusLine(room.yarmiplay)?.let { Text(it, color = AppColors.TextDim) }
         Text(
             "Everyone in the same room on the same server watches in sync. Use the public server syncplay.pl (ports 8995–8999) or your own. " +
                 ROOM_PRIVACY_HINT,
@@ -80,13 +85,18 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
             TvTextField(model.username, { model.username = it.take(40) }, "Your name", Modifier.weight(1f))
             TvTextField(model.room, { model.room = it.take(60) }, "Room", Modifier.weight(1f), onSubmit = ::connect)
         }
-        TvTextField(model.password, { model.password = it }, "Server password (optional)", password = true)
+        if (!approvedOnly(settings.knownServers, model.host, model.port)) {
+            TvTextField(model.password, { model.password = it }, "Server password (optional)", password = true)
+        }
         ToggleRow("Secure connection (TLS)", model.tls, { model.tls = !model.tls }, subtitle = "Falls back to plain TCP if the server doesn't support it")
         ToggleRow("Connect automatically when the app starts", model.autoConnect, { model.autoConnect = !model.autoConnect })
         model.error?.let { Text(it, color = AppColors.Error) }
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             ActionButton(if (connected) "Reconnect" else "Connect", ::connect, icon = Icons.Filled.Link, primary = true)
             if (connected) ActionButton("Disconnect", model::disconnect, icon = Icons.Filled.LinkOff)
+            model.serverKey?.takeIf(container::hasDeviceKey)?.let { server ->
+                ActionButton("Forget this device's key", { container.forgetDeviceKey(server) }, icon = Icons.Filled.Key)
+            }
         }
         if (connected && room.motd != null) {
             Text(room.motd ?: "", color = AppColors.TextDim, modifier = Modifier.width(900.dp))

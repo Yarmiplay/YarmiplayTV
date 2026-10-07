@@ -23,6 +23,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.BuildConfig
+import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.data.PlaybackPrefs
 import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.UnpauseMode
@@ -88,6 +89,14 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
             { container.scope.launch { container.settingsStore.saveShowRoomChat(!settings.showRoomChat) } },
             subtitle = "Off hides everyone's chat messages in rooms, whatever name they use",
         )
+        if (container.supportsDeviceAccess) {
+            TvTextField(
+                settings.deviceName,
+                { name -> container.scope.launch { container.settingsStore.saveDeviceName(name) } },
+                "Device name (shown to YarmiplayServerTV hosts when asking for access)",
+                placeholder = DevicePlatform.deviceName,
+            )
+        }
 
         SectionTitle("Media servers")
         ValueRow(
@@ -109,6 +118,12 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
             settings.reportPlayback,
             { saveServerPrefs(report = !settings.reportPlayback) },
             subtitle = "Send watched state and how far you got to the servers that have the file",
+        )
+        ToggleRow(
+            "Add media servers shared by Syncplay hosts",
+            settings.addSharedServers,
+            { container.scope.launch { container.settingsStore.saveAddSharedServers(!settings.addSharedServers) } },
+            subtitle = "When a YarmiplayServerTV host shares their Jellyfin, sign in to it automatically",
         )
 
         SectionTitle("Playback")

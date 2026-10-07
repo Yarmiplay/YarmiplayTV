@@ -33,6 +33,7 @@ import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.data.DesktopPaths
 import com.yarmiplaytv.defaultSyncplayName
 import com.yarmiplaytv.data.desktopSettingsStore
+import com.yarmiplaytv.device.FileDeviceKeyStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.player.desktop.DesktopMpvOptions
 import com.yarmiplaytv.player.desktop.DesktopMpvPlayer
@@ -102,6 +103,7 @@ internal fun runApp(args: List<String>) {
         MainWindow(app, boundsFile)
     }
     app.updates.onExit()
+    app.relay?.close()
     player.close()
     exitProcess(0)
 }
@@ -122,6 +124,8 @@ private fun createContainer(configDir: File): AppContainer {
             )
         },
         createLocalLibrary = { settings, scope, folders -> FileLocalLibrary(settings, scope, folders) },
+        deviceKeys = FileDeviceKeyStore(File(configDir, "device-keys")),
+        cacheDir = if (DesktopPaths.portableDir() != null) File(configDir, "cache") else DesktopPaths.cacheDir(),
     ).also { it.deviceKind = DeviceKind.DESKTOP }
 }
 

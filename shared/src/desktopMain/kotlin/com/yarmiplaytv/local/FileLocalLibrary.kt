@@ -12,7 +12,9 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.net.URI
+import java.nio.channels.FileChannel
 import java.nio.file.ClosedWatchServiceException
+import java.nio.file.StandardOpenOption
 import java.nio.file.FileSystems
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
@@ -56,11 +58,13 @@ class FileLocalLibrary(
     override suspend fun describe(uri: String): LocalFile = withContext(Dispatchers.IO) {
         val path = runCatching { pathOf(uri) }.getOrNull()
         if (path != null && Files.isRegularFile(path)) {
-            LocalFile(path.fileName.toString(), Files.size(path), uriOf(path))
+            LocalFile(path.fileName.toString(), Files.size(path), uriOf(path), modified = Files.getLastModifiedTime(path).toMillis())
         } else {
             LocalFile(uri.substringBefore('?').trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\').ifEmpty { uri }, 0L, uri)
         }
     }
+
+    override fun openChannel(uri: String): FileChannel = FileChannel.open(pathOf(uri), StandardOpenOption.READ)
 
     override fun scan(folder: LocalFolder): List<LocalFile> {
         val root = pathOf(folder.uri)
@@ -75,7 +79,7 @@ class FileLocalLibrary(
             override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
                 val name = file.fileName.toString()
                 if (attrs.isRegularFile && LocalMatcher.isVideo(name, null)) {
-                    out += LocalFile(name, attrs.size(), uriOf(file), folder.name)
+                    out += LocalFile(name, attrs.size(), uriOf(file), folder.name, attrs.lastModifiedTime().toMillis())
                 }
                 return if (out.size >= MAX_FILES) FileVisitResult.TERMINATE else FileVisitResult.CONTINUE
             }

@@ -19,8 +19,18 @@ fun serverDetail(source: MediaSource): String {
         is PlexSource -> source.session.userName to source.session.serverUrl
         else -> "" to ""
     }
-    return listOf(kindName(source.kind), user, url).filter { it.isNotEmpty() }.joinToString(" · ")
+    val shared = (source as? JellyfinSource)?.session?.let { s ->
+        when {
+            s.noLongerShared -> "No longer shared, remove it"
+            s.isShared -> "Shared by the Syncplay host at ${s.sharedBy}"
+            else -> ""
+        }
+    }.orEmpty()
+    return listOf(kindName(source.kind), user, url, shared).filter { it.isNotEmpty() }.joinToString(" · ")
 }
+
+/** A Jellyfin a Syncplay host shares: removing it just forgets it (its guest account isn't ours). */
+fun isSharedServer(source: MediaSource): Boolean = (source as? JellyfinSource)?.session?.isShared == true
 
 /** A server's name with its backend, for lists that mix both, e.g. "Living Room (Jellyfin)". */
 fun serverLabel(source: MediaSource): String = "${source.displayName} (${kindName(source.kind)})"

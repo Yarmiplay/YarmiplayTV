@@ -3,12 +3,15 @@ package com.yarmiplaytv.sync
 import com.yarmiplaytv.Logger
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.syncplay.DeviceAuth
 import com.yarmiplaytv.syncplay.FileInfo
+import com.yarmiplaytv.syncplay.RelayOffer
 import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.SyncplayClient
 import com.yarmiplaytv.syncplay.SyncplayConfig
 import com.yarmiplaytv.syncplay.SyncplayEvent
+import com.yarmiplaytv.syncplay.YarmiplaySession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -47,10 +50,16 @@ class SyncController(
     /** "host:port" of the server [connect] last used. */
     var server: String? = null
         private set
+    private var lastConfig: SyncplayConfig? = null
 
     val room: StateFlow<RoomState> = clientFlow
         .flatMapLatest { it?.state ?: flowOf(RoomState()) }
         .stateIn(scope, SharingStarted.Eagerly, RoomState())
+
+    /** The YarmiplayServerTV extension session of the current connection; null on other servers. */
+    val session: StateFlow<YarmiplaySession?> = clientFlow
+        .flatMapLatest { it?.session ?: flowOf(null) }
+        .stateIn(scope, SharingStarted.Eagerly, null)
 
     private val _events = MutableSharedFlow<SyncplayEvent>(extraBufferCapacity = 128)
     /** All protocol events of the current client (for the playlist controller and UI). */
@@ -89,11 +98,20 @@ class SyncController(
     private var reportedFile: FileInfo? = null
     private var loading = false
 
-    fun connect(config: SyncplayConfig) {
+    /** This device's keys; with them the client opts in to the YarmiplayServerTV extensions. */
+    var deviceAuth: DeviceAuth? = null
+    var appVersion: String = ""
+
+    /**
+     * Joins [config]'s room. [requestAccess] asks a YarmiplayServerTV host to approve this device if they haven't
+     * yet; pass false for connections the user didn't start (connecting on launch).
+     */
+    fun connect(config: SyncplayConfig, requestAccess: Boolean = true) {
         disconnect()
-        server = "${config.host.trim().lowercase()}:${config.port}"
+        lastConfig = config
+        server = serverKey(config.host, config.port)
         val newClient = SyncplayClient(
-            config = config,
+            config = config.copy(deviceAuth = deviceAuth, appVersion = appVersion, requestAccess = requestAccess),
             player = adapter,
             settings = syncSettings,
             parentScope = scope,
@@ -120,6 +138,11 @@ class SyncController(
         newClient.start()
         if (loading) newClient.fileLoading()
         else reportedFile?.let { newClient.fileLoaded(it, resetPosition = false) }
+    }
+
+    /** Connects again with the last [connect]'s settings, e.g. to ask a YarmiplayServerTV host for access. */
+    fun reconnect(requestAccess: Boolean = true) {
+        lastConfig?.let { connect(it, requestAccess) }
     }
 
     fun disconnect() {
@@ -159,8 +182,15 @@ class SyncController(
     }
 
     fun toggleReady() = clientFlow.value?.toggleReady()
-    fun setReady(ready: Boolean) = clientFlow.value?.setReady(ready)
+    fun setReady(ready: Boolean, manuallyInitiated: Boolean = true) = clientFlow.value?.setReady(ready, manuallyInitiated)
     fun sendChat(text: String) = clientFlow.value?.sendChat(text.trim().take(maxChatLength))
+
+    /** The file reported to the room, if one is loaded. */
+    val currentFile: FileInfo? get() = reportedFile
+
+    fun offerFiles(files: List<RelayOffer>) = clientFlow.value?.offerFiles(files)
+    fun reportUploadFailed(id: String, error: String) = clientFlow.value?.reportUploadFailed(id, error)
+    fun authorizeJellyfin(code: String) = clientFlow.value?.authorizeJellyfin(code)
 
     /** The server's chat message limit (it cuts longer messages off), or Syncplay's default before joining. */
     val maxChatLength: Int
@@ -178,6 +208,9 @@ class SyncController(
     fun postLocal(text: String, isError: Boolean = false) = post(FeedMessage(text, isError = isError))
 
     companion object {
+        /** How a Syncplay server is named in settings: "host:port", host lowercased. */
+        fun serverKey(host: String, port: Int) = "${host.trim().lowercase()}:$port"
+
         private const val TAG = "SyncController"
         private const val MAX_FEED = 200
         /** Syncplay's MAX_CHAT_MESSAGE_LENGTH. */
