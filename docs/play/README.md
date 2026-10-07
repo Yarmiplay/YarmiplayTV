@@ -143,7 +143,7 @@ location).
 
 Testers join on their own from the testers page, `https://tv.yarmiplay.com/test/` (from
 `docs/testers.md`, linked in the download page's footer). It walks them through joining the Google Group
-(`https://groups.google.com/g/yarmiplaytv-testers`: anyone can join, members can't see each other's
+(`https://groups.google.com/g/yarmiplaytv-testers/about`: anyone can join, members can't see each other's
 addresses), the opt-in link `https://play.google.com/apps/testing/com.yarmiplaytv` and installing from Play.
 Play only lets a new tester install
 about 15 minutes after opting in (before that it shows an error), which the page tells them.

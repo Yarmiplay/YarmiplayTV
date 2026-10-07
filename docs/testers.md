@@ -7,7 +7,7 @@ tablet or Google TV? Joining takes two minutes.
 
 1. **Join the testers group**
    Use the Google account that's on your phone or TV.
-   [Join group](https://groups.google.com/g/yarmiplaytv-testers)
+   [Join group](https://groups.google.com/g/yarmiplaytv-testers/about)
 2. **Become a tester**
    Sign in with the same account.
    [Become a tester](https://play.google.com/apps/testing/com.yarmiplaytv)
