@@ -101,7 +101,7 @@ class AppContainer(
         deviceAuth = deviceKeys?.let { keys -> DeviceKeys(keys) { deviceDisplayName } }
     }
     /** The YarmiplayServerTV file relay; idle on other servers. */
-    val relay: RelayManager? = cacheDir?.let { RelayManager(scope, sync, player, local, it) }
+    val relay: RelayManager? = cacheDir?.let { RelayManager(scope, sync, player, local, it, settings.map { s -> s.shareFiles }) }
     private val locator = MediaLocator(local, servers) { name -> relay?.find(name) }.apply { preferredServer = initial.preferredServer }
     val playlist = PlaylistController(scope, sync, player, mediaSource, local, locator, relay)
     private val reporter = PlaybackReporter(scope, player, playlist.nowPlaying, servers).apply { enabled = initial.reportPlayback }

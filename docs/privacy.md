@@ -29,7 +29,8 @@ for a new version.
     to the app, the app tells the server each file's name, size, duration and a fingerprint of its contents
     (a SHA-256 hash of its first and last megabyte). When another viewer in the room plays one of them, the
     app uploads the parts the server asks for, and the server passes them on to that viewer. Files that
-    aren't in the room's playlist are never offered or uploaded.
+    aren't in the room's playlist are never offered or uploaded. Turn this off with **Share my files with the
+    room** in Settings; you can still watch files other viewers share.
   - *Shared media servers:* when the host shares their Jellyfin server, the app adds it to your servers and
     signs in with a Quick Connect code that the Syncplay server approves for you. Turn this off with
     **Add media servers shared by Syncplay hosts** in Settings.

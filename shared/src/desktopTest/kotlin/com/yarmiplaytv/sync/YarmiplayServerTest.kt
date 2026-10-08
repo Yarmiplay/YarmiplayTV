@@ -149,6 +149,31 @@ class YarmiplayServerTest {
         }
     }
 
+    @Test
+    fun `a viewer who turned sharing off offers nothing and can withdraw an offer`() {
+        val server = System.getenv("YARMIPLAY_TEST_SERVER").orEmpty()
+        assumeTrue("YARMIPLAY_TEST_SERVER not set", server.isNotBlank())
+        val media = tmp.newFolder("media")
+        File(media, "private.mkv").writeBytes(Random(17).nextBytes(2 * 1024 * 1024 + 5))
+        val app = join(server, "private")
+        runBlocking { app.settingsStore.saveShareFiles(false) }
+        awaitTrue("sharing to be off") { !app.settings.value.shareFiles }
+        awaitTrue("an extension session") { app.sync.room.value.yarmiplay.relayActive }
+        onMain { app.local.addFolder(FileLocalLibrary.uriOf(media.toPath())) }
+        awaitTrue("the folder to be indexed") { app.local.files.value.isNotEmpty() }
+        onMain { app.playlist.shared.add(listOf("private.mkv")) }
+        awaitTrue("the playlist to come back") { app.sync.room.value.playlist == listOf("private.mkv") }
+        runBlocking { delay(3_000) }
+        assertTrue("offered with sharing off", onMain { app.sync.room.value.yarmiplay.relayFiles.none { it.sources > 0 } })
+
+        runBlocking { app.settingsStore.saveShareFiles(true) }
+        awaitTrue("the file to be offered once sharing is on") {
+            app.sync.room.value.yarmiplay.relayFiles.any { it.name == "private.mkv" && it.sources == 1 }
+        }
+        runBlocking { app.settingsStore.saveShareFiles(false) }
+        awaitTrue("the offer to be withdrawn") { app.sync.room.value.yarmiplay.relayFiles.none { it.sources > 0 } }
+    }
+
     /** Runs YarmiplayServerTV's scripts/fake_peer.py (YARMIPLAY_FAKE_PEER) in our room, with its output kept for failures. */
     private fun fakePeer(server: String, name: String, script: String): Pair<Process, StringBuffer> {
         val peer = System.getenv("YARMIPLAY_FAKE_PEER").orEmpty()

@@ -35,7 +35,8 @@ desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin]
     without the password. Settings > Device name sets what the host sees; the connect screen can forget the key.
   - File relay: someone who doesn't have the playlist's file streams it from a viewer who does, through the
     Syncplay server, or downloads it first when the connection is too slow to play it smoothly. Relayed files
-    are cached for at most 24 hours (up to 4 GB) and deleted when you leave the room.
+    are cached for at most 24 hours (up to 4 GB) and deleted when you leave the room. Settings > Share my files
+    with the room stops this device from offering its files; it can still play files others share.
   - A Jellyfin server the host shares is added automatically, as "<name> (via <server>)"
     (Settings > Add media servers shared by Syncplay hosts).
 

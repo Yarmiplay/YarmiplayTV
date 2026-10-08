@@ -56,6 +56,7 @@ class AppState {
             store.saveServerPrefs(saved.preferredServer, saved.reportPlayback)
             store.saveDeviceName(saved.deviceName)
             store.saveAddSharedServers(saved.addSharedServers)
+            store.saveShareFiles(saved.shareFiles)
             store.replaceRoomPlaylists(savedRoomPlaylists)
         }
         onMain {
@@ -88,6 +89,7 @@ class AppState {
             store.saveServerPrefs("", reportPlayback = true)
             store.saveDeviceName("")
             store.saveAddSharedServers(true)
+            store.saveShareFiles(true)
             store.replaceRoomPlaylists(emptyMap())
         }
         onMain { removeAllServers() }
@@ -96,7 +98,7 @@ class AppState {
         waitUntil(5_000) {
             val s = container.settings.value
             s.syncplay == PROFILE && s.jellyfinServers.isEmpty() && s.plexServers.isEmpty() && container.mediaSource.value == null &&
-                s.lastJellyfinUrl == LAST_JELLYFIN_URL && s.showRoomChat && s.acceptedRoomRules && s.deviceName.isEmpty() && s.addSharedServers
+                s.lastJellyfinUrl == LAST_JELLYFIN_URL && s.showRoomChat && s.acceptedRoomRules && s.deviceName.isEmpty() && s.addSharedServers && s.shareFiles
         }
         clearFeed()
     }

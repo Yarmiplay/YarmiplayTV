@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -101,11 +102,13 @@ class RelayManager(
     private val player: Player,
     local: LocalLibrary,
     cacheDir: File,
+    /** Whether this device offers its files to the room; viewing relayed files works either way. */
+    sharing: Flow<Boolean> = flowOf(true),
 ) {
     private val http = relayHttpClient()
     private val cache by lazy { RelayCache(File(cacheDir, "relay")) }
     private val proxy = RelayProxy(scope)
-    private val offers = RelayOffers(scope, sync, local)
+    private val offers = RelayOffers(scope, sync, local, sharing)
     private val uploader = RelayUploader(scope, sync, local, offers, http)
 
     private val transfers = HashMap<String, RelayTransfer>()

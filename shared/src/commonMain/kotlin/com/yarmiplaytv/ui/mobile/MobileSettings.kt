@@ -75,6 +75,12 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                 settings.addSharedServers,
                 Modifier.testTag("toggle_add_shared_servers"),
             ) { container.scope.launch { container.settingsStore.saveAddSharedServers(it) } }
+            ToggleSetting(
+                "Share my files with the room",
+                "On YarmiplayServerTV servers, viewers without the playlist's file can stream it from your media folders",
+                settings.shareFiles,
+                Modifier.testTag("toggle_share_files"),
+            ) { container.scope.launch { container.settingsStore.saveShareFiles(it) } }
 
             SectionHeader("Syncing")
             ValueSetting(

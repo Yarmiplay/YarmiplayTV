@@ -89,6 +89,8 @@ data class AppSettings(
     val deviceName: String = "",
     /** Add the Jellyfin a YarmiplayServerTV host shares with their room. */
     val addSharedServers: Boolean = true,
+    /** Offer the room's YarmiplayServerTV file relay the playlist files in this device's media folders. */
+    val shareFiles: Boolean = true,
     /** What each Syncplay server ("host:port") turned out to be when last joined. */
     val knownServers: Map<String, KnownServer> = emptyMap(),
 )
@@ -166,6 +168,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
 
         val deviceName = stringPreferencesKey("device_name")
         val addSharedServers = booleanPreferencesKey("add_shared_servers")
+        val shareFiles = booleanPreferencesKey("share_files")
         /** One [KnownServer] per line: "host:port", "yarmiplay" or "syncplay", server id and access, tab-separated. */
         val knownServers = stringPreferencesKey("sp_known_servers")
     }
@@ -226,6 +229,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             acceptedRoomRules = p[Keys.acceptedRoomRules] ?: false,
             deviceName = p[Keys.deviceName] ?: "",
             addSharedServers = p[Keys.addSharedServers] ?: true,
+            shareFiles = p[Keys.shareFiles] ?: true,
             knownServers = p[Keys.knownServers]?.let(::decodeKnown) ?: emptyMap(),
         )
     }
@@ -242,6 +246,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
     suspend fun saveDeviceName(name: String) = dataStore.edit { it[Keys.deviceName] = name.take(60) }
 
     suspend fun saveAddSharedServers(on: Boolean) = dataStore.edit { it[Keys.addSharedServers] = on }
+
+    suspend fun saveShareFiles(on: Boolean) = dataStore.edit { it[Keys.shareFiles] = on }
 
     /** Remembers what [server] ("host:port") is; null forgets it. */
     suspend fun saveKnownServer(server: String, known: KnownServer?) = dataStore.edit {

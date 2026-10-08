@@ -14,6 +14,7 @@ import com.yarmiplaytv.syncplay.Yarmiplay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
@@ -25,26 +26,29 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Offers the room's relay the local files that match its playlist, again whenever the room, the playlist, the
- * local index or the session changes (the client drops repeats of what the server already has).
+ * local index or the session changes (the client drops repeats of what the server already has). With [sharing]
+ * off it offers nothing and withdraws what it offered, so upload requests find no file and are refused.
  */
 @OptIn(FlowPreview::class)
 class RelayOffers(
     private val scope: CoroutineScope,
     private val sync: SyncController,
     private val local: LocalLibrary,
+    private val sharing: Flow<Boolean>,
 ) {
     private val hashes = ConcurrentHashMap<String, String>()
     @Volatile private var offered: Map<String, LocalFile> = emptyMap()
 
-    private data class Inputs(val room: String, val playlist: List<String>, val active: Boolean, val files: List<LocalFile>)
+    private data class Inputs(val room: String, val playlist: List<String>, val active: Boolean, val files: List<LocalFile>, val sharing: Boolean)
 
     fun start() {
         scope.launch {
-            combine(sync.room, local.files) { room, files ->
-                Inputs(room.room, room.playlist, room.yarmiplay.relayActive, files)
+            combine(sync.room, local.files, sharing) { room, files, sharing ->
+                Inputs(room.room, room.playlist, room.yarmiplay.relayActive, files, sharing)
             }.distinctUntilChanged().debounce(300).collectLatest { inputs ->
-                if (!inputs.active) {
+                if (!inputs.active || !inputs.sharing) {
                     offered = emptyMap()
+                    if (inputs.active) sync.offerFiles(emptyList())
                     return@collectLatest
                 }
                 val users = sync.room.value.users

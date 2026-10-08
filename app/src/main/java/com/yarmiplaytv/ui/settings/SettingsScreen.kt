@@ -125,6 +125,12 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
             { container.scope.launch { container.settingsStore.saveAddSharedServers(!settings.addSharedServers) } },
             subtitle = "When a YarmiplayServerTV host shares their Jellyfin, sign in to it automatically",
         )
+        ToggleRow(
+            "Share my files with the room",
+            settings.shareFiles,
+            { container.scope.launch { container.settingsStore.saveShareFiles(!settings.shareFiles) } },
+            subtitle = "On YarmiplayServerTV servers, viewers without the playlist's file can stream it from your media folders",
+        )
 
         SectionTitle("Playback")
         ToggleRow("Hardware decoding", pb.hardwareDecoding, { savePlayback(pb.copy(hardwareDecoding = !pb.hardwareDecoding)) }, subtitle = "MediaCodec with software fallback. Takes effect after restarting the app")
