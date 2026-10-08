@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.6.1" date="2026-10-08">
+      <description>
+        <p>YarmiplayServerTV support: hosts approve devices once, viewers without the file stream it from someone who has it, and a Jellyfin the host shares is added automatically. Nothing changes on other Syncplay servers.</p>
+      </description>
+    </release>
     <release version="1.5.1" date="2026-10-06">
       <description>
         <p>Syncplay connects on mobile networks where the server refuses IPv6, by falling back to IPv4.</p>
