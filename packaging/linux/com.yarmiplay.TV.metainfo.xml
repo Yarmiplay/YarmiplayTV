@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.6.3" date="2026-10-09">
+      <description>
+        <p>File relay: shows Streaming while it plays, and a progress bar while a slow link downloads the file.</p>
+      </description>
+    </release>
     <release version="1.6.2" date="2026-10-08">
       <description>
         <p>File relay: a file opened directly is shared even without a media folder, and Android plays a relayed file instead of failing to open it.</p>
