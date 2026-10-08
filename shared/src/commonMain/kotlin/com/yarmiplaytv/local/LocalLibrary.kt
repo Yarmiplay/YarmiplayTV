@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -29,6 +30,10 @@ abstract class LocalLibrary(
 
     private val _files = MutableStateFlow<List<LocalFile>>(emptyList())
     val files: StateFlow<List<LocalFile>> = _files.asStateFlow()
+
+    private val _opened = MutableStateFlow<List<LocalFile>>(emptyList())
+    /** Files picked directly this session (outside the media folders too), most recent last; the relay offers them. */
+    val opened: StateFlow<List<LocalFile>> = _opened.asStateFlow()
 
     private val _indexing = MutableStateFlow(false)
     val indexing: StateFlow<Boolean> = _indexing.asStateFlow()
@@ -94,6 +99,10 @@ abstract class LocalLibrary(
     /** Name and size of a single file URI. */
     abstract suspend fun describe(uri: String): LocalFile
 
+    fun rememberOpened(file: LocalFile) {
+        _opened.update { list -> (list.filterNot { it.uri == file.uri } + file).takeLast(MAX_OPENED) }
+    }
+
     /** Opens [uri] for reading at any offset (to serve it to the room's file relay); blocking, call on IO. */
     abstract fun openChannel(uri: String): FileChannel
 
@@ -110,5 +119,6 @@ abstract class LocalLibrary(
         private const val TAG = "LocalLibrary"
         private const val MIN_REFRESH_MS = 30_000L
         const val MAX_FILES = 20_000
+        private const val MAX_OPENED = 200
     }
 }

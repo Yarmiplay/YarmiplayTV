@@ -158,13 +158,15 @@ class RelayTransfer(
     /** Fetches blocks `[first, end)`; returns false on an error. [abandon] stops early when the player moved away. */
     private suspend fun fetch(first: Int, end: Int, download: Boolean, abandon: () -> Boolean): Boolean {
         val src = source() ?: run {
-            lastError = "No viewer is sharing this file right now"
+            fail("No viewer is sharing this file right now")
             return false
         }
         val start = cache.blockStart(first)
         val last = minOf(size, cache.blockStart(end)) - 1
+        val mode = if (download) "download" else "stream"
+        val t0 = System.nanoTime()
         val request = Request.Builder()
-            .url("${src.session.baseUrl}/yarmiplay/files/${src.fileId}?mode=${if (download) "download" else "stream"}")
+            .url("${src.session.baseUrl}/yarmiplay/files/${src.fileId}?mode=$mode")
             .header("Authorization", src.session.authorization)
             .header("Range", "bytes=$start-$last")
             .build()
@@ -173,13 +175,17 @@ class RelayTransfer(
         try {
             call.await().use { response ->
                 if (response.code != 206 && response.code != 200) {
-                    lastError = when (response.code) {
-                        401 -> "The Syncplay server ended the session"
-                        404 -> "No viewer is sharing this file right now"
-                        else -> "The Syncplay server answered ${response.code}"
-                    }
+                    fail(
+                        when (response.code) {
+                            401 -> "The Syncplay server ended the session"
+                            404 -> "No viewer is sharing this file right now"
+                            else -> "The Syncplay server answered ${response.code}"
+                        },
+                        "$mode bytes=$start-$last of $name: HTTP ${response.code}",
+                    )
                     return false
                 }
+                Logger.i(TAG, "Fetching $mode bytes=$start-$last of $name: HTTP ${response.code}")
                 val body = response.body ?: return false
                 val stream = body.byteStream()
                 val buffer = ByteArray(BUFFER)
@@ -196,25 +202,41 @@ class RelayTransfer(
                         cache.markComplete(block)
                         block++
                     }
-                    if (cache.isDeleted || abandon()) return true
+                    if (cache.isDeleted || abandon()) {
+                        Logger.i(TAG, "Left $mode of $name at $pos (${elapsedMs(t0)} ms): the player moved")
+                        return true
+                    }
                     // Another fetch filled what comes next: stop here and let the loop pick the next gap.
                     if (block < end && pos == cache.blockStart(block) && cache.has(block)) return true
                 }
-                lastError = null
-                return pos > last
+                val ok = pos > last
+                if (ok) {
+                    lastError = null
+                    Logger.i(TAG, "Got $mode bytes=$start-$last of $name in ${elapsedMs(t0)} ms")
+                } else {
+                    fail("The Syncplay server sent too little", "$mode of $name ended at $pos of bytes=$start-$last")
+                }
+                return ok
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
             if (currentCoroutineContext().isActive) {
-                lastError = "Lost the connection to the Syncplay server"
-                Logger.w(TAG, "Relay fetch of $name failed: ${e.message}")
+                fail("Lost the connection to the Syncplay server", "$mode bytes=$start-$last of $name failed: $e")
             }
             return false
         } finally {
             cancelOnStop.dispose()
         }
     }
+
+    /** Sets [lastError]; logs [detail] (or the error) each time, and the error only when it changes. */
+    private fun fail(error: String, detail: String? = null) {
+        if (detail != null || error != lastError) Logger.w(TAG, detail ?: "$name: $error")
+        lastError = error
+    }
+
+    private fun elapsedMs(t0: Long) = (System.nanoTime() - t0) / 1_000_000
 
     companion object {
         private const val TAG = "RelayTransfer"

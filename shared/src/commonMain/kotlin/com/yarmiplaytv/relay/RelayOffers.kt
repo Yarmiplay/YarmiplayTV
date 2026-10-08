@@ -25,8 +25,8 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Offers the room's relay the local files that match its playlist, again whenever the room, the playlist, the
- * local index or the session changes (the client drops repeats of what the server already has). With [sharing]
+ * Offers the room's relay the local files that match its playlist (from the media folders or opened directly),
+ * again whenever the room, the playlist, the local files or the session changes (the client drops repeats of what the server already has). With [sharing]
  * off it offers nothing and withdraws what it offered, so upload requests find no file and are refused.
  */
 @OptIn(FlowPreview::class)
@@ -43,8 +43,8 @@ class RelayOffers(
 
     fun start() {
         scope.launch {
-            combine(sync.room, local.files, sharing) { room, files, sharing ->
-                Inputs(room.room, room.playlist, room.yarmiplay.relayActive, files, sharing)
+            combine(sync.room, local.files, local.opened, sharing) { room, files, opened, sharing ->
+                Inputs(room.room, room.playlist, room.yarmiplay.relayActive, candidates(files, opened), sharing)
             }.distinctUntilChanged().debounce(300).collectLatest { inputs ->
                 if (!inputs.active || !inputs.sharing) {
                     offered = emptyMap()
@@ -90,6 +90,12 @@ class RelayOffers(
         private const val TAG = "RelayOffers"
 
         private fun key(size: Long, quickHash: String) = "$size:$quickHash"
+
+        /** The media folders' files, then the files opened directly that aren't among them. */
+        fun candidates(folderFiles: List<LocalFile>, opened: List<LocalFile>): List<LocalFile> {
+            val known = folderFiles.mapTo(HashSet()) { it.uri }
+            return folderFiles + opened.filterNot { it.uri in known }
+        }
 
         /**
          * The playlist entries this device has, as relay offers named like the playlist entry (so viewers match

@@ -153,8 +153,13 @@ class PlaylistController(
             return
         }
         if (!locator.hasServers && !local.hasFolders && !locator.hasRelay(filename)) {
-            _status.value = PlaylistStatus.NotFound(filename, "Connect a media server or add a media folder to auto-load playlist items")
-            sync.postLocal("Can't load '$filename': no media server or media folders", isError = true)
+            if (sync.room.value.yarmiplay.relayActive) {
+                _status.value = PlaylistStatus.NotFound(filename, "Nobody in the room is sharing it yet")
+                sync.postLocal("Can't load '$filename': nobody in the room is sharing it yet", isError = true)
+            } else {
+                _status.value = PlaylistStatus.NotFound(filename, "Connect a media server or add a media folder to auto-load playlist items")
+                sync.postLocal("Can't load '$filename': no media server or media folders", isError = true)
+            }
             return
         }
         _status.value = PlaylistStatus.Resolving(filename)
@@ -359,7 +364,7 @@ class PlaylistController(
         }
     }
 
-    private suspend fun localPlayable(uri: String): PlayableMedia = local.describe(uri).toPlayable()
+    private suspend fun localPlayable(uri: String): PlayableMedia = local.describe(uri).also(local::rememberOpened).toPlayable()
 
     private fun addFileNameToPlaylist(fileName: String) {
         if (sync.client == null) {

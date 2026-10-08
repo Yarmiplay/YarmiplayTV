@@ -79,6 +79,7 @@ class RelayUploader(
                 return fail(request, "bad range")
             }
             val session = sync.session.value ?: return
+            Logger.i(TAG, "Uploading bytes ${request.offset}+${request.length} of ${file.name}")
             val call = http.newCall(
                 Request.Builder()
                     .url("${session.baseUrl}/yarmiplay/upload/${request.id}")
@@ -101,7 +102,7 @@ class RelayUploader(
             } catch (e: IOException) {
                 // The server takes the request back and asks someone else.
                 if (e.cause is ReadFailure) fail(request, "read error")
-                else Logger.d(TAG, "Relay upload of ${file.name} ended: ${e.message}")
+                else Logger.w(TAG, "Relay upload of ${file.name} ended: $e")
             }
         }
     }

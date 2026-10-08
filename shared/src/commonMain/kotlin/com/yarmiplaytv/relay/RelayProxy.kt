@@ -32,14 +32,14 @@ class RelayProxy(private val scope: CoroutineScope) {
         val key = routes.entries.firstOrNull { it.value === transfer }?.key
             ?: ByteArray(16).also(random::nextBytes).joinToString("") { "%02x".format(it) }.also { routes[it] = transfer }
         val name = URLEncoder.encode(transfer.name, "UTF-8").replace("+", "%20")
-        return "http://127.0.0.1:${socket.localPort}/relay/$key/$name"
+        return "http://$HOST:${socket.localPort}/relay/$key/$name"
     }
 
     fun remove(transfer: RelayTransfer) {
         routes.entries.removeAll { it.value === transfer }
     }
 
-    fun isProxyUrl(url: String?): Boolean = url != null && server?.let { url.startsWith("http://127.0.0.1:${it.localPort}/relay/") } == true
+    fun isProxyUrl(url: String?): Boolean = url != null && server?.let { url.startsWith("http://$HOST:${it.localPort}/relay/") } == true
 
     @Synchronized
     fun close() {
@@ -49,7 +49,7 @@ class RelayProxy(private val scope: CoroutineScope) {
     }
 
     private fun start(): ServerSocket {
-        val socket = ServerSocket(0, 16, InetAddress.getLoopbackAddress())
+        val socket = ServerSocket(0, 16, InetAddress.getByName(HOST))
         server = socket
         Thread({
             while (!socket.isClosed) {
@@ -65,6 +65,8 @@ class RelayProxy(private val scope: CoroutineScope) {
     }
 
     private suspend fun serve(socket: Socket) {
+        var what = "request"
+        var served = 0L
         try {
             socket.soTimeout = 15_000
             val input = BufferedInputStream(socket.getInputStream())
@@ -86,6 +88,8 @@ class RelayProxy(private val scope: CoroutineScope) {
                 ?: return respond(out, 416, "Range Not Satisfiable", "Content-Range: bytes */$size\r\n")
             val (start, end) = range
             val partial = headers["range"] != null
+            what = "${parts[0]} ${headers["range"] ?: "(no range)"} of ${transfer.name}"
+            Logger.d(TAG, "$what: serving $start-$end of $size")
             val head = buildString {
                 append(if (partial) "HTTP/1.1 206 Partial Content\r\n" else "HTTP/1.1 200 OK\r\n")
                 append("Content-Type: ${contentType(transfer.name)}\r\n")
@@ -102,20 +106,25 @@ class RelayProxy(private val scope: CoroutineScope) {
             while (pos <= end) {
                 val available = transfer.awaitAvailable(pos, WAIT_MS)
                 if (available <= 0) {
-                    Logger.w(TAG, "Relay data for ${transfer.name} didn't arrive in time")
+                    Logger.w(TAG, "$what: data at $pos didn't arrive in time (${transfer.lastError ?: "no error"}), served $served")
                     break
                 }
                 val n = transfer.cache.read(pos, buffer, minOf(available, end + 1 - pos, BUFFER.toLong()).toInt())
-                if (n <= 0) break
+                if (n <= 0) {
+                    Logger.w(TAG, "$what: the cache read $n at $pos, served $served")
+                    break
+                }
                 out.write(buffer, 0, n)
                 pos += n
+                served += n
                 transfer.demand(pos)
             }
             out.flush()
+            Logger.d(TAG, "$what: done, served $served")
         } catch (_: SocketException) {
-            // The player closed the connection, e.g. to seek.
+            Logger.d(TAG, "$what: the player closed the connection after $served")
         } catch (e: IOException) {
-            Logger.d(TAG, "Relay proxy request ended: ${e.message}")
+            Logger.w(TAG, "$what: ended after $served: $e")
         }
     }
 
@@ -137,6 +146,8 @@ class RelayProxy(private val scope: CoroutineScope) {
 
     companion object {
         private const val TAG = "RelayProxy"
+        /** Explicitly IPv4: Android's getLoopbackAddress() is ::1. */
+        const val HOST = "127.0.0.1"
         private const val BUFFER = 256 * 1024
         /** Longer than the server's own 60 s, so its error reaches us first. */
         private const val WAIT_MS = 90_000L

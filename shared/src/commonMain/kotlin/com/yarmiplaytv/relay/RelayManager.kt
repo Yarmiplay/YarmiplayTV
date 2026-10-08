@@ -1,5 +1,6 @@
 package com.yarmiplaytv.relay
 
+import com.yarmiplaytv.Logger
 import com.yarmiplaytv.local.LocalLibrary
 import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.player.Player
@@ -157,6 +158,7 @@ class RelayManager(
 
     /** Starts fetching [entry] and returns the URL the player opens. */
     suspend fun open(entry: RelayFile): String {
+        Logger.i(TAG, "Opening ${entry.name}: ${entry.size} bytes, ${entry.sources} source(s), server has ${entry.cachedBytes}")
         val key = "${entry.quickHash}-${entry.size}"
         val transfer = transfers[key] ?: withContext(Dispatchers.IO) {
             RelayTransfer(key, entry.name, entry.size, cache.open(key, entry.size), http, scope) { sourceFor(entry.quickHash, entry.size) }
@@ -275,6 +277,7 @@ class RelayManager(
     }
 
     companion object {
+        private const val TAG = "RelayManager"
         private const val TICK_MS = 2_000L
 
         fun find(room: RoomState, fileName: String): RelayFile? {

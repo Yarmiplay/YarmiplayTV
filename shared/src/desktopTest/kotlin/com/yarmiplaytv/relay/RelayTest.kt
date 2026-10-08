@@ -31,6 +31,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.net.URI
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
@@ -180,6 +184,17 @@ class RelayTest {
     }
 
     @Test
+    fun `offers a file opened directly when no media folder has it`() {
+        val opened = LocalFile("Opened Movie.mp4", 5_000, "file:///elsewhere/Opened%20Movie.mp4")
+        val folder = listOf(local("Show - S01E01.mkv"))
+        val candidates = RelayOffers.candidates(folder, listOf(opened, folder[0]))
+        assertEquals(listOf(folder[0], opened), candidates)
+        val offers = RelayOffers.offersFor(listOf("Opened Movie.mp4"), candidates, emptyList(), null) { "h" }
+        assertEquals(opened, offers.single().second)
+        assertEquals("Opened Movie.mp4", offers.single().first.name)
+    }
+
+    @Test
     fun `uses our own reported duration first`() {
         val offers = RelayOffers.offersFor(listOf("a.mkv"), listOf(local("a.mkv")), emptyList(), "a.mkv" to 60.0) { "h" }
         assertEquals(60.0, offers.single().first.duration, 0.0)
@@ -287,6 +302,23 @@ class RelayTest {
             proxy.close()
             scope.cancel()
             server.shutdown()
+        }
+    }
+
+    @Test
+    fun `the proxy listens on IPv4 loopback, where its URLs point`() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val proxy = RelayProxy(scope)
+        try {
+            val cache = RelayCache(tmp.newFolder("relay"))
+            val transfer = RelayTransfer("k", "a.mp4", 100, cache.open("k", 100), relayHttpClient(), scope) { null }
+            val url = URI(proxy.url(transfer))
+            assertEquals("127.0.0.1", url.host)
+            Socket().use { it.connect(InetSocketAddress(InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)), url.port), 2_000) }
+            assertTrue(proxy.isProxyUrl(url.toString()))
+        } finally {
+            proxy.close()
+            scope.cancel()
         }
     }
 }

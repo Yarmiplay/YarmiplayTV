@@ -150,6 +150,31 @@ class YarmiplayServerTest {
     }
 
     @Test
+    fun `a file added directly, outside any media folder, is relayed whole to a viewer`() {
+        val server = System.getenv("YARMIPLAY_TEST_SERVER").orEmpty()
+        assumeTrue("YARMIPLAY_TEST_SERVER not set", server.isNotBlank())
+        val bytes = Random(11).nextBytes(5 * 1024 * 1024 + 377)
+        val file = File(tmp.newFolder("elsewhere"), "picked directly.mp4").apply { writeBytes(bytes) }
+
+        val seeder = join(server, "seeder")
+        val leecherPlayer = FakePlayer()
+        val leecher = join(server, "leecher", leecherPlayer)
+        awaitTrue("both to get an extension session") { listOf(seeder, leecher).all { it.sync.room.value.yarmiplay.relayActive } }
+        assertTrue(!seeder.local.hasFolders)
+
+        onMain { seeder.playlist.addLocalFilesToRoomPlaylist(listOf(FileLocalLibrary.uriOf(file.toPath()))) }
+        awaitTrue("the room to list the directly added file") {
+            leecher.sync.room.value.yarmiplay.relayFiles.any { it.name == file.name && it.sources == 1 && it.size == bytes.size.toLong() }
+        }
+        onMain { seeder.playlist.selectIndex(0) }
+
+        awaitTrue("the leecher to open the relayed file") { leecher.relay?.isRelayUrl(leecherPlayer.loaded) == true }
+        val client = OkHttpClient.Builder().readTimeout(60, TimeUnit.SECONDS).build()
+        val read = client.newCall(Request.Builder().url(leecherPlayer.loaded!!).build()).execute().use { it.body!!.bytes() }
+        assertArrayEquals(bytes, read)
+    }
+
+    @Test
     fun `a viewer who turned sharing off offers nothing and can withdraw an offer`() {
         val server = System.getenv("YARMIPLAY_TEST_SERVER").orEmpty()
         assumeTrue("YARMIPLAY_TEST_SERVER not set", server.isNotBlank())
