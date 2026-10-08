@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.6.2" date="2026-10-08">
+      <description>
+        <p>File relay: a file opened directly is shared even without a media folder, and Android plays a relayed file instead of failing to open it.</p>
+      </description>
+    </release>
     <release version="1.6.1" date="2026-10-08">
       <description>
         <p>YarmiplayServerTV support: hosts approve devices once, viewers without the file stream it from someone who has it, and a Jellyfin the host shares is added automatically. Nothing changes on other Syncplay servers.</p>
