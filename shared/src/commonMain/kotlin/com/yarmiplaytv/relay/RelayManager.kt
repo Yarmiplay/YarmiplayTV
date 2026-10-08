@@ -11,6 +11,7 @@ import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.syncplay.SyncplayEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +40,21 @@ data class RelayStatus(
     val complete: Boolean,
     val error: String?,
 ) {
+    /** Share of the file already in the cache, for the download bar. */
+    val fraction: Float
+        get() = if (size <= 0L) 0f else (haveBytes.toDouble() / size).toFloat().coerceIn(0f, 1f)
+
+    /**
+     * What to put on the player. Streaming stays a label once the file is open, so playback is not covered.
+     * The download bar shows while this viewer is held, or until the file opens, and then goes away.
+     */
+    fun playbackHint(fileLoaded: Boolean): RelayHint = when {
+        complete -> RelayHint.None
+        downloading && (waitingToPlay || !fileLoaded) -> RelayHint.Downloading
+        !downloading && fileLoaded -> RelayHint.Streaming
+        else -> RelayHint.None
+    }
+
     val text: String
         get() {
             val from = if (seeders.isEmpty()) "" else " from ${seeders.joinToString(", ")}"
@@ -52,6 +68,8 @@ data class RelayStatus(
             }
         }
 }
+
+enum class RelayHint { None, Streaming, Downloading }
 
 /** When to stream, when to download, and when a download is far enough along to play. */
 object RelayPolicy {
@@ -118,6 +136,8 @@ class RelayManager(
     private var currentUrl: String? = null
     private var notReadyByUs = false
     private var lastRoom: String? = null
+    /** Refreshes the download bar as blocks land. The stream-or-download choice stays on [tick]. */
+    private var progressJob: Job? = null
 
     private val _status = MutableStateFlow<RelayStatus?>(null)
     val status: StateFlow<RelayStatus?> = _status.asStateFlow()
@@ -170,13 +190,26 @@ class RelayManager(
         transfer.start()
         val url = withContext(Dispatchers.IO) { proxy.url(transfer) }
         currentUrl = url
+        watch(transfer)
         update()
         return url
+    }
+
+    /** Moves the download bar as each block lands. The stream-or-download choice stays on [tick]. */
+    private fun watch(transfer: RelayTransfer) {
+        progressJob?.cancel()
+        progressJob = scope.launch {
+            transfer.cache.version.collect {
+                if (current === transfer && transfer.downloading) update()
+            }
+        }
     }
 
     fun isRelayUrl(url: String?): Boolean = proxy.isProxyUrl(url)
 
     fun close() {
+        progressJob?.cancel()
+        progressJob = null
         transfers.values.forEach { it.stop() }
         uploader.cancelAll()
         proxy.close()
@@ -189,6 +222,8 @@ class RelayManager(
     }
 
     private fun detach() {
+        progressJob?.cancel()
+        progressJob = null
         current?.stop()
         current = null
         currentEntry = null

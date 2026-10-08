@@ -120,6 +120,23 @@ class RelayTest {
     // --- Stream or download ------------------------------------------------------------------
 
     @Test
+    fun `fraction is how much of the file is here`() {
+        val status = RelayStatus(
+            "a.mp4", emptyList(), downloading = true, haveBytes = 250, size = 1_000,
+            bytesPerSecond = null, etaSeconds = null, waitingToPlay = true, complete = false, error = null,
+        )
+        assertEquals(0.25, status.fraction.toDouble(), 0.0001)
+        assertEquals(0.0, status.copy(size = 0).fraction.toDouble(), 0.0)
+        assertEquals(1.0, status.copy(haveBytes = 1_000).fraction.toDouble(), 0.0001)
+        assertEquals(RelayHint.Downloading, status.playbackHint(fileLoaded = true))
+        assertEquals(RelayHint.Downloading, status.copy(waitingToPlay = false).playbackHint(fileLoaded = false))
+        assertEquals(RelayHint.None, status.copy(waitingToPlay = false).playbackHint(fileLoaded = true))
+        assertEquals(RelayHint.Streaming, status.copy(downloading = false, waitingToPlay = false).playbackHint(fileLoaded = true))
+        assertEquals(RelayHint.None, status.copy(downloading = false).playbackHint(fileLoaded = false))
+        assertEquals(RelayHint.None, status.copy(complete = true).playbackHint(fileLoaded = true))
+    }
+
+    @Test
     fun `downloads when throughput is under 1_3 times the bitrate`() {
         val size = 1_000_000_000L
         val duration = 1_000.0 // 1 MB/s

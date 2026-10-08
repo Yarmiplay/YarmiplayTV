@@ -57,6 +57,7 @@ import com.yarmiplaytv.ui.components.Dot
 import com.yarmiplaytv.ui.components.IconAction
 import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.components.TvTile
+import com.yarmiplaytv.ui.mobile.RelayDownloadBar
 import com.yarmiplaytv.ui.shared.BLOCKED_NOTE
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
 import com.yarmiplaytv.ui.shared.relayNote
@@ -156,6 +157,7 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
             val relayStatus by relay.status.collectAsStateWithLifecycle()
             relayStatus?.let { s ->
                 Text(s.text, color = AppColors.Accent, style = MaterialTheme.typography.bodySmall)
+                if (s.downloading && !s.complete) RelayDownloadBar(s.fraction)
                 s.error?.let { Text(it, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall) }
             }
         }

@@ -150,6 +150,7 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
             val relayStatus by relay.status.collectAsStateWithLifecycle()
             relayStatus?.let { s ->
                 Text(s.text, color = AppColors.Accent, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("relay_status"))
+                if (s.downloading && !s.complete) RelayDownloadBar(s.fraction, Modifier.testTag("relay_download_bar"))
                 s.error?.let { Text(it, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall) }
             }
         }

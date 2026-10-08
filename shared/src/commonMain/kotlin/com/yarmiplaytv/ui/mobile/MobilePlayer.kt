@@ -9,6 +9,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -66,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.player.TrackType
+import com.yarmiplaytv.relay.RelayHint
 import com.yarmiplaytv.sync.FeedMessage
 import com.yarmiplaytv.sync.PlaylistStatus
 import com.yarmiplaytv.syncplay.ConnectionStatus
@@ -146,6 +148,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
             Box(Modifier.fillMaxSize().testTag("player_gestures").videoGestures(input))
 
             CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom)
+            RelayOnPlayer(container, state.fileLoaded)
 
             if (state.buffering && state.fileLoaded) {
                 Chip("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(top = 24.dp))
@@ -330,13 +333,52 @@ private fun PlayerToasts(container: AppContainer, modifier: Modifier = Modifier)
 }
 
 @Composable
+private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean) {
+    val relay = container.relay ?: return
+    val relayStatus by relay.status.collectAsStateWithLifecycle()
+    val status = relayStatus ?: return
+    when (status.playbackHint(fileLoaded)) {
+        RelayHint.Streaming -> Surface(
+            color = Color.Black.copy(alpha = 0.6f),
+            shape = RoundedCornerShape(50),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 64.dp).widthIn(max = 560.dp).testTag("relay_streaming"),
+        ) {
+            Text(
+                status.text,
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+            )
+        }
+        RelayHint.Downloading -> Surface(
+            color = AppColors.Surface.copy(alpha = 0.9f),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.align(Alignment.Center).widthIn(max = 560.dp).testTag("relay_download"),
+        ) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Downloading", style = MaterialTheme.typography.titleMedium)
+                Text(status.text, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                RelayDownloadBar(status.fraction)
+            }
+        }
+        RelayHint.None -> Unit
+    }
+}
+
+@Composable
 private fun CenterStatus(container: AppContainer, nav: Navigator, status: PlaylistStatus, nothingLoaded: Boolean, fileLoaded: Boolean, inRoom: Boolean) {
+    val hideLoading = container.relay?.let { relay ->
+        val relayStatus by relay.status.collectAsStateWithLifecycle()
+        relayStatus?.playbackHint(fileLoaded) == RelayHint.Downloading
+    } == true
     val pickFile = rememberVideoPicker { uri -> container.playlist.resolveManuallyLocal(uri) }
     val playFile = rememberVideoPicker { uri -> container.playlist.playLocal(uri, inRoom) }
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         when (status) {
             is PlaylistStatus.Resolving -> StatusBox("Looking for the file…", status.fileName)
-            is PlaylistStatus.Loading -> if (!fileLoaded) StatusBox("Loading…", status.fileName)
+            is PlaylistStatus.Loading -> if (!fileLoaded && !hideLoading) StatusBox("Loading…", status.fileName)
             is PlaylistStatus.NotFound, is PlaylistStatus.Failed -> {
                 val (file, reason) = when (status) {
                     is PlaylistStatus.NotFound -> status.fileName to status.reason

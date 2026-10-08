@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -60,9 +61,11 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.player.SurfacePlayer
+import com.yarmiplaytv.relay.RelayHint
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.sync.PlaylistStatus
+import com.yarmiplaytv.ui.mobile.RelayDownloadBar
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.components.ActionButton
@@ -207,6 +210,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
 
         // Status in the middle of the screen (resolving/loading/nothing playing).
         CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom, overlay == Overlay.Hidden)
+        RelayOnPlayer(container, state.fileLoaded)
 
         if (state.buffering && state.fileLoaded) {
             Pill("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(24.dp))
@@ -254,6 +258,28 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
 }
 
 @Composable
+private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean) {
+    val relay = container.relay ?: return
+    val relayStatus by relay.status.collectAsStateWithLifecycle()
+    val status = relayStatus ?: return
+    when (status.playbackHint(fileLoaded)) {
+        RelayHint.Streaming -> Pill(
+            status.text,
+            AppColors.Accent,
+            Modifier.align(Alignment.TopCenter).padding(top = 72.dp).fillMaxWidth(0.7f),
+        )
+        RelayHint.Downloading -> Panel(Modifier.align(Alignment.Center).width(820.dp)) {
+            Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Downloading", style = MaterialTheme.typography.titleLarge)
+                Text(status.text, color = AppColors.TextDim)
+                RelayDownloadBar(status.fraction)
+            }
+        }
+        RelayHint.None -> Unit
+    }
+}
+
+@Composable
 private fun CenterStatus(
     container: AppContainer,
     nav: Navigator,
@@ -264,10 +290,14 @@ private fun CenterStatus(
     canFocus: Boolean,
 ) {
     val focus = remember { FocusRequester() }
+    val hideLoading = container.relay?.let { relay ->
+        val relayStatus by relay.status.collectAsStateWithLifecycle()
+        relayStatus?.playbackHint(fileLoaded) == RelayHint.Downloading
+    } == true
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         when (status) {
             is PlaylistStatus.Resolving -> StatusCard("Finding the file…", status.fileName)
-            is PlaylistStatus.Loading -> if (!fileLoaded) StatusCard("Loading…", status.fileName)
+            is PlaylistStatus.Loading -> if (!fileLoaded && !hideLoading) StatusCard("Loading…", status.fileName)
             is PlaylistStatus.NotFound, is PlaylistStatus.Failed -> {
                 val (file, reason) = when (status) {
                     is PlaylistStatus.NotFound -> status.fileName to status.reason
