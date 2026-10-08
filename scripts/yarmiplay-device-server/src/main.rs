@@ -1,5 +1,5 @@
 //! YarmiplayServerTV with device access and the file relay on, for YarmiplayServerTest in `shared`:
-//! `cargo run -- <port> <password|approved> [password]`.
+//! `cargo run -- <port> <open|password|approved> [password] [--vanilla]`.
 //! Pending devices named "...approve..." are approved and "...deny..." denied; approved devices whose
 //! user is named "...revoke..." are removed and kicked 3 seconds after they log in.
 
@@ -18,10 +18,13 @@ async fn main() {
     let port: u16 = args.next().and_then(|p| p.parse().ok()).unwrap_or(8999);
     let access = match args.next().as_deref() {
         Some("approved") => SyncplayAccess::Approved,
+        Some("open") => SyncplayAccess::Open,
         _ => SyncplayAccess::Password,
     };
-    let password = args.next().unwrap_or_default();
-    let opts = SyncplayOptions { access, password, file_relay: true, ..SyncplayOptions::default() };
+    let (flags, rest): (Vec<String>, Vec<String>) = args.partition(|a| a.starts_with("--"));
+    let vanilla_mode = flags.iter().any(|f| f == "--vanilla");
+    let password = rest.into_iter().next().unwrap_or_default();
+    let opts = SyncplayOptions { access, password, vanilla_mode, file_relay: true, ..SyncplayOptions::default() };
     let devices = Arc::new(DeviceStore::in_memory());
     println!("server id {}", devices.server_id());
     let ext = Extensions {

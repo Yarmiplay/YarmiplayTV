@@ -366,6 +366,68 @@ class YarmiplayServerTest {
     }
 
     @Test
+    fun `an open server lets the device in without a challenge`() {
+        val server = System.getenv("YARMIPLAY_TEST_SERVER").orEmpty()
+        assumeTrue("YARMIPLAY_TEST_SERVER not set", server.isNotBlank())
+        val app = join(server, "open")
+        awaitTrue("the marker") { app.sync.room.value.yarmiplay.serverKind == ServerKind.YARMIPLAY }
+        val info = onMain { app.sync.room.value.yarmiplay }
+        assertEquals("open", info.access)
+        assertNull(info.serverId)
+        assertTrue(!info.approvedDevice && info.device == DeviceState.None)
+        assertEquals("YarmiplayServerTV", serverStatusLine(info))
+    }
+
+    /**
+     * A server that must look exactly like stock Syncplay: no device prompt, the password alone decides, and no
+     * Yarmiplay command goes out (a playlist with a local file would make the relay offer it).
+     */
+    private fun assertPlainPasswordServer(spec: String) {
+        val (host, port, password) = spec.split(":", limit = 3).let { Triple(it[0], it[1].toInt(), it[2]) }
+        val media = tmp.newFolder("media")
+        File(media, "plain.mkv").writeBytes(ByteArray(4096) { it.toByte() })
+        val app = container("plain")
+        onMain { app.sync.connect(SyncplayConfig(host, port, "plain", room, password = password)) }
+        awaitTrue("to join with the password") { app.sync.room.value.status == ConnectionStatus.CONNECTED }
+        onMain { app.local.addFolder(FileLocalLibrary.uriOf(media.toPath())) }
+        awaitTrue("the folder to be indexed") { app.local.files.value.isNotEmpty() }
+        onMain { app.playlist.shared.add(listOf("plain.mkv")) }
+        awaitTrue("the playlist to come back") { app.sync.room.value.playlist == listOf("plain.mkv") }
+        runBlocking { delay(3_000) }
+        val room = onMain { app.sync.room.value }
+        assertEquals(ConnectionStatus.CONNECTED, room.status)
+        assertEquals(ServerKind.SYNCPLAY, room.yarmiplay.serverKind)
+        assertTrue(room.yarmiplay.device == DeviceState.None && room.yarmiplay.serverId == null && !room.yarmiplay.session)
+        assertNull(serverStatusLine(room.yarmiplay))
+        assertTrue(!app.hasDeviceKey("$host:$port"))
+
+        val wrong = container("wrong")
+        onMain { wrong.sync.connect(SyncplayConfig(host, port, "wrong", room.room, password = "not-$password")) }
+        awaitTrue("the password to be refused") {
+            wrong.sync.room.value.status == ConnectionStatus.DISCONNECTED && wrong.sync.feed.value.any { it.isError && "password" in it.text.lowercase() }
+        }
+        assertEquals(DeviceState.None, deviceOf(wrong))
+        assertNull(onMain { deviceAccessPrompt(wrong.sync.room.value.yarmiplay, wrong.deviceDisplayName) })
+        assertStaysDisconnected(wrong)
+    }
+
+    /** YARMIPLAY_VANILLA_SERVER=host:port:password: scripts/yarmiplay-device-server in password mode with --vanilla. */
+    @Test
+    fun `YarmiplayServerTV in vanilla mode is treated as a stock server`() {
+        val spec = System.getenv("YARMIPLAY_VANILLA_SERVER").orEmpty()
+        assumeTrue("YARMIPLAY_VANILLA_SERVER not set", spec.count { it == ':' } >= 2)
+        assertPlainPasswordServer(spec)
+    }
+
+    /** SYNCPLAY_PASSWORD_SERVER=host:port:password: scripts/local-syncplay-server.ps1 -Password. */
+    @Test
+    fun `a stock Syncplay server with a password works as before`() {
+        val spec = System.getenv("SYNCPLAY_PASSWORD_SERVER").orEmpty()
+        assumeTrue("SYNCPLAY_PASSWORD_SERVER not set", spec.count { it == ':' } >= 2)
+        assertPlainPasswordServer(spec)
+    }
+
+    @Test
     fun `a stock Syncplay server sees nothing new`() {
         val server = System.getenv("SYNCPLAY_TEST_SERVER").orEmpty()
         assumeTrue("SYNCPLAY_TEST_SERVER not set", server.isNotBlank())

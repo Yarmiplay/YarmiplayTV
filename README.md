@@ -239,9 +239,14 @@ $env:JELLYFIN_RESOLVE = "Some Show - S01E01 - Title.mkv"
 cd ../YarmiplayServerTV/src-tauri; cargo run --example syncplay_server -- 18999       # file relay
 cd scripts/yarmiplay-device-server; cargo run -- 18997 password secret                 # password or approval
 cd scripts/yarmiplay-device-server; cargo run -- 18996 approved                        # approved devices only
+cd scripts/yarmiplay-device-server; cargo run -- 18995 password secret --vanilla       # vanilla Syncplay mode
+./scripts/local-syncplay-server.ps1 -Port 18998                                        # stock Syncplay
+./scripts/local-syncplay-server.ps1 -Port 18994 -Password secret                       # stock, with a password
 $env:YARMIPLAY_TEST_SERVER = "127.0.0.1:18999"
 $env:YARMIPLAY_FAKE_PEER = "../YarmiplayServerTV/scripts/fake_peer.py"
 $env:YARMIPLAY_PASSWORD_SERVER = "127.0.0.1:18997:secret"; $env:YARMIPLAY_APPROVED_SERVER = "127.0.0.1:18996"
+$env:YARMIPLAY_VANILLA_SERVER = "127.0.0.1:18995:secret"
+$env:SYNCPLAY_TEST_SERVER = "127.0.0.1:18998"; $env:SYNCPLAY_PASSWORD_SERVER = "127.0.0.1:18994:secret"
 ./gradlew :shared:desktopTest --tests "*YarmiplayServerTest*"
 ```
 
