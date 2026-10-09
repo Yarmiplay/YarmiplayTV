@@ -161,15 +161,14 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         _tracks.value = emptyList()
         mpv.setPropertyBoolean("pause", startPaused)
         mpv.setPropertyString("vid", if (surfaceAttached) "auto" else "no")
-        val opts = buildList {
-            if (mediaTitle != null) add("force-media-title=${mediaTitle.replace(",", "\\,")}")
-            if (startPosition > 0) add("start=$startPosition")
-        }.joinToString(",")
+        // Properties, not loadfile's option list: a comma in the title (or the option-argument
+        // position, which moved in mpv 0.38) makes that list fail and the file never opens.
+        mpv.setPropertyString("force-media-title", mediaTitle ?: "")
+        mpv.setPropertyString("start", if (startPosition > 0) startPosition.toString() else "none")
         openError = null
         val target = mpvTarget(url)
         latestLoad = ++loadsIssued
-        if (opts.isEmpty()) mpv.command(arrayOf("loadfile", target, "replace"))
-        else mpv.command(arrayOf("loadfile", target, "replace", "-1", opts))
+        mpv.command(arrayOf("loadfile", target, "replace"))
     }
 
     /**

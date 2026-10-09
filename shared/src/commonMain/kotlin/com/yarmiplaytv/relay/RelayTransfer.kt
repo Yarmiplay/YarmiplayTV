@@ -18,6 +18,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
 import java.util.ArrayDeque
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Where a relayed file can be read right now: the session and the file's id in the room. */
 data class RelaySource(val session: YarmiplaySession, val fileId: String)
@@ -38,6 +40,9 @@ class RelayTransfer(
 ) {
     /** Where the player reads; the stream loop fills ahead of it. */
     private val readerPos = MutableStateFlow(0L)
+    /** One entry per player connection. mpv asks for several ranges at once, and a single position would cancel the others. */
+    private val readers = ConcurrentHashMap<Int, Long>()
+    private val readerIds = AtomicInteger()
     private var streamJob: Job? = null
     private var downloadJob: Job? = null
     private val samples = ArrayDeque<Sample>()
@@ -76,6 +81,23 @@ class RelayTransfer(
     /** The player wants bytes from [offset]. */
     fun demand(offset: Long) {
         readerPos.value = offset.coerceIn(0, size)
+    }
+
+    /** A player connection that needs [offset]; [moveReader] follows it and [closeReader] drops it. */
+    fun openReader(offset: Long): Int {
+        val id = readerIds.incrementAndGet()
+        readers[id] = offset.coerceIn(0, size)
+        demand(offset)
+        return id
+    }
+
+    fun moveReader(id: Int, offset: Long) {
+        val at = offset.coerceIn(0, size)
+        if (readers.replace(id, at) != null) demand(at)
+    }
+
+    fun closeReader(id: Int) {
+        readers.remove(id)
     }
 
     /** Waits up to [timeoutMs] for bytes at [offset]; returns how many are there without a gap (0 on timeout). */
@@ -119,7 +141,7 @@ class RelayTransfer(
     private suspend fun streamLoop() {
         var failures = 0
         while (currentCoroutineContext().isActive && !cache.isDeleted) {
-            val pos = readerPos.value
+            val pos = focus()
             val first = cache.firstMissing(cache.blockOf(pos))
             val limit = pos + READ_AHEAD
             if (first == null || cache.blockStart(first) >= limit) {
@@ -127,7 +149,7 @@ class RelayTransfer(
                 continue
             }
             val end = runEnd(first, cache.blockOf(minOf(limit, size - 1)) + 1)
-            val ok = fetch(first, end, download = false) { readerPos.value.let { it < cache.blockStart(first) || it > cache.blockStart(end) } }
+            val ok = fetch(first, end, download = false) { !wanted(first, end) }
             failures = if (ok) 0 else failures + 1
             if (!ok) delay(minOf(5_000L, 500L * failures))
         }
@@ -145,6 +167,27 @@ class RelayTransfer(
             if (!ok) delay(minOf(10_000L, 1_000L * failures))
         }
         downloading = downloading && !cache.complete
+    }
+
+    /** The earliest player connection that still needs bytes, else the last single demand. */
+    private fun focus(): Long {
+        val live = readers.values.toList()
+        if (live.isEmpty()) return readerPos.value
+        return live.filter { cache.availableFrom(it) == 0L }.minOrNull() ?: live.min()
+    }
+
+    /**
+     * Keep this request while a player position still needs it. The position is often behind the request: the stream
+     * fills [READ_AHEAD] ahead of where the player is, and dropping that looked like a seek and retried the same bytes.
+     */
+    private fun wanted(first: Int, end: Int): Boolean {
+        val from = cache.blockStart(first)
+        val to = cache.blockStart(end)
+        val points = readers.values.toList().ifEmpty { listOf(readerPos.value) }
+        return points.any { reader ->
+            reader in from until to ||
+                (from >= cache.blockStart(cache.blockOf(reader)) && from < reader + READ_AHEAD)
+        }
     }
 
     /** The end (exclusive) of the run of missing blocks starting at [first], at most [limit] and [MAX_REQUEST_BLOCKS] long. */

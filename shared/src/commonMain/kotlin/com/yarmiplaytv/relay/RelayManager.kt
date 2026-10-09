@@ -45,13 +45,14 @@ data class RelayStatus(
         get() = if (size <= 0L) 0f else (haveBytes.toDouble() / size).toFloat().coerceIn(0f, 1f)
 
     /**
-     * What to put on the player. Streaming stays a label once the file is open, so playback is not covered.
-     * The download bar shows while this viewer is held, or until the file opens, and then goes away.
+     * What to put on the player. Streaming replaces the loading card immediately, including before the file
+     * opens, so a relayed file is not stuck on "Loading…". The download bar shows while this viewer is held,
+     * or until the file opens, and then goes away.
      */
     fun playbackHint(fileLoaded: Boolean): RelayHint = when {
         complete -> RelayHint.None
         downloading && (waitingToPlay || !fileLoaded) -> RelayHint.Downloading
-        !downloading && fileLoaded -> RelayHint.Streaming
+        !downloading -> RelayHint.Streaming
         else -> RelayHint.None
     }
 

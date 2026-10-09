@@ -292,7 +292,7 @@ private fun CenterStatus(
     val focus = remember { FocusRequester() }
     val hideLoading = container.relay?.let { relay ->
         val relayStatus by relay.status.collectAsStateWithLifecycle()
-        relayStatus?.playbackHint(fileLoaded) == RelayHint.Downloading
+        relayStatus?.playbackHint(fileLoaded) != RelayHint.None
     } == true
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         when (status) {

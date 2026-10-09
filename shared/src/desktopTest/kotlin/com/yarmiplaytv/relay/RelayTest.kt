@@ -132,7 +132,7 @@ class RelayTest {
         assertEquals(RelayHint.Downloading, status.copy(waitingToPlay = false).playbackHint(fileLoaded = false))
         assertEquals(RelayHint.None, status.copy(waitingToPlay = false).playbackHint(fileLoaded = true))
         assertEquals(RelayHint.Streaming, status.copy(downloading = false, waitingToPlay = false).playbackHint(fileLoaded = true))
-        assertEquals(RelayHint.None, status.copy(downloading = false).playbackHint(fileLoaded = false))
+        assertEquals(RelayHint.Streaming, status.copy(downloading = false).playbackHint(fileLoaded = false))
         assertEquals(RelayHint.None, status.copy(complete = true).playbackHint(fileLoaded = true))
     }
 
@@ -317,6 +317,81 @@ class RelayTest {
             transfer.stop()
         } finally {
             proxy.close()
+            scope.cancel()
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `two player ranges far apart are both served`() {
+        val size = 40 * RelayCache.BLOCK + 100
+        fun at(i: Int) = ((i * 31 + 7) % 251).toByte()
+        val far = (36 * RelayCache.BLOCK).toInt()
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val (start, end) = RelayProxy.parseRange(request.getHeader("Range"), size) ?: return MockResponse().setResponseCode(416)
+                val body = ByteArray((end - start + 1).toInt()) { at((start + it).toInt()) }
+                return MockResponse().setResponseCode(206).setHeader("Content-Range", "bytes $start-$end/$size").setBody(Buffer().write(body))
+            }
+        }
+        server.start()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val proxy = RelayProxy(scope)
+        try {
+            val session = YarmiplaySession("secret-token", 1, server.url("/").toString().trimEnd('/'))
+            val cache = RelayCache(tmp.newFolder("relay"))
+            val transfer = RelayTransfer("k", "wide.mp4", size, cache.open("k", size), relayHttpClient(), scope) { RelaySource(session, "file1") }
+            transfer.start()
+            val url = proxy.url(transfer)
+            val client = OkHttpClient.Builder().readTimeout(30, TimeUnit.SECONDS).build()
+            val calls = listOf(0 to 99, far to far + 99).map { (start, end) ->
+                java.util.concurrent.CompletableFuture.supplyAsync {
+                    client.newCall(Request.Builder().url(url).header("Range", "bytes=$start-$end").build()).execute().use { it.body!!.bytes() }
+                }
+            }
+            assertArrayEquals(ByteArray(100) { at(it) }, calls[0].get(30, TimeUnit.SECONDS))
+            assertArrayEquals(ByteArray(100) { at(far + it) }, calls[1].get(30, TimeUnit.SECONDS))
+            transfer.stop()
+        } finally {
+            proxy.close()
+            scope.cancel()
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `read-ahead ahead of the play position is fetched, not cancelled`() {
+        val size = 40 * RelayCache.BLOCK
+        val hole = 32 * RelayCache.BLOCK
+        val requests = CopyOnWriteArrayList<String>()
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val range = request.getHeader("Range") ?: ""
+                requests += range
+                val (start, end) = RelayProxy.parseRange(range, size) ?: return MockResponse().setResponseCode(416)
+                return MockResponse().setResponseCode(206)
+                    .setHeader("Content-Range", "bytes $start-$end/$size")
+                    .setBody(Buffer().write(ByteArray((end - start + 1).toInt())))
+            }
+        }
+        server.start()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val session = YarmiplaySession("secret-token", 1, server.url("/").toString().trimEnd('/'))
+            val cached = RelayCache(tmp.newFolder("relay")).open("k", size)
+            repeat(32) { cached.markComplete(it) }
+            val transfer = RelayTransfer("k", "wide.mp4", size, cached, relayHttpClient(), scope) { RelaySource(session, "file1") }
+            transfer.demand(0)
+            transfer.start()
+            val deadline = System.nanoTime() + 20_000_000_000L
+            while (cached.firstMissing(32) != null && System.nanoTime() < deadline) Thread.sleep(50)
+            transfer.stop()
+            assertNull(cached.firstMissing(32))
+            assertTrue(requests.any { it.startsWith("bytes=$hole-") })
+            assertTrue("cancelled the read-ahead ${requests.size} times", requests.size <= 3)
+        } finally {
             scope.cancel()
             server.shutdown()
         }

@@ -100,24 +100,28 @@ class RelayProxy(private val scope: CoroutineScope) {
             }
             out.write(head.toByteArray(Charsets.US_ASCII))
             if (parts[0] == "HEAD") return out.flush()
-            transfer.demand(start)
-            val buffer = ByteArray(BUFFER)
-            var pos = start
-            while (pos <= end) {
-                val available = transfer.awaitAvailable(pos, WAIT_MS)
-                if (available <= 0) {
-                    Logger.w(TAG, "$what: data at $pos didn't arrive in time (${transfer.lastError ?: "no error"}), served $served")
-                    break
+            val reader = transfer.openReader(start)
+            try {
+                val buffer = ByteArray(BUFFER)
+                var pos = start
+                while (pos <= end) {
+                    val available = transfer.awaitAvailable(pos, WAIT_MS)
+                    if (available <= 0) {
+                        Logger.w(TAG, "$what: data at $pos didn't arrive in time (${transfer.lastError ?: "no error"}), served $served")
+                        break
+                    }
+                    val n = transfer.cache.read(pos, buffer, minOf(available, end + 1 - pos, BUFFER.toLong()).toInt())
+                    if (n <= 0) {
+                        Logger.w(TAG, "$what: the cache read $n at $pos, served $served")
+                        break
+                    }
+                    out.write(buffer, 0, n)
+                    pos += n
+                    served += n
+                    transfer.moveReader(reader, pos)
                 }
-                val n = transfer.cache.read(pos, buffer, minOf(available, end + 1 - pos, BUFFER.toLong()).toInt())
-                if (n <= 0) {
-                    Logger.w(TAG, "$what: the cache read $n at $pos, served $served")
-                    break
-                }
-                out.write(buffer, 0, n)
-                pos += n
-                served += n
-                transfer.demand(pos)
+            } finally {
+                transfer.closeReader(reader)
             }
             out.flush()
             Logger.d(TAG, "$what: done, served $served")

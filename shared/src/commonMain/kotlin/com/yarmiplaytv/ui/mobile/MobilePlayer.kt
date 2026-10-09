@@ -371,7 +371,7 @@ private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean)
 private fun CenterStatus(container: AppContainer, nav: Navigator, status: PlaylistStatus, nothingLoaded: Boolean, fileLoaded: Boolean, inRoom: Boolean) {
     val hideLoading = container.relay?.let { relay ->
         val relayStatus by relay.status.collectAsStateWithLifecycle()
-        relayStatus?.playbackHint(fileLoaded) == RelayHint.Downloading
+        relayStatus?.playbackHint(fileLoaded) != RelayHint.None
     } == true
     val pickFile = rememberVideoPicker { uri -> container.playlist.resolveManuallyLocal(uri) }
     val playFile = rememberVideoPicker { uri -> container.playlist.playLocal(uri, inRoom) }
