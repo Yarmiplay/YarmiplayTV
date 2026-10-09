@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.6.4" date="2026-10-09">
+      <description>
+        <p>File relay: a comma in the file name no longer leaves the player on Loading, and streaming keeps filling ahead of playback.</p>
+      </description>
+    </release>
     <release version="1.6.3" date="2026-10-09">
       <description>
         <p>File relay: shows Streaming while it plays, and a progress bar while a slow link downloads the file.</p>
