@@ -131,8 +131,12 @@ class RelayTest {
         assertEquals(RelayHint.Downloading, status.playbackHint(fileLoaded = true))
         assertEquals(RelayHint.Downloading, status.copy(waitingToPlay = false).playbackHint(fileLoaded = false))
         assertEquals(RelayHint.None, status.copy(waitingToPlay = false).playbackHint(fileLoaded = true))
-        assertEquals(RelayHint.Streaming, status.copy(downloading = false, waitingToPlay = false).playbackHint(fileLoaded = true))
-        assertEquals(RelayHint.Streaming, status.copy(downloading = false).playbackHint(fileLoaded = false))
+        val streaming = status.copy(downloading = false, waitingToPlay = false)
+        assertEquals(RelayHint.Streaming, streaming.playbackHint(fileLoaded = true))
+        assertEquals(RelayHint.Streaming, streaming.playbackHint(fileLoaded = false))
+        assertTrue(streaming.streamingLineVisible(controlsVisible = true, fileLoaded = true))
+        assertFalse(streaming.streamingLineVisible(controlsVisible = false, fileLoaded = true))
+        assertTrue(streaming.streamingLineVisible(controlsVisible = false, fileLoaded = false))
         assertEquals(RelayHint.None, status.copy(complete = true).playbackHint(fileLoaded = true))
     }
 

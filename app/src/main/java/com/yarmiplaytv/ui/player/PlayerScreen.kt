@@ -210,7 +210,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
 
         // Status in the middle of the screen (resolving/loading/nothing playing).
         CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom, overlay == Overlay.Hidden)
-        RelayOnPlayer(container, state.fileLoaded)
+        RelayOnPlayer(container, state.fileLoaded, overlay != Overlay.Hidden)
 
         if (state.buffering && state.fileLoaded) {
             Pill("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(24.dp))
@@ -258,24 +258,23 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
 }
 
 @Composable
-private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean) {
+private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean, controlsVisible: Boolean) {
     val relay = container.relay ?: return
     val relayStatus by relay.status.collectAsStateWithLifecycle()
     val status = relayStatus ?: return
-    when (status.playbackHint(fileLoaded)) {
-        RelayHint.Streaming -> Pill(
+    when {
+        status.streamingLineVisible(controlsVisible, fileLoaded) -> Pill(
             status.text,
             AppColors.Accent,
             Modifier.align(Alignment.TopCenter).padding(top = 72.dp).fillMaxWidth(0.7f),
         )
-        RelayHint.Downloading -> Panel(Modifier.align(Alignment.Center).width(820.dp)) {
+        status.playbackHint(fileLoaded) == RelayHint.Downloading -> Panel(Modifier.align(Alignment.Center).width(820.dp)) {
             Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Downloading", style = MaterialTheme.typography.titleLarge)
                 Text(status.text, color = AppColors.TextDim)
                 RelayDownloadBar(status.fraction)
             }
         }
-        RelayHint.None -> Unit
     }
 }
 

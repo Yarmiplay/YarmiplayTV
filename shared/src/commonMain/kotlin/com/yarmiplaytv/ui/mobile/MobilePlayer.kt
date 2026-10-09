@@ -148,7 +148,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
             Box(Modifier.fillMaxSize().testTag("player_gestures").videoGestures(input))
 
             CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom)
-            RelayOnPlayer(container, state.fileLoaded)
+            RelayOnPlayer(container, state.fileLoaded, controls)
 
             if (state.buffering && state.fileLoaded) {
                 Chip("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(top = 24.dp))
@@ -333,12 +333,12 @@ private fun PlayerToasts(container: AppContainer, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean) {
+private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean, controlsVisible: Boolean) {
     val relay = container.relay ?: return
     val relayStatus by relay.status.collectAsStateWithLifecycle()
     val status = relayStatus ?: return
-    when (status.playbackHint(fileLoaded)) {
-        RelayHint.Streaming -> Surface(
+    when {
+        status.streamingLineVisible(controlsVisible, fileLoaded) -> Surface(
             color = Color.Black.copy(alpha = 0.6f),
             shape = RoundedCornerShape(50),
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 64.dp).widthIn(max = 560.dp).testTag("relay_streaming"),
@@ -352,7 +352,7 @@ private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean)
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
             )
         }
-        RelayHint.Downloading -> Surface(
+        status.playbackHint(fileLoaded) == RelayHint.Downloading -> Surface(
             color = AppColors.Surface.copy(alpha = 0.9f),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.align(Alignment.Center).widthIn(max = 560.dp).testTag("relay_download"),
@@ -363,7 +363,6 @@ private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean)
                 RelayDownloadBar(status.fraction)
             }
         }
-        RelayHint.None -> Unit
     }
 }
 

@@ -56,6 +56,13 @@ data class RelayStatus(
         else -> RelayHint.None
     }
 
+    /**
+     * The streaming line shares the controls. Before the file opens it stays up either way, so that wait is not a
+     * blank screen; once the picture is playing it shows and hides with the controls.
+     */
+    fun streamingLineVisible(controlsVisible: Boolean, fileLoaded: Boolean): Boolean =
+        playbackHint(fileLoaded) == RelayHint.Streaming && (controlsVisible || !fileLoaded)
+
     val text: String
         get() {
             val from = if (seeders.isEmpty()) "" else " from ${seeders.joinToString(", ")}"
