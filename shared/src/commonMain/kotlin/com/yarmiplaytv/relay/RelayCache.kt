@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
+import java.io.IOException
+import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.util.BitSet
 
@@ -148,6 +150,18 @@ class CachedFile internal constructor(private val file: File, val size: Long, va
         raf.read(buffer, 0, length)
     }
 
+    /** Writes the whole file to [out]; call once it's [complete]. Blocking. */
+    fun copyTo(out: OutputStream) {
+        val buffer = ByteArray(COPY_BUFFER)
+        var pos = 0L
+        while (pos < size) {
+            val n = read(pos, buffer, minOf(COPY_BUFFER.toLong(), size - pos).toInt())
+            if (n <= 0) throw IOException("the cached copy went away")
+            out.write(buffer, 0, n)
+            pos += n
+        }
+    }
+
     @Synchronized
     internal fun delete() {
         deleted = true
@@ -157,4 +171,8 @@ class CachedFile internal constructor(private val file: File, val size: Long, va
     }
 
     val isDeleted: Boolean get() = deleted
+
+    private companion object {
+        const val COPY_BUFFER = 256 * 1024
+    }
 }

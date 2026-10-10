@@ -33,6 +33,7 @@ import com.yarmiplaytv.ui.components.SectionTitle
 import com.yarmiplaytv.ui.components.ToggleRow
 import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.components.ValueRow
+import com.yarmiplaytv.ui.mobile.rememberDirectoryPicker
 import com.yarmiplaytv.ui.shared.nextPreferred
 import com.yarmiplaytv.ui.shared.preferredOf
 import com.yarmiplaytv.ui.shared.serverLabel
@@ -131,6 +132,33 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
             { container.scope.launch { container.settingsStore.saveShareFiles(!settings.shareFiles) } },
             subtitle = "On YarmiplayServerTV servers, viewers without the playlist's file can stream it from your media folders",
         )
+        val pickDownloadFolder = rememberDirectoryPicker("Save relayed files to") { uri ->
+            container.scope.launch { container.settingsStore.saveDownloadDirectory(uri) }
+        }
+        ValueRow(
+            "Save relayed files to",
+            if (settings.downloadDirectory.isEmpty()) "Ask each time" else container.local.folderOf(settings.downloadDirectory).name,
+            {
+                if (settings.downloadDirectory.isEmpty()) pickDownloadFolder()
+                else container.scope.launch { container.settingsStore.saveDownloadDirectory("") }
+            },
+            subtitle = if (settings.downloadDirectory.isEmpty()) "Pick a folder for the player's save button" else "Select to ask each time again",
+        )
+        container.screenshots?.let { screenshots ->
+            val pickScreenshotFolder = rememberDirectoryPicker("Save screenshots to") { uri ->
+                container.scope.launch { container.settingsStore.saveScreenshotDirectory(uri) }
+            }
+            val folder = settings.screenshotDirectory
+            ValueRow(
+                "Save screenshots to",
+                if (folder.isEmpty()) screenshots.defaultFolder else container.local.folderOf(folder).name,
+                {
+                    if (folder.isEmpty()) pickScreenshotFolder()
+                    else container.scope.launch { container.settingsStore.saveScreenshotDirectory("") }
+                },
+                subtitle = if (folder.isEmpty()) "Pick another folder for the player's screenshot button" else "Select to use ${screenshots.defaultFolder} again",
+            )
+        }
 
         SectionTitle("Playback")
         ToggleRow("Hardware decoding", pb.hardwareDecoding, { savePlayback(pb.copy(hardwareDecoding = !pb.hardwareDecoding)) }, subtitle = "MediaCodec with software fallback. Takes effect after restarting the app")

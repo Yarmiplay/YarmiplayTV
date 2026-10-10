@@ -11,8 +11,6 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -42,11 +40,10 @@ actual fun PlayerVolumeControl(onInteract: () -> Unit, modifier: Modifier) {
                 tint = Color.White,
             )
         }
-        Slider(
+        PlayerTrack(
             value = if (muted) 0f else volume.toFloat(),
-            onValueChange = { control.setVolume(it.roundToInt().toDouble()); onInteract() },
             valueRange = 0f..control.max.toFloat(),
-            colors = SliderDefaults.colors(thumbColor = AppColors.Accent, activeTrackColor = AppColors.Accent),
+            onValueChange = { control.setVolume(it.roundToInt().toDouble()); onInteract() },
             modifier = Modifier.width(120.dp).testTag("volume_slider"),
         )
         Text(

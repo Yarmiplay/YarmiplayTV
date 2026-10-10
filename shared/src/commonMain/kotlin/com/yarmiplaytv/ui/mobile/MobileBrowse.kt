@@ -61,7 +61,14 @@ import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MobileTopBar(title: String, nav: Navigator, subtitle: String? = null, showBack: Boolean = nav.canGoBack, actions: @Composable () -> Unit = {}) {
+fun MobileTopBar(
+    title: String,
+    nav: Navigator,
+    subtitle: String? = null,
+    showBack: Boolean = nav.canGoBack,
+    onBack: () -> Unit = nav::back,
+    actions: @Composable () -> Unit = {},
+) {
     TopAppBar(
         title = {
             Column {
@@ -70,7 +77,7 @@ fun MobileTopBar(title: String, nav: Navigator, subtitle: String? = null, showBa
             }
         },
         navigationIcon = {
-            if (showBack) IconButton(onClick = nav::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+            if (showBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
         },
         actions = { actions() },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = AppColors.Background),

@@ -147,6 +147,28 @@ class PlayerControlsUiTest {
         onNodeWithTag("volume_label").assertTextEquals("65%")
     }
 
+    @Test
+    fun `clicking or dragging along the seek bar seeks there`() = runComposeUiTest {
+        player.state.value = player.state.value.copy(paused = true)
+        showPlayer()
+        onNodeWithTag("seek_slider").performMouseInput { click(Offset(width * 0.25f, centerY)) }
+        settle()
+        assertEquals(150.0, player.seeks.single(), 1.0)
+
+        onNodeWithTag("seek_slider").performMouseInput {
+            moveTo(Offset(width * 0.5f, centerY))
+            press()
+            moveTo(Offset(width * 0.75f, centerY))
+            release()
+        }
+        settle()
+        assertEquals("one seek when the button is let go", 2, player.seeks.size)
+        assertEquals(450.0, player.seeks.last(), 1.0)
+
+        onNodeWithTag("seek_slider").performSemanticsAction(SemanticsActions.SetProgress) { it(60f) }
+        assertEquals(60.0, player.seeks.last(), 0.0)
+    }
+
     private fun ComposeUiTest.screenshot(name: String) {
         val dir = System.getProperty("yarmiplaytv.screenshotDir") ?: return
         val file = File(dir, "${System.getProperty("os.name").substringBefore(' ').lowercase()}/$name.png")

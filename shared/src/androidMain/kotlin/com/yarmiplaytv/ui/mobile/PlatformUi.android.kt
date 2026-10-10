@@ -1,18 +1,26 @@
 package com.yarmiplaytv.ui.mobile
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.ContentResolver
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.view.SurfaceView
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.pointerInput
@@ -28,7 +36,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.SurfacePlayer
+import com.yarmiplaytv.relay.SaveTarget
 import com.yarmiplaytv.shared.R
+import java.io.IOException
 
 actual fun Modifier.exposeTestTags(): Modifier = semantics { testTagsAsResourceId = true }
 
@@ -38,6 +48,8 @@ actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) = BackHandl
 actual val controlsHideMillis = 5000L
 
 actual val hideControlsButton = false
+
+actual val tvStyleSeekBar = false
 
 @Composable
 actual fun PlayerVolumeControl(onInteract: () -> Unit, modifier: Modifier) = Unit
@@ -123,6 +135,76 @@ actual fun rememberFolderPicker(container: AppContainer): () -> Unit {
         if (uri != null) container.local.addFolder(uri.toString())
     }
     return { launcher.launch(null) }
+}
+
+@Composable
+actual fun rememberSavePicker(container: AppContainer): (String, (SaveTarget) -> Unit) -> Unit {
+    val context = LocalContext.current
+    val resolver = context.contentResolver
+    val pending = remember { arrayOfNulls<(SaveTarget) -> Unit>(1) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(SAVE_MIME)) { uri ->
+        val onPicked = pending[0]
+        pending[0] = null
+        if (uri != null && onPicked != null) onPicked(documentSaveTarget(resolver, uri))
+    }
+    return remember(container, launcher) {
+        { name, onPicked ->
+            val folder = container.settings.value.downloadDirectory
+            if (folder.isNotEmpty()) {
+                val created = runCatching {
+                    val tree = Uri.parse(folder)
+                    val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+                    DocumentsContract.createDocument(resolver, parent, SAVE_MIME, name)
+                }.getOrNull()
+                if (created != null) {
+                    onPicked(documentSaveTarget(resolver, created))
+                } else {
+                    Toast.makeText(context, "Can't save to ${container.local.folderOf(folder).name}; pick the folder again in Settings", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                pending[0] = onPicked
+                try {
+                    launcher.launch(name)
+                } catch (e: ActivityNotFoundException) {
+                    pending[0] = null
+                    Toast.makeText(context, "This device has no file picker to save with", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+}
+
+/** A document the picker or the download folder just created for the copy; a failed save deletes it again. */
+private fun documentSaveTarget(resolver: ContentResolver, uri: Uri) = SaveTarget(
+    label = runCatching {
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null }
+    }.getOrNull() ?: uriFileName(uri.toString()) ?: uri.toString(),
+    open = { resolver.openOutputStream(uri, "wt") ?: throw IOException("Can't open $uri") },
+    discard = { DocumentsContract.deleteDocument(resolver, uri) },
+)
+
+/** Any name the user keeps works: the providers keep the extension for this type. */
+private const val SAVE_MIME = "application/octet-stream"
+
+@Composable
+actual fun rememberDirectoryPicker(title: String, onPicked: (String) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val current by rememberUpdatedState(onPicked)
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            current(uri.toString())
+        }
+    }
+    return {
+        try {
+            launcher.launch(null)
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(context, "This device has no folder picker", Toast.LENGTH_LONG).show()
+        }
+    }
 }
 
 actual fun uriFileName(uri: String): String? = Uri.parse(uri).lastPathSegment?.substringAfterLast('/')

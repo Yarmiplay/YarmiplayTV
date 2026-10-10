@@ -275,8 +275,8 @@ class TvNavigationTest {
 
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
         tv.awaitFocus("Play/pause")
-        // Left to right: play/pause, back 10 s, forward 10 s, ready, then the panel buttons.
-        val row = listOf("Back", "Forward", "Ready", "Shared playlist", "Room", "Chat", "Audio", "Subtitles")
+        // Left to right: play/pause, back 10 s, forward 10 s, ready, screenshot, then the panel buttons.
+        val row = listOf("Back", "Forward", "Ready", "Screenshot", "Shared playlist", "Room", "Chat", "Audio", "Subtitles")
         // What gets focus when each panel opens; TEXT_FIELD is the chat's message field.
         val panels = listOf("Shared playlist" to Scenarios.CLIP_NAME, "Room" to "I'm ready", "Chat" to TEXT_FIELD, "Audio" to "", "Subtitles" to "Off")
         for ((button, focused) in panels) {

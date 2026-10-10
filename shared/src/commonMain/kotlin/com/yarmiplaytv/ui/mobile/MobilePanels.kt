@@ -146,13 +146,17 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
         }
         SheetTitle(room.room, "${container.sync.client?.config?.host ?: ""} · Syncplay ${room.serverVersion ?: ""}")
         serverStatusLine(room.yarmiplay)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall) }
-        container.relay?.let { relay ->
-            val relayStatus by relay.status.collectAsStateWithLifecycle()
-            relayStatus?.let { s ->
+        val relayStatus = container.relay?.let { relay ->
+            val current by relay.status.collectAsStateWithLifecycle()
+            current
+        }
+        val streamingFrom = relayStatus?.takeIf { !it.downloading && !it.complete }?.seeders?.toSet().orEmpty()
+        relayStatus?.let { s ->
+            if (streamingFrom.isEmpty()) {
                 Text(s.text, color = AppColors.Accent, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("relay_status"))
-                if (s.downloading && !s.complete) RelayDownloadBar(s.fraction, Modifier.testTag("relay_download_bar"))
-                s.error?.let { Text(it, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall) }
             }
+            if (s.downloading && !s.complete) RelayDownloadBar(s.fraction, Modifier.testTag("relay_download_bar"))
+            s.error?.let { Text(it, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall) }
         }
         ReadyChip(room.isReady == true, { container.sync.toggleReady() }, Modifier.testTag("ready_toggle"))
         val blocked by container.sync.blocked.collectAsStateWithLifecycle()
@@ -173,7 +177,11 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★" else ""), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★" else "") + (if (user.name in streamingFrom) " · streaming" else ""),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = if (user.name in streamingFrom) Modifier.testTag("relay_status") else Modifier,
+                    )
                     Text(
                         user.file?.let { "${it.name} (${formatClock(it.duration)})" } ?: "No file open",
                         color = if (mismatch) AppColors.NotReady else AppColors.TextDim,

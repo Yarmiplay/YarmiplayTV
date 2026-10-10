@@ -18,6 +18,8 @@ import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.relay.RelayManager
+import com.yarmiplaytv.screenshot.ScreenshotStore
+import com.yarmiplaytv.screenshot.Screenshots
 import com.yarmiplaytv.sync.HostJellyfinSharing
 import com.yarmiplaytv.sync.MediaLocator
 import com.yarmiplaytv.sync.PlaybackReporter
@@ -57,6 +59,8 @@ class AppContainer(
     private val deviceKeys: DeviceKeyStore? = null,
     /** Where relayed files are cached; without it this device doesn't use the file relay. */
     cacheDir: File? = null,
+    /** Where screenshots of the video go; without it the player has no screenshot button. */
+    screenshotStore: ScreenshotStore? = null,
 ) {
     val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.Main.immediate +
@@ -104,6 +108,9 @@ class AppContainer(
     val relay: RelayManager? = cacheDir?.let { RelayManager(scope, sync, player, local, it, settings.map { s -> s.shareFiles }) }
     private val locator = MediaLocator(local, servers) { name -> relay?.find(name) }.apply { preferredServer = initial.preferredServer }
     val playlist = PlaylistController(scope, sync, player, mediaSource, local, locator, relay)
+    val screenshots: Screenshots? = screenshotStore?.let { store ->
+        Screenshots(scope, player, store, folder = { settings.value.screenshotDirectory }) { playlist.nowPlaying.value?.title }
+    }
     private val reporter = PlaybackReporter(scope, player, playlist.nowPlaying, servers).apply { enabled = initial.reportPlayback }
     private val autosave = PlaylistAutosave(scope, sync, playlist.shared, settingsStore).apply { enabled = initial.autosavePlaylists }
     private val jellyfinSharing = HostJellyfinSharing(

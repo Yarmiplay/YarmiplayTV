@@ -19,6 +19,7 @@ class ShortcutsTest {
         override fun changeVolume(delta: Double) { log += "volume $delta" }
         override fun toggleMute() { log += "mute" }
         override fun focusChat() { log += "chat" }
+        override fun screenshot() { log += "screenshot" }
     }
 
     private val input = PlayerInput(
@@ -56,6 +57,14 @@ class ShortcutsTest {
         assertFalse(handleShortcut(Key.H, true, Target()))
         assertFalse(handleShortcut(Key.H, false, Target(playerShowing = false)))
         assertEquals(listOf("toggleControls"), log)
+    }
+
+    @Test
+    fun f5TakesAScreenshotWithoutShowingTheControls() {
+        assertTrue(handleShortcut(Key.F5, false, Target()))
+        assertFalse(handleShortcut(Key.F5, true, Target()))
+        assertFalse(handleShortcut(Key.F5, false, Target(playerShowing = false)))
+        assertEquals(listOf("screenshot"), log)
     }
 
     @Test

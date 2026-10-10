@@ -1,9 +1,14 @@
 package com.yarmiplaytv.player
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.PixelCopy
+import android.view.Surface
 import android.view.SurfaceHolder
 import dev.jdtech.mpv.MPVLib
 import dev.jdtech.mpv.MPVLib.MpvEvent
@@ -16,6 +21,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.io.File
+import java.io.FileOutputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 data class MpvOptions(
     /** mpv --hwdec value; "no" forces software decoding. The list falls back left to right. */
@@ -46,6 +54,11 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     @Volatile private var cachedPaused = true
     @Volatile private var cachedSpeed = 1.0
     @Volatile private var surfaceAttached = false
+    @Volatile private var surface: Surface? = null
+    @Volatile private var surfaceWidth = 0
+    @Volatile private var surfaceHeight = 0
+    /** Until when a [showText] message is on the video. */
+    @Volatile private var osdUntil = 0L
     @Volatile private var currentUrl: String? = null
     /**
      * Each loadfile yields exactly one START_FILE, so counting both tells whether the file mpv is opening is
@@ -130,15 +143,19 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             mpv.setOptionString("force-window", "yes")
             mpv.setPropertyString("vo", "gpu")
             mpv.setPropertyString("vid", "auto")
+            surface = holder.surface
             surfaceAttached = true
         }
 
         override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+            surfaceWidth = width
+            surfaceHeight = height
             mpv.setPropertyString("android-surface-size", "${width}x$height")
         }
 
         override fun surfaceDestroyed(holder: SurfaceHolder) {
             surfaceAttached = false
+            surface = null
             // Without a surface the MediaCodec decoder can't drain its output and mpv's core spins
             // in it holding the lock (the next main-thread mpv call then ANRs), so drop video until
             // a surface is back; audio keeps playing.
@@ -229,7 +246,32 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     }
 
     override fun showText(text: String, durationMs: Int) {
+        osdUntil = SystemClock.elapsedRealtime() + durationMs
         mpv.command(arrayOf("show-text", text, durationMs.toString()))
+    }
+
+    /**
+     * This libmpv has no image encoders, so the picture is copied from the surface mpv draws on: the video with
+     * its subtitles, without the black bars beside it (subtitles can sit in the ones above and below).
+     */
+    override fun screenshot(path: String): Boolean {
+        val source = surface?.takeIf { it.isValid } ?: return false
+        val width = surfaceWidth
+        val height = surfaceHeight
+        if (width <= 0 || height <= 0) return false
+        if (SystemClock.elapsedRealtime() < osdUntil) {
+            showText("", 1)
+            Thread.sleep(OSD_CLEAR_MS)
+        }
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val copied = CountDownLatch(1)
+        var result = PixelCopy.ERROR_UNKNOWN
+        PixelCopy.request(source, bitmap, { result = it; copied.countDown() }, Handler(Looper.getMainLooper()))
+        if (!copied.await(2, TimeUnit.SECONDS) || result != PixelCopy.SUCCESS) return false
+        val left = (mpv.getPropertyInt("osd-dimensions/ml") ?: 0).coerceIn(0, width / 2)
+        val right = (mpv.getPropertyInt("osd-dimensions/mr") ?: 0).coerceIn(0, width / 2)
+        val picture = if (left + right in 1 until width) Bitmap.createBitmap(bitmap, left, 0, width - left - right, height) else bitmap
+        return FileOutputStream(path).use { picture.compress(Bitmap.CompressFormat.JPEG, 92, it) }
     }
 
     // --- Fast reads for the sync engine -------------------------------------------
@@ -381,5 +423,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
     companion object {
         private const val TAG = "mpv"
+        /** Long enough for mpv to draw a frame without the message it was showing. */
+        private const val OSD_CLEAR_MS = 150L
     }
 }

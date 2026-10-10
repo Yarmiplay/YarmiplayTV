@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.local.LocalBrowse
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.theme.AppColors
@@ -63,45 +65,74 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
     var picked by remember { mutableStateOf<String?>(null) }
     val pickFolder = rememberFolderPicker(container)
     val pickVideo = rememberVideoPicker { uri -> if (inRoom) picked = uri else container.playlist.playLocal(uri, inRoom = false) }
+    // The media folder being browsed and the path inside it; none shows the media folders themselves.
+    var openUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var path by rememberSaveable { mutableStateOf("") }
+    val open = folders.firstOrNull { it.uri == openUri }
+    fun up() {
+        if (path.isEmpty()) openUri = null else path = path.substringBeforeLast('/', "")
+    }
+    PlatformBackHandler(enabled = open != null) { up() }
 
     Column(Modifier.fillMaxSize()) {
-        MobileTopBar("Files on this device", nav) {
+        MobileTopBar(
+            title = open?.let { path.substringAfterLast('/').ifEmpty { it.name } } ?: "Files on this device",
+            nav = nav,
+            subtitle = open?.let { listOf("Files on this device", it.name).plus(path.split('/').dropLast(1).filter(String::isNotEmpty)).joinToString(" / ") },
+            showBack = open != null || nav.canGoBack,
+            onBack = { if (open != null) up() else nav.back() },
+        ) {
             IconButton({ scope.launch { container.local.refresh() } }) { Icon(Icons.Filled.Refresh, "Rescan") }
         }
         if (indexing) LinearProgressIndicator(Modifier.fillMaxWidth())
+        val listing = remember(files, open, path) { open?.let { LocalBrowse.list(files, it, path) } }
         LazyColumn(Modifier.fillMaxSize().testTag("local_list"), contentPadding = PaddingValues(bottom = 24.dp)) {
-            item {
-                Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(pickVideo, Modifier.weight(1f).testTag("open_video")) {
-                        Icon(Icons.Filled.VideoFile, contentDescription = null); Text(" Open a video")
+            if (open == null || listing == null) {
+                item {
+                    Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(pickVideo, Modifier.weight(1f).testTag("open_video")) {
+                            Icon(Icons.Filled.VideoFile, contentDescription = null); Text(" Open a video")
+                        }
+                        FilledTonalButton(pickFolder, Modifier.weight(1f).testTag("add_folder")) {
+                            Icon(Icons.Filled.CreateNewFolder, contentDescription = null); Text(" Add folder")
+                        }
                     }
-                    FilledTonalButton(pickFolder, Modifier.weight(1f).testTag("add_folder")) {
-                        Icon(Icons.Filled.CreateNewFolder, contentDescription = null); Text(" Add folder")
+                    Text(
+                        "Media folders work like Syncplay's media directories: when the room's playlist moves to a file, " +
+                            "YarmiplayTV looks for it here first (subfolders included), then on Jellyfin and Plex.",
+                        color = AppColors.TextDim,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+                if (folders.isNotEmpty()) {
+                    item { SectionHeader("Media folders", Modifier.padding(top = 8.dp)) }
+                    items(folders, key = { "f:" + it.uri }) { folder ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { openUri = folder.uri; path = "" }.padding(start = 16.dp, end = 4.dp).testTag("local_folder"),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Filled.Folder, contentDescription = null, tint = AppColors.Accent)
+                            Spacer(Modifier.width(12.dp))
+                            Text(folder.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(videoCount(LocalBrowse.inFolder(files, folder).size), color = AppColors.TextDim)
+                            IconButton({ container.local.removeFolder(folder) }) { Icon(Icons.Filled.Delete, "Remove folder", tint = AppColors.TextDim) }
+                        }
                     }
                 }
-                Text(
-                    "Media folders work like Syncplay's media directories: when the room's playlist moves to a file, " +
-                        "YarmiplayTV looks for it here first, then on Jellyfin and Plex.",
-                    color = AppColors.TextDim,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-            if (folders.isNotEmpty()) {
-                item { SectionHeader("Media folders", Modifier.padding(top = 8.dp)) }
-                items(folders, key = { "f:" + it.uri }) { folder ->
-                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            } else {
+                items(listing.folders, key = { "d:" + it.path }) { sub ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { path = sub.path }.padding(horizontal = 16.dp, vertical = 14.dp).testTag("local_subfolder"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Icon(Icons.Filled.Folder, contentDescription = null, tint = AppColors.Accent)
                         Spacer(Modifier.width(12.dp))
-                        Text(folder.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${files.count { it.folder == folder.name }}", color = AppColors.TextDim)
-                        IconButton({ container.local.removeFolder(folder) }) { Icon(Icons.Filled.Delete, "Remove folder", tint = AppColors.TextDim) }
+                        Text(sub.name, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(videoCount(sub.videos), color = AppColors.TextDim)
                     }
                 }
-            }
-            if (files.isNotEmpty()) {
-                item { SectionHeader("Videos", Modifier.padding(top = 8.dp)) }
-                items(files, key = { "v:" + it.uri }) { file ->
+                items(listing.files, key = { "v:" + it.uri }) { file ->
                     Row(
                         Modifier.fillMaxWidth().clickable {
                             if (inRoom) picked = file.uri else container.playlist.playLocal(file.uri, inRoom = false)
@@ -112,12 +143,13 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(file.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text("${file.folder} · ${formatSize(file.sizeBytes)}", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                            Text(formatSize(file.sizeBytes), color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
-            } else if (folders.isNotEmpty() && !indexing) {
-                item { EmptyMessage("No videos found in these folders") }
+                if (listing.folders.isEmpty() && listing.files.isEmpty() && !indexing) {
+                    item { EmptyMessage("No videos in this folder") }
+                }
             }
         }
     }
@@ -146,6 +178,8 @@ private fun LocalFileActions(container: AppContainer, uri: String, name: String,
         Text("Others need the same file (same name) in their Syncplay media folders, Jellyfin or Plex.", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
     }
 }
+
+private fun videoCount(n: Int) = if (n == 1) "1 video" else "$n videos"
 
 internal fun formatSize(bytes: Long): String = when {
     bytes <= 0 -> "unknown size"

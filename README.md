@@ -77,10 +77,14 @@ python -m http.server -d build/site 8000
 When it starts, the app from the download page reads `version.json` and shows a notice on the home screen if
 its platform's package has a higher version than the one running (so only bumping `appVersion` makes an
 update; builds of the same version don't). Phones and tablets link to the download page, TVs show the
-Downloader short link, and the installed Windows app downloads the `.msi`, checks its SHA-256 and installs it
-(per user, no administrator prompt) with **Install**, or by itself with **Install updates on launch** in
-Settings: it downloads at startup and installs when the app closes. The portable Windows app only links to the
-download page. "Check for updates" in Settings turns it all off. Release builds, which go to Google Play, never check: Play doesn't allow apps to update outside it.
+Downloader short link, and the installed Windows app (the `.msi` or winget) downloads the `.msi`, checks its
+SHA-256 and installs it (per user, no administrator prompt) with **Install**, or by itself with **Automatic
+updates** in Settings: before the window opens, it shows a small window with the download's progress (and
+Skip), installs the new version quietly and starts it with the same arguments. If the check doesn't answer
+within 5 seconds, the download fails or the installer does, the current version opens with the notice
+instead, and doesn't try the same installer again on that start. The portable Windows app only links to the
+download page, and the Microsoft Store, Flatpak, snap and AUR packages leave updates to their store. "Check
+for updates" in Settings turns it all off. Release builds, which go to Google Play, never check: Play doesn't allow apps to update outside it.
 
 The download page's APK is signed with a fixed key from the repository secrets
 `YARMIPLAYTV_APK_KEYSTORE_BASE64` and `YARMIPLAYTV_APK_KEYSTORE_PASSWORD` (alias `yarmiplaytv-apk`), so a new
@@ -115,8 +119,9 @@ In a room, the player's playlist, room and chat buttons open a side panel:
 - **Chat:** Enter in the player opens it; ↑/↓ recall what you sent.
 
 Player keys: Space or K pauses, ←/→ or J/L seek, ↑/↓ change the volume (also the scroll wheel and the volume
-slider in the player's bar), M mutes, F or F11 toggles full screen,
-H hides or shows the controls (they also hide after 2 s unless the mouse is on them), Esc leaves full screen
+slider in the player's bar), M mutes, F or F11 toggles full screen, F5 saves a screenshot to
+Pictures\YarmiplayTV or the folder picked under Settings > Save screenshots to (the camera button in the player's
+bar does too, also on Android, where they go to Pictures/YarmiplayTV unless another folder is picked), H hides or shows the controls (they also hide after 2 s unless the mouse is on them), Esc leaves full screen
 or goes back. The command line follows the official client:
 `YarmiplayTV [--host host[:port]] [--name name] [--room room] [--password pw] [file]`.
 

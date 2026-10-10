@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.Button
@@ -165,7 +166,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                     ) {
                         IconButton(nav::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
                         Text(nowPlaying?.title ?: "Nothing playing", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        RoomStatusChip(room)
+                        RoomStatusChip(room, playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls })
                         if (hideControlsButton) {
                             TextButton({ controls = false }, Modifier.testTag("hide_controls")) {
                                 Icon(Icons.Filled.KeyboardArrowDown, null, tint = AppColors.TextDim)
@@ -239,7 +240,9 @@ private fun BottomControls(
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        if (tvStyleSeekBar) {
+            TvSeekBar(state, position, onInteract) { container.player.seek(it) }
+        } else Row(verticalAlignment = Alignment.CenterVertically) {
             Text(formatClock(dragging?.toDouble() ?: position), color = AppColors.Text, style = MaterialTheme.typography.labelMedium)
             Slider(
                 value = (dragging ?: position.toFloat()).coerceIn(0f, duration.toFloat().coerceAtLeast(0.01f)),
@@ -259,6 +262,12 @@ private fun BottomControls(
             PlayerVolumeControl(onInteract, Modifier.padding(end = 8.dp))
             if (inRoom) ReadyChip(ready, { container.sync.toggleReady(); onInteract() }, Modifier.testTag("player_ready"))
             Spacer(Modifier.weight(1f))
+            rememberRelaySave(container)?.let { RelaySaveButton(it, onInteract) }
+            container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
+                IconButton({ screenshots.take(); onInteract() }, Modifier.testTag("screenshot")) {
+                    Icon(Icons.Filled.PhotoCamera, contentDescription = "Screenshot", tint = Color.White)
+                }
+            }
             SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist") { onSheet(PlayerSheet.PLAYLIST) }
             SheetButton(Icons.Filled.Groups, "Room") { onSheet(PlayerSheet.ROOM) }
             SheetButton(Icons.Filled.Forum, "Chat") { onSheet(PlayerSheet.CHAT) }
@@ -289,21 +298,39 @@ private fun Chip(text: String, color: Color, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(color))
-        Text("  $text", style = MaterialTheme.typography.labelLarge, color = Color.White)
+        Text("  $text", style = MaterialTheme.typography.labelLarge, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
-private fun RoomStatusChip(room: RoomState) {
+private fun RoomStatusChip(room: RoomState, streaming: String? = null) {
     when (room.status) {
         ConnectionStatus.CONNECTED -> {
             val ready = room.users.count { it.isReady == true }
-            Chip("${room.room} · ${room.users.size} · $ready ready", AppColors.Ready)
+            val via = streaming?.let { " · ${it.withPing(room.rttMillis)}" }.orEmpty()
+            Chip(
+                "${room.room} · ${room.users.size} · $ready ready$via",
+                AppColors.Ready,
+                if (streaming != null) Modifier.widthIn(max = 420.dp).testTag("relay_streaming") else Modifier,
+            )
         }
         ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> Chip("Connecting…", AppColors.NotReady)
         ConnectionStatus.DISCONNECTED -> Chip("Not in a room", AppColors.TextDim)
     }
 }
+
+/** The short streaming line, while it should be on screen. Null for a download or a finished copy. */
+@Composable
+private fun playerStreamingLabel(container: AppContainer, controlsVisible: Boolean, fileLoaded: Boolean): String? {
+    val relay = container.relay ?: return null
+    val status by relay.status.collectAsStateWithLifecycle()
+    val current = status ?: return null
+    return current.text.takeIf { current.streamingLineVisible(controlsVisible, fileLoaded) }
+}
+
+/** Our ping, on the same chip as the peer's name. */
+private fun String.withPing(rttMillis: Double): String =
+    if (rttMillis > 0) "$this · %.0f ms".format(rttMillis) else this
 
 @Composable
 private fun PlayerToasts(container: AppContainer, modifier: Modifier = Modifier) {
@@ -336,30 +363,21 @@ private fun PlayerToasts(container: AppContainer, modifier: Modifier = Modifier)
 private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean, controlsVisible: Boolean) {
     val relay = container.relay ?: return
     val relayStatus by relay.status.collectAsStateWithLifecycle()
+    val room by container.sync.room.collectAsStateWithLifecycle()
     val status = relayStatus ?: return
     when {
-        status.streamingLineVisible(controlsVisible, fileLoaded) -> Surface(
-            color = Color.Black.copy(alpha = 0.6f),
-            shape = RoundedCornerShape(50),
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 64.dp).widthIn(max = 560.dp).testTag("relay_streaming"),
-        ) {
-            Text(
-                status.text,
-                color = Color.White,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-            )
-        }
+        status.streamingLineVisible(controlsVisible, fileLoaded) && !controlsVisible -> Chip(
+            status.text.withPing(room.rttMillis),
+            AppColors.Ready,
+            Modifier.align(Alignment.TopCenter).padding(top = 24.dp).widthIn(max = 280.dp).testTag("relay_streaming"),
+        )
         status.playbackHint(fileLoaded) == RelayHint.Downloading -> Surface(
             color = AppColors.Surface.copy(alpha = 0.9f),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.align(Alignment.Center).widthIn(max = 560.dp).testTag("relay_download"),
         ) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Downloading", style = MaterialTheme.typography.titleMedium)
-                Text(status.text, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                Text(status.text, style = MaterialTheme.typography.titleMedium)
                 RelayDownloadBar(status.fraction)
             }
         }
@@ -370,7 +388,7 @@ private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean,
 private fun CenterStatus(container: AppContainer, nav: Navigator, status: PlaylistStatus, nothingLoaded: Boolean, fileLoaded: Boolean, inRoom: Boolean) {
     val hideLoading = container.relay?.let { relay ->
         val relayStatus by relay.status.collectAsStateWithLifecycle()
-        relayStatus?.playbackHint(fileLoaded) != RelayHint.None
+        relayStatus.let { it != null && it.playbackHint(fileLoaded) != RelayHint.None }
     } == true
     val pickFile = rememberVideoPicker { uri -> container.playlist.resolveManuallyLocal(uri) }
     val playFile = rememberVideoPicker { uri -> container.playlist.playLocal(uri, inRoom) }

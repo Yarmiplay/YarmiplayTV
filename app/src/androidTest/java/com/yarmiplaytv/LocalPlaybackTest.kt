@@ -1,6 +1,10 @@
 package com.yarmiplaytv
 
+import android.content.ContentUris
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -117,6 +121,36 @@ class LocalPlaybackTest {
         compose.waitUntil(5_000) { compose.onNodeWithTag("sheet_Audio").fetchSemanticsNode().boundsInRoot == audioBounds }
         compose.onNodeWithTag("sheet_Audio").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("player_sheet"), 5_000)
+    }
+
+    @Test
+    fun screenshotButtonSavesTheFrameToPictures() {
+        playClipAndWaitLoaded()
+        compose.runOnUiThread { container.player.setPaused(true) }
+        val before = savedScreenshots()
+        compose.waitUntilExactlyOneExists(hasTestTag("screenshot"), 5_000)
+        compose.onNodeWithTag("screenshot").performClick()
+        compose.waitUntil(10_000) { (savedScreenshots() - before).isNotEmpty() }
+        val added = savedScreenshots() - before
+        try {
+            val image = TestSupport.app.contentResolver.openInputStream(added.single())!!.use(BitmapFactory::decodeStream)
+            val colors = (0 until 16).flatMap { y -> (0 until 16).map { x -> image.getPixel(x * image.width / 16, y * image.height / 16) } }.toSet()
+            assertTrue("screenshot ${image.width}x${image.height} has ${colors.size} colours", colors.size > 8)
+        } finally {
+            added.forEach(TestSupport::delete)
+        }
+    }
+
+    /** The images in Pictures/YarmiplayTV. */
+    private fun savedScreenshots(): Set<Uri> {
+        val images = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        return TestSupport.app.contentResolver.query(
+            images,
+            arrayOf(MediaStore.Images.Media._ID),
+            "${MediaStore.Images.Media.RELATIVE_PATH}=?",
+            arrayOf("${Environment.DIRECTORY_PICTURES}/YarmiplayTV/"),
+            null,
+        )?.use { c -> buildSet { while (c.moveToNext()) add(ContentUris.withAppendedId(images, c.getLong(0))) } }.orEmpty()
     }
 
     private companion object {

@@ -153,13 +153,15 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
         }
         PanelHeader(room.room, "${container.sync.client?.config?.host ?: ""} · Syncplay ${room.serverVersion ?: ""}")
         serverStatusLine(room.yarmiplay)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall) }
-        container.relay?.let { relay ->
-            val relayStatus by relay.status.collectAsStateWithLifecycle()
-            relayStatus?.let { s ->
-                Text(s.text, color = AppColors.Accent, style = MaterialTheme.typography.bodySmall)
-                if (s.downloading && !s.complete) RelayDownloadBar(s.fraction)
-                s.error?.let { Text(it, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall) }
-            }
+        val relayStatus = container.relay?.let { relay ->
+            val current by relay.status.collectAsStateWithLifecycle()
+            current
+        }
+        val streamingFrom = relayStatus?.takeIf { !it.downloading && !it.complete }?.seeders?.toSet().orEmpty()
+        relayStatus?.let { s ->
+            if (streamingFrom.isEmpty()) Text(s.text, color = AppColors.Accent, style = MaterialTheme.typography.bodySmall)
+            if (s.downloading && !s.complete) RelayDownloadBar(s.fraction)
+            s.error?.let { Text(it, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall) }
         }
         val blocked by container.sync.blocked.collectAsStateWithLifecycle()
         val me = room.users.firstOrNull { it.name == room.username }
@@ -187,7 +189,7 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★" else ""),
+                            user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★" else "") + (if (user.name in streamingFrom) " · streaming" else ""),
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(

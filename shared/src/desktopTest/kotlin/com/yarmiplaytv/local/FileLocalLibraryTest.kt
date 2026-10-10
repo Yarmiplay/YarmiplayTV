@@ -2,6 +2,7 @@ package com.yarmiplaytv.local
 
 import com.yarmiplaytv.data.SettingsStore
 import com.yarmiplaytv.data.desktopSettingsStore
+import com.yarmiplaytv.ui.mobile.DesktopDialogs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,6 +67,37 @@ class FileLocalLibraryTest {
         assertTrue(movie.uri.startsWith("file:"))
         assertEquals(File(media, "North Wind (2022).mkv").canonicalFile, File(FileLocalLibrary.pathOf(movie.uri).toString()).canonicalFile)
         assertEquals("Movies", lib.folders.value.single().name)
+        assertEquals(listOf("", "Season 1"), lib.files.value.map { it.directory })
+        assertTrue(lib.files.value.all { it.folderUri == lib.folders.value.single().uri })
+    }
+
+    @Test
+    fun `a dropped folder brings the videos in its subfolders too`() {
+        File(media, "Season 1/Show S01E02.mp4").writeBytes(ByteArray(10))
+        val videos = DesktopDialogs.videosIn(media.toPath()).map { media.toPath().relativize(it).joinToString("/") }
+        assertEquals(listOf("North Wind (2022).mkv", "Season 1/Show S01E01.mp4", "Season 1/Show S01E02.mp4"), videos)
+    }
+
+    @Test
+    fun `browses one folder level at a time`() = runBlocking {
+        File(media, "Season 1/Extras").mkdirs()
+        File(media, "Season 1/Extras/Bloopers.mkv").writeBytes(ByteArray(10))
+        File(media, "Season 1/Show S01E10.mp4").writeBytes(ByteArray(10))
+        File(media, "Season 1/Show S01E2.mp4").writeBytes(ByteArray(10))
+        val lib = library()
+        lib.addFolder(FileLocalLibrary.uriOf(media.toPath()))
+        awaitTrue { lib.files.value.size == 5 }
+        val folder = lib.folders.value.single()
+
+        val root = LocalBrowse.list(lib.files.value, folder, "")
+        assertEquals(listOf(LocalSubfolder("Season 1", "Season 1", 4)), root.folders)
+        assertEquals(listOf("North Wind (2022).mkv"), root.files.map { it.name })
+
+        val season = LocalBrowse.list(lib.files.value, folder, "Season 1")
+        assertEquals(listOf(LocalSubfolder("Extras", "Season 1/Extras", 1)), season.folders)
+        assertEquals(listOf("Show S01E01.mp4", "Show S01E2.mp4", "Show S01E10.mp4"), season.files.map { it.name })
+
+        assertEquals(listOf("Bloopers.mkv"), LocalBrowse.list(lib.files.value, folder, "Season 1/Extras").files.map { it.name })
     }
 
     @Test

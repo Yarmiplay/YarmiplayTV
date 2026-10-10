@@ -10,6 +10,7 @@ import com.yarmiplaytv.syncplay.DeviceState
 import com.yarmiplaytv.syncplay.ServerKind
 import com.yarmiplaytv.syncplay.SyncplayConfig
 import com.yarmiplaytv.syncplay.Yarmiplay
+import com.yarmiplaytv.ui.mobile.fileSaveTarget
 import com.yarmiplaytv.ui.shared.DeviceAccessPrompt
 import com.yarmiplaytv.ui.shared.approvedOnly
 import com.yarmiplaytv.ui.shared.closeDeviceAccess
@@ -145,7 +146,7 @@ class YarmiplayServerTest {
         }
         assertArrayEquals(bytes.copyOfRange(bytes.size - 1000, bytes.size), tail)
         awaitTrue("the leecher to show where the file comes from") {
-            leecher.relay?.status?.value?.text?.contains("via the Syncplay server") == true
+            leecher.relay?.status?.value?.text?.contains("via seeder") == true
         }
     }
 
@@ -172,6 +173,12 @@ class YarmiplayServerTest {
         val client = OkHttpClient.Builder().readTimeout(60, TimeUnit.SECONDS).build()
         val read = client.newCall(Request.Builder().url(leecherPlayer.loaded!!).build()).execute().use { it.body!!.bytes() }
         assertArrayEquals(bytes, read)
+
+        val copy = tmp.root.resolve("saved").resolve("copy.mp4")
+        onMain { leecher.relay!!.save(file.name, fileSaveTarget(copy.toPath())) }
+        awaitTrue("the saved copy") { copy.length() == bytes.size.toLong() && leecher.relay?.status?.value?.saving == false }
+        assertArrayEquals(bytes, copy.readBytes())
+        awaitTrue("the save to be reported") { leecher.sync.feed.value.any { it.text.startsWith("Saved a copy of ${file.name}") } }
     }
 
     @Test

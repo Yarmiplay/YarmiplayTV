@@ -33,12 +33,40 @@ internal fun updatePlatform(
 }
 
 /**
+ * [args] as one Windows command line, quoted the way the C runtime splits it again (CommandLineToArgvW):
+ * backslashes only escape when they come before a quote.
+ */
+internal fun windowsCommandLine(args: List<String>): String = args.joinToString(" ") { arg ->
+    if (arg.isNotEmpty() && arg.none { it == ' ' || it == '\t' || it == '"' }) return@joinToString arg
+    buildString {
+        append('"')
+        var slashes = 0
+        for (c in arg) {
+            if (c == '\\') {
+                slashes++
+                continue
+            }
+            append("\\".repeat(if (c == '"') slashes * 2 + 1 else slashes))
+            slashes = 0
+            append(c)
+        }
+        append("\\".repeat(slashes * 2))
+        append('"')
+    }
+}
+
+/**
  * Installs updates with the download page's .msi. The app is installed per user, so the installer needs no
  * administrator rights and upgrades the installed version in place.
  */
-internal class WindowsUpdater private constructor(private val launcher: File) : UpdateInstaller {
+internal class WindowsUpdater private constructor(
+    private val launcher: File,
+    /** The arguments this run started with, for starting the app again after installing. */
+    private val args: List<String>,
+) : UpdateInstaller {
     private val http = OkHttpClient.Builder().readTimeout(60, TimeUnit.SECONDS).build()
     private var msi: File? = null
+    private var version: String? = null
 
     override suspend fun download(update: Update, progress: (Float) -> Unit) = withContext(Dispatchers.IO) {
         val expected = update.sha256 ?: error("the download page lists no checksum")
@@ -75,20 +103,26 @@ internal class WindowsUpdater private constructor(private val launcher: File) : 
         target.delete()
         if (!partial.renameTo(target)) error("couldn't save the installer")
         msi = target
+        version = update.version
     }
 
     override fun installAfterExit(relaunch: Boolean) {
         val msi = msi ?: return
-        fun quoted(f: File) = "'" + f.path.replace("'", "''") + "'"
+        fun quoted(s: String) = "'" + s.replace("'", "''") + "'"
         // The launcher runs the app in a child process and holds YarmiplayTV.exe open until it exits too.
         val current = ProcessHandle.current()
         val pids = listOfNotNull(current, current.parent().orElse(null)?.takeIf { it.info().command().orElse("") == launcher.path })
             .joinToString(",") { it.pid().toString() }
         val script = buildString {
             append("Wait-Process -Id $pids -ErrorAction SilentlyContinue; ")
-            append("\$p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList ('/i \"' + ${quoted(msi)} + '\" /passive /norestart'); ")
-            append("Remove-Item -LiteralPath ${quoted(msi)} -ErrorAction SilentlyContinue; ")
-            if (relaunch) append("if (\$p.ExitCode -eq 0) { Start-Process -FilePath ${quoted(launcher)} }")
+            append("\$p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList ('/i \"' + ${quoted(msi.path)} + '\" /qn /norestart'); ")
+            append("Remove-Item -LiteralPath ${quoted(msi.path)} -ErrorAction SilentlyContinue; ")
+            if (relaunch) {
+                // 3010: installed, Windows wants a restart for something else.
+                append("if (\$p.ExitCode -in 0, 3010) { \$env:$FAILED_INSTALL = \$null } else { \$env:$FAILED_INSTALL = ${quoted(version.orEmpty())} }; ")
+                append("Start-Process -FilePath ${quoted(launcher.path)}")
+                if (args.isNotEmpty()) append(" -ArgumentList ${quoted(windowsCommandLine(args))}")
+            }
         }
         val encoded = Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_16LE))
         ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", encoded)
@@ -98,14 +132,19 @@ internal class WindowsUpdater private constructor(private val launcher: File) : 
     }
 
     companion object {
+        /** Set to the version whose installer failed when the app is started again after it. */
+        const val FAILED_INSTALL = "YARMIPLAYTV_UPDATE_FAILED"
+
+        /** The installed app's launcher (YarmiplayTV.exe), which jpackage names in jpackage.app-path. */
+        val installedLauncher: File? get() = System.getProperty("jpackage.app-path")?.let(::File)?.takeIf { it.isFile }
+
         /**
-         * Only for the installed app on Windows; its jpackage launcher sets jpackage.app-path. The portable app
-         * only points to the download page: the .msi would install a second copy next to it.
+         * Only for the installed app on Windows. The portable app only points to the download page: the .msi
+         * would install a second copy next to it.
          */
-        fun createOrNull(): WindowsUpdater? {
+        fun createOrNull(args: List<String> = emptyList()): WindowsUpdater? {
             if (updatePlatform() != "windows" || DesktopPaths.portableDir() != null) return null
-            val launcher = System.getProperty("jpackage.app-path")?.let(::File)?.takeIf { it.isFile } ?: return null
-            return WindowsUpdater(launcher)
+            return WindowsUpdater(installedLauncher ?: return null, args)
         }
     }
 }

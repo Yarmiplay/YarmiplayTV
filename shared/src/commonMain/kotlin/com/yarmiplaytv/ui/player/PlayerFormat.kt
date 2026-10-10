@@ -1,5 +1,6 @@
 package com.yarmiplaytv.ui.player
 
+import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.syncplay.FileDifference
 import com.yarmiplaytv.syncplay.FileInfo
 import com.yarmiplaytv.syncplay.FileMatch
@@ -16,6 +17,14 @@ fun formatClock(seconds: Double): String {
     val s = total % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
+
+/** Under the seek bar, between the clocks: codec, height, hardware or software decoding, and speed when not 1×. */
+fun playbackInfo(state: PlaybackState): String = listOfNotNull(
+    state.videoCodec?.substringBefore(' ')?.uppercase(),
+    if (state.videoHeight > 0) "${state.videoHeight}p" else null,
+    state.hwdec?.takeIf { it.isNotBlank() && it != "no" }?.let { "HW" } ?: if (state.fileLoaded) "SW" else null,
+    if (state.speed != 1.0) "%.2fx".format(state.speed) else null,
+).joinToString(" · ")
 
 /** Under a room member's file: how it differs from ours, like Syncplay's warning, or null when it looks the same. */
 fun fileDifferenceNote(theirs: FileInfo?, mine: FileInfo?): String? {

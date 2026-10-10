@@ -57,6 +57,8 @@ class AppState {
             store.saveDeviceName(saved.deviceName)
             store.saveAddSharedServers(saved.addSharedServers)
             store.saveShareFiles(saved.shareFiles)
+            store.saveDownloadDirectory(saved.downloadDirectory)
+            store.saveScreenshotDirectory(saved.screenshotDirectory)
             store.replaceRoomPlaylists(savedRoomPlaylists)
         }
         onMain {
@@ -90,6 +92,8 @@ class AppState {
             store.saveDeviceName("")
             store.saveAddSharedServers(true)
             store.saveShareFiles(true)
+            store.saveDownloadDirectory("")
+            store.saveScreenshotDirectory("")
             store.replaceRoomPlaylists(emptyMap())
         }
         onMain { removeAllServers() }
@@ -98,7 +102,8 @@ class AppState {
         waitUntil(5_000) {
             val s = container.settings.value
             s.syncplay == PROFILE && s.jellyfinServers.isEmpty() && s.plexServers.isEmpty() && container.mediaSource.value == null &&
-                s.lastJellyfinUrl == LAST_JELLYFIN_URL && s.showRoomChat && s.acceptedRoomRules && s.deviceName.isEmpty() && s.addSharedServers && s.shareFiles
+                s.lastJellyfinUrl == LAST_JELLYFIN_URL && s.showRoomChat && s.acceptedRoomRules && s.deviceName.isEmpty() && s.addSharedServers && s.shareFiles &&
+                s.downloadDirectory.isEmpty() && s.screenshotDirectory.isEmpty()
         }
         clearFeed()
     }
@@ -127,14 +132,14 @@ class AppState {
     fun fakeMediaFolders() {
         val movies = LocalFolder("content://com.android.externalstorage.documents/tree/primary%3AMovies", "Movies")
         val shows = LocalFolder("content://com.android.externalstorage.documents/tree/primary%3ADownload%2FShows", "Shows")
-        fun file(name: String, size: Long, folder: LocalFolder) =
-            LocalFile(name, size, "${folder.uri}/document/primary%3A${Uri.encode(name)}", folder.name)
+        fun file(name: String, size: Long, folder: LocalFolder, directory: String = "") =
+            LocalFile(name, size, "${folder.uri}/document/primary%3A${Uri.encode("$directory/$name")}", folder.name, directory = directory, folderUri = folder.uri)
         setLocalLibrary(
             listOf(movies, shows),
             listOf(
                 file("North Wind (2022).mkv", 2_254_857_830, movies),
-                file("Orbit Station S01E01.mkv", 734_003_200, shows),
-                file("Orbit Station S01E02.mkv", 730_857_472, shows),
+                file("Orbit Station S01E01.mkv", 734_003_200, shows, "Orbit Station/Season 1"),
+                file("Orbit Station S01E02.mkv", 730_857_472, shows, "Orbit Station/Season 1"),
                 file("Paper Boats (2018).mp4", 1_610_612_736, movies),
             ),
         )

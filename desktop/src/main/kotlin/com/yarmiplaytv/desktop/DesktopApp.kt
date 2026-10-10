@@ -31,6 +31,7 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.data.DesktopPaths
+import com.yarmiplaytv.data.SettingsStore
 import com.yarmiplaytv.defaultSyncplayName
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.device.FileDeviceKeyStore
@@ -39,6 +40,7 @@ import com.yarmiplaytv.player.desktop.DesktopMpvOptions
 import com.yarmiplaytv.player.desktop.DesktopMpvPlayer
 import com.yarmiplaytv.player.desktop.MpvUnavailableException
 import com.yarmiplaytv.player.desktop.VideoSurface
+import com.yarmiplaytv.screenshot.FolderScreenshotStore
 import com.yarmiplaytv.ui.mobile.DesktopBack
 import com.yarmiplaytv.ui.mobile.DesktopDialogs
 import com.yarmiplaytv.ui.mobile.DesktopRoomPanel
@@ -48,11 +50,16 @@ import com.yarmiplaytv.ui.mobile.DesktopVolume
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
 import com.yarmiplaytv.ui.mobile.appLogoPainter
+import com.yarmiplaytv.update.UpdateChecker
+import com.yarmiplaytv.update.Updates
+import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
 import java.awt.Desktop
 import java.awt.Dimension
 import java.io.File
 import java.net.URI
 import java.nio.file.Paths
+import java.util.concurrent.TimeUnit
 import javax.swing.JOptionPane
 import javax.swing.SwingUtilities
 import kotlin.system.exitProcess
@@ -60,11 +67,24 @@ import kotlin.system.exitProcess
 internal fun runApp(args: List<String>) {
     val configDir = DesktopPaths.portableDir() ?: DesktopPaths.migrateLegacyConfig()
     val boundsFile = File(configDir, "window.properties")
+    val store = desktopSettingsStore(configDir)
+    val installer = WindowsUpdater.createOrNull(args)
+    val failedInstall = System.getenv(WindowsUpdater.FAILED_INSTALL)?.ifEmpty { null }
+    // Before the container, so libmpv isn't loaded yet and the installer can replace it.
+    val launchUpdate = runBlocking {
+        updateBeforeLaunch(store.current(), installer, failedInstall, LaunchUpdateWindow(WindowsUpdater.installedLauncher)) {
+            UpdateChecker(http = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).build()).check("windows", APP_VERSION)
+        }
+    }
+    if (launchUpdate is LaunchUpdate.Install) {
+        installer?.installAfterExit(relaunch = true)
+        exitProcess(0)
+    }
     var container: AppContainer? = null
     var failure: Throwable? = null
     // The container's scope runs on the Swing thread (Dispatchers.Main), so it's created there too.
     SwingUtilities.invokeAndWait {
-        container = runCatching { createContainer(configDir) }.onFailure { failure = it }.getOrNull()
+        container = runCatching { createContainer(configDir, store) }.onFailure { failure = it }.getOrNull()
     }
     val app = container ?: run {
         val error = failure
@@ -95,8 +115,13 @@ internal fun runApp(args: List<String>) {
         launch.profile(app.settings.value.syncplay, defaultSyncplayName(DeviceKind.DESKTOP))?.let { app.sync.connect(it.toConfig()) }
         openFiles(app, launch.files)
         app.updates.platform = updatePlatform()
-        app.updates.installer = WindowsUpdater.createOrNull()
-        app.updates.checkOnLaunch()
+        app.updates.installer = installer
+        val postponed = launchUpdate as? LaunchUpdate.Postponed
+        when {
+            postponed == null -> app.updates.checkOnLaunch(failedInstall)
+            postponed.error != null -> app.updates.showFailed(postponed.update, Updates.downloadFailed(postponed.error))
+            else -> app.updates.show(postponed.update)
+        }
     }
 
     application(exitProcessOnExit = false) {
@@ -108,8 +133,8 @@ internal fun runApp(args: List<String>) {
     exitProcess(0)
 }
 
-private fun createContainer(configDir: File): AppContainer {
-    val store = desktopSettingsStore(configDir)
+private fun createContainer(configDir: File, store: SettingsStore): AppContainer {
+    val pictures = lazy { File(PicturesFolder.resolve(), "YarmiplayTV") }
     return AppContainer(
         settingsStore = store,
         deviceName = DevicePlatform.deviceModel.ifEmpty { "Desktop" },
@@ -126,12 +151,13 @@ private fun createContainer(configDir: File): AppContainer {
         createLocalLibrary = { settings, scope, folders -> FileLocalLibrary(settings, scope, folders) },
         deviceKeys = FileDeviceKeyStore(File(configDir, "device-keys")),
         cacheDir = if (DesktopPaths.portableDir() != null) File(configDir, "cache") else DesktopPaths.cacheDir(),
+        screenshotStore = FolderScreenshotStore(File(System.getProperty("java.io.tmpdir"), "yarmiplaytv-screenshots"), pictures::value),
     ).also { it.deviceKind = DeviceKind.DESKTOP }
 }
 
 /**
  * Plays the first video like "Open with" on Android (here, reported to the room). Further videos are
- * added to the room's shared playlist when in a room. Folders stand for the videos directly in them.
+ * added to the room's shared playlist when in a room. Folders stand for the videos in them and their subfolders.
  * With the playlist panel open ([addToPlaylist]), every video goes to the playlist instead.
  */
 internal fun openFiles(container: AppContainer, files: List<File>, addToPlaylist: Boolean = false) {
@@ -165,6 +191,7 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
                 container.player.showText(if (mute) "Muted" else "Volume ${volume.volume.value.toInt()}%", 1000)
             }
             override fun focusChat() = DesktopRoomPanel.focusChat()
+            override fun screenshot() { container.screenshots?.take() }
         }
     }
     val drop = remember {

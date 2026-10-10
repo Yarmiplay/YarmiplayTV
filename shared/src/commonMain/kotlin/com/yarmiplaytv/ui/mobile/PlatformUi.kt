@@ -5,6 +5,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.player.Player
+import com.yarmiplaytv.relay.SaveTarget
 
 /** Lets uiautomator (`scripts/ui.ps1 -Id`) see test tags. Dialogs and sheets are separate windows and need their own. */
 expect fun Modifier.exposeTestTags(): Modifier
@@ -32,6 +33,9 @@ expect val controlsHideMillis: Long
 
 /** Desktop: the player's top bar has a Hide button (and H hides), since a click on the video pauses instead. */
 expect val hideControlsButton: Boolean
+
+/** Desktop: Android TV's thin seek bar with the clocks under it, instead of the phone's slider between them. */
+expect val tvStyleSeekBar: Boolean
 
 /** Desktop: mute button and volume slider in the player's bar. Nothing on Android, where the device's buttons do it. */
 @Composable
@@ -71,6 +75,20 @@ expect fun rememberVideoPicker(onPicked: (String) -> Unit): () -> Unit
 /** Picks a folder and adds it to the media folders. */
 @Composable
 expect fun rememberFolderPicker(container: AppContainer): () -> Unit
+
+/**
+ * Asks where to save a copy of a relayed file named `fileName`, or uses the download folder from settings without
+ * asking. `onPicked` isn't called when the user cancels.
+ */
+@Composable
+expect fun rememberSavePicker(container: AppContainer): (fileName: String, onPicked: (SaveTarget) -> Unit) -> Unit
+
+/**
+ * Picks a folder to save into; [onPicked] gets its URI (a writable content:// tree on Android, file:// on desktop).
+ * [title] heads the desktop dialog.
+ */
+@Composable
+expect fun rememberDirectoryPicker(title: String, onPicked: (String) -> Unit): () -> Unit
 
 /** File name from the last segment of a file URI, for files the local library doesn't list. */
 expect fun uriFileName(uri: String): String?

@@ -98,6 +98,23 @@ class DesktopMpvPlayerTest {
         }
     }
 
+    @Test
+    fun savesScreenshotsAtTheVideoSizeOnGpuAndCpu() = runBlocking {
+        for (mode in listOf("gl", "sw")) {
+            player.close()
+            player = DesktopMpvPlayer(DesktopMpvOptions(render = mode))
+            player.renderer.setSize(640, 360)
+            loadAndAwait<PlayerEvent.FileLoaded>(clip.toURI().toString())
+            withTimeout(5_000) { while (player.renderer.frames.published == 0L || player.state.value.videoWidth == 0) delay(20) }
+            val shot = File.createTempFile("yarmiplaytv-shot", ".jpg").apply { delete(); deleteOnExit() }
+            assertTrue("$mode: screenshot failed", player.screenshot(shot.path))
+            val image = ImageIO.read(shot)
+            assertNotNull("$mode: not an image", image)
+            val state = player.state.value
+            assertEquals("$mode: size", "${state.videoWidth}x${state.videoHeight}", "${image.width}x${image.height}")
+        }
+    }
+
     /** Kali and most desktops start the JVM with en_US.UTF-8 or similar; libmpv only accepts "C". */
     @Test
     fun startsWhenTheNumberLocaleIsNotC() = runBlocking {

@@ -120,18 +120,29 @@ class UpdatesTest {
     }
 
     @Test
-    fun `installs on launch by downloading and installing on exit`() {
+    fun `with Automatic updates on, the check in the app only shows the notice`() {
         runBlocking { store.saveUpdatePrefs(check = true, installOnLaunch = true) }
         server.enqueue(MockResponse().setBody(manifest()))
         val installer = FakeInstaller()
         val updates = updates(installer)
         updates.checkOnLaunch()
-        awaitTrue { updates.state.value is UpdateState.Ready }
-        assertEquals("1.2.0", installer.downloaded?.version)
-        assertNull(installer.relaunch)
+        awaitTrue { updates.state.value != null }
+        runBlocking { delay(300) }
+        assertTrue(updates.state.value is UpdateState.Available)
+        assertNull(installer.downloaded)
 
         updates.onExit()
-        assertEquals(false, installer.relaunch)
+        assertNull(installer.relaunch)
+    }
+
+    @Test
+    fun `after a failed install the notice says so, even for a dismissed version`() {
+        runBlocking { store.saveDismissedUpdate("1.2.0") }
+        server.enqueue(MockResponse().setBody(manifest()))
+        val updates = updates(FakeInstaller())
+        updates.checkOnLaunch(failedInstall = "1.2.0")
+        awaitTrue { updates.state.value != null }
+        assertEquals(Updates.INSTALL_FAILED, (updates.state.value as UpdateState.Failed).message)
     }
 
     @Test
@@ -142,7 +153,7 @@ class UpdatesTest {
         awaitTrue { updates.state.value != null }
         updates.download(thenRestart = true)
         awaitTrue { updates.state.value is UpdateState.Failed }
-        assertEquals("checksum mismatch", (updates.state.value as UpdateState.Failed).message)
+        assertEquals("Couldn't download it: checksum mismatch", (updates.state.value as UpdateState.Failed).message)
     }
 
     @Test

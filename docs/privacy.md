@@ -1,6 +1,6 @@
 # YarmiplayTV privacy policy
 
-Effective 8 October 2026. This policy covers the YarmiplayTV app for Android TV, Android phones and tablets,
+Effective 10 October 2026. This policy covers the YarmiplayTV app for Android TV, Android phones and tablets,
 and desktop.
 
 ## Summary
@@ -59,8 +59,9 @@ for a new version.
   from your IP address, and GitHub handles it under the
   [GitHub Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
   The developer doesn't receive it. Turn it off with **Check for updates** in Settings. When you install an
-  update on Windows, the installer is downloaded from the same page. The apps from Google Play and the
-  Microsoft Store don't check: their store updates them.
+  update on Windows, or **Automatic updates** installs one before the app opens, the installer is downloaded
+  from the same page. The apps from Google Play, the Microsoft Store, Flathub, the Snap Store and the AUR
+  don't check: their store updates them.
 
 Connections are encrypted when the server supports it: Syncplay servers with TLS, and Jellyfin and Plex
 servers on HTTPS. plex.tv is always HTTPS. Media servers on a home network often use plain HTTP, and the app
@@ -73,7 +74,8 @@ folders you add to your local library are stored only on your device. Names you 
 in memory and forgotten when you leave the room. Video files you play from the device are
 read from the device and are only uploaded through a YarmiplayServerTV file relay, as described above. Parts of
 a file you watch through the relay are kept in the app's cache folder, up to 4 GB, and deleted when you
-leave the room, after 24 hours, or when the app next starts. On Android, uninstalling the app or clearing its storage deletes
+leave the room, after 24 hours, or when the app next starts. A copy you save with the player's save button is written
+only where you choose, and stays there until you delete it. On Android, uninstalling the app or clearing its storage deletes
 this data. On desktop it is in `%APPDATA%\YarmiplayTV` (Windows; the portable version uses the `data` folder
 next to `YarmiplayTV.exe`), `~/Library/Application Support/YarmiplayTV` (macOS) or `~/.config/yarmiplaytv`
 (Linux), and you can delete that folder.

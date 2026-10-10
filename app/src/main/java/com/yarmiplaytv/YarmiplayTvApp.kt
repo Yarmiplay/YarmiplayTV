@@ -9,6 +9,7 @@ import com.yarmiplaytv.device.AndroidDeviceKeyStore
 import com.yarmiplaytv.local.SafLocalLibrary
 import com.yarmiplaytv.player.MpvOptions
 import com.yarmiplaytv.player.MpvPlayer
+import com.yarmiplaytv.screenshot.AndroidScreenshotStore
 
 private val Context.dataStore by preferencesDataStore("settings")
 
@@ -36,6 +37,7 @@ class YarmiplayTvApp : Application() {
             createLocalLibrary = { store, scope, folders -> SafLocalLibrary(this, store, scope, folders) },
             deviceKeys = AndroidDeviceKeyStore(),
             cacheDir = cacheDir,
+            screenshotStore = AndroidScreenshotStore(this),
         )
         if (BuildConfig.UPDATE_CHECK) {
             container.updates.platform = "android"

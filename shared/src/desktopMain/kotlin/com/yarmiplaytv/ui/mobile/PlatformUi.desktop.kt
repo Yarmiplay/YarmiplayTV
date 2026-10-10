@@ -31,8 +31,11 @@ import androidx.compose.ui.unit.dp
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.player.Player
+import com.yarmiplaytv.relay.SaveTarget
 import kotlinx.coroutines.flow.StateFlow
 import org.xml.sax.InputSource
+import java.nio.file.Files
+import java.nio.file.Path
 
 actual fun Modifier.exposeTestTags(): Modifier = this
 
@@ -99,6 +102,8 @@ private val hiddenCursor: PointerIcon by lazy {
 actual val controlsHideMillis = 2000L
 
 actual val hideControlsButton = true
+
+actual val tvStyleSeekBar = true
 
 /** How far the pointer has to move to bring hidden controls back, so a nudged mouse doesn't undo a hide. */
 private val SHOW_CONTROLS_DISTANCE = 12.dp
@@ -179,6 +184,40 @@ actual fun rememberVideoPicker(onPicked: (String) -> Unit): () -> Unit {
 @Composable
 actual fun rememberFolderPicker(container: AppContainer): () -> Unit =
     remember(container) { { DesktopDialogs.pickFolder()?.let { container.local.addFolder(FileLocalLibrary.uriOf(it)) } } }
+
+@Composable
+actual fun rememberSavePicker(container: AppContainer): (String, (SaveTarget) -> Unit) -> Unit =
+    remember(container) {
+        { name, onPicked ->
+            val folder = container.settings.value.downloadDirectory
+            val path = if (folder.isNotEmpty()) {
+                runCatching { FileLocalLibrary.pathOf(folder) }.getOrNull()?.let { DesktopDialogs.uniqueIn(it, name) }
+            } else {
+                DesktopDialogs.saveFile(name)
+            }
+            if (path != null) onPicked(fileSaveTarget(path))
+        }
+    }
+
+/** Only removes the file once this save has started writing it, so a failed save keeps a file the user picked to replace. */
+internal fun fileSaveTarget(path: Path): SaveTarget {
+    var opened = false
+    return SaveTarget(
+        label = path.toString(),
+        open = {
+            path.parent?.let(Files::createDirectories)
+            opened = true
+            Files.newOutputStream(path)
+        },
+        discard = { if (opened) Files.deleteIfExists(path) },
+    )
+}
+
+@Composable
+actual fun rememberDirectoryPicker(title: String, onPicked: (String) -> Unit): () -> Unit {
+    val current by rememberUpdatedState(onPicked)
+    return remember(title) { { DesktopDialogs.pickFolder(title)?.let { current(FileLocalLibrary.uriOf(it)) } } }
+}
 
 actual fun uriFileName(uri: String): String? =
     runCatching { FileLocalLibrary.pathOf(uri).fileName?.toString() }.getOrNull() ?: uri.substringAfterLast('/').ifEmpty { null }

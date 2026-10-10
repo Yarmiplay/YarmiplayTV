@@ -77,7 +77,7 @@ data class AppSettings(
     val autosavePlaylists: Boolean = true,
     /** Look for a newer version on the download page when the app starts (not in Play builds). */
     val checkForUpdates: Boolean = true,
-    /** Desktop: download updates when the app starts and install them when it closes. */
+    /** Automatic updates, on the installed Windows app: install a new version before the window opens. */
     val installUpdatesOnLaunch: Boolean = false,
     /** The update version the user dismissed; it isn't shown again. */
     val dismissedUpdate: String = "",
@@ -91,6 +91,10 @@ data class AppSettings(
     val addSharedServers: Boolean = true,
     /** Offer the room's YarmiplayServerTV file relay the playlist files in this device's media folders. */
     val shareFiles: Boolean = true,
+    /** Folder URI that saved copies of relayed files go to; empty asks where each time. */
+    val downloadDirectory: String = "",
+    /** Folder URI that screenshots are saved to without asking; empty uses the platform's Pictures/YarmiplayTV. */
+    val screenshotDirectory: String = "",
     /** What each Syncplay server ("host:port") turned out to be when last joined. */
     val knownServers: Map<String, KnownServer> = emptyMap(),
 )
@@ -169,6 +173,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val deviceName = stringPreferencesKey("device_name")
         val addSharedServers = booleanPreferencesKey("add_shared_servers")
         val shareFiles = booleanPreferencesKey("share_files")
+        val downloadDirectory = stringPreferencesKey("download_directory")
+        val screenshotDirectory = stringPreferencesKey("screenshot_directory")
         /** One [KnownServer] per line: "host:port", "yarmiplay" or "syncplay", server id and access, tab-separated. */
         val knownServers = stringPreferencesKey("sp_known_servers")
     }
@@ -230,6 +236,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             deviceName = p[Keys.deviceName] ?: "",
             addSharedServers = p[Keys.addSharedServers] ?: true,
             shareFiles = p[Keys.shareFiles] ?: true,
+            downloadDirectory = p[Keys.downloadDirectory] ?: "",
+            screenshotDirectory = p[Keys.screenshotDirectory] ?: "",
             knownServers = p[Keys.knownServers]?.let(::decodeKnown) ?: emptyMap(),
         )
     }
@@ -248,6 +256,12 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
     suspend fun saveAddSharedServers(on: Boolean) = dataStore.edit { it[Keys.addSharedServers] = on }
 
     suspend fun saveShareFiles(on: Boolean) = dataStore.edit { it[Keys.shareFiles] = on }
+
+    /** Empty goes back to asking where to save each time. */
+    suspend fun saveDownloadDirectory(uri: String) = dataStore.edit { it[Keys.downloadDirectory] = uri }
+
+    /** Empty goes back to the default Pictures/YarmiplayTV. */
+    suspend fun saveScreenshotDirectory(uri: String) = dataStore.edit { it[Keys.screenshotDirectory] = uri }
 
     /** Remembers what [server] ("host:port") is; null forgets it. */
     suspend fun saveKnownServer(server: String, known: KnownServer?) = dataStore.edit {

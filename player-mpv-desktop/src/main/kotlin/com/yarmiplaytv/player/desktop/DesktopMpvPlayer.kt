@@ -183,6 +183,9 @@ class DesktopMpvPlayer(
         core.command("show-text", text, durationMs.toString())
     }
 
+    override fun screenshot(path: String): Boolean =
+        core.command("screenshot-to-file", path, "subtitles") >= 0 && File(path).length() > 0
+
     /** Also unmutes, since a muted player would ignore the new volume. */
     fun setVolume(percent: Double) {
         val value = percent.coerceIn(0.0, MAX_VOLUME)

@@ -68,7 +68,8 @@ class SafLocalLibrary(
     override fun scan(folder: LocalFolder): List<LocalFile> {
         val treeUri = Uri.parse(folder.uri)
         val out = ArrayList<LocalFile>()
-        val pending = ArrayDeque<String>().apply { add(DocumentsContract.getTreeDocumentId(treeUri)) }
+        // Document id and its path under the media folder.
+        val pending = ArrayDeque<Pair<String, String>>().apply { add(DocumentsContract.getTreeDocumentId(treeUri) to "") }
         val columns = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
@@ -77,18 +78,20 @@ class SafLocalLibrary(
             DocumentsContract.Document.COLUMN_LAST_MODIFIED,
         )
         while (pending.isNotEmpty() && out.size < MAX_FILES) {
-            val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, pending.removeFirst())
+            val (parent, directory) = pending.removeFirst()
+            val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parent)
             resolver.query(children, columns, null, null, null)?.use { c ->
                 while (c.moveToNext()) {
                     val id = c.getString(0)
                     val name = c.getString(1) ?: continue
                     val mime = c.getString(2)
                     if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                        if (!name.startsWith(".")) pending.add(id)
+                        if (!name.startsWith(".")) pending.add(id to if (directory.isEmpty()) name else "$directory/$name")
                     } else if (LocalMatcher.isVideo(name, mime)) {
                         val size = if (c.isNull(3)) 0L else c.getLong(3)
                         val modified = if (c.isNull(4)) 0L else c.getLong(4)
-                        out += LocalFile(name, size, DocumentsContract.buildDocumentUriUsingTree(treeUri, id).toString(), folder.name, modified)
+                        val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id).toString()
+                        out += LocalFile(name, size, uri, folder.name, modified, directory, folder.uri)
                     }
                 }
             }

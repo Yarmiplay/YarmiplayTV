@@ -79,7 +79,8 @@ class FileLocalLibrary(
             override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
                 val name = file.fileName.toString()
                 if (attrs.isRegularFile && LocalMatcher.isVideo(name, null)) {
-                    out += LocalFile(name, attrs.size(), uriOf(file), folder.name, attrs.lastModifiedTime().toMillis())
+                    val directory = file.parent?.let { root.relativize(it).joinToString("/") }.orEmpty()
+                    out += LocalFile(name, attrs.size(), uriOf(file), folder.name, attrs.lastModifiedTime().toMillis(), directory, folder.uri)
                 }
                 return if (out.size >= MAX_FILES) FileVisitResult.TERMINATE else FileVisitResult.CONTINUE
             }

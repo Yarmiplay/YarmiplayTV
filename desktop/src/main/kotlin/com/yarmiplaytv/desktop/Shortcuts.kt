@@ -16,12 +16,15 @@ internal interface ShortcutTarget {
     fun toggleMute()
     /** Opens the chat panel with the cursor in the message box. */
     fun focusChat()
+    /** Saves the current frame to the Pictures folder. */
+    fun screenshot()
 }
 
 /**
  * Window-level shortcuts. The window only passes keys nothing focused has used, and the side panel keeps its
  * keys to itself, so typing in a text field never triggers them. Esc leaves full screen, else goes back; the
- * rest only work on the player screen, and all but H (which hides or shows the controls) show the controls.
+ * rest only work on the player screen, and all but H (which hides or shows the controls) and F5 (screenshot)
+ * show the controls.
  */
 internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget): Boolean {
     if (key == Key.Escape) {
@@ -35,6 +38,10 @@ internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget)
     if (modified) return false
     if (key == Key.H) {
         input.toggleControls()
+        return true
+    }
+    if (key == Key.F5) {
+        target.screenshot()
         return true
     }
     when (key) {

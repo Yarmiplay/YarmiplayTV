@@ -24,6 +24,8 @@ finish-args:
   # Videos to open or add as media folders; the file chooser isn't a portal one.
   - --filesystem=xdg-videos:ro
   - --filesystem=xdg-download:ro
+  # Screenshots (F5 or the player's camera button).
+  - --filesystem=xdg-pictures/YarmiplayTV:create
   # libmpv refuses to start under a locale with another decimal separator.
   - --env=LC_NUMERIC=C
 

@@ -177,8 +177,12 @@ class MobileScreenshotTest {
         shot("search_results")
 
         tap("tab_Home"); await("home")
-        tap("card_local"); await("local_list"); awaitText("Paper Boats")
+        tap("card_local"); await("local_list"); awaitText("Shows")
         shot("local_files")
+        tapText("Shows"); await("local_subfolder")
+        tapText("Orbit Station"); awaitText("Season 1")
+        tapText("Season 1"); awaitText("Orbit Station S01E02.mkv")
+        shot("local_folder")
         tapText("Orbit Station S01E01.mkv"); await("local_play_room")
         shot("local_file_actions")
         back()

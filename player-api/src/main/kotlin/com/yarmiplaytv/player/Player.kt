@@ -27,6 +27,12 @@ interface Player {
     /** Short text shown by mpv's on-screen display. */
     fun showText(text: String, durationMs: Int = 3000)
 
+    /**
+     * Writes the current video frame with its subtitles to [path] (the extension picks the image format) and
+     * returns whether it did. Blocks until the file is written, so call it off the main thread.
+     */
+    fun screenshot(path: String): Boolean = false
+
     // Fast reads for the sync engine: they reflect commands immediately, before mpv confirms them.
     val isFileLoaded: Boolean
     val isPaused: Boolean

@@ -24,7 +24,10 @@ interface UpdateInstaller {
     /** Downloads [update]'s package and checks its SHA-256; [progress] gets 0 to 1. Throws on failure. */
     suspend fun download(update: Update, progress: (Float) -> Unit)
 
-    /** Runs the downloaded installer once this process has exited, then starts the new version if [relaunch]. */
+    /**
+     * Runs the downloaded installer once this process has exited. With [relaunch], starts the app again
+     * afterwards: the new version, or this one with a notice when the installer failed.
+     */
     fun installAfterExit(relaunch: Boolean)
 }
 
@@ -48,23 +51,34 @@ class Updates(
     val state: StateFlow<UpdateState?> = _state.asStateFlow()
     private var download: Job? = null
 
-    fun checkOnLaunch() {
+    /**
+     * Shows the notice when the page has a newer version that wasn't dismissed. [failedInstall] is the version
+     * whose installer just failed (the desktop app starts again after it): that one shows why.
+     */
+    fun checkOnLaunch(failedInstall: String? = null) {
         val platform = platform ?: return
         scope.launch {
             val settings = settingsStore.current()
             if (!settings.checkForUpdates) return@launch
             val update = checker.check(platform, currentVersion) ?: return@launch
-            val autoInstall = settings.installUpdatesOnLaunch && installer != null
-            if (update.version == settings.dismissedUpdate && !autoInstall) return@launch
+            if (update.version == failedInstall) {
+                showFailed(update, INSTALL_FAILED)
+                return@launch
+            }
+            if (update.version == settings.dismissedUpdate) return@launch
             Logger.i(TAG, "Version ${update.version} is available")
             show(update)
-            if (autoInstall) download(thenRestart = false)
         }
     }
 
     /** Shows [update] as available, e.g. from tests. */
     fun show(update: Update) {
         _state.value = UpdateState.Available(update)
+    }
+
+    /** Shows that [update] couldn't be installed; [message] is the whole sentence the notice shows. */
+    fun showFailed(update: Update, message: String) {
+        _state.value = UpdateState.Failed(update, message)
     }
 
     /** Downloads the update, then restarts into the installer if [thenRestart] or installs when the app closes. */
@@ -81,7 +95,7 @@ class Updates(
                 }
                 .onFailure {
                     Logger.w(TAG, "Couldn't download version ${update.version}: ${it.message}")
-                    _state.value = UpdateState.Failed(update, it.message ?: "Download failed")
+                    _state.value = UpdateState.Failed(update, downloadFailed(it))
                 }
         }
     }
@@ -106,7 +120,10 @@ class Updates(
         if (remember) scope.launch { settingsStore.saveDismissedUpdate(update.version) }
     }
 
-    private companion object {
-        const val TAG = "Updates"
+    companion object {
+        private const val TAG = "Updates"
+        const val INSTALL_FAILED = "The installer didn't finish. Try again, or get it from the download page."
+
+        fun downloadFailed(error: Throwable) = "Couldn't download it: ${error.message ?: "the download failed"}"
     }
 }

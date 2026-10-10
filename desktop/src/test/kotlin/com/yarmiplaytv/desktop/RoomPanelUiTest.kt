@@ -237,7 +237,8 @@ internal class IdlePlayer : Player {
     override fun load(url: String, mediaTitle: String?, startPaused: Boolean, startPosition: Double) = Unit
     override fun stop() = Unit
     override fun setPaused(paused: Boolean) = Unit
-    override fun seek(position: Double) = Unit
+    val seeks = mutableListOf<Double>()
+    override fun seek(position: Double) { seeks += position }
     override fun seekRelative(offset: Double) = Unit
     override fun setSpeed(speed: Double) = Unit
     override fun selectTrack(type: TrackType, id: Int?) = Unit

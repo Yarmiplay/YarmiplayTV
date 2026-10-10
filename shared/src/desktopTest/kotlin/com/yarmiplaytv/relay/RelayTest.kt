@@ -11,6 +11,8 @@ import com.yarmiplaytv.syncplay.YarmiplayCapabilities
 import com.yarmiplaytv.syncplay.YarmiplayInfo
 import com.yarmiplaytv.syncplay.YarmiplaySession
 import com.yarmiplaytv.sync.HostJellyfinSharing
+import com.yarmiplaytv.ui.mobile.DesktopDialogs
+import com.yarmiplaytv.ui.mobile.fileSaveTarget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,8 +32,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.InetAddress
+import java.nio.file.Files
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URI
@@ -117,6 +121,42 @@ class RelayTest {
         assertEquals(size, f.cachedBytes)
     }
 
+    @Test
+    fun `a complete cached file copies out whole`() {
+        val cache = RelayCache(tmp.newFolder("relay"))
+        val bytes = ByteArray((RelayCache.BLOCK + 300).toInt()) { (it % 251).toByte() }
+        val f = cache.open("k", bytes.size.toLong())
+        f.write(0, bytes, bytes.size)
+        f.markComplete(0)
+        f.markComplete(1)
+        val out = ByteArrayOutputStream()
+        f.copyTo(out)
+        assertArrayEquals(bytes, out.toByteArray())
+    }
+
+    @Test
+    fun `a saved copy gets a free name in the download folder`() {
+        val dir = tmp.newFolder("downloads").toPath()
+        assertEquals(dir.resolve("Movie.mkv"), DesktopDialogs.uniqueIn(dir, "Movie.mkv"))
+        Files.writeString(dir.resolve("Movie.mkv"), "x")
+        Files.writeString(dir.resolve("Movie (2).mkv"), "x")
+        assertEquals(dir.resolve("Movie (3).mkv"), DesktopDialogs.uniqueIn(dir, "Movie.mkv"))
+        Files.writeString(dir.resolve("README"), "x")
+        assertEquals(dir.resolve("README (2)"), DesktopDialogs.uniqueIn(dir, "README"))
+    }
+
+    @Test
+    fun `a failed save only deletes a file it started writing`() {
+        val existing = tmp.newFile("picked.mkv").toPath().also { Files.writeString(it, "keep me") }
+        fileSaveTarget(existing).discard()
+        assertEquals("keep me", Files.readString(existing))
+
+        val target = fileSaveTarget(tmp.root.toPath().resolve("new").resolve("copy.mkv"))
+        target.open().use { it.write(1) }
+        target.discard()
+        assertFalse(Files.exists(tmp.root.toPath().resolve("new").resolve("copy.mkv")))
+    }
+
     // --- Stream or download ------------------------------------------------------------------
 
     @Test
@@ -138,6 +178,15 @@ class RelayTest {
         assertFalse(streaming.streamingLineVisible(controlsVisible = false, fileLoaded = true))
         assertTrue(streaming.streamingLineVisible(controlsVisible = false, fileLoaded = false))
         assertEquals(RelayHint.None, status.copy(complete = true).playbackHint(fileLoaded = true))
+        assertEquals("Downloading · 25%", status.text)
+        assertEquals("Streaming via Ada", status.copy(downloading = false, seeders = listOf("Ada")).text)
+        assertEquals("Streaming via Ada, Bo", status.copy(downloading = false, seeders = listOf("Ada", "Bo")).text)
+        assertEquals("Streaming", status.copy(downloading = false).text)
+        assertEquals("Relayed via Ada", status.copy(complete = true, seeders = listOf("Ada")).text)
+        assertEquals(
+            "Downloading via Ada · 25% · less than a minute left",
+            status.copy(seeders = listOf("Ada"), etaSeconds = 30.0).text,
+        )
     }
 
     @Test

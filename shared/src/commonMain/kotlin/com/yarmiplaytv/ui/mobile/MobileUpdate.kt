@@ -53,11 +53,11 @@ fun UpdateBanner(container: AppContainer, modifier: Modifier = Modifier) {
             Text(
                 when (s) {
                     is UpdateState.Available ->
-                        if (canInstall) "Install it now, or let YarmiplayTV install updates on launch (Settings)."
+                        if (canInstall) "Install it now, or turn on Automatic updates in Settings."
                         else "Get it from the YarmiplayTV download page."
                     is UpdateState.Downloading -> "Downloading… ${(s.progress * 100).toInt()}%"
                     is UpdateState.Ready -> "It installs when you close YarmiplayTV."
-                    is UpdateState.Failed -> "Couldn't download it: ${s.message}"
+                    is UpdateState.Failed -> s.message
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = AppColors.TextDim,
@@ -67,7 +67,8 @@ fun UpdateBanner(container: AppContainer, modifier: Modifier = Modifier) {
                 when {
                     s is UpdateState.Ready -> Button(updates::restartToInstall) { Text("Restart now") }
                     s is UpdateState.Downloading -> Unit
-                    s is UpdateState.Available && canInstall -> Button({ updates.download(thenRestart = true) }) { Text("Install") }
+                    (s is UpdateState.Available || s is UpdateState.Failed) && canInstall ->
+                        Button({ updates.download(thenRestart = true) }) { Text(if (s is UpdateState.Failed) "Try again" else "Install") }
                     else -> Button({ uriHandler.openUri(s.update.pageUrl) }) { Text("Download page") }
                 }
                 TextButton({ updates.dismiss() }) { Text(if (s is UpdateState.Downloading) "Cancel" else "Not now") }

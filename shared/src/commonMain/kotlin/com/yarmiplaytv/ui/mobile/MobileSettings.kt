@@ -9,6 +9,10 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -81,6 +85,17 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                 settings.shareFiles,
                 Modifier.testTag("toggle_share_files"),
             ) { container.scope.launch { container.settingsStore.saveShareFiles(it) } }
+            FolderSetting(container, "Save relayed files to", settings.downloadDirectory, "Ask each time", "Ask each time", "download_folder") { uri ->
+                container.scope.launch { container.settingsStore.saveDownloadDirectory(uri) }
+            }
+            container.screenshots?.let { screenshots ->
+                FolderSetting(
+                    container, "Save screenshots to", settings.screenshotDirectory,
+                    unset = screenshots.defaultFolder, clear = "Use ${screenshots.defaultFolder}", tag = "screenshot_folder",
+                ) { uri ->
+                    container.scope.launch { container.settingsStore.saveScreenshotDirectory(uri) }
+                }
+            }
 
             SectionHeader("Syncing")
             ValueSetting(
@@ -155,8 +170,8 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                 ) { saveUpdates(check = it) }
                 if (container.updates.installer != null) {
                     ToggleSetting(
-                        "Install updates on launch",
-                        "Download new versions when the app starts and install them when you close it",
+                        "Automatic updates",
+                        "Download and install a new version before the app opens, then start that version",
                         settings.checkForUpdates && settings.installUpdatesOnLaunch,
                         Modifier.testTag("toggle_install_updates"),
                     ) { saveUpdates(check = settings.checkForUpdates || it, install = it) }
@@ -172,6 +187,41 @@ private fun ValueSetting(title: String, value: String, modifier: Modifier = Modi
     Column(modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         Text(value, color = AppColors.Accent, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/**
+ * A folder the app saves into, picked with the system's folder picker; [folder] empty means [unset] (asking each
+ * time, or a default folder), which the [clear] button goes back to. [tag] names the row and the button in tests.
+ */
+@Composable
+private fun FolderSetting(
+    container: AppContainer,
+    title: String,
+    folder: String,
+    unset: String,
+    clear: String,
+    tag: String,
+    save: (String) -> Unit,
+) {
+    val pick = rememberDirectoryPicker(title, save)
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = pick).padding(start = 16.dp, end = 4.dp).testTag("settings_$tag"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                if (folder.isEmpty()) unset else container.local.folderOf(folder).name,
+                color = AppColors.Accent,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        if (folder.isNotEmpty()) {
+            IconButton({ save("") }, Modifier.testTag("clear_$tag")) {
+                Icon(Icons.Filled.Close, clear, tint = AppColors.TextDim)
+            }
+        }
     }
 }
 

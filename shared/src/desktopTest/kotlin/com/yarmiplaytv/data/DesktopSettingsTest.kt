@@ -66,6 +66,8 @@ class DesktopSettingsTest {
             saveLocalFolders(listOf("file:///C:/Videos/", "file:///D:/Shows/"))
             saveServers(listOf(living), listOf(den, office))
             saveServerPrefs(preferredServer = PlexSource.keyOf(office), reportPlayback = false)
+            saveDownloadDirectory("file:///D:/Downloads/")
+            saveScreenshotDirectory("file:///D:/Screenshots/")
         }
         firstRun.coroutineContext.job.cancelAndJoin()
 
@@ -79,6 +81,8 @@ class DesktopSettingsTest {
         assertEquals(listOf(den, office), settings.plexServers)
         assertEquals("plex:mid2", settings.preferredServer)
         assertEquals(false, settings.reportPlayback)
+        assertEquals("file:///D:/Downloads/", settings.downloadDirectory)
+        assertEquals("file:///D:/Screenshots/", settings.screenshotDirectory)
     }
 
     @Test

@@ -11,6 +11,10 @@ data class LocalFile(
     val folder: String = "",
     /** Last modified, in milliseconds since the epoch; 0 when unknown. */
     val modified: Long = 0L,
+    /** Where it is under the media folder, like "Show/Season 1"; empty for files directly in it. */
+    val directory: String = "",
+    /** The media folder's URI, which tells apart two media folders with the same name. */
+    val folderUri: String = "",
 )
 
 /** Finds the local file for a shared-playlist entry, the way desktop Syncplay searches its media directories. */

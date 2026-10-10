@@ -22,11 +22,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Downloading
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Replay10
@@ -53,6 +56,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -66,9 +70,11 @@ import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.sync.PlaylistStatus
 import com.yarmiplaytv.ui.mobile.RelayDownloadBar
+import com.yarmiplaytv.ui.mobile.rememberRelaySave
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.components.ActionButton
+import com.yarmiplaytv.ui.components.Dot
 import com.yarmiplaytv.ui.components.IconAction
 import com.yarmiplaytv.ui.components.Panel
 import com.yarmiplaytv.ui.components.Pill
@@ -240,7 +246,11 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 onHome = { nav.popTo(Screen.Home) },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
-            RoomChip(room, Modifier.align(Alignment.TopEnd).padding(32.dp))
+            RoomChip(
+                room,
+                playerStreamingLabel(container, controlsVisible = true, state.fileLoaded),
+                Modifier.align(Alignment.TopEnd).padding(32.dp),
+            )
         }
 
         (overlay as? Overlay.Side)?.let { side ->
@@ -261,22 +271,45 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
 private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean, controlsVisible: Boolean) {
     val relay = container.relay ?: return
     val relayStatus by relay.status.collectAsStateWithLifecycle()
+    val room by container.sync.room.collectAsStateWithLifecycle()
     val status = relayStatus ?: return
     when {
-        status.streamingLineVisible(controlsVisible, fileLoaded) -> Pill(
-            status.text,
-            AppColors.Accent,
-            Modifier.align(Alignment.TopCenter).padding(top = 72.dp).fillMaxWidth(0.7f),
+        status.streamingLineVisible(controlsVisible, fileLoaded) && !controlsVisible -> StreamingChip(
+            status.text.withPing(room.rttMillis),
+            Modifier.align(Alignment.TopCenter).padding(top = 32.dp).testTag("relay_streaming"),
         )
         status.playbackHint(fileLoaded) == RelayHint.Downloading -> Panel(Modifier.align(Alignment.Center).width(820.dp)) {
             Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Downloading", style = MaterialTheme.typography.titleLarge)
-                Text(status.text, color = AppColors.TextDim)
+                Text(status.text, style = MaterialTheme.typography.titleLarge)
                 RelayDownloadBar(status.fraction)
             }
         }
     }
 }
+
+/** Green dot plus the short streaming line, the same chip as the room ping. */
+@Composable
+private fun StreamingChip(text: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier.clip(RoundedCornerShape(50)).background(AppColors.Ready.copy(alpha = 0.18f)).padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Dot(AppColors.Ready)
+        Text(text, color = AppColors.Ready, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun playerStreamingLabel(container: AppContainer, controlsVisible: Boolean, fileLoaded: Boolean): String? {
+    val relay = container.relay ?: return null
+    val status by relay.status.collectAsStateWithLifecycle()
+    val current = status ?: return null
+    return current.text.takeIf { current.streamingLineVisible(controlsVisible, fileLoaded) }
+}
+
+private fun String.withPing(rttMillis: Double): String =
+    if (rttMillis > 0) "$this · %.0f ms".format(rttMillis) else this
 
 @Composable
 private fun CenterStatus(
@@ -291,7 +324,7 @@ private fun CenterStatus(
     val focus = remember { FocusRequester() }
     val hideLoading = container.relay?.let { relay ->
         val relayStatus by relay.status.collectAsStateWithLifecycle()
-        relayStatus?.playbackHint(fileLoaded) != RelayHint.None
+        relayStatus.let { it != null && it.playbackHint(fileLoaded) != RelayHint.None }
     } == true
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         when (status) {
@@ -412,13 +445,7 @@ private fun ControlsBar(
         Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
             Text(formatClock(position), color = AppColors.TextDim)
             Spacer(Modifier.weight(1f))
-            val info = listOfNotNull(
-                state.videoCodec?.substringBefore(' ')?.uppercase(),
-                if (state.videoHeight > 0) "${state.videoHeight}p" else null,
-                state.hwdec?.takeIf { it.isNotBlank() && it != "no" }?.let { "HW" } ?: if (state.fileLoaded) "SW" else null,
-                if (state.speed != 1.0) "%.2fx".format(state.speed) else null,
-            ).joinToString(" · ")
-            Text(info, color = AppColors.TextDim)
+            Text(playbackInfo(state), color = AppColors.TextDim)
             Spacer(Modifier.width(24.dp))
             Text(formatClock(state.duration), color = AppColors.TextDim)
         }
@@ -436,6 +463,18 @@ private fun ControlsBar(
                 )
             }
             Spacer(Modifier.weight(1f))
+            rememberRelaySave(container)?.let { save ->
+                IconAction(
+                    if (save.saving) Icons.Filled.Downloading else Icons.Filled.Download,
+                    if (save.saving) "${save.label} (${(save.fraction * 100).toInt()}%)" else save.label,
+                    save.onClick,
+                    Modifier.testTag("relay_save"),
+                    tint = if (save.saving) AppColors.Accent else AppColors.Text,
+                )
+            }
+            container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
+                IconAction(Icons.Filled.PhotoCamera, "Screenshot", screenshots::take, Modifier.testTag("screenshot"))
+            }
             listOf(
                 Triple(PanelKind.PLAYLIST, Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist"),
                 Triple(PanelKind.ROOM, Icons.Filled.Groups, "Room"),
@@ -451,17 +490,22 @@ private fun ControlsBar(
 }
 
 @Composable
-private fun RoomChip(room: com.yarmiplaytv.syncplay.RoomState, modifier: Modifier = Modifier) {
+private fun RoomChip(room: com.yarmiplaytv.syncplay.RoomState, streaming: String? = null, modifier: Modifier = Modifier) {
     val text: String
     val color: Color
     when (room.status) {
         ConnectionStatus.CONNECTED -> {
             val ready = room.users.count { it.isReady == true }
-            text = "${room.room} · ${room.users.size} watching · $ready ready" + if (room.rttMillis > 0) " · %.0f ms".format(room.rttMillis) else ""
+            val ping = if (room.rttMillis > 0) " · %.0f ms".format(room.rttMillis) else ""
+            text = "${room.room} · ${room.users.size} watching · $ready ready$ping" + (streaming?.let { " · $it" } ?: "")
             color = AppColors.Ready
         }
         ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> { text = "Connecting to Syncplay…"; color = AppColors.NotReady }
         ConnectionStatus.DISCONNECTED -> { text = "Not in a room"; color = AppColors.TextDim }
     }
-    Pill(text, color, modifier)
+    if (streaming != null && room.status == ConnectionStatus.CONNECTED) {
+        StreamingChip(text, modifier.testTag("relay_streaming"))
+    } else {
+        Pill(text, color, modifier)
+    }
 }

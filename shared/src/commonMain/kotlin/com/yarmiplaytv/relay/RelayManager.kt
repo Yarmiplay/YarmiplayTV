@@ -9,21 +9,27 @@ import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.RelayFile
 import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.syncplay.SyncplayEvent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.io.IOException
+import java.io.OutputStream
 
 /** What the relay is doing for the file that's playing, for the UI. */
 data class RelayStatus(
@@ -39,6 +45,8 @@ data class RelayStatus(
     val waitingToPlay: Boolean,
     val complete: Boolean,
     val error: String?,
+    /** A copy is being saved: the whole file downloads, then it's written where the user picked. */
+    val saving: Boolean = false,
 ) {
     /** Share of the file already in the cache, for the download bar. */
     val fraction: Float
@@ -63,21 +71,29 @@ data class RelayStatus(
     fun streamingLineVisible(controlsVisible: Boolean, fileLoaded: Boolean): Boolean =
         playbackHint(fileLoaded) == RelayHint.Streaming && (controlsVisible || !fileLoaded)
 
+    /** Short line for the player chip and the room list. Names the peer when we know who has the file. */
     val text: String
         get() {
-            val from = if (seeders.isEmpty()) "" else " from ${seeders.joinToString(", ")}"
+            val via = seeders.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "via $it" }
             return when {
-                complete -> "Playing a copy relayed$from via the Syncplay server"
+                complete -> via?.let { "Relayed $it" } ?: "Relayed"
                 downloading -> buildString {
-                    append("Downloading$from via the Syncplay server · ${(haveBytes * 100 / size.coerceAtLeast(1))}%")
+                    append(via?.let { "Downloading $it" } ?: "Downloading")
+                    append(" · ${(haveBytes * 100 / size.coerceAtLeast(1))}%")
                     etaSeconds?.let { append(" · ${RelayPolicy.formatEta(it)} left") }
                 }
-                else -> "Streaming$from via the Syncplay server"
+                else -> via?.let { "Streaming $it" } ?: "Streaming"
             }
         }
 }
 
 enum class RelayHint { None, Streaming, Downloading }
+
+/**
+ * Where a saved copy of a relayed file goes. It's picked when the user asks, before the rest of the file is here;
+ * [open] runs once it is, and [discard] removes what a failed save left behind. [label] names the copy in the feed.
+ */
+class SaveTarget(val label: String, val open: () -> OutputStream, val discard: () -> Unit = {})
 
 /** When to stream, when to download, and when a download is far enough along to play. */
 object RelayPolicy {
@@ -146,6 +162,9 @@ class RelayManager(
     private var lastRoom: String? = null
     /** Refreshes the download bar as blocks land. The stream-or-download choice stays on [tick]. */
     private var progressJob: Job? = null
+    /** The transfer being saved; it downloads in full whatever the network speed. */
+    private var saving: RelayTransfer? = null
+    private var saveJob: Job? = null
 
     private val _status = MutableStateFlow<RelayStatus?>(null)
     val status: StateFlow<RelayStatus?> = _status.asStateFlow()
@@ -215,6 +234,62 @@ class RelayManager(
 
     fun isRelayUrl(url: String?): Boolean = proxy.isProxyUrl(url)
 
+    /**
+     * Saves a copy of [fileName], the file that's playing, to [target]: downloads the rest of it, then copies it out
+     * of the cache. Says in the room's feed how it went. Stops when another file starts playing.
+     */
+    fun save(fileName: String, target: SaveTarget) {
+        val t = current?.takeIf { currentEntry?.name == fileName } ?: run {
+            scope.launch(Dispatchers.IO) { runCatching { target.discard() } }
+            sync.postLocal("Couldn't save $fileName: it stopped playing", isError = true)
+            return
+        }
+        saveJob?.cancel()
+        saving = t
+        t.setDownload(true)
+        update()
+        saveJob = scope.launch {
+            val error = try {
+                while (!t.cache.complete) {
+                    if (current !== t || t.cache.isDeleted) throw IOException("it stopped playing")
+                    withTimeoutOrNull(1_000) { t.cache.version.first { t.cache.complete || t.cache.isDeleted } }
+                }
+                withContext(Dispatchers.IO) { target.open().use { t.cache.copyTo(it) } }
+                null
+            } catch (e: CancellationException) {
+                withContext(NonCancellable + Dispatchers.IO) { runCatching { target.discard() } }
+                throw e
+            } catch (e: IOException) {
+                e.message ?: "couldn't write the file"
+            } catch (e: SecurityException) {
+                "no permission to write there"
+            } finally {
+                if (saving === t) {
+                    saving = null
+                    update()
+                }
+            }
+            if (error == null) {
+                Logger.i(TAG, "Saved $fileName as ${target.label}")
+                sync.postLocal("Saved a copy of $fileName as ${target.label}")
+            } else {
+                Logger.w(TAG, "Saving $fileName failed: $error")
+                withContext(Dispatchers.IO) { runCatching { target.discard() } }
+                sync.postLocal("Couldn't save $fileName: $error", isError = true)
+            }
+        }
+    }
+
+    /** Stops saving; the file goes back to streaming when the network keeps up. */
+    fun cancelSave() {
+        val t = saving ?: return
+        saveJob?.cancel()
+        saveJob = null
+        saving = null
+        sync.postLocal("Stopped saving ${currentEntry?.name ?: t.name}")
+        update()
+    }
+
     fun close() {
         progressJob?.cancel()
         progressJob = null
@@ -263,7 +338,7 @@ class RelayManager(
             if (notReadyByUs && RelayPolicy.canPlayThrough(entry.size, t.cache.cachedBytes, rate, duration, player.currentPosition())) {
                 readyAgain()
             }
-            if (RelayPolicy.shouldStream(own, entry.size, duration)) {
+            if (t !== saving && RelayPolicy.shouldStream(own, entry.size, duration)) {
                 t.setDownload(false)
                 readyAgain()
             }
@@ -299,6 +374,7 @@ class RelayManager(
             waitingToPlay = notReadyByUs,
             complete = t.cache.complete,
             error = t.lastError.takeIf { !t.cache.complete },
+            saving = t === saving,
         )
     }
 

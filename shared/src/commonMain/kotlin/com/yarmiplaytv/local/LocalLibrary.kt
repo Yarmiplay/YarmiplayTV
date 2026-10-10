@@ -110,7 +110,7 @@ abstract class LocalLibrary(
     protected abstract fun scan(folder: LocalFolder): List<LocalFile>
 
     /** The folder entry (with display name) for a folder URI. */
-    protected abstract fun folderOf(uri: String): LocalFolder
+    abstract fun folderOf(uri: String): LocalFolder
 
     protected open fun onFolderAdded(uri: String) {}
     protected open fun onFolderRemoved(uri: String) {}
