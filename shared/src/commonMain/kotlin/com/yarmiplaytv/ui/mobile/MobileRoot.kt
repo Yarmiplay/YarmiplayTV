@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.LayoutDirection
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.DeviceKind
+import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.AppColors
@@ -70,6 +71,8 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind) {
         container.sync.toasts.collect { msg ->
             showing?.cancel()
             if (nav.current == Screen.Player) return@collect
+            // The join form shows connection problems itself; a snackbar there would cover its buttons.
+            if (nav.current == Screen.SyncplayConnect && msg.from == null && container.sync.room.value.status != ConnectionStatus.CONNECTED) return@collect
             showing = launch { snackbar.showSnackbar(msg.from?.let { "$it: ${msg.text}" } ?: msg.text) }
         }
     }

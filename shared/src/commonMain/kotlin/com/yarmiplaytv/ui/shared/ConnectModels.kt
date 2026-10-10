@@ -21,6 +21,7 @@ import com.yarmiplaytv.media.plex.PlexServer
 import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.sync.SyncController
+import com.yarmiplaytv.syncplay.ConnectionStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -100,6 +101,14 @@ class SyncplayConnectModel(private val container: AppContainer) {
 
 @Composable
 fun rememberSyncplayConnectModel(container: AppContainer): SyncplayConnectModel = remember { SyncplayConnectModel(container) }
+
+/** The connect form's line about the connection: connecting, why it's reconnecting, or why it stopped. */
+fun connectionStatusLine(status: ConnectionStatus, error: String?): String? = when (status) {
+    ConnectionStatus.CONNECTING -> "Connecting…"
+    ConnectionStatus.RECONNECTING -> error?.let { "Reconnecting: $it" } ?: "Reconnecting…"
+    ConnectionStatus.DISCONNECTED -> error?.let { "Disconnected: $it" }
+    ConnectionStatus.CONNECTED -> null
+}
 
 /**
  * Adds a Jellyfin server: LAN discovery, Quick Connect and username/password, shared by the TV and

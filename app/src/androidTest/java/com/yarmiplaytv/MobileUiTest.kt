@@ -3,6 +3,7 @@ package com.yarmiplaytv
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -158,6 +159,27 @@ class MobileUiTest {
                 container.settings.value.acceptedRoomRules
         }
         container.sync.disconnect()
+        runBlocking { container.settingsStore.saveAcceptedRoomRules(accepted) }
+    }
+
+    @Test
+    fun connectFormShowsWhyItIsntInTheRoom() {
+        val accepted = container.settings.value.acceptedRoomRules
+        runBlocking { container.settingsStore.saveAcceptedRoomRules(true) }
+        compose.waitUntil(5_000) { container.settings.value.acceptedRoomRules }
+        compose.onNodeWithTag("tab_Room").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("field_host"), 5_000)
+        compose.onNodeWithTag("field_host").performTextReplacement("127.0.0.1")
+        compose.onNodeWithTag("field_port").performTextReplacement("9")
+        compose.onNodeWithTag("field_name").performTextReplacement("Instrumented")
+        compose.onNodeWithTag("field_room").performTextReplacement("instrumented-room")
+        compose.onNodeWithTag("connect").performClick()
+
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("connection_status") and hasText("Reconnecting: ", substring = true)).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("connect_cancel").performScrollTo().performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("connection_status"), 5_000)
         runBlocking { container.settingsStore.saveAcceptedRoomRules(accepted) }
     }
 

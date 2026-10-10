@@ -69,6 +69,10 @@ class SyncController(
     /** Chat plus notable notifications, newest last (bounded). */
     val feed: StateFlow<List<FeedMessage>> = _feed.asStateFlow()
 
+    private val _connectionError = MutableStateFlow<String?>(null)
+    /** Why the connection last dropped; cleared once it's back, on [connect] and on [disconnect]. */
+    val connectionError: StateFlow<String?> = _connectionError.asStateFlow()
+
     private val _toasts = MutableSharedFlow<FeedMessage>(extraBufferCapacity = 32)
     val toasts: SharedFlow<FeedMessage> = _toasts.asSharedFlow()
 
@@ -126,11 +130,14 @@ class SyncController(
                     is SyncplayEvent.Chat -> receiveChat(event.username, event.message)
                     is SyncplayEvent.Notification -> post(FeedMessage(event.message, isError = event.isError))
                     is SyncplayEvent.Connected -> {
+                        _connectionError.value = null
                         post(FeedMessage("Joined room '${event.room}' as ${event.username}" + if (event.tls) " (TLS)" else ""))
                         event.motd?.let { post(FeedMessage(it.trim())) }
                     }
-                    is SyncplayEvent.Disconnected ->
+                    is SyncplayEvent.Disconnected -> {
+                        _connectionError.value = event.reason ?: "Connection closed"
                         post(FeedMessage("Disconnected: ${event.reason ?: "unknown"}" + if (event.willReconnect) " — reconnecting" else "", isError = !event.willReconnect))
+                    }
                     else -> Unit
                 }
             }
@@ -150,6 +157,7 @@ class SyncController(
         eventsJob = null
         clientFlow.value?.close()
         clientFlow.value = null
+        _connectionError.value = null
         player.setSpeed(1.0)
         _blocked.value = emptySet()
     }

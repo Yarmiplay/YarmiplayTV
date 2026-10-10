@@ -54,6 +54,7 @@ import com.yarmiplaytv.ui.shared.approvedOnly
 import com.yarmiplaytv.ui.shared.plexServerLabel
 import com.yarmiplaytv.ui.shared.rememberJellyfinLoginModel
 import com.yarmiplaytv.ui.shared.rememberPlexLoginModel
+import com.yarmiplaytv.ui.shared.connectionStatusLine
 import com.yarmiplaytv.ui.shared.rememberSyncplayConnectModel
 import com.yarmiplaytv.ui.shared.isSharedServer
 import com.yarmiplaytv.ui.shared.serverDetail
@@ -113,11 +114,15 @@ private fun ConnectForm(container: AppContainer, model: com.yarmiplaytv.ui.share
             Switch(model.autoConnect, { model.autoConnect = it }, Modifier.testTag("auto_connect"))
         }
         model.error?.let { Text(it, color = AppColors.Error) }
+        val connectionError by container.sync.connectionError.collectAsStateWithLifecycle()
+        connectionStatusLine(status, connectionError)?.let {
+            Text(it, color = if (status == ConnectionStatus.DISCONNECTED) AppColors.Error else AppColors.TextDim, modifier = Modifier.testTag("connection_status"))
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Button({ if (model.connect()) onConnected() }, Modifier.testTag("connect")) { Text("Connect") }
             if (status == ConnectionStatus.CONNECTING || status == ConnectionStatus.RECONNECTING) {
                 CircularProgressIndicator(Modifier.padding(start = 8.dp))
-                TextButton({ model.disconnect() }) { Text("Cancel") }
+                TextButton({ model.disconnect() }, Modifier.testTag("connect_cancel")) { Text("Cancel") }
             }
         }
         model.serverKey?.takeIf(container::hasDeviceKey)?.let { server ->

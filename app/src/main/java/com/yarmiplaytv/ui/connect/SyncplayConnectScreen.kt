@@ -41,6 +41,7 @@ import com.yarmiplaytv.ui.shared.ROOM_PRIVACY_HINT
 import com.yarmiplaytv.ui.shared.ROOM_RULES
 import com.yarmiplaytv.ui.shared.ROOM_RULES_URL
 import com.yarmiplaytv.ui.shared.approvedOnly
+import com.yarmiplaytv.ui.shared.connectionStatusLine
 import com.yarmiplaytv.ui.shared.rememberSyncplayConnectModel
 import com.yarmiplaytv.ui.shared.serverStatusLine
 import com.yarmiplaytv.ui.theme.AppColors
@@ -50,6 +51,7 @@ import kotlinx.coroutines.delay
 fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
     val room by container.sync.room.collectAsStateWithLifecycle()
     val settings by container.settings.collectAsStateWithLifecycle()
+    val connectionError by container.sync.connectionError.collectAsStateWithLifecycle()
     val model = rememberSyncplayConnectModel(container)
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
@@ -91,6 +93,9 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
         ToggleRow("Secure connection (TLS)", model.tls, { model.tls = !model.tls }, subtitle = "Falls back to plain TCP if the server doesn't support it")
         ToggleRow("Connect automatically when the app starts", model.autoConnect, { model.autoConnect = !model.autoConnect })
         model.error?.let { Text(it, color = AppColors.Error) }
+        connectionStatusLine(room.status, connectionError)?.let {
+            Text(it, color = if (room.status == ConnectionStatus.DISCONNECTED) AppColors.Error else AppColors.TextDim)
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             ActionButton(if (connected) "Reconnect" else "Connect", ::connect, icon = Icons.Filled.Link, primary = true)
             if (connected) ActionButton("Disconnect", model::disconnect, icon = Icons.Filled.LinkOff)

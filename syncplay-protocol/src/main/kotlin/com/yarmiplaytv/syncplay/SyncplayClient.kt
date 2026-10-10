@@ -37,6 +37,9 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import java.io.IOException
+import javax.net.ssl.SSLException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 import kotlin.math.min
 import kotlin.math.pow
 
@@ -359,7 +362,15 @@ class SyncplayClient(
         val message = runCatching { json.parseToJsonElement(reply).jsonObject }.getOrNull() ?: return
         val answer = (message["TLS"] as? JsonObject)?.get("startTLS")?.jsonPrimitive?.content
         if (answer != null && "true" in answer) {
-            t.startTls()
+            try {
+                t.startTls()
+            } catch (e: SSLException) {
+                if (e !is SSLHandshakeException && e !is SSLPeerUnverifiedException) throw e
+                // A certificate that fails here fails on every retry too.
+                fatalError = "The server's TLS certificate isn't valid for ${config.host} (${e.message}). " +
+                    "Turn TLS off, or connect using the name on the server's certificate."
+                throw IOException(fatalError, e)
+            }
             log("TLS enabled")
         } else {
             log("Server does not support TLS")

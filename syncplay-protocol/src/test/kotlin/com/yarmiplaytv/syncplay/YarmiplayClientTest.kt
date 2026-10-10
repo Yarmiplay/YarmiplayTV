@@ -63,7 +63,7 @@ class YarmiplayClientTest {
 
     private fun hello(marker: String? = null): String {
         val ext = marker?.let { ""","yarmiplay":$it""" } ?: ""
-        return """{"Hello":{"username":"ana","room":{"name":"movie night"},"version":"1.2.255","realversion":"1.7.4","features":{"readiness":true,"chat":true$ext}}}"""
+        return """{"Hello":{"username":"ana","room":{"name":"movie night"},"version":"1.2.255","realversion":"1.7.6","features":{"readiness":true,"chat":true$ext}}}"""
     }
 
     private val marker = """{"server":"YarmiplayServerTV","version":"1.6.0","protocol":1,"capabilities":{"fileRelay":true,"jellyfin":false,"https":false},"access":"open","device":"none"}"""
@@ -237,8 +237,8 @@ class YarmiplayClientTest {
         )
         eventually("list") { c.state.value.users.size == 2 }
         assertEquals(mapOf("ana" to true, "bob" to false), c.state.value.users.associate { it.name to it.yarmiplay })
-        transport.receive("""{"Set":{"user":{"cleo":{"room":{"name":"movie night"},"event":{"joined":true,"version":"1.7.4","features":{"yarmiplay":{"protocol":1}}}}}}}""")
-        transport.receive("""{"Set":{"user":{"dan":{"room":{"name":"movie night"},"event":{"joined":true,"version":"1.7.4","features":{"chat":true}}}}}}""")
+        transport.receive("""{"Set":{"user":{"cleo":{"room":{"name":"movie night"},"event":{"joined":true,"version":"1.7.6","features":{"yarmiplay":{"protocol":1}}}}}}}""")
+        transport.receive("""{"Set":{"user":{"dan":{"room":{"name":"movie night"},"event":{"joined":true,"version":"1.7.6","features":{"chat":true}}}}}}""")
         eventually("joined") { c.state.value.users.size == 4 }
         assertTrue(c.state.value.users.first { it.name == "cleo" }.yarmiplay)
         assertFalse(c.state.value.users.first { it.name == "dan" }.yarmiplay)
@@ -391,7 +391,7 @@ class YarmiplayClientTest {
 }
 
 /** A connection whose server lines come from the test; everything the client writes is recorded. */
-class ScriptedTransport : Transport {
+class ScriptedTransport(private val tlsError: Exception = IllegalStateException("no TLS")) : Transport {
     private val incoming = Channel<String?>(Channel.UNLIMITED)
     val sent: MutableList<String> = Collections.synchronizedList(mutableListOf())
     @Volatile var closed = false
@@ -403,7 +403,7 @@ class ScriptedTransport : Transport {
     override suspend fun writeLine(line: String) {
         if (!closed) sent += line
     }
-    override suspend fun startTls() = error("no TLS")
+    override suspend fun startTls() = throw tlsError
 
     fun receive(line: String) {
         incoming.trySend(line)

@@ -189,7 +189,7 @@ class FakeSyncplayServer(val port: Int = PORT) : AutoCloseable {
                 put("username", name)
                 putJsonObject("room") { put("name", room) }
                 put("version", "1.2.255")
-                put("realversion", "1.7.3")
+                put("realversion", "1.7.6")
                 put("motd", "")
                 putJsonObject("features") {
                     put("isolateRooms", false)
