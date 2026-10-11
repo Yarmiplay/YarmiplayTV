@@ -93,8 +93,14 @@ class LocalPlaybackTest {
         // restarts and reapplies its overlays); the video mustn't vanish behind the home screen.
         playClipAndWaitLoaded()
         val before = compose.activity
-        compose.activityRule.scenario.recreate()
-        compose.waitUntil(10_000) { compose.activity !== before }
+        // Activity.recreate() like the system does it; ActivityScenario.recreate() waits for it while syncing with
+        // Compose, which a slow emulator can trip ("performMeasureAndLayout called during measure layout").
+        compose.runOnUiThread { before.recreate() }
+        val deadline = System.currentTimeMillis() + 15_000
+        while (runCatching { compose.activity === before }.getOrDefault(true)) {
+            check(System.currentTimeMillis() < deadline) { "The activity wasn't recreated" }
+            Thread.sleep(100)
+        }
         compose.waitUntilExactlyOneExists(hasTestTag("player"), 10_000)
         assertTrue(container.player.state.value.fileLoaded)
     }
