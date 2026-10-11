@@ -20,11 +20,14 @@ desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin]
   The app never jumps to a server's saved position, since the room decides where playback is. Turn reporting
   off with Settings > Report progress to your media servers.
 - Syncplay's managed rooms, on servers that support them (the official server and YarmiplayServerTV 1.7.1+):
-  in the room panel, **Create managed room** makes one and gives you its operator password to share, and
-  **Operator password** makes you an operator of the managed room you're in (or type it on the join form when
-  joining a `+name:HASH` room). Only operators play, pause, seek or change the playlist; everyone else follows,
-  and operators can mark others ready or not ready. Passwords are remembered per server and room and sent again
-  whenever you rejoin. Managed rooms show their chosen name with a lock instead of the hash.
+  **Create managed room**, on the join form or in the room panel, makes one and gives you its operator password
+  to share (the room's full name and the password each have their own copy button), and **Operator password**
+  makes you an operator of the managed room you're in (or type it on the join form when joining a `+name:HASH`
+  room). Only operators play, pause, seek or change the playlist; everyone else follows, and operators can mark
+  others ready or not ready. Passwords are remembered per server and room and sent again whenever you rejoin,
+  and a room created from the join form is saved as the one to join next time. Managed rooms show their chosen
+  name with a lock instead of the hash. The Room tab lists the shared playlist first, then the chat, the
+  people in the room, and last switching rooms.
 - Like Syncplay, it warns when someone's copy of a file differs from yours: the playlist marks the entry when
   their file size differs (with both sizes when they're shared), and the room list says whether the name, size
   or duration differ. It's only a warning; playback and sync carry on as usual.

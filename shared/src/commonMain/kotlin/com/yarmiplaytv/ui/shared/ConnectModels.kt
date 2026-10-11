@@ -23,10 +23,15 @@ import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.ManagedRooms
+import com.yarmiplaytv.syncplay.SyncplayEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Form state and actions of the Syncplay connect screen, shared by the TV and mobile UIs. */
 class SyncplayConnectModel(private val container: AppContainer) {
@@ -52,12 +57,15 @@ class SyncplayConnectModel(private val container: AppContainer) {
     /** Set when [connect] needs the community rules agreed first; answered with [acceptRules] or [declineRules]. */
     var askRules by mutableStateOf(false)
         private set
+    /** What [acceptRules] goes on with: [createManaged] rather than [connect]. */
+    private var createAfterRules = false
 
     /**
      * Validates, saves and connects. Returns false when the form is incomplete (with [error] set) or the rules
      * haven't been agreed to yet (with [askRules] set).
      */
     fun connect(): Boolean {
+        createAfterRules = false
         val profile = validProfile() ?: return false
         if (!container.settings.value.acceptedRoomRules) {
             askRules = true
@@ -67,10 +75,35 @@ class SyncplayConnectModel(private val container: AppContainer) {
         return true
     }
 
+    /**
+     * Like [connect], then makes a managed room named after the Room field and moves there as its operator. The
+     * saved profile then points at the new room (`+name:HASH`), so the next connection goes straight back to it.
+     */
+    fun createManaged(): Boolean = createManaged(rulesAccepted = container.settings.value.acceptedRoomRules)
+
+    private fun createManaged(rulesAccepted: Boolean): Boolean {
+        createAfterRules = true
+        val profile = validProfile() ?: return false
+        error = when {
+            ManagedRooms.isManaged(profile.room) -> "That's already a managed room; join it with Connect"
+            !ManagedRooms.isValidBaseName(profile.room) -> "A managed room's name has at most ${ManagedRooms.MAX_BASE_NAME_LENGTH} characters"
+            else -> null
+        }
+        if (error != null) return false
+        if (!rulesAccepted) {
+            askRules = true
+            return false
+        }
+        join(profile, create = true)
+        return true
+    }
+
     /** Agrees to the rules and connects; returns whether it connected. */
     fun acceptRules(): Boolean {
         askRules = false
         container.scope.launch { container.settingsStore.saveAcceptedRoomRules(true) }
+        // Saving the agreement takes a moment, so it's passed along rather than read back.
+        if (createAfterRules) return createManaged(rulesAccepted = true)
         val profile = validProfile() ?: return false
         join(profile)
         return true
@@ -92,9 +125,28 @@ class SyncplayConnectModel(private val container: AppContainer) {
         return if (error == null) SyncplayProfile(host.trim(), p!!, username.trim(), room.trim(), password, tls) else null
     }
 
-    private fun join(profile: SyncplayProfile) {
-        container.scope.launch { container.settingsStore.saveSyncplay(profile, autoConnect) }
-        container.sync.connect(profile.toConfig(), operatorPassword = operatorPassword.takeIf { showsOperatorPassword })
+    private fun join(profile: SyncplayProfile, create: Boolean = false) {
+        val auto = autoConnect
+        container.scope.launch { container.settingsStore.saveSyncplay(profile, auto) }
+        if (create) {
+            // Subscribed before connecting: events aren't replayed.
+            container.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                val created = withTimeoutOrNull(CREATE_TIMEOUT_MS) {
+                    container.sync.events.filterIsInstance<SyncplayEvent.ManagedRoomCreated>().first { ManagedRooms.display(it.room) == profile.room }
+                } ?: return@launch
+                room = created.room
+                container.settingsStore.saveSyncplay(profile.copy(room = created.room), auto)
+            }
+        }
+        container.sync.connect(
+            profile.toConfig(),
+            operatorPassword = operatorPassword.takeIf { showsOperatorPassword && !create },
+            createManagedRoom = profile.room.takeIf { create },
+        )
+    }
+
+    private companion object {
+        const val CREATE_TIMEOUT_MS = 60_000L
     }
 
     fun disconnect() {

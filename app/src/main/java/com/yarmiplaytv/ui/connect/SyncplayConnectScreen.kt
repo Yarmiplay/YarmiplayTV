@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -102,6 +103,9 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             ActionButton(if (connected) "Reconnect" else "Connect", ::connect, icon = Icons.Filled.Link, primary = true)
+            if (!model.showsOperatorPassword) {
+                ActionButton("Create managed room", { if (model.createManaged()) nav.back() }, icon = Icons.Filled.Lock)
+            }
             if (connected) ActionButton("Disconnect", model::disconnect, icon = Icons.Filled.LinkOff)
             model.serverKey?.takeIf(container::hasDeviceKey)?.let { server ->
                 ActionButton("Forget this device's key", { container.forgetDeviceKey(server) }, icon = Icons.Filled.Key)

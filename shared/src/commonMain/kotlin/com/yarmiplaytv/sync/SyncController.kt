@@ -118,9 +118,10 @@ class SyncController(
 
     /**
      * Joins [config]'s room. [requestAccess] asks a YarmiplayServerTV host to approve this device if they haven't
-     * yet; pass false for connections the user didn't start (connecting on launch).
+     * yet; pass false for connections the user didn't start (connecting on launch). With [createManagedRoom], once
+     * joined it makes a managed room of that name and moves there as its operator (see [SyncplayClient.createManagedRoom]).
      */
-    fun connect(config: SyncplayConfig, requestAccess: Boolean = true, operatorPassword: String? = null) {
+    fun connect(config: SyncplayConfig, requestAccess: Boolean = true, operatorPassword: String? = null, createManagedRoom: String? = null) {
         disconnect()
         lastConfig = config
         server = serverKey(config.host, config.port)
@@ -137,6 +138,8 @@ class SyncController(
         )
         newClient.savedOperatorPassword = { room -> passwordKey(room)?.let { operatorPasswords?.get(it) } }
         clientFlow.value = newClient
+        // Only on the first join: a reconnect after creating it already goes to the managed room.
+        var pendingCreate = createManagedRoom?.trim()?.takeIf { it.isNotEmpty() }
         // Subscribe before start(): events has no replay, and a local server answers within a millisecond.
         eventsJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             newClient.events.collect { event ->
@@ -148,9 +151,17 @@ class SyncController(
                         _connectionError.value = null
                         post(FeedMessage("Joined room '${ManagedRooms.label(event.room)}' as ${event.username}" + if (event.tls) " (TLS)" else ""))
                         event.motd?.let { post(FeedMessage(it.trim())) }
+                        pendingCreate?.let { name ->
+                            pendingCreate = null
+                            if (!newClient.createManagedRoom(name)) {
+                                val why = if (newClient.state.value.managedRooms) "the name doesn't fit" else "this server doesn't have managed rooms"
+                                post(FeedMessage("Couldn't create managed room '$name': $why", isError = true))
+                            }
+                        }
                     }
                     is SyncplayEvent.ManagedRoomCreated -> {
                         passwordKey(event.room)?.let { operatorPasswords?.save(it, event.password) }
+                        lastConfig = lastConfig?.copy(room = event.room)
                         post(FeedMessage("Created managed room '${ManagedRooms.display(event.room)}' (${event.room}). Operator password: ${event.password}"))
                     }
                     is SyncplayEvent.ControllerAuth -> controllerAuth(event)

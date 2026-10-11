@@ -143,10 +143,13 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
     }
 }
 
+/**
+ * The room, its ready button and its users; with [showChangeRoom] also [RoomSwitchContent]'s options under them
+ * (the player's room sheet and the desktop panel). The Room tab shows those at its very end instead.
+ */
 @Composable
 fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, showChangeRoom: Boolean = true) {
     val room by container.sync.room.collectAsStateWithLifecycle()
-    var newRoom by rememberSaveable { mutableStateOf("") }
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (room.status != ConnectionStatus.CONNECTED) {
             SheetTitle("Room")
@@ -227,20 +230,49 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
                 }
             }
         }
-        if (showChangeRoom) {
-            fun change() { if (newRoom.isNotBlank()) { container.sync.changeRoom(newRoom.trim()); newRoom = "" } }
-            OutlinedTextField(
-                newRoom, { newRoom = it.take(60) },
-                label = { Text("Switch room") },
-                placeholder = { Text(ManagedRooms.label(room.room)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                keyboardActions = KeyboardActions(onGo = { change() }),
-                trailingIcon = { IconButton(::change) { Icon(Icons.Filled.MeetingRoom, "Change room") } },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (room.managedRooms) ManagedRoomActions(container, room)
-        }
+        if (showChangeRoom) RoomSwitchOptions(container, room)
+    }
+}
+
+/** Switching rooms and the managed-room options, while connected; nothing otherwise. */
+@Composable
+fun RoomSwitchContent(container: AppContainer, modifier: Modifier = Modifier) {
+    val room by container.sync.room.collectAsStateWithLifecycle()
+    if (room.status != ConnectionStatus.CONNECTED) return
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        RoomSwitchOptions(container, room)
+    }
+}
+
+@Composable
+private fun RoomSwitchOptions(container: AppContainer, room: RoomState) {
+    var newRoom by rememberSaveable { mutableStateOf("") }
+    fun change() { if (newRoom.isNotBlank()) { container.sync.changeRoom(newRoom.trim()); newRoom = "" } }
+    OutlinedTextField(
+        newRoom, { newRoom = it.take(60) },
+        label = { Text("Switch room") },
+        placeholder = { Text(ManagedRooms.label(room.room)) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+        keyboardActions = KeyboardActions(onGo = { change() }),
+        trailingIcon = { IconButton(::change) { Icon(Icons.Filled.MeetingRoom, "Change room") } },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    if (room.managedRooms) ManagedRoomActions(container, room)
+}
+
+/** "[label]: [value]" with its own copy button. */
+@Composable
+private fun CopyRow(label: String, value: String, copyDescription: String, buttonModifier: Modifier, textModifier: Modifier = Modifier, onCopy: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "$label: $value",
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = textModifier.weight(1f),
+        )
+        IconButton(onCopy, buttonModifier) { Icon(Icons.Filled.ContentCopy, copyDescription, tint = AppColors.TextDim) }
     }
 }
 
@@ -256,21 +288,22 @@ private fun ManagedRoomActions(container: AppContainer, room: RoomState) {
     if (room.inManagedRoom) {
         val saved = if (room.isOperator) container.sync.savedOperatorPassword(room.room) else null
         Surface(color = AppColors.SurfaceHigh, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().testTag("managed_room_info")) {
-            Row(Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Lock, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
+            Column(Modifier.padding(start = 12.dp, top = 8.dp, bottom = 4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Lock, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(10.dp))
                     Text(
                         if (room.isOperator) "Managed room · you're an operator" else "Managed room · only operators control playback and the playlist",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    Text(room.room, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
-                    saved?.let { Text("Operator password: $it", style = MaterialTheme.typography.labelMedium, modifier = Modifier.testTag("operator_password")) }
                 }
-                IconButton(
-                    { clipboard.setText(AnnotatedString(listOfNotNull("Room: ${room.room}", saved?.let { "Operator password: $it" }).joinToString("\n"))) },
-                    Modifier.testTag("copy_managed"),
-                ) { Icon(Icons.Filled.ContentCopy, "Copy the room name" + if (saved != null) " and password" else "", tint = AppColors.TextDim) }
+                // The name is for everyone joining; the password only for those who should be operators too.
+                CopyRow("Room", room.room, "Copy the room name", Modifier.testTag("copy_room_name")) { clipboard.setText(AnnotatedString(room.room)) }
+                saved?.let { password ->
+                    CopyRow("Operator password", password, "Copy the operator password", Modifier.testTag("copy_operator_password"), Modifier.testTag("operator_password")) {
+                        clipboard.setText(AnnotatedString(password))
+                    }
+                }
             }
         }
         if (!room.isOperator) {

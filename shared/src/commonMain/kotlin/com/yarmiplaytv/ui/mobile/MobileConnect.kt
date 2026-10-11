@@ -4,20 +4,26 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -76,15 +82,18 @@ fun MobileRoomScreen(container: AppContainer, nav: Navigator) {
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(bottom = 24.dp)) {
             if (connected && !editing) {
-                RoomUsersContent(container)
+                // What's watched first, then talking about it, the room's people, and last leaving for another room.
+                PlaylistContent(container, onBrowse = { nav.switchTab(Screen.Home) })
+                HorizontalDivider(Modifier.padding(vertical = 8.dp), color = AppColors.SurfaceHigh)
+                ChatContent(container, maxHeight = 300.dp)
+                HorizontalDivider(Modifier.padding(vertical = 8.dp), color = AppColors.SurfaceHigh)
+                RoomUsersContent(container, showChangeRoom = false)
+                HorizontalDivider(Modifier.padding(vertical = 8.dp), color = AppColors.SurfaceHigh)
+                RoomSwitchContent(container)
                 Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedButton({ editing = true }) { Text("Edit connection") }
                     OutlinedButton({ model.disconnect() }, Modifier.testTag("disconnect")) { Text("Disconnect") }
                 }
-                HorizontalDivider(Modifier.padding(vertical = 8.dp), color = AppColors.SurfaceHigh)
-                PlaylistContent(container, onBrowse = { nav.switchTab(Screen.Home) })
-                HorizontalDivider(Modifier.padding(vertical = 8.dp), color = AppColors.SurfaceHigh)
-                ChatContent(container, maxHeight = 300.dp)
             } else {
                 ConnectForm(container, model, room.status, onConnected = { editing = false })
             }
@@ -135,6 +144,14 @@ private fun ConnectForm(container: AppContainer, model: com.yarmiplaytv.ui.share
             if (status == ConnectionStatus.CONNECTING || status == ConnectionStatus.RECONNECTING) {
                 CircularProgressIndicator(Modifier.padding(start = 8.dp))
                 TextButton({ model.disconnect() }, Modifier.testTag("connect_cancel")) { Text("Cancel") }
+            }
+        }
+        if (!model.showsOperatorPassword) {
+            // Joins the room above, then turns it into a managed one with you as its operator.
+            OutlinedButton({ if (model.createManaged()) onConnected() }, Modifier.testTag("connect_create_managed")) {
+                Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Create managed room")
             }
         }
         model.serverKey?.takeIf(container::hasDeviceKey)?.let { server ->
