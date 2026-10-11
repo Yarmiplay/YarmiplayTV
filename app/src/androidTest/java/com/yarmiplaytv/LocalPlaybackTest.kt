@@ -240,7 +240,11 @@ class LocalPlaybackTest {
             waitFor(5_000) { PlayerPictureInPicture.active }
             assertTrue("still loaded", container.player.state.value.fileLoaded)
         } finally {
-            leavePictureInPicture(activity)
+            // If full screen doesn't come back, the PiP window still mustn't outlive the test.
+            runCatching { leavePictureInPicture(activity) }.onFailure {
+                closePictureInPicture(activity)
+                throw it
+            }
         }
         // Full size again without the activity being recreated: the same player screen, its controls back.
         assertSame(activity, compose.activity)
@@ -292,8 +296,8 @@ class LocalPlaybackTest {
             play()
             block()
         } finally {
-            bringBack()
             compose.runOnUiThread { container.playlist.stop() }
+            closePictureInPicture(compose.activity)
             TestSupport.delete(long)
         }
     }
@@ -327,6 +331,23 @@ class LocalPlaybackTest {
             if (runCatching { waitFor(3_000) { !activity.isInPictureInPictureMode } }.isSuccess) return
         }
         waitFor(1) { !activity.isInPictureInPictureMode }
+    }
+
+    /**
+     * Makes sure no PiP window outlives the test: the next test's (singleTask) activity would open inside it. Back to
+     * full screen if the system lets us, else the activity and its pinned task go.
+     */
+    private fun closePictureInPicture(activity: android.app.Activity) {
+        if (!activity.isInPictureInPictureMode) {
+            bringBack()
+            return
+        }
+        repeat(3) {
+            bringBack()
+            if (runCatching { waitFor(3_000) { !activity.isInPictureInPictureMode } }.isSuccess) return
+        }
+        compose.runOnUiThread { activity.finishAndRemoveTask() }
+        waitFor(10_000) { activity.isDestroyed }
     }
 
     /** Like tapping the app's icon: brings the (singleTask) activity back to full screen without a new intent to act on. */
