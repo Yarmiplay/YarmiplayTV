@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.7.5" date="2026-10-11">
+      <description>
+        <p>Create a managed room right from the join form; the room name and operator password each have their own copy button; the Room tab lists the shared playlist first, then chat, the people in the room, and last switching rooms.</p>
+      </description>
+    </release>
     <release version="1.7.4" date="2026-10-11">
       <description>
         <p>Syncplay managed rooms: create a room only its operators control, identify as an operator with its password (remembered per server and room), and follow the operators otherwise; operators can mark others ready.</p>
