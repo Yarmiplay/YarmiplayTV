@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.7.2" date="2026-10-11">
+      <description>
+        <p>A Player tab on phones, tablets and desktop that opens the player from any screen, preview frames for the videos in Files on this device, and on Android the TV's thin seek bar and a media volume slider in the player.</p>
+      </description>
+    </release>
     <release version="1.7.1" date="2026-10-10">
       <description>
         <p>Screenshots from the player (camera button, F5 on desktop), a save button for relayed files, local files browsed by folder, automatic updates installed before the app opens on Windows, and clearer Syncplay connection errors, including a stop on an invalid TLS certificate.</p>
