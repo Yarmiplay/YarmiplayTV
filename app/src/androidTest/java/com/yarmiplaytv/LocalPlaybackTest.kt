@@ -253,26 +253,39 @@ class LocalPlaybackTest {
         assumeTrue("no picture-in-picture on this device", pipSupported)
         val saved = container.settings.value.playback
         val activity = compose.activity
+        // The minute-long clip: the 3 s one can end (and so stop playing) before a slow emulator handles Home.
+        val long = TestSupport.insertClip("YarmiplayTV PiP Clip - ${System.currentTimeMillis() % 100000}.mp4", TestSupport.LONG_CLIP_ASSET)
         try {
-            playClipAndWaitLoaded()
-            playFromStart()
+            container.playlist.playLocal(long.toString(), inRoom = false)
+            compose.waitUntilExactlyOneExists(hasTestTag("player"), 10_000)
+            compose.waitUntil(20_000) { container.player.state.value.fileLoaded }
+            play()
             Screenshots.shell("input keyevent KEYCODE_HOME")
             // Until the app has been told (the player switched layouts), the window is still animating into PiP;
             // asking for full screen then cancels it without the app ever hearing it left.
-            waitFor(10_000) { activity.isInPictureInPictureMode && PlayerPictureInPicture.active }
+            waitFor(15_000) { activity.isInPictureInPictureMode && PlayerPictureInPicture.active }
             leavePictureInPicture(activity)
             compose.waitUntilExactlyOneExists(hasTestTag("player"), 10_000)
 
             runBlocking { container.settingsStore.savePlayback(saved.copy(pictureInPicture = false)) }
             compose.waitUntil(5_000) { !container.settings.value.playback.pictureInPicture }
-            playFromStart()
+            play()
             Screenshots.shell("input keyevent KEYCODE_HOME")
-            Thread.sleep(2_000)
+            Thread.sleep(3_000)
             assertFalse("the setting is off", activity.isInPictureInPictureMode)
         } finally {
             runBlocking { container.settingsStore.savePlayback(saved) }
             bringBack()
+            compose.runOnUiThread { container.playlist.stop() }
+            TestSupport.delete(long)
         }
+    }
+
+    /** Plays the loaded clip and waits until the PiP parameters have caught up with it playing. */
+    private fun play() {
+        compose.runOnUiThread { container.player.setPaused(false) }
+        compose.waitUntil(5_000) { !container.player.state.value.paused }
+        compose.waitForIdle()
     }
 
     /**
@@ -295,17 +308,6 @@ class LocalPlaybackTest {
             if (runCatching { waitFor(3_000) { !activity.isInPictureInPictureMode } }.isSuccess) return
         }
         waitFor(1) { !activity.isInPictureInPictureMode }
-    }
-
-    /** The 3 s clip, playing from its start, so it's still playing when the test leaves the app. */
-    private fun playFromStart() {
-        compose.runOnUiThread {
-            container.player.seek(0.0)
-            container.player.setPaused(false)
-        }
-        compose.waitUntil(5_000) { !container.player.state.value.paused && container.player.currentPosition() < 1.0 }
-        // The PiP parameters follow the playing state on the next frame.
-        compose.waitForIdle()
     }
 
     /** Like tapping the app's icon: brings the (singleTask) activity back to full screen without a new intent to act on. */

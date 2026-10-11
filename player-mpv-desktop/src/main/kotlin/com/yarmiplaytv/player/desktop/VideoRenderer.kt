@@ -46,6 +46,12 @@ abstract class VideoRenderer internal constructor(
     threadName: String,
 ) : AutoCloseable {
     abstract val kind: String
+    /** What draws the frames, e.g. the GPU's OpenGL renderer name; null when unknown or for the CPU renderer. */
+    @Volatile var device: String? = null
+        protected set
+    /** OpenGL drawn by the CPU (Mesa's llvmpipe in VMs and CI): it works, but reads back black frames now and then. */
+    val isSoftwareRasterizer: Boolean
+        get() = device?.let { SOFTWARE_RASTERIZERS.containsMatchIn(it) } == true
 
     val frames = VideoFrames()
     val stats = RenderStats()
@@ -183,6 +189,7 @@ abstract class VideoRenderer internal constructor(
 
     companion object {
         private const val SLOW_HANDOFF_NS = 12_000_000L
+        private val SOFTWARE_RASTERIZERS = Regex("llvmpipe|softpipe|swrast|SwiftShader|Basic Render", RegexOption.IGNORE_CASE)
 
         /**
          * GPU rendering unless [mode] is "sw" or the GPU path can't start (e.g. no OpenGL in a VM).
@@ -246,6 +253,7 @@ internal class GlVideoRenderer(lib: LibMpv, mpv: Pointer) : VideoRenderer(lib, m
     override fun setUp() {
         val ctx = GlContext.create()
         context = ctx
+        device = runCatching { GL11.glGetString(GL11.GL_RENDERER) }.getOrNull()
         getProcAddress = LibMpv.GetProcAddress { _, name ->
             val address = name?.let(ctx::getProcAddress) ?: 0L
             if (address == 0L) null else Pointer(address)

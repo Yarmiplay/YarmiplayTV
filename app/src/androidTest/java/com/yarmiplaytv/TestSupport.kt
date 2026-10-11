@@ -11,12 +11,14 @@ import kotlinx.coroutines.runBlocking
 
 object TestSupport {
     const val CLIP_ASSET = "yarmiplaytv-test-clip.mp4"
+    /** A minute long, for tests that need a clip still playing after slow steps (CI emulators). */
+    const val LONG_CLIP_ASSET = "yarmiplaytv-sync-clip.mp4"
 
     val app: YarmiplayTvApp get() = ApplicationProvider.getApplicationContext()
     val container: AppContainer get() = app.container
 
-    /** Copies the bundled test clip into MediaStore (Movies/YarmiplayTV-tests) and returns its content:// URI. */
-    fun insertClip(displayName: String): Uri {
+    /** Copies a bundled clip into MediaStore (Movies/YarmiplayTV-tests) and returns its content:// URI. */
+    fun insertClip(displayName: String, asset: String = CLIP_ASSET): Uri {
         val resolver = app.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, displayName)
@@ -26,7 +28,7 @@ object TestSupport {
         }
         val uri = requireNotNull(resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)) { "MediaStore insert failed" }
         resolver.openOutputStream(uri)!!.use { out ->
-            InstrumentationRegistry.getInstrumentation().context.assets.open(CLIP_ASSET).use { it.copyTo(out) }
+            InstrumentationRegistry.getInstrumentation().context.assets.open(asset).use { it.copyTo(out) }
         }
         resolver.update(uri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
         return uri
