@@ -249,35 +249,49 @@ class LocalPlaybackTest {
     }
 
     @Test
-    fun leavingTheAppWhilePlayingGoesIntoPictureInPictureUnlessTurnedOff() {
+    fun leavingTheAppWhilePlayingGoesIntoPictureInPicture() {
+        assumeTrue("no picture-in-picture on this device", pipSupported)
+        val activity = compose.activity
+        withLongClipPlaying {
+            Screenshots.shell("input keyevent KEYCODE_HOME")
+            // The app has been told (the player switched layouts) once the window is in PiP. Getting back out is the
+            // PiP button test's part: a slow emulator can ignore it while a Home-started PiP settles.
+            waitFor(15_000) { activity.isInPictureInPictureMode && PlayerPictureInPicture.active }
+        }
+    }
+
+    @Test
+    fun leavingTheAppDoesNotGoIntoPictureInPictureWhenTurnedOff() {
         assumeTrue("no picture-in-picture on this device", pipSupported)
         val saved = container.settings.value.playback
         val activity = compose.activity
-        // The minute-long clip: the 3 s one can end (and so stop playing) before a slow emulator handles Home.
+        try {
+            runBlocking { container.settingsStore.savePlayback(saved.copy(pictureInPicture = false)) }
+            waitFor(5_000) { !container.settings.value.playback.pictureInPicture }
+            withLongClipPlaying {
+                Screenshots.shell("input keyevent KEYCODE_HOME")
+                Thread.sleep(3_000)
+                assertFalse("the setting is off", activity.isInPictureInPictureMode)
+                assertFalse(PlayerPictureInPicture.active)
+            }
+        } finally {
+            runBlocking { container.settingsStore.savePlayback(saved) }
+        }
+    }
+
+    /**
+     * Runs [block] with the minute-long clip playing on the player screen: the 3 s one can end, and so stop playing,
+     * before a slow emulator handles Home. Afterwards the app is brought back and the clip removed.
+     */
+    private fun withLongClipPlaying(block: () -> Unit) {
         val long = TestSupport.insertClip("YarmiplayTV PiP Clip - ${System.currentTimeMillis() % 100000}.mp4", TestSupport.LONG_CLIP_ASSET)
         try {
             container.playlist.playLocal(long.toString(), inRoom = false)
             compose.waitUntilExactlyOneExists(hasTestTag("player"), 10_000)
             compose.waitUntil(20_000) { container.player.state.value.fileLoaded }
             play()
-            Screenshots.shell("input keyevent KEYCODE_HOME")
-            // Until the app has been told (the player switched layouts), the window is still animating into PiP;
-            // asking for full screen then cancels it without the app ever hearing it left.
-            waitFor(15_000) { activity.isInPictureInPictureMode && PlayerPictureInPicture.active }
-            leavePictureInPicture(activity)
-            // Back to the full layout in the same activity. (The PiP button test checks the controls are back; on a
-            // slow emulator the compose rule can take a while to see the hierarchy again after the rotation.)
-            waitFor(15_000) { !PlayerPictureInPicture.active }
-            assertSame(activity, compose.activity)
-
-            runBlocking { container.settingsStore.savePlayback(saved.copy(pictureInPicture = false)) }
-            waitFor(5_000) { !container.settings.value.playback.pictureInPicture }
-            play()
-            Screenshots.shell("input keyevent KEYCODE_HOME")
-            Thread.sleep(3_000)
-            assertFalse("the setting is off", activity.isInPictureInPictureMode)
+            block()
         } finally {
-            runBlocking { container.settingsStore.savePlayback(saved) }
             bringBack()
             compose.runOnUiThread { container.playlist.stop() }
             TestSupport.delete(long)
