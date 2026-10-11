@@ -5,7 +5,9 @@ import com.yarmiplaytv.data.KnownServer
 import com.yarmiplaytv.data.SettingsStore
 import com.yarmiplaytv.device.DeviceKeyStore
 import com.yarmiplaytv.device.DeviceKeys
+import com.yarmiplaytv.local.FrameGrabber
 import com.yarmiplaytv.local.LocalLibrary
+import com.yarmiplaytv.local.VideoThumbnails
 import com.yarmiplaytv.media.CompositeMediaSource
 import com.yarmiplaytv.media.MediaSource
 import com.yarmiplaytv.media.MediaSourceException
@@ -61,6 +63,8 @@ class AppContainer(
     cacheDir: File? = null,
     /** Where screenshots of the video go; without it the player has no screenshot button. */
     screenshotStore: ScreenshotStore? = null,
+    /** Makes the preview frames of the videos in the file lists (kept under [cacheDir]); without it they show an icon. */
+    frameGrabber: FrameGrabber? = null,
 ) {
     val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.Main.immediate +
@@ -99,6 +103,7 @@ class AppContainer(
     val mediaSource: StateFlow<MediaSource?> = servers.map(::browsable).stateIn(scope, SharingStarted.Eagerly, browsable(servers.value))
 
     val local: LocalLibrary = createLocalLibrary(settingsStore, scope, initial.localFolders)
+    val thumbnails: VideoThumbnails? = frameGrabber?.let { grabber -> cacheDir?.let { VideoThumbnails(File(it, "thumbnails"), grabber) } }
     val sync = SyncController(scope, player).apply {
         showChat = initial.showRoomChat
         appVersion = this@AppContainer.appVersion

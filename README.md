@@ -24,7 +24,8 @@ desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin]
   or duration differ. It's only a warning; playback and sync carry on as usual.
 - One APK: the remote-friendly TV UI on Google TV, a touch UI on phones (bottom navigation) and tablets
   (navigation rail). On phones and tablets you can also open a single video, use "Open with" from a file
-  manager, or add media folders that work like Syncplay's media directories.
+  manager, or add media folders that work like Syncplay's media directories; their videos show a preview
+  frame. The player has the TV's thin seek bar and a volume slider, and the Player tab opens it from any screen.
 - A desktop app with the same UI plus a side panel that edits the room's playlist and chats the way the
   desktop Syncplay client does.
 - Each room's playlist is remembered per server and put back when you rejoin a room whose playlist is empty
@@ -209,11 +210,14 @@ also run `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
 On a phone or tablet:
 
 - **Local files.** Use "Files on this device" to open a single video, or add a folder such as `Movies`.
+  Each video in a folder shows a preview frame from a tenth of the way in (also on desktop).
   When the room's playlist moves to a file, the app looks for that filename in your folders first, then on
   Jellyfin and Plex, so a friend's desktop Syncplay sees the same file.
-- **Player controls.** The player goes fullscreen in landscape. Tap to show the controls. Double-tap the
-  left or right side to seek, or the middle to pause. The playlist, room, chat and track panels open as
-  bottom sheets.
+- **Player.** The Player tab (bottom bar or rail, also on desktop) opens the player from any screen; Back
+  returns to where you were. The player goes fullscreen in landscape. Tap to show the controls. Double-tap the
+  left or right side to seek, or the middle to pause. Tap or drag the thin seek bar, as on the TV, to seek;
+  the slider next to the mute button sets the device's media volume and follows the volume buttons. The
+  playlist, room, chat and track panels open as bottom sheets.
 - **Background playback.** Keep the app in front while watching. Android cuts network access for apps in
   the background, so the room connection drops after a few seconds. It reconnects and resyncs
   automatically when you come back.

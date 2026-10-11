@@ -30,7 +30,7 @@ import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.ui.mobile.DesktopPlayerInput
-import com.yarmiplaytv.ui.mobile.DesktopVolume
+import com.yarmiplaytv.ui.mobile.PlayerVolume
 import com.yarmiplaytv.ui.mobile.MobilePlayerScreen
 import com.yarmiplaytv.ui.mobile.MobileTheme
 import com.yarmiplaytv.ui.nav.Navigator
@@ -69,7 +69,7 @@ class PlayerControlsUiTest {
     private lateinit var storeScope: CoroutineScope
     private lateinit var app: AppContainer
     private val player = IdlePlayer()
-    private val volume = object : DesktopVolume {
+    private val volume = object : PlayerVolume {
         override val volume = MutableStateFlow(80.0)
         override val muted = MutableStateFlow(false)
         override val max = 130.0

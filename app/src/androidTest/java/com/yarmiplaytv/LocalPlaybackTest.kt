@@ -2,22 +2,32 @@ package com.yarmiplaytv
 
 import android.content.ContentUris
 import android.graphics.BitmapFactory
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.click
 import androidx.compose.ui.geometry.Offset
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.yarmiplaytv.local.AndroidFrameGrabber
+import com.yarmiplaytv.local.LocalFile
 import com.yarmiplaytv.sync.PlaylistStatus
+import kotlinx.coroutines.runBlocking
+import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -26,7 +36,8 @@ import org.junit.runner.RunWith
 
 /**
  * Plays a real clip from device storage through a content:// URI (mpv gets it as a file descriptor)
- * and drives the touch player: tap to toggle controls, double-tap to seek, bottom sheets.
+ * and drives the touch player: tap to toggle controls, double-tap to seek, bottom sheets, the seek bar and volume.
+ * Also makes preview frames of the clip for the file lists.
  */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -139,6 +150,82 @@ class LocalPlaybackTest {
         } finally {
             added.forEach(TestSupport::delete)
         }
+    }
+
+    @Test
+    fun seekBarIsTheTvTrackAndSeeks() {
+        playClipAndWaitLoaded()
+        compose.runOnUiThread { container.player.setPaused(true) }
+        compose.waitUntilExactlyOneExists(hasTestTag("seek_slider"), 5_000)
+        compose.onNodeWithTag("seek_slider").performSemanticsAction(SemanticsActions.SetProgress) { it(2.0f) }
+        compose.waitUntil(5_000) { container.player.currentPosition() in 1.8..2.2 }
+        // A tap on the track seeks there too: the first quarter of a 3 s clip.
+        compose.onNodeWithTag("seek_slider").performTouchInput { click(Offset(width * 0.25f, centerY)) }
+        compose.waitUntil(5_000) { container.player.currentPosition() in 0.5..1.0 }
+    }
+
+    @Test
+    fun volumeControlSetsAndMutesTheMediaVolume() {
+        val audio = TestSupport.app.getSystemService(AudioManager::class.java)
+        val stream = AudioManager.STREAM_MUSIC
+        val max = audio.getStreamMaxVolume(stream)
+        val before = audio.getStreamVolume(stream)
+        try {
+            playClipAndWaitLoaded()
+            compose.runOnUiThread { container.player.setPaused(true) }
+            compose.waitUntilExactlyOneExists(hasTestTag("volume_slider"), 5_000)
+            compose.onNodeWithTag("volume_slider").performSemanticsAction(SemanticsActions.SetProgress) { it(40f) }
+            compose.waitUntil(5_000) { audio.getStreamVolume(stream) == Math.round(0.4 * max).toInt() }
+            val shown = audio.getStreamVolume(stream) * 100 / max
+            compose.onNodeWithTag("volume_label").assertTextEquals("${Math.round(audio.getStreamVolume(stream) * 100.0 / max)}%")
+            assertTrue("$shown%", shown in 30..50)
+
+            compose.onNodeWithTag("volume_mute").performClick()
+            compose.waitUntil(5_000) { audio.isStreamMute(stream) }
+            compose.onNodeWithTag("volume_label").assertTextEquals("Muted")
+            compose.onNodeWithTag("volume_mute").performClick()
+            compose.waitUntil(5_000) { !audio.isStreamMute(stream) }
+
+            // The volume buttons change it behind the player's back; the bar follows.
+            audio.setStreamVolume(stream, max, 0)
+            compose.waitUntil(5_000) { runCatching { compose.onNodeWithTag("volume_label").assertTextEquals("100%") }.isSuccess }
+        } finally {
+            audio.adjustStreamVolume(stream, AudioManager.ADJUST_UNMUTE, 0)
+            audio.setStreamVolume(stream, before, 0)
+        }
+    }
+
+    @Test
+    fun previewFrameOfAClipOnThisDevice() {
+        val file = LocalFile(clipName, TestSupport.clipSize(), clip!!.toString(), modified = System.currentTimeMillis())
+        val preview = runBlocking { container.thumbnails!!.thumbnail(file) }
+        assertNotNull("no preview for the media store clip", preview)
+        assertColourfulImage(preview!!)
+        assertEquals("served from the cache", preview, runBlocking { container.thumbnails!!.thumbnail(file) })
+    }
+
+    @Test
+    fun frameGrabberDecodesAFileWithoutAProviderThumbnail() {
+        // A plain file has no provider to ask, so this is the frame the media retriever decodes.
+        val copy = File(TestSupport.app.cacheDir, "grabber-test.mp4")
+        val target = File(TestSupport.app.cacheDir, "grabber-test.jpg")
+        try {
+            TestSupport.app.contentResolver.openInputStream(clip!!)!!.use { input -> copy.outputStream().use(input::copyTo) }
+            assertTrue(AndroidFrameGrabber(TestSupport.app).grab(Uri.fromFile(copy).toString(), 320, target))
+            assertColourfulImage(target)
+            assertFalse(AndroidFrameGrabber(TestSupport.app).grab(Uri.fromFile(File(TestSupport.app.cacheDir, "missing.mp4")).toString(), 320, target.resolveSibling("x.jpg")))
+        } finally {
+            copy.delete()
+            target.delete()
+        }
+    }
+
+    private fun assertColourfulImage(file: File) {
+        val image = BitmapFactory.decodeFile(file.path)
+        assertNotNull("not an image: $file", image)
+        assertTrue("${image.width} px wide", image.width in 16..320)
+        val colors = (0 until 16).flatMap { y -> (0 until 16).map { x -> image.getPixel(x * image.width / 16, y * image.height / 16) } }.toSet()
+        assertTrue("preview ${image.width}x${image.height} has ${colors.size} colours", colors.size > 8)
     }
 
     /** The images in Pictures/YarmiplayTV. */

@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -49,10 +50,8 @@ actual val controlsHideMillis = 5000L
 
 actual val hideControlsButton = false
 
-actual val tvStyleSeekBar = false
-
-@Composable
-actual fun PlayerVolumeControl(onInteract: () -> Unit, modifier: Modifier) = Unit
+/** Fingers need more than the mouse's 24 dp to catch the thin track. */
+actual val playerTrackTouchHeight = 40.dp
 
 @Composable
 actual fun Modifier.playerScreenInput(input: PlayerInput): Modifier = this

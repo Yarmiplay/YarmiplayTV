@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.RectF
 import android.hardware.display.DisplayManager
+import android.media.AudioManager
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import android.view.Display
@@ -88,6 +89,11 @@ object Screenshots {
         demo("exit")
         enterDemo()
         automation.setRotation(UiAutomation.ROTATION_FREEZE_0)
+        // The player's volume control shows the media volume; the same level for every capture.
+        instrumentation.targetContext.getSystemService(AudioManager::class.java)?.let { audio ->
+            audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) / 2, 0)
+        }
     }
 
     private fun enterDemo() {

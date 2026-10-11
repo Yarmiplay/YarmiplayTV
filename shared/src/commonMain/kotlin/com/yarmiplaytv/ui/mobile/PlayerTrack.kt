@@ -49,8 +49,8 @@ import com.yarmiplaytv.ui.theme.AppColors
 import kotlin.math.roundToInt
 
 /**
- * Android TV's seek bar for the mouse: the track, with the clocks and what's playing under it in dim text. Click or
- * drag to seek; the bar shows where it will go until the button is let go.
+ * Android TV's seek bar: the track, with the clocks and what's playing under it in dim text. Click, tap or drag to
+ * seek; the bar shows where it will go until the button or finger is let go.
  */
 @Composable
 internal fun TvSeekBar(state: PlaybackState, position: Double, onInteract: () -> Unit, onSeek: (Double) -> Unit) {
@@ -82,7 +82,7 @@ internal fun TvSeekBar(state: PlaybackState, position: Double, onInteract: () ->
 
 /**
  * The TV bar's 6 dp track (white at 20 %, the [buffered] part a little lighter, the part up to [value] in the accent
- * colour) as a mouse slider. A knob shows at the value while the mouse is on it or dragging.
+ * colour) as a slider. A knob shows at the value while the mouse is on it or it is being dragged.
  */
 @Composable
 internal fun PlayerTrack(
@@ -108,7 +108,7 @@ internal fun PlayerTrack(
 
     Box(
         modifier
-            .height(TOUCH_HEIGHT)
+            .height(playerTrackTouchHeight)
             .onSizeChanged { width = it.width }
             .hoverable(hover, enabled)
             .semantics {
@@ -157,5 +157,3 @@ internal fun PlayerTrack(
 
 private val TRACK = 6.dp
 private val KNOB = 14.dp
-/** Taller than the track, so it's easy to hit with the mouse. */
-private val TOUCH_HEIGHT = 24.dp

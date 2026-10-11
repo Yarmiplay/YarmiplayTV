@@ -43,8 +43,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,7 +73,6 @@ import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
-import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -226,38 +223,19 @@ private fun BottomControls(
 ) {
     val state by container.player.state.collectAsStateWithLifecycle()
     var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
-    var dragging by remember { mutableStateOf<Float?>(null) }
     LaunchedEffect(Unit) {
         while (true) {
             position = container.player.currentPosition()
             delay(250)
         }
     }
-    val duration = state.duration
     Column(
         modifier.fillMaxWidth()
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000))))
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        if (tvStyleSeekBar) {
-            TvSeekBar(state, position, onInteract) { container.player.seek(it) }
-        } else Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(formatClock(dragging?.toDouble() ?: position), color = AppColors.Text, style = MaterialTheme.typography.labelMedium)
-            Slider(
-                value = (dragging ?: position.toFloat()).coerceIn(0f, duration.toFloat().coerceAtLeast(0.01f)),
-                onValueChange = { dragging = it; onInteract() },
-                onValueChangeFinished = {
-                    dragging?.let { container.player.seek(it.toDouble()) }
-                    dragging = null
-                },
-                valueRange = 0f..duration.toFloat().coerceAtLeast(0.01f),
-                enabled = duration > 0,
-                colors = SliderDefaults.colors(thumbColor = AppColors.Accent, activeTrackColor = AppColors.Accent),
-                modifier = Modifier.weight(1f).padding(horizontal = 12.dp).testTag("seek_slider"),
-            )
-            Text(formatClock(duration), color = AppColors.Text, style = MaterialTheme.typography.labelMedium)
-        }
+        TvSeekBar(state, position, onInteract) { container.player.seek(it) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             PlayerVolumeControl(onInteract, Modifier.padding(end = 8.dp))
             if (inRoom) ReadyChip(ready, { container.sync.toggleReady(); onInteract() }, Modifier.testTag("player_ready"))

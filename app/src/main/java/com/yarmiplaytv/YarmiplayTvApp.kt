@@ -6,6 +6,7 @@ import android.os.Build
 import androidx.datastore.preferences.preferencesDataStore
 import com.yarmiplaytv.data.SettingsStore
 import com.yarmiplaytv.device.AndroidDeviceKeyStore
+import com.yarmiplaytv.local.AndroidFrameGrabber
 import com.yarmiplaytv.local.SafLocalLibrary
 import com.yarmiplaytv.player.MpvOptions
 import com.yarmiplaytv.player.MpvPlayer
@@ -38,6 +39,7 @@ class YarmiplayTvApp : Application() {
             deviceKeys = AndroidDeviceKeyStore(),
             cacheDir = cacheDir,
             screenshotStore = AndroidScreenshotStore(this),
+            frameGrabber = AndroidFrameGrabber(this),
         )
         if (BuildConfig.UPDATE_CHECK) {
             container.updates.platform = "android"

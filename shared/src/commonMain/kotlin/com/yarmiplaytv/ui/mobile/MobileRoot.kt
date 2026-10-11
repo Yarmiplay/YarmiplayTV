@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -39,10 +40,13 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+
 private data class Tab(val screen: Screen, val label: String, val icon: ImageVector)
 
 private val tabs = listOf(
     Tab(Screen.Home, "Home", Icons.Filled.Home),
+    // Opens the player over the current screen from anywhere, whether something is playing or not.
+    Tab(Screen.Player, "Player", Icons.Filled.PlayCircle),
     Tab(Screen.Search(), "Search", Icons.Filled.Search),
     Tab(Screen.SyncplayConnect, "Room", Icons.Filled.Groups),
     Tab(Screen.Settings, "Settings", Icons.Filled.Settings),
@@ -79,7 +83,9 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind) {
     PlatformBackHandler(enabled = nav.canGoBack && nav.current != Screen.Player) { nav.back() }
 
     val screen = nav.current
-    val selectedTab = stack.lastOrNull { s -> tabs.any { it.screen::class == s::class } }?.let { s -> tabs.first { it.screen::class == s::class } }
+    // The player covers the tabs while it's showing, so a screen opened from it (e.g. search) keeps its own tab.
+    val sections = tabs.filter { it.screen != Screen.Player }
+    val selectedTab = stack.lastOrNull { s -> sections.any { it.screen::class == s::class } }?.let { s -> sections.first { it.screen::class == s::class } }
         ?: tabs.first()
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
@@ -88,7 +94,7 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind) {
                 // Unlike the other screens, the player isn't inside a Scaffold that sets this.
                 CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
             } else {
-                MobileScaffold(snackbar, selectedTab, useRail = kind.isLarge, onTab = { nav.switchTab(it.screen) }) {
+                MobileScaffold(snackbar, selectedTab, useRail = kind.isLarge, onTab = { if (it.screen == Screen.Player) nav.push(Screen.Player) else nav.switchTab(it.screen) }) {
                     saveable.SaveableStateProvider(screen.key) {
                         when (screen) {
                             Screen.Home -> MobileHomeScreen(container, nav, kind)

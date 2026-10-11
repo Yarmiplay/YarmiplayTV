@@ -1,17 +1,22 @@
 package com.yarmiplaytv.ui.mobile
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.CreateNewFolder
@@ -36,22 +41,28 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.local.LocalBrowse
+import com.yarmiplaytv.local.LocalFile
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -139,7 +150,7 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
                         }.padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Filled.Movie, contentDescription = null, tint = AppColors.TextDim)
+                        VideoThumbnail(container, file, Modifier.width(96.dp))
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(file.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -156,16 +167,23 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
 
     picked?.let { uri ->
         ModalBottomSheet(onDismissRequest = { picked = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = AppColors.Surface, modifier = Modifier.exposeTestTags()) {
-            val name = files.firstOrNull { it.uri == uri }?.name ?: uriFileName(uri) ?: ""
-            LocalFileActions(container, uri, name, room.room) { picked = null }
+            val file = files.firstOrNull { it.uri == uri }
+            LocalFileActions(container, uri, file, file?.name ?: uriFileName(uri) ?: "", room.room) { picked = null }
         }
     }
 }
 
 @Composable
-private fun LocalFileActions(container: AppContainer, uri: String, name: String, roomName: String, onDone: () -> Unit) {
+private fun LocalFileActions(container: AppContainer, uri: String, file: LocalFile?, name: String, roomName: String, onDone: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Files opened from outside the media folders aren't in the index, so they have no preview.
+            if (file != null) {
+                VideoThumbnail(container, file, Modifier.width(160.dp))
+                Spacer(Modifier.width(14.dp))
+            }
+            Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        }
         Button({ container.playlist.playLocal(uri, inRoom = true); onDone() }, Modifier.fillMaxWidth().testTag("local_play_room")) {
             Icon(Icons.Filled.Groups, contentDescription = null); Text("  Play for everyone in '$roomName'")
         }
@@ -176,6 +194,22 @@ private fun LocalFileActions(container: AppContainer, uri: String, name: String,
             Icon(Icons.Filled.PlayArrow, contentDescription = null); Text("  Play only on this device")
         }
         Text("Others need the same file (same name) in their Syncplay media folders, Jellyfin or Plex.", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/** The video's preview frame in a 16:9 tile, over a film icon that shows until it's ready or when there can't be one. */
+@Composable
+private fun VideoThumbnail(container: AppContainer, file: LocalFile, modifier: Modifier = Modifier) {
+    val thumbnails = container.thumbnails
+    val image by produceState<File?>(null, thumbnails, file) { value = thumbnails?.thumbnail(file) }
+    Box(
+        modifier.aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(AppColors.SurfaceHigh),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Filled.Movie, contentDescription = null, tint = AppColors.TextDim, modifier = Modifier.size(24.dp))
+        image?.let {
+            AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().testTag("local_thumbnail"))
+        }
     }
 }
 

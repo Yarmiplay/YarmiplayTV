@@ -36,8 +36,10 @@ import com.yarmiplaytv.defaultSyncplayName
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.device.FileDeviceKeyStore
 import com.yarmiplaytv.local.FileLocalLibrary
+import com.yarmiplaytv.local.FrameGrabber
 import com.yarmiplaytv.player.desktop.DesktopMpvOptions
 import com.yarmiplaytv.player.desktop.DesktopMpvPlayer
+import com.yarmiplaytv.player.desktop.MpvFrameGrabber
 import com.yarmiplaytv.player.desktop.MpvUnavailableException
 import com.yarmiplaytv.player.desktop.VideoSurface
 import com.yarmiplaytv.screenshot.FolderScreenshotStore
@@ -46,9 +48,9 @@ import com.yarmiplaytv.ui.mobile.DesktopDialogs
 import com.yarmiplaytv.ui.mobile.DesktopRoomPanel
 import com.yarmiplaytv.ui.mobile.DesktopPlayerInput
 import com.yarmiplaytv.ui.mobile.DesktopVideo
-import com.yarmiplaytv.ui.mobile.DesktopVolume
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
+import com.yarmiplaytv.ui.mobile.PlayerVolume
 import com.yarmiplaytv.ui.mobile.appLogoPainter
 import com.yarmiplaytv.update.UpdateChecker
 import com.yarmiplaytv.update.Updates
@@ -99,7 +101,7 @@ internal fun runApp(args: List<String>) {
         player.changeVolume(delta)
         player.showText("Volume ${player.volume.value.toInt()}%", 1000)
     }
-    DesktopPlayerInput.volume = object : DesktopVolume {
+    DesktopPlayerInput.volume = object : PlayerVolume {
         override val volume = player.volume
         override val muted = player.muted
         override val max = DesktopMpvPlayer.MAX_VOLUME
@@ -152,6 +154,7 @@ private fun createContainer(configDir: File, store: SettingsStore): AppContainer
         deviceKeys = FileDeviceKeyStore(File(configDir, "device-keys")),
         cacheDir = if (DesktopPaths.portableDir() != null) File(configDir, "cache") else DesktopPaths.cacheDir(),
         screenshotStore = FolderScreenshotStore(File(System.getProperty("java.io.tmpdir"), "yarmiplaytv-screenshots"), pictures::value),
+        frameGrabber = FrameGrabber { uri, width, target -> MpvFrameGrabber.grab(FileLocalLibrary.pathOf(uri).toString(), width, target) },
     ).also { it.deviceKind = DeviceKind.DESKTOP }
 }
 

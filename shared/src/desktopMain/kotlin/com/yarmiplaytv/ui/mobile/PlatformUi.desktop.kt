@@ -32,7 +32,6 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.relay.SaveTarget
-import kotlinx.coroutines.flow.StateFlow
 import org.xml.sax.InputSource
 import java.nio.file.Files
 import java.nio.file.Path
@@ -82,17 +81,7 @@ object DesktopPlayerInput {
     /** Changes the volume by the given percentage points. */
     var changeVolume: (Double) -> Unit = {}
     /** The player's volume for the player bar's volume control; without it the control isn't shown. */
-    var volume: DesktopVolume? = null
-}
-
-interface DesktopVolume {
-    /** In percent, 0 to [max]. */
-    val volume: StateFlow<Double>
-    val muted: StateFlow<Boolean>
-    val max: Double
-    /** Also unmutes. */
-    fun setVolume(percent: Double)
-    fun setMuted(muted: Boolean)
+    var volume: PlayerVolume? = null
 }
 
 private val hiddenCursor: PointerIcon by lazy {
@@ -103,7 +92,7 @@ actual val controlsHideMillis = 2000L
 
 actual val hideControlsButton = true
 
-actual val tvStyleSeekBar = true
+actual val playerTrackTouchHeight = 24.dp
 
 /** How far the pointer has to move to bring hidden controls back, so a nudged mouse doesn't undo a hide. */
 private val SHOW_CONTROLS_DISTANCE = 12.dp

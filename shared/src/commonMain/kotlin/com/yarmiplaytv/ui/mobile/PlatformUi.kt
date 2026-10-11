@@ -3,6 +3,7 @@ package com.yarmiplaytv.ui.mobile
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.unit.Dp
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.relay.SaveTarget
@@ -34,10 +35,10 @@ expect val controlsHideMillis: Long
 /** Desktop: the player's top bar has a Hide button (and H hides), since a click on the video pauses instead. */
 expect val hideControlsButton: Boolean
 
-/** Desktop: Android TV's thin seek bar with the clocks under it, instead of the phone's slider between them. */
-expect val tvStyleSeekBar: Boolean
+/** How tall the player's thin tracks (seek bar, volume) are to the pointer: taller for fingers than for the mouse. */
+expect val playerTrackTouchHeight: Dp
 
-/** Desktop: mute button and volume slider in the player's bar. Nothing on Android, where the device's buttons do it. */
+/** Mute button and volume slider in the player's bar: mpv's volume on desktop, the device's media volume on Android. */
 @Composable
 expect fun PlayerVolumeControl(onInteract: () -> Unit, modifier: Modifier = Modifier)
 
