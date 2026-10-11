@@ -82,6 +82,11 @@ object DesktopPlayerInput {
     var changeVolume: (Double) -> Unit = {}
     /** The player's volume for the player bar's volume control; without it the control isn't shown. */
     var volume: PlayerVolume? = null
+    /** The window is the mini player: small, always on top, only the video. */
+    var miniPlayer: Boolean by mutableStateOf(false)
+    var toggleMiniPlayer: () -> Unit = {}
+    /** Moves the window by the given pixels, for dragging the mini player by its video. */
+    var moveWindowBy: (dx: Int, dy: Int) -> Unit = { _, _ -> }
 }
 
 private val hiddenCursor: PointerIcon by lazy {
@@ -162,7 +167,18 @@ actual fun VideoSurface(player: Player, modifier: Modifier) = DesktopVideo.surfa
 
 /** The desktop window decides about full screen itself (double-click, F). */
 @Composable
-actual fun FullscreenLandscape() = Unit
+actual fun FullscreenLandscape(pictureInPicture: Boolean) = Unit
+
+actual val autoPictureInPictureSetting = false
+
+/** The mini player: only opened by hand (the button or P), and left the same way, by double-click or Esc. */
+@Composable
+actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: Boolean): PictureInPicture {
+    val active = DesktopPlayerInput.miniPlayer
+    SideEffect { PlayerPictureInPicture.active = active }
+    DisposableEffect(Unit) { onDispose { PlayerPictureInPicture.active = false } }
+    return PictureInPicture(supported = true, active = active) { DesktopPlayerInput.toggleMiniPlayer() }
+}
 
 @Composable
 actual fun rememberVideoPicker(onPicked: (String) -> Unit): () -> Unit {

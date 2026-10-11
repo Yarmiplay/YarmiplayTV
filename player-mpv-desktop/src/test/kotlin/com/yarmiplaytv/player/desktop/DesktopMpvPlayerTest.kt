@@ -63,6 +63,10 @@ class DesktopMpvPlayerTest {
         assertNotNull("no frame rendered", rendered)
         assertEquals("640x360", player.renderer.frames.lastSize)
         assertTrue(player.tracks.value.any { it.type == TrackType.VIDEO })
+        // The shown aspect (for the mini player and Android's PiP window) follows the video's square pixels.
+        withTimeout(5_000) { while (player.state.value.displayAspect <= 0.0 || player.state.value.videoHeight == 0) delay(20) }
+        val state = player.state.value
+        assertEquals(state.videoWidth.toDouble() / state.videoHeight, state.displayAspect, 0.01)
     }
 
     @Test

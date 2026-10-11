@@ -112,10 +112,13 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind) {
                     }
                 }
             }
-            nav.actionItem?.let { item ->
-                MobileItemActionsSheet(container, item, onDismiss = { nav.actionItem = null })
+            // A dialog would fill the small picture-in-picture window.
+            if (!PlayerPictureInPicture.active) {
+                nav.actionItem?.let { item ->
+                    MobileItemActionsSheet(container, item, onDismiss = { nav.actionItem = null })
+                }
+                MobileDeviceAccessDialog(container)
             }
-            MobileDeviceAccessDialog(container)
         }
     }
 }

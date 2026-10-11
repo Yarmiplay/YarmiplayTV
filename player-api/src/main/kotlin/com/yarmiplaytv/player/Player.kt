@@ -57,6 +57,8 @@ data class PlaybackState(
     val hwdec: String? = null,
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
+    /** Width over height as the video is shown (pixel aspect and rotation applied); 0 until known. */
+    val displayAspect: Double = 0.0,
 )
 
 enum class TrackType(val mpvName: String, val property: String) {

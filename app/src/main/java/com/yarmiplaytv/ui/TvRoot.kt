@@ -28,6 +28,7 @@ import com.yarmiplaytv.ui.connect.PlexLoginScreen
 import com.yarmiplaytv.ui.connect.ServersScreen
 import com.yarmiplaytv.ui.connect.SyncplayConnectScreen
 import com.yarmiplaytv.ui.home.HomeScreen
+import com.yarmiplaytv.ui.mobile.PlayerPictureInPicture
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.player.PlayerScreen
@@ -76,10 +77,13 @@ fun TvRoot(container: AppContainer) {
             if (screen != Screen.Player) {
                 ToastHost(container.sync.toasts, Modifier.align(Alignment.BottomEnd).padding(32.dp))
             }
-            nav.actionItem?.let { item ->
-                ItemActionsDialog(container, item, onDismiss = { nav.actionItem = null })
+            // A dialog would fill the small picture-in-picture window.
+            if (!PlayerPictureInPicture.active) {
+                nav.actionItem?.let { item ->
+                    ItemActionsDialog(container, item, onDismiss = { nav.actionItem = null })
+                }
+                DeviceAccessDialog(container)
             }
-            DeviceAccessDialog(container)
         }
     }
 }

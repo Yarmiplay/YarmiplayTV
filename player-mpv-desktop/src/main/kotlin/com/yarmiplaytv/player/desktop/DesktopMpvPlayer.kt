@@ -107,6 +107,7 @@ class DesktopMpvPlayer(
             "hwdec-current" to LibMpv.FORMAT_STRING,
             "width" to LibMpv.FORMAT_INT64,
             "height" to LibMpv.FORMAT_INT64,
+            "video-params/aspect" to LibMpv.FORMAT_DOUBLE,
         ).forEach { (name, format) -> core.observe(name, format) }
         core.startEvents(::onEvent)
         compensator.start(scope)
@@ -272,6 +273,7 @@ class DesktopMpvPlayer(
                 _state.update { it.copy(position = v) }
             }
             "duration" -> (value as? Double)?.let { v -> _state.update { it.copy(duration = v) } }
+            "video-params/aspect" -> _state.update { it.copy(displayAspect = (value as? Double) ?: 0.0) }
             "speed" -> (value as? Double)?.let { v ->
                 cachedSpeed = v
                 _state.update { it.copy(speed = v) }

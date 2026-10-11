@@ -1,5 +1,6 @@
 package com.yarmiplaytv.ui.settings
 
+import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -162,6 +164,16 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
 
         SectionTitle("Playback")
         ToggleRow("Hardware decoding", pb.hardwareDecoding, { savePlayback(pb.copy(hardwareDecoding = !pb.hardwareDecoding)) }, subtitle = "MediaCodec with software fallback. Takes effect after restarting the app")
+        // Many TVs have no picture-in-picture.
+        val context = LocalContext.current
+        if (remember(context) { context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) }) {
+            ToggleRow(
+                "Picture-in-picture when leaving the app",
+                pb.pictureInPicture,
+                { savePlayback(pb.copy(pictureInPicture = !pb.pictureInPicture)) },
+                subtitle = "A playing video keeps going, in sync, in a small window over other apps",
+            )
+        }
         ValueRow("Seek step", "${pb.seekStepSeconds} s", {
             val steps = listOf(5, 10, 15, 30)
             savePlayback(pb.copy(seekStepSeconds = steps[(steps.indexOf(pb.seekStepSeconds) + 1) % steps.size]))

@@ -1,6 +1,9 @@
 package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.unit.Dp
@@ -65,9 +68,40 @@ expect fun toggleRoomSidePanel(tab: RoomPanelTab): Boolean
 @Composable
 expect fun RoomSidePanel(container: AppContainer)
 
-/** Landscape, edge-to-edge with hidden system bars and the screen kept on while the player is on screen. */
+/**
+ * Landscape, edge-to-edge with hidden system bars and the screen kept on while the player is on screen. In
+ * picture-in-picture ([pictureInPicture]) only the screen stays on: the window is the system's then.
+ */
 @Composable
-expect fun FullscreenLandscape()
+expect fun FullscreenLandscape(pictureInPicture: Boolean = false)
+
+/**
+ * Picture-in-picture for the player: Android's PiP window, the desktop's mini player. [active] while the video is
+ * in it; [toggle] goes in (and on desktop, back out: Android's window is expanded with the system's controls).
+ */
+class PictureInPicture(val supported: Boolean, val active: Boolean, val toggle: () -> Unit)
+
+/** Whether the player is in picture-in-picture right now, so the app's dialogs stay out of the small window. */
+object PlayerPictureInPicture {
+    var active: Boolean by mutableStateOf(false)
+}
+
+/**
+ * While the player is on screen. [autoEnter]: Android goes into PiP by itself when the app is left while a video
+ * plays. Android also puts a play/pause button in the PiP window, and closing the window pauses a video watched
+ * alone (in a room that would pause everyone, so there it plays on as when switching apps).
+ */
+@Composable
+expect fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: Boolean): PictureInPicture
+
+/** Android: settings have "Picture-in-picture when leaving the app". The desktop's mini player only opens by hand. */
+expect val autoPictureInPictureSetting: Boolean
+
+/** The player's picture-in-picture button: "Picture-in-picture" on Android, "Mini player (P)" on desktop. */
+expect val pictureInPictureLabel: String
+
+/** Desktop's mini player: dragging the video moves the window, double-clicking it calls [onExit]. Nothing on Android. */
+expect fun Modifier.miniPlayerGestures(onExit: () -> Unit): Modifier
 
 /** System "open video" picker; [onPicked] gets a content:// (Android) or file:// (desktop) URI. */
 @Composable

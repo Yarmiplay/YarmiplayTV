@@ -122,7 +122,10 @@ In a room, the player's playlist, room and chat buttons open a side panel:
 Player keys: Space or K pauses, ←/→ or J/L seek, ↑/↓ change the volume (also the scroll wheel and the volume
 slider in the player's bar), M mutes, F or F11 toggles full screen, F5 saves a screenshot to
 Pictures\YarmiplayTV or the folder picked under Settings > Save screenshots to (the camera button in the player's
-bar does too, also on Android, where they go to Pictures/YarmiplayTV unless another folder is picked), H hides or shows the controls (they also hide after 2 s unless the mouse is on them), Esc leaves full screen
+bar does too, also on Android, where they go to Pictures/YarmiplayTV unless another folder is picked), H hides or shows the controls (they also hide after 2 s unless the mouse is on them), P (or the
+picture-in-picture button in the player's top bar) shrinks the window to a mini player: a small, always-on-top
+video in the corner of the screen (borderless on Windows) that you drag to move, with play/pause and the way back
+on hover; double-click or Esc returns to the full window. Esc leaves full screen
 or goes back. The command line follows the official client:
 `YarmiplayTV [--host host[:port]] [--name name] [--room room] [--password pw] [file]`.
 
@@ -218,9 +221,14 @@ On a phone or tablet:
   left or right side to seek, or the middle to pause. Tap or drag the thin seek bar, as on the TV, to seek;
   the slider next to the mute button sets the device's media volume and follows the volume buttons. The
   playlist, room, chat and track panels open as bottom sheets.
-- **Background playback.** Keep the app in front while watching. Android cuts network access for apps in
-  the background, so the room connection drops after a few seconds. It reconnects and resyncs
-  automatically when you come back.
+- **Picture-in-picture.** Leaving the app while a video plays (Home, or switching apps) shrinks it into a
+  small window over other apps, which keeps playing in sync with the room; the button in the player's top bar
+  does it by hand. The window has a play/pause button (in a room it pauses everyone, like the one in the
+  player). Closing the window pauses a video you watch alone. Turn the automatic part off under Settings >
+  Picture-in-picture when leaving the app. The same works on Android TV devices that support it.
+- **Background playback.** Without picture-in-picture, keep the app in front while watching. Android cuts
+  network access for apps in the background, so the room connection drops after a few seconds. It
+  reconnects and resyncs automatically when you come back.
 
 Inside the emulator, the host PC is `10.0.2.2`, so a Jellyfin server on this PC is `http://10.0.2.2:8096`
 and a Syncplay server on this PC is `10.0.2.2:8999`. The player overlay auto-hides after 3 seconds (by

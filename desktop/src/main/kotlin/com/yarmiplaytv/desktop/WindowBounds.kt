@@ -8,11 +8,12 @@ import androidx.compose.ui.window.WindowState
 import java.io.File
 import java.util.Properties
 
-/** The main window's size, position and maximized state, kept next to the settings between runs. */
+/** The main window's size, position and maximized state, and where the mini player was, kept next to the settings between runs. */
 internal data class WindowBounds(
     val size: DpSize = DpSize(1280.dp, 800.dp),
     val position: WindowPosition = WindowPosition.PlatformDefault,
     val maximized: Boolean = false,
+    val mini: MiniBounds? = null,
 ) {
     val placement: WindowPlacement get() = if (maximized) WindowPlacement.Maximized else WindowPlacement.Floating
 
@@ -21,7 +22,9 @@ internal data class WindowBounds(
             val p = Properties()
             runCatching { file.inputStream().use(p::load) }.onFailure { return WindowBounds() }
             fun float(key: String) = p.getProperty(key)?.toFloatOrNull()
-            val width = float("width") ?: return WindowBounds()
+            fun int(key: String) = p.getProperty(key)?.toIntOrNull()
+            val mini = int("miniWidth")?.let { width -> int("miniX")?.let { x -> int("miniY")?.let { y -> MiniBounds(x, y, width) } } }
+            val width = float("width") ?: return WindowBounds(mini = mini)
             val height = float("height") ?: return WindowBounds()
             val x = float("x")
             val y = float("y")
@@ -29,10 +32,11 @@ internal data class WindowBounds(
                 size = DpSize(width.coerceAtLeast(MIN_WIDTH).dp, height.coerceAtLeast(MIN_HEIGHT).dp),
                 position = if (x != null && y != null) WindowPosition(x.dp, y.dp) else WindowPosition.PlatformDefault,
                 maximized = p.getProperty("maximized") == "true",
+                mini = mini,
             )
         }
 
-        fun save(file: File, state: WindowState) {
+        fun save(file: File, state: WindowState, mini: MiniBounds? = null) {
             val p = Properties()
             if (state.placement != WindowPlacement.Floating) {
                 // Keep the floating size from before it was maximized.
@@ -47,6 +51,11 @@ internal data class WindowBounds(
                 }
             }
             p["maximized"] = (state.placement == WindowPlacement.Maximized).toString()
+            mini?.let {
+                p["miniX"] = it.x.toString()
+                p["miniY"] = it.y.toString()
+                p["miniWidth"] = it.width.toString()
+            }
             runCatching {
                 file.parentFile?.mkdirs()
                 file.outputStream().use { p.store(it, "YarmiplayTV window") }

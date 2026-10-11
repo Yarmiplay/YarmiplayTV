@@ -18,13 +18,15 @@ internal interface ShortcutTarget {
     fun focusChat()
     /** Saves the current frame to the Pictures folder. */
     fun screenshot()
+    /** Goes into the mini player, or back to the full window. */
+    fun togglePictureInPicture()
 }
 
 /**
  * Window-level shortcuts. The window only passes keys nothing focused has used, and the side panel keeps its
  * keys to itself, so typing in a text field never triggers them. Esc leaves full screen, else goes back; the
- * rest only work on the player screen, and all but H (which hides or shows the controls) and F5 (screenshot)
- * show the controls.
+ * rest only work on the player screen, and all but H (which hides or shows the controls), F5 (screenshot) and
+ * P (mini player) show the controls. In the mini player, Esc's back goes to the full window (the player's back handler).
  */
 internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget): Boolean {
     if (key == Key.Escape) {
@@ -42,6 +44,10 @@ internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget)
     }
     if (key == Key.F5) {
         target.screenshot()
+        return true
+    }
+    if (key == Key.P) {
+        target.togglePictureInPicture()
         return true
     }
     when (key) {

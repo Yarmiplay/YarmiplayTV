@@ -14,6 +14,7 @@ import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
@@ -29,6 +30,7 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.player.PlaybackState
+import com.yarmiplaytv.ui.mobile.DesktopBack
 import com.yarmiplaytv.ui.mobile.DesktopPlayerInput
 import com.yarmiplaytv.ui.mobile.PlayerVolume
 import com.yarmiplaytv.ui.mobile.MobilePlayerScreen
@@ -96,6 +98,8 @@ class PlayerControlsUiTest {
     @After
     fun tearDown() {
         DesktopPlayerInput.volume = null
+        DesktopPlayerInput.miniPlayer = false
+        DesktopPlayerInput.toggleMiniPlayer = {}
         app.scope.cancel()
         storeScope.cancel()
         Dispatchers.resetMain()
@@ -167,6 +171,49 @@ class PlayerControlsUiTest {
 
         onNodeWithTag("seek_slider").performSemanticsAction(SemanticsActions.SetProgress) { it(60f) }
         assertEquals(60.0, player.seeks.last(), 0.0)
+    }
+
+    @Test
+    fun `the mini player shows only the video, with play-pause and the way back on hover`() = runComposeUiTest {
+        var toggles = 0
+        DesktopPlayerInput.toggleMiniPlayer = { toggles++; DesktopPlayerInput.miniPlayer = !DesktopPlayerInput.miniPlayer }
+        player.state.value = player.state.value.copy(paused = true)
+        showPlayer()
+        onNodeWithTag("pip").assertContentDescriptionEquals("Mini player (P)")
+        // The click action, not a mouse click: the pointer left over the video would show the hover buttons straight away.
+        onNodeWithTag("pip").performSemanticsAction(SemanticsActions.OnClick)
+        settle()
+        assertEquals(1, toggles)
+        onNodeWithTag("player_pip").assertExists()
+        assertFalse("no controls in the mini player", controlsShowing())
+        onNodeWithTag("seek_slider").assertDoesNotExist()
+        onNodeWithTag("pip_restore").assertDoesNotExist()
+
+        onNodeWithTag("player_pip").performMouseInput { moveTo(center) }
+        settle()
+        screenshot("mini_player")
+        onNodeWithTag("pip_play_pause").performMouseInput { click() }
+        settle()
+        assertEquals(listOf(false), player.pauses)
+
+        onNodeWithTag("pip_restore").performMouseInput { click() }
+        settle()
+        assertEquals(2, toggles)
+        onNodeWithTag("player_pip").assertDoesNotExist()
+        assertTrue("the controls are back", controlsShowing())
+
+        // Double-clicking the video and Esc (the back handler) go back to the full window too, not off the player.
+        DesktopPlayerInput.miniPlayer = true
+        settle()
+        onNodeWithTag("player_pip").performMouseInput { doubleClick(Offset(width * 0.15f, height * 0.8f)) }
+        settle()
+        assertEquals(3, toggles)
+        DesktopPlayerInput.miniPlayer = true
+        settle()
+        runOnUiThread { assertTrue(DesktopBack.dispatch()) }
+        settle()
+        assertEquals(4, toggles)
+        onNodeWithTag("player").assertExists()
     }
 
     private fun ComposeUiTest.screenshot(name: String) {

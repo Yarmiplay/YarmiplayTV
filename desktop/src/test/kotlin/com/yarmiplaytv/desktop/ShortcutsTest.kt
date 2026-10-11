@@ -20,6 +20,7 @@ class ShortcutsTest {
         override fun toggleMute() { log += "mute" }
         override fun focusChat() { log += "chat" }
         override fun screenshot() { log += "screenshot" }
+        override fun togglePictureInPicture() { log += "mini player" }
     }
 
     private val input = PlayerInput(
@@ -65,6 +66,14 @@ class ShortcutsTest {
         assertFalse(handleShortcut(Key.F5, true, Target()))
         assertFalse(handleShortcut(Key.F5, false, Target(playerShowing = false)))
         assertEquals(listOf("screenshot"), log)
+    }
+
+    @Test
+    fun pTogglesTheMiniPlayerWithoutShowingTheControls() {
+        assertTrue(handleShortcut(Key.P, false, Target()))
+        assertFalse(handleShortcut(Key.P, true, Target()))
+        assertFalse(handleShortcut(Key.P, false, Target(playerShowing = false)))
+        assertEquals(listOf("mini player"), log)
     }
 
     @Test

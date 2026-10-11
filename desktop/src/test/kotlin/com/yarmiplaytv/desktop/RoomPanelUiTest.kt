@@ -236,7 +236,8 @@ internal class IdlePlayer : Player {
     override val events = MutableSharedFlow<PlayerEvent>(extraBufferCapacity = 16)
     override fun load(url: String, mediaTitle: String?, startPaused: Boolean, startPosition: Double) = Unit
     override fun stop() = Unit
-    override fun setPaused(paused: Boolean) = Unit
+    val pauses = mutableListOf<Boolean>()
+    override fun setPaused(paused: Boolean) { pauses += paused }
     val seeks = mutableListOf<Double>()
     override fun seek(position: Double) { seeks += position }
     override fun seekRelative(offset: Double) = Unit

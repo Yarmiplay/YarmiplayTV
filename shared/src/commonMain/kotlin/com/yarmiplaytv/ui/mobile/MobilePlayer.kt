@@ -32,8 +32,10 @@ import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.Button
@@ -97,8 +99,17 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     var seekFlash by remember { mutableStateOf<String?>(null) }
     val barsHover = remember { MutableInteractionSource() }
     val onBars by barsHover.collectIsHoveredAsState()
+    val pip = rememberPictureInPicture(player, settings.playback.pictureInPicture, inRoom)
 
-    FullscreenLandscape()
+    FullscreenLandscape(pictureInPicture = pip.active)
+    LaunchedEffect(pip.active) {
+        if (pip.active) {
+            sheet = null
+            controls = false
+        } else {
+            controls = true
+        }
+    }
 
     LaunchedEffect(controls, interaction, state.paused, sheet, onBars) {
         if (controls && !state.paused && sheet == null && !onBars) {
@@ -110,6 +121,8 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
 
     PlatformBackHandler {
         when {
+            // Only the desktop's mini player gets Back (Esc): it goes back to the full window first.
+            pip.active -> pip.toggle()
             sheet != null -> sheet = null
             else -> nav.back()
         }
@@ -140,6 +153,10 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
         }
         if (tab == null || !toggleRoomSidePanel(tab)) sheet = kind
     }
+    if (pip.active) {
+        PictureInPictureView(container, pip, state.paused, onTogglePause = ::togglePause)
+        return
+    }
     Row(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxHeight().background(Color.Black).testTag("player").playerScreenInput(input)) {
             VideoSurface(player, Modifier.fillMaxSize())
@@ -164,6 +181,11 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         IconButton(nav::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
                         Text(nowPlaying?.title ?: "Nothing playing", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         RoomStatusChip(room, playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls })
+                        if (pip.supported && state.fileLoaded) {
+                            IconButton(pip.toggle, Modifier.testTag("pip")) {
+                                Icon(Icons.Filled.PictureInPictureAlt, contentDescription = pictureInPictureLabel, tint = Color.White)
+                            }
+                        }
                         if (hideControlsButton) {
                             TextButton({ controls = false }, Modifier.testTag("hide_controls")) {
                                 Icon(Icons.Filled.KeyboardArrowDown, null, tint = AppColors.TextDim)
@@ -251,6 +273,31 @@ private fun BottomControls(
             SheetButton(Icons.Filled.Forum, "Chat") { onSheet(PlayerSheet.CHAT) }
             SheetButton(Icons.Filled.Audiotrack, "Audio") { onSheet(PlayerSheet.AUDIO) }
             SheetButton(Icons.Filled.Subtitles, "Subtitles") { onSheet(PlayerSheet.SUBTITLES) }
+        }
+    }
+}
+
+/**
+ * The player in picture-in-picture: only the video. On desktop (the mini player) hovering shows play/pause and the
+ * way back to the full window; dragging the video moves the window and double-clicking it goes back too. Android's
+ * PiP window has its own controls.
+ */
+@Composable
+private fun PictureInPictureView(container: AppContainer, pip: PictureInPicture, paused: Boolean, onTogglePause: () -> Unit) {
+    val hover = remember { MutableInteractionSource() }
+    val hovered by hover.collectIsHoveredAsState()
+    Box(Modifier.fillMaxSize().background(Color.Black).testTag("player_pip").hoverable(hover).miniPlayerGestures(onExit = pip.toggle)) {
+        VideoSurface(container.player, Modifier.fillMaxSize())
+        if (hovered) {
+            RoundButton(
+                if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                if (paused) "Play" else "Pause",
+                modifier = Modifier.align(Alignment.Center).testTag("pip_play_pause"),
+                onClick = onTogglePause,
+            )
+            IconButton(pip.toggle, Modifier.align(Alignment.TopEnd).testTag("pip_restore")) {
+                Icon(Icons.Filled.OpenInFull, contentDescription = "Back to the full window", tint = Color.White)
+            }
         }
     }
 }

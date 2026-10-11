@@ -87,9 +87,15 @@ actual fun VideoSurface(player: Player, modifier: Modifier) {
 }
 
 @Composable
-actual fun FullscreenLandscape() {
+actual fun FullscreenLandscape(pictureInPicture: Boolean) {
     val context = LocalContext.current
     val view = LocalView.current
+    DisposableEffect(view) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
+    }
+    // In picture-in-picture the window belongs to the system; the lock and hidden bars come back with full screen.
+    if (pictureInPicture) return
     DisposableEffect(Unit) {
         val activity = context.findActivity()
         val previous = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -97,16 +103,14 @@ actual fun FullscreenLandscape() {
         val insets = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
         insets?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         insets?.hide(WindowInsetsCompat.Type.systemBars())
-        view.keepScreenOn = true
         onDispose {
-            view.keepScreenOn = false
             insets?.show(WindowInsetsCompat.Type.systemBars())
             activity?.requestedOrientation = previous
         }
     }
 }
 
-private fun Context.findActivity(): Activity? {
+internal fun Context.findActivity(): Activity? {
     var c: Context? = this
     while (c is ContextWrapper) {
         if (c is Activity) return c

@@ -138,6 +138,14 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
             ToggleSetting("Hardware decoding", "MediaCodec with software fallback. Takes effect after restarting the app", pb.hardwareDecoding) {
                 savePlayback(pb.copy(hardwareDecoding = it))
             }
+            if (autoPictureInPictureSetting) {
+                ToggleSetting(
+                    "Picture-in-picture when leaving the app",
+                    "A playing video keeps going, in sync, in a small window over other apps",
+                    pb.pictureInPicture,
+                    Modifier.testTag("toggle_pip"),
+                ) { savePlayback(pb.copy(pictureInPicture = it)) }
+            }
             ValueSetting("Seek step", "${pb.seekStepSeconds} s · double-tap the left or right side of the video") {
                 val steps = listOf(5, 10, 15, 30)
                 savePlayback(pb.copy(seekStepSeconds = steps[(steps.indexOf(pb.seekStepSeconds) + 1) % steps.size]))

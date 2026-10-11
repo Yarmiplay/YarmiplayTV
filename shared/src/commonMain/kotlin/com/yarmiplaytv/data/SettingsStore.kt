@@ -50,6 +50,8 @@ data class PlaybackPrefs(
     val seekStepSeconds: Int = 10,
     /** TV: how long the player's controls stay up while a video plays; 0 keeps them up. */
     val controlsHideSeconds: Int = 3,
+    /** Android: leaving the app while a video plays shrinks it to a picture-in-picture window. */
+    val pictureInPicture: Boolean = true,
 )
 
 data class AppSettings(
@@ -139,6 +141,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         fun roomPlaylist(key: String) = stringPreferencesKey(ROOM_PLAYLIST_PREFIX + key)
 
         val hwdec = booleanPreferencesKey("pb_hwdec")
+        val pip = booleanPreferencesKey("pb_pip")
         val alang = stringPreferencesKey("pb_alang")
         val slang = stringPreferencesKey("pb_slang")
         val seekStep = intPreferencesKey("pb_seek_step")
@@ -214,6 +217,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             autoReadyOnLoad = p[Keys.autoReady] ?: true,
             playback = PlaybackPrefs(
                 hardwareDecoding = p[Keys.hwdec] ?: true,
+                pictureInPicture = p[Keys.pip] ?: true,
                 audioLanguages = p[Keys.alang] ?: defaults.playback.audioLanguages,
                 subtitleLanguages = p[Keys.slang] ?: defaults.playback.subtitleLanguages,
                 seekStepSeconds = p[Keys.seekStep] ?: 10,
@@ -349,6 +353,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
     suspend fun savePlayback(prefs: PlaybackPrefs) {
         dataStore.edit {
             it[Keys.hwdec] = prefs.hardwareDecoding
+            it[Keys.pip] = prefs.pictureInPicture
             it[Keys.alang] = prefs.audioLanguages
             it[Keys.slang] = prefs.subtitleLanguages
             it[Keys.seekStep] = prefs.seekStepSeconds

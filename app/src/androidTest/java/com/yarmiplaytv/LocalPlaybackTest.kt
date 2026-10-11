@@ -1,6 +1,7 @@
 package com.yarmiplaytv
 
 import android.content.ContentUris
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.net.Uri
@@ -21,14 +22,18 @@ import androidx.compose.ui.geometry.Offset
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.yarmiplaytv.local.AndroidFrameGrabber
 import com.yarmiplaytv.local.LocalFile
+import com.yarmiplaytv.support.Screenshots
 import com.yarmiplaytv.sync.PlaylistStatus
+import com.yarmiplaytv.ui.mobile.PlayerPictureInPicture
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -219,6 +224,96 @@ class LocalPlaybackTest {
             target.delete()
         }
     }
+
+    @Test
+    fun pipButtonShrinksThePlayerToAWindowThatKeepsTheVideo() {
+        assumeTrue("no picture-in-picture on this device", pipSupported)
+        playClipAndWaitLoaded()
+        compose.runOnUiThread { container.player.setPaused(true) }
+        val activity = compose.activity
+        try {
+            compose.waitUntilExactlyOneExists(hasTestTag("pip"), 5_000)
+            compose.onNodeWithTag("pip").performClick()
+            waitFor(10_000) { activity.isInPictureInPictureMode }
+            // The player screen switched to its picture-in-picture layout. (Compose's test APIs can't see the
+            // window while it's in PiP, so this is the screen's own flag rather than its nodes.)
+            waitFor(5_000) { PlayerPictureInPicture.active }
+            assertTrue("still loaded", container.player.state.value.fileLoaded)
+        } finally {
+            leavePictureInPicture(activity)
+        }
+        // Full size again without the activity being recreated: the same player screen, its controls back.
+        assertSame(activity, compose.activity)
+        compose.waitUntilExactlyOneExists(hasTestTag("player_controls"), 10_000)
+        assertFalse(PlayerPictureInPicture.active)
+    }
+
+    @Test
+    fun leavingTheAppWhilePlayingGoesIntoPictureInPictureUnlessTurnedOff() {
+        assumeTrue("no picture-in-picture on this device", pipSupported)
+        val saved = container.settings.value.playback
+        val activity = compose.activity
+        try {
+            playClipAndWaitLoaded()
+            playFromStart()
+            Screenshots.shell("input keyevent KEYCODE_HOME")
+            // Until the app has been told (the player switched layouts), the window is still animating into PiP;
+            // asking for full screen then cancels it without the app ever hearing it left.
+            waitFor(10_000) { activity.isInPictureInPictureMode && PlayerPictureInPicture.active }
+            leavePictureInPicture(activity)
+            compose.waitUntilExactlyOneExists(hasTestTag("player"), 10_000)
+
+            runBlocking { container.settingsStore.savePlayback(saved.copy(pictureInPicture = false)) }
+            compose.waitUntil(5_000) { !container.settings.value.playback.pictureInPicture }
+            playFromStart()
+            Screenshots.shell("input keyevent KEYCODE_HOME")
+            Thread.sleep(2_000)
+            assertFalse("the setting is off", activity.isInPictureInPictureMode)
+        } finally {
+            runBlocking { container.settingsStore.savePlayback(saved) }
+            bringBack()
+        }
+    }
+
+    /**
+     * Polls [condition]. Unlike the compose rule's waits it works while the window is in picture-in-picture, where the
+     * rule finds no compose hierarchy; it moves the rule's clock along itself, so the UI keeps recomposing.
+     */
+    private fun waitFor(timeoutMs: Long, condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (!condition()) {
+            check(System.currentTimeMillis() < deadline) { "Timed out" }
+            compose.mainClock.advanceTimeByFrame()
+            Thread.sleep(50)
+        }
+    }
+
+    /** Back to full screen; asks again if the first request came while the window was still animating into PiP. */
+    private fun leavePictureInPicture(activity: android.app.Activity) {
+        repeat(5) {
+            bringBack()
+            if (runCatching { waitFor(3_000) { !activity.isInPictureInPictureMode } }.isSuccess) return
+        }
+        waitFor(1) { !activity.isInPictureInPictureMode }
+    }
+
+    /** The 3 s clip, playing from its start, so it's still playing when the test leaves the app. */
+    private fun playFromStart() {
+        compose.runOnUiThread {
+            container.player.seek(0.0)
+            container.player.setPaused(false)
+        }
+        compose.waitUntil(5_000) { !container.player.state.value.paused && container.player.currentPosition() < 1.0 }
+        // The PiP parameters follow the playing state on the next frame.
+        compose.waitForIdle()
+    }
+
+    /** Like tapping the app's icon: brings the (singleTask) activity back to full screen without a new intent to act on. */
+    private fun bringBack() {
+        Screenshots.shell("am start -n ${TestSupport.app.packageName}/com.yarmiplaytv.MainActivity")
+    }
+
+    private val pipSupported get() = TestSupport.app.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
 
     private fun assertColourfulImage(file: File) {
         val image = BitmapFactory.decodeFile(file.path)

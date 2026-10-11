@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Replay10
@@ -69,7 +70,10 @@ import com.yarmiplaytv.relay.RelayHint
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.sync.PlaylistStatus
+import com.yarmiplaytv.ui.mobile.PictureInPicture
 import com.yarmiplaytv.ui.mobile.RelayDownloadBar
+import com.yarmiplaytv.ui.mobile.pictureInPictureLabel
+import com.yarmiplaytv.ui.mobile.rememberPictureInPicture
 import com.yarmiplaytv.ui.mobile.rememberRelaySave
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
@@ -113,6 +117,8 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
     val step = settings.playback.seekStepSeconds.toDouble()
     val hideAfter = settings.playback.controlsHideSeconds
     val inRoom = room.status == ConnectionStatus.CONNECTED
+    val pip = rememberPictureInPicture(player, settings.playback.pictureInPicture, inRoom)
+    LaunchedEffect(pip.active) { if (pip.active) overlay = Overlay.Hidden }
 
     val view = LocalView.current
     DisposableEffect(Unit) {
@@ -213,6 +219,8 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
             onRelease = { it.holder.removeCallback(player.surfaceCallback) },
             modifier = Modifier.fillMaxSize(),
         )
+        // Picture-in-picture shows only the video; the system draws the window's controls.
+        if (pip.active) return@Box
 
         // Status in the middle of the screen (resolving/loading/nothing playing).
         CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom, overlay == Overlay.Hidden)
@@ -239,6 +247,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 title = nowPlaying?.title ?: "Nothing playing",
                 controlsFocus = controlsFocus,
                 panelButtons = panelButtons,
+                pip = pip,
                 showHideHint = overlay == Overlay.Controls,
                 onTogglePause = ::togglePause,
                 onSeek = ::seekBy,
@@ -409,6 +418,7 @@ private fun ControlsBar(
     title: String,
     controlsFocus: FocusRequester,
     panelButtons: Map<PanelKind, FocusRequester>,
+    pip: PictureInPicture,
     showHideHint: Boolean,
     onTogglePause: () -> Unit,
     onSeek: (Double) -> Unit,
@@ -474,6 +484,9 @@ private fun ControlsBar(
             }
             container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
                 IconAction(Icons.Filled.PhotoCamera, "Screenshot", screenshots::take, Modifier.testTag("screenshot"))
+            }
+            if (pip.supported && state.fileLoaded) {
+                IconAction(Icons.Filled.PictureInPictureAlt, pictureInPictureLabel, pip.toggle, Modifier.testTag("pip"))
             }
             listOf(
                 Triple(PanelKind.PLAYLIST, Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist"),

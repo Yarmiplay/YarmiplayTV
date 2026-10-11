@@ -180,10 +180,19 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
     val bounds = remember { WindowBounds.load(boundsFile) }
     val state = rememberWindowState(placement = bounds.placement, position = bounds.position, size = bounds.size)
     val fullscreen = remember { Fullscreen(state) }
+    val mini = remember { MiniPlayer(state, fullscreen, bounds.mini) }
+    fun setMini(on: Boolean) {
+        DesktopPlayerInput.miniPlayer = mini.set(on, container.player.state.value.displayAspect)
+    }
+    fun applyFullscreen(on: Boolean) {
+        if (on) setMini(false)
+        fullscreen.set(on)
+    }
     val shortcuts = remember {
         object : ShortcutTarget {
             override val isFullscreen get() = fullscreen.isFullscreen
-            override fun setFullscreen(on: Boolean) = fullscreen.set(on)
+            override fun setFullscreen(on: Boolean) = applyFullscreen(on)
+            override fun togglePictureInPicture() = setMini(!mini.isActive)
             override fun back() = DesktopBack.dispatch()
             override val player get() = DesktopPlayerInput.input?.value
             override fun changeVolume(delta: Double) = DesktopPlayerInput.changeVolume(delta)
@@ -208,8 +217,9 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
         }
     }
     val close = {
+        setMini(false)
         fullscreen.set(false)
-        WindowBounds.save(boundsFile, state)
+        WindowBounds.save(boundsFile, state, mini.remembered)
         exitApplication()
     }
     container.updates.exitApp = close
@@ -226,11 +236,19 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
         LaunchedEffect(Unit) {
             window.minimumSize = Dimension(WindowBounds.MIN_WIDTH.toInt(), WindowBounds.MIN_HEIGHT.toInt())
             fullscreen.attach(window)
-            DesktopPlayerInput.toggleFullscreen = fullscreen::toggle
+            mini.attach(window)
+            DesktopPlayerInput.toggleFullscreen = { applyFullscreen(!fullscreen.isFullscreen) }
+            DesktopPlayerInput.toggleMiniPlayer = { setMini(!mini.isActive) }
+            DesktopPlayerInput.moveWindowBy = { dx, dy -> window.setLocation(window.x + dx, window.y + dy) }
         }
         LaunchedEffect(Unit) {
-            // Leaving the player leaves full screen.
-            snapshotFlow { DesktopPlayerInput.input != null }.collect { showing -> if (!showing) fullscreen.set(false) }
+            // Leaving the player leaves full screen and the mini player.
+            snapshotFlow { DesktopPlayerInput.input != null }.collect { showing ->
+                if (!showing) {
+                    setMini(false)
+                    fullscreen.set(false)
+                }
+            }
         }
         Box(
             Modifier.fillMaxSize()

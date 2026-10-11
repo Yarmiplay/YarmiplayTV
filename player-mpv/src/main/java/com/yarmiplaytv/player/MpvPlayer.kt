@@ -121,6 +121,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             observeProperty("hwdec-current", MpvFormat.MPV_FORMAT_STRING)
             observeProperty("width", MpvFormat.MPV_FORMAT_INT64)
             observeProperty("height", MpvFormat.MPV_FORMAT_INT64)
+            observeProperty("video-params/aspect", MpvFormat.MPV_FORMAT_DOUBLE)
         }
     }
 
@@ -314,6 +315,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
                 _state.update { it.copy(position = value) }
             }
             "duration" -> _state.update { it.copy(duration = value) }
+            "video-params/aspect" -> _state.update { it.copy(displayAspect = value) }
             "speed" -> {
                 cachedSpeed = value
                 _state.update { it.copy(speed = value) }
