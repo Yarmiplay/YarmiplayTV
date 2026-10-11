@@ -10,8 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -50,14 +52,16 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.Filenames
-import com.yarmiplaytv.ui.nav.Navigator
-import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.syncplay.ManagedRooms
+import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.ui.components.ActionButton
 import com.yarmiplaytv.ui.components.Dot
 import com.yarmiplaytv.ui.components.IconAction
 import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.components.TvTile
 import com.yarmiplaytv.ui.mobile.RelayDownloadBar
+import com.yarmiplaytv.ui.nav.Navigator
+import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.BLOCKED_NOTE
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
 import com.yarmiplaytv.ui.shared.relayNote
@@ -88,7 +92,7 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     val inRoom = room.status == ConnectionStatus.CONNECTED
     Column(Modifier.fillMaxSize().padding(24.dp)) {
-        PanelHeader("Shared playlist", if (inRoom) "Room ${room.room} · everyone sees these changes" else null)
+        PanelHeader("Shared playlist", if (inRoom) "Room ${ManagedRooms.label(room.room)} · everyone sees these changes" else null)
         if (!inRoom) {
             Text("Join a Syncplay room to use the shared playlist.", color = AppColors.TextDim)
             ActionButton("Browse", { nav.popTo(Screen.Home) }, Modifier.padding(top = 16.dp).focusRequester(focus), icon = Icons.Filled.Home)
@@ -151,7 +155,7 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
             ActionButton("Join a room", { nav.push(Screen.SyncplayConnect) }, Modifier.focusRequester(focus))
             return@Column
         }
-        PanelHeader(room.room, "${container.sync.client?.config?.host ?: ""} · Syncplay ${room.serverVersion ?: ""}")
+        PanelHeader(ManagedRooms.label(room.room), "${container.sync.client?.config?.host ?: ""} · Syncplay ${room.serverVersion ?: ""}")
         serverStatusLine(room.yarmiplay)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall) }
         val relayStatus = container.relay?.let { relay ->
             val current by relay.status.collectAsStateWithLifecycle()
@@ -189,7 +193,7 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★" else "") + (if (user.name in streamingFrom) " · streaming" else ""),
+                            user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★ operator" else "") + (if (user.name in streamingFrom) " · streaming" else ""),
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
@@ -202,6 +206,15 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
                         if (difference != null) Text(difference, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
                         relayNote(room, user)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall) }
                         if (user.name in blocked) Text(BLOCKED_NOTE, color = AppColors.Error, style = MaterialTheme.typography.labelSmall)
+                    }
+                    if (!isMe && room.isOperator) {
+                        val markReady = user.isReady != true
+                        IconAction(
+                            if (markReady) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                            if (markReady) "Mark ${user.name} ready" else "Mark ${user.name} not ready",
+                            { container.sync.setOthersReady(user.name, markReady) },
+                            tint = if (markReady) AppColors.Ready else AppColors.NotReady,
+                        )
                     }
                     if (!isMe) {
                         val isBlocked = user.name in blocked
@@ -216,11 +229,43 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
             }
         }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TvTextField(newRoom, { newRoom = it.take(60) }, "Switch room", Modifier.weight(1f), placeholder = room.room, onSubmit = {
+            TvTextField(newRoom, { newRoom = it.take(60) }, "Switch room", Modifier.weight(1f), placeholder = ManagedRooms.label(room.room), onSubmit = {
                 if (newRoom.isNotBlank()) container.sync.changeRoom(newRoom)
             })
             IconAction(Icons.Filled.MeetingRoom, "Change room", { if (newRoom.isNotBlank()) container.sync.changeRoom(newRoom) })
         }
+        if (room.managedRooms) ManagedRoomActions(container, room)
+    }
+}
+
+/**
+ * Syncplay's managed rooms, on servers that have them: the room's full name and (for its operator) the password to
+ * share, identifying as operator, and creating a new managed room.
+ */
+@Composable
+private fun ManagedRoomActions(container: AppContainer, room: RoomState) {
+    var newManaged by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    if (room.inManagedRoom) {
+        Text(
+            if (room.isOperator) "Managed room · you're an operator" else "Managed room · only operators control playback and the playlist",
+            color = AppColors.TextDim,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        val saved = if (room.isOperator) container.sync.savedOperatorPassword(room.room) else null
+        Text(room.room + (saved?.let { " · operator password $it" } ?: ""), color = AppColors.Accent, style = MaterialTheme.typography.labelMedium)
+        if (!room.isOperator) {
+            fun identify() { if (password.isNotBlank()) { container.sync.identifyAsOperator(password); password = "" } }
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TvTextField(password, { password = it.uppercase().take(20) }, "Operator password", Modifier.weight(1f), placeholder = "AB-123-456", onSubmit = ::identify)
+                IconAction(Icons.Filled.Key, "Identify as operator", ::identify)
+            }
+        }
+    }
+    fun create() { if (container.sync.createManagedRoom(newManaged)) newManaged = "" }
+    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        TvTextField(newManaged, { newManaged = it.take(ManagedRooms.MAX_BASE_NAME_LENGTH) }, "Create managed room", Modifier.weight(1f), onSubmit = ::create)
+        IconAction(Icons.Filled.Lock, "Create managed room", ::create)
     }
 }
 

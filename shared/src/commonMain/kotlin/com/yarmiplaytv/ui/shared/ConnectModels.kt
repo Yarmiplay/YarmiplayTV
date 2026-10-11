@@ -22,6 +22,7 @@ import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.syncplay.ManagedRooms
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -36,6 +37,10 @@ class SyncplayConnectModel(private val container: AppContainer) {
     var username by mutableStateOf(saved.syncplay.username.ifEmpty { defaultSyncplayName(container.deviceKind) })
     var room by mutableStateOf(saved.syncplay.room)
     var password by mutableStateOf(saved.syncplay.password)
+    /** For a managed room (`+name:HASH`): saved like the others and sent once the room is joined. */
+    var operatorPassword by mutableStateOf("")
+    /** The room is a managed room's full name, so an operator password applies. */
+    val showsOperatorPassword: Boolean get() = ManagedRooms.isManaged(room.trim())
     var tls by mutableStateOf(saved.syncplay.useTls)
     var autoConnect by mutableStateOf(saved.autoConnect)
     var error by mutableStateOf<String?>(null)
@@ -89,7 +94,7 @@ class SyncplayConnectModel(private val container: AppContainer) {
 
     private fun join(profile: SyncplayProfile) {
         container.scope.launch { container.settingsStore.saveSyncplay(profile, autoConnect) }
-        container.sync.connect(profile.toConfig())
+        container.sync.connect(profile.toConfig(), operatorPassword = operatorPassword.takeIf { showsOperatorPassword })
     }
 
     fun disconnect() {

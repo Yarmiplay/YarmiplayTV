@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextDirection
@@ -104,6 +105,17 @@ private fun ConnectForm(container: AppContainer, model: com.yarmiplaytv.ui.share
         }
         OutlinedTextField(model.username, { model.username = it.take(16) }, label = { Text("Your name") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("field_name"))
         OutlinedTextField(model.room, { model.room = it.take(60) }, label = { Text("Room") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("field_room"))
+        if (model.showsOperatorPassword) {
+            OutlinedTextField(
+                model.operatorPassword, { model.operatorPassword = it.uppercase().take(20) },
+                label = { Text("Operator password (optional)") },
+                placeholder = { Text("AB-123-456") },
+                supportingText = { Text("Makes you an operator of this managed room once you've joined") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
+                modifier = Modifier.fillMaxWidth().testTag("field_operator_password"),
+            )
+        }
         val settings by container.settings.collectAsStateWithLifecycle()
         if (!approvedOnly(settings.knownServers, model.host, model.port)) {
             OutlinedTextField(model.password, { model.password = it }, label = { Text("Server password (optional)") }, singleLine = true,

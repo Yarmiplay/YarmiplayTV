@@ -108,6 +108,19 @@ class SyncplayClient(
     /** The live extension session, for the relay's and the shared Jellyfin's HTTP requests; null on stock servers. */
     val session: StateFlow<YarmiplaySession?> = _session.asStateFlow()
 
+    /** Managed rooms: the password of a [createManagedRoom] waiting for the server's `newControlledRoom`. */
+    private var pendingCreatePassword: String? = null
+    /** The managed room we've already sent a saved password for since joining it, so it's sent once. */
+    private var identifiedRoom: String? = null
+    /** The password we last sent for each room, to report with the server's answer. */
+    private val sentPasswords = HashMap<String, String>()
+
+    /**
+     * A saved operator password for a managed room (the full `+name:HASH`), sent once after joining or rejoining
+     * it. Set before [start].
+     */
+    var savedOperatorPassword: (room: String) -> String? = { null }
+
     /** What this device offers to the room's relay, and what the server currently holds (null: nothing). */
     private var offer: List<RelayOffer> = emptyList()
     private var offerSent: List<RelayOffer>? = null
@@ -192,23 +205,105 @@ class SyncplayClient(
 
     fun changeRoom(room: String) {
         scope.launch {
-            config = config.copy(room = room)
-            _state.update {
-                it.copy(
-                    room = room, playlist = emptyList(), playlistReceived = false, playlistIndex = null,
-                    yarmiplay = it.yarmiplay.copy(relayFiles = emptyList()),
-                )
-            }
-            // The server forgets offers on a room change; the new room's playlist decides the next one.
-            offer = emptyList()
-            offerSent = null
-            if (!logged) return@launch
-            hadFirstPlaylistIndex = false
-            awaitingRoomPlaylist = true
-            users.clear()
-            sendSet { putJsonObject("room") { put("name", room) } }
-            sendList()
+            applyRoomChange(room)
+            identifyWithSavedPassword()
         }
+    }
+
+    // --- Managed rooms ---------------------------------------------------------------
+
+    /**
+     * Makes a managed room named [baseName] (1 to [ManagedRooms.MAX_BASE_NAME_LENGTH] characters) with a new
+     * operator password, and joins it as its operator; [SyncplayEvent.ManagedRoomCreated] reports both. Returns
+     * false, sending nothing, when the server has no managed rooms or the name doesn't fit.
+     */
+    fun createManagedRoom(baseName: String): Boolean {
+        val name = baseName.trim()
+        if (!state.value.managedRooms || !ManagedRooms.isValidBaseName(name)) return false
+        val password = ManagedRooms.generatePassword()
+        scope.launch {
+            if (!logged || !state.value.managedRooms) return@launch
+            pendingCreatePassword = password
+            sendControllerAuth(name, password)
+        }
+        return true
+    }
+
+    /** Asks to become an operator of the managed room we're in; answered with [SyncplayEvent.ControllerAuth]. */
+    fun identifyAsOperator(password: String) {
+        scope.launch {
+            val room = state.value.room
+            if (!logged || !state.value.inManagedRoom) return@launch
+            identifiedRoom = room
+            sendControllerAuth(room, ManagedRooms.normalizePassword(password))
+        }
+    }
+
+    /** As an operator, marks [username] ready or not ready; the server ignores it from anyone else. */
+    fun setOthersReady(username: String, isReady: Boolean) {
+        scope.launch {
+            if (!logged || !state.value.managedRooms || username == state.value.username) return@launch
+            sendSet { putJsonObject("ready") { put("username", username); put("isReady", isReady); put("manuallyInitiated", true) } }
+        }
+    }
+
+    private fun sendControllerAuth(room: String, password: String) {
+        sentPasswords[room] = password
+        sendSet { putJsonObject("controllerAuth") { put("room", room); put("password", password) } }
+    }
+
+    /** After joining (or rejoining) a managed room, sends its saved password once, like the official client. */
+    private fun identifyWithSavedPassword() {
+        val s = state.value
+        if (!logged || !s.inManagedRoom || identifiedRoom == s.room || s.isOperator) return
+        val password = savedOperatorPassword(s.room)?.takeIf { it.isNotBlank() } ?: return
+        identifiedRoom = s.room
+        sendControllerAuth(s.room, ManagedRooms.normalizePassword(password))
+    }
+
+    private fun handleControllerAuth(auth: JsonObject) {
+        val user = auth.str("user") ?: return
+        val room = auth.str("room") ?: return
+        val success = auth["success"]?.jsonPrimitive?.booleanOrNull ?: return
+        val mine = user == state.value.username
+        if (success && room == state.value.room) {
+            val known = users[user] ?: if (mine) RoomUser(user, room, currentFile, myReady) else null
+            known?.let { users[user] = it.copy(isController = true) }
+            publishUsers()
+        }
+        emit(SyncplayEvent.ControllerAuth(user, room, success, password = if (mine) sentPasswords[room] else null))
+    }
+
+    private fun handleNewControlledRoom(created: JsonObject) {
+        val room = created.str("roomName") ?: return
+        val password = created.str("password") ?: return
+        // Only the answer to our own request; the server sends it to the creator alone.
+        if (password != pendingCreatePassword) return
+        pendingCreatePassword = null
+        applyRoomChange(room)
+        identifiedRoom = room
+        sendControllerAuth(room, password)
+        emit(SyncplayEvent.ManagedRoomCreated(room, password))
+    }
+
+    private fun applyRoomChange(room: String) {
+        config = config.copy(room = room)
+        _state.update {
+            it.copy(
+                room = room, playlist = emptyList(), playlistReceived = false, playlistIndex = null,
+                yarmiplay = it.yarmiplay.copy(relayFiles = emptyList()),
+            )
+        }
+        // The server forgets offers on a room change; the new room's playlist decides the next one.
+        offer = emptyList()
+        offerSent = null
+        identifiedRoom = null
+        if (!logged) return
+        hadFirstPlaylistIndex = false
+        awaitingRoomPlaylist = true
+        users.clear()
+        sendSet { putJsonObject("room") { put("name", room) } }
+        sendList()
     }
 
     // --- YarmiplayServerTV extensions ----------------------------------------------
@@ -386,6 +481,8 @@ class SyncplayClient(
         clientIgnoringOnTheFly = 0
         serverIgnoringOnTheFly = 0
         hadFirstPlaylistIndex = false
+        identifiedRoom = null
+        pendingCreatePassword = null
         sessionToken = null
         refreshSession()
         engine.onDisconnected()
@@ -472,6 +569,8 @@ class SyncplayClient(
         sendReady(ready, manuallyInitiated = false)
         sendFile()
         sendList()
+        // Operator status ends with the connection; a saved password makes us one again.
+        identifyWithSavedPassword()
     }
 
     private fun handleSet(set: JsonObject) {
@@ -482,6 +581,8 @@ class SyncplayClient(
                 "ready" -> (value as? JsonObject)?.let { handleSetReady(it) }
                 "playlistIndex" -> (value as? JsonObject)?.let { handlePlaylistIndex(it) }
                 "playlistChange" -> (value as? JsonObject)?.let { handlePlaylistChange(it) }
+                "controllerAuth" -> (value as? JsonObject)?.let { handleControllerAuth(it) }
+                "newControlledRoom" -> (value as? JsonObject)?.let { handleNewControlledRoom(it) }
                 else -> Unit
             }
         }
@@ -498,7 +599,12 @@ class SyncplayClient(
                 event?.containsKey("joined") == true -> {
                     if (room == myRoom) {
                         val features = (event["features"] ?: settings["features"]) as? JsonObject
-                        users[name] = RoomUser(name, room, file, yarmiplay = features?.get("yarmiplay") is JsonObject)
+                        val existing = users[name]
+                        users[name] = RoomUser(
+                            name, room, file ?: existing?.file, existing?.isReady,
+                            isController = existing?.isController ?: false,
+                            yarmiplay = features?.get("yarmiplay") is JsonObject,
+                        )
                         if (name != state.value.username) notify("$name joined the room")
                     }
                 }
@@ -526,6 +632,8 @@ class SyncplayClient(
     private fun handleSetReady(ready: JsonObject) {
         val name = ready.str("username") ?: return
         val isReady = ready["isReady"]?.jsonPrimitive?.booleanOrNull
+        // Set by an operator of a managed room; clients that declare setOthersReadiness get no chat line about it.
+        ready.str("setBy")?.takeIf { it != name && isReady != null }?.let { emit(SyncplayEvent.ReadySetBy(name, it, isReady!!)) }
         if (name == state.value.username) {
             myReady = isReady
             _state.update { it.copy(isReady = isReady) }
@@ -979,6 +1087,7 @@ class SyncplayClient(
     private inner class EngineHost : SyncEngine.Host {
         override val username: String get() = state.value.username
         override val readinessSupported: Boolean get() = state.value.serverFeatures["readiness"] != false
+        override val controlsPlayback: Boolean get() = !state.value.followsOperators
         override val isReady: Boolean? get() = myReady
         override val currentFileDuration: Double get() = currentFile?.duration ?: 0.0
         override fun areAllOtherUsersReady(): Boolean =

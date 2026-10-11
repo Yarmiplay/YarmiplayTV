@@ -24,6 +24,7 @@ import com.yarmiplaytv.screenshot.ScreenshotStore
 import com.yarmiplaytv.screenshot.Screenshots
 import com.yarmiplaytv.sync.HostJellyfinSharing
 import com.yarmiplaytv.sync.MediaLocator
+import com.yarmiplaytv.sync.OperatorPasswords
 import com.yarmiplaytv.sync.PlaybackReporter
 import com.yarmiplaytv.sync.PlaylistAutosave
 import com.yarmiplaytv.sync.PlaylistController
@@ -108,6 +109,17 @@ class AppContainer(
         showChat = initial.showRoomChat
         appVersion = this@AppContainer.appVersion
         deviceAuth = deviceKeys?.let { keys -> DeviceKeys(keys) { deviceDisplayName } }
+        operatorPasswords = object : OperatorPasswords {
+            // Read when joining a room, so kept in memory; changes are written through.
+            private val saved = runBlocking { settingsStore.roomPasswords() }.toMutableMap()
+
+            override fun get(key: String): String? = synchronized(saved) { saved[key] }
+
+            override fun save(key: String, password: String?) {
+                synchronized(saved) { if (password == null) saved.remove(key) else saved[key] = password }
+                scope.launch { settingsStore.saveRoomPassword(key, password) }
+            }
+        }
     }
     /** The YarmiplayServerTV file relay; idle on other servers. */
     val relay: RelayManager? = cacheDir?.let { RelayManager(scope, sync, player, local, it, settings.map { s -> s.shareFiles }) }

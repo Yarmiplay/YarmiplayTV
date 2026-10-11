@@ -69,6 +69,7 @@ data class RoomUser(
     val file: FileInfo? = null,
     /** null when the user's client doesn't support readiness. */
     val isReady: Boolean? = null,
+    /** A room operator: in a managed room, only operators control playback and the playlist. */
     val isController: Boolean = false,
     /** The user's client has a YarmiplayServerTV extension session, so it can seed and fetch relayed files. */
     val yarmiplay: Boolean = false,
@@ -100,6 +101,18 @@ data class RoomState(
 ) {
     val others: List<RoomUser> get() = users.filter { it.name != username }
     val currentPlaylistFile: String? get() = playlistIndex?.let { playlist.getOrNull(it) }
+
+    /** The server supports managed rooms (its Hello says so; a missing key means no). */
+    val managedRooms: Boolean get() = serverFeatures["managedRooms"] == true
+
+    /** We're in a managed room ([ManagedRooms.isManaged]). */
+    val inManagedRoom: Boolean get() = managedRooms && ManagedRooms.isManaged(room)
+
+    /** We're an operator of the managed room we're in. */
+    val isOperator: Boolean get() = inManagedRoom && users.any { it.name == username && it.isController }
+
+    /** In a managed room without being its operator: playback and the playlist follow the operators. */
+    val followsOperators: Boolean get() = inManagedRoom && !isOperator
 }
 
 object Constants {

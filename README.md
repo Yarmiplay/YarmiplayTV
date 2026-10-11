@@ -19,6 +19,12 @@ desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin]
   several servers have the same file, each is told, also when the file plays from your media folders.
   The app never jumps to a server's saved position, since the room decides where playback is. Turn reporting
   off with Settings > Report progress to your media servers.
+- Syncplay's managed rooms, on servers that support them (the official server and YarmiplayServerTV 1.7.1+):
+  in the room panel, **Create managed room** makes one and gives you its operator password to share, and
+  **Operator password** makes you an operator of the managed room you're in (or type it on the join form when
+  joining a `+name:HASH` room). Only operators play, pause, seek or change the playlist; everyone else follows,
+  and operators can mark others ready or not ready. Passwords are remembered per server and room and sent again
+  whenever you rejoin. Managed rooms show their chosen name with a lock instead of the hash.
 - Like Syncplay, it warns when someone's copy of a file differs from yours: the playlist marks the entry when
   their file size differs (with both sizes when they're shared), and the room list says whether the name, size
   or duration differ. It's only a warning; playback and sync carry on as usual.

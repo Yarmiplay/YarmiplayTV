@@ -66,7 +66,12 @@ class FakeSyncplayServer(val port: Int = PORT) : AutoCloseable {
     private val peers = LinkedHashMap<String, Peer>()
     @Volatile private var closed = false
 
-    val room = ROOM
+    /** The one room; a client's room change (e.g. into a managed room it created) moves it. */
+    @Volatile var room = ROOM
+        private set
+    /** The managed room's operator password, while [room] is one. */
+    private var managedPassword: String? = null
+    private val operators = mutableSetOf<String>()
     @Volatile var paused = true
         private set
     @Volatile var position = 0.0
@@ -96,9 +101,21 @@ class FakeSyncplayServer(val port: Int = PORT) : AutoCloseable {
 
     // --- Scripted room ----------------------------------------------------------------
 
+    /** Makes the room a managed room named [baseName] with operator [password]; returns its full name. */
     @Synchronized
-    fun addPeer(name: String, file: PeerFile? = null, ready: Boolean? = false) {
+    fun makeManaged(baseName: String, password: String): String {
+        room = "+$baseName:$MANAGED_HASH"
+        managedPassword = password
+        operators.clear()
+        return room
+    }
+
+    val operatorNames: Set<String> @Synchronized get() = operators.toSet()
+
+    @Synchronized
+    fun addPeer(name: String, file: PeerFile? = null, ready: Boolean? = false, operator: Boolean = false) {
         peers[name] = Peer(name, file, ready)
+        if (operator) operators += name
         broadcast(set { putJsonObject("user") { putJsonObject(name) { roomObj(); put("event", buildJsonObject { put("joined", true) }) } } })
         if (file != null) broadcast(userFile(name, file))
         broadcast(set { putJsonObject("ready") { put("username", name); ready?.let { put("isReady", it) }; put("manuallyInitiated", true) } })
@@ -131,6 +148,9 @@ class FakeSyncplayServer(val port: Int = PORT) : AutoCloseable {
         connections.forEach { runCatching { it.socket.close() } }
         connections.clear()
         peers.clear()
+        room = ROOM
+        managedPassword = null
+        operators.clear()
         playlist = emptyList()
         playlistIndex = null
         paused = true
@@ -226,7 +246,38 @@ class FakeSyncplayServer(val port: Int = PORT) : AutoCloseable {
                     c.file = file
                     broadcast(userFile(name, file))
                 }
+                "room" -> o["name"]?.jsonPrimitive?.contentOrNull?.let { room = it }
+                "controllerAuth" -> {
+                    val target = o["room"]?.jsonPrimitive?.contentOrNull ?: continue
+                    val password = o["password"]?.jsonPrimitive?.contentOrNull ?: continue
+                    if (!target.startsWith("+")) {
+                        // A new managed room: the real server derives the hash from the name, password and its salt.
+                        managedPassword = password
+                        c.send(set { putJsonObject("newControlledRoom") { put("roomName", "+$target:$MANAGED_HASH"); put("password", password) } })
+                    } else {
+                        val success = target == room && password == managedPassword
+                        if (success) operators += name
+                        broadcast(set { putJsonObject("controllerAuth") { put("user", name); put("room", target); put("success", success) } })
+                    }
+                }
                 "ready" -> {
+                    val other = o["username"]?.jsonPrimitive?.contentOrNull?.takeIf { it != name }
+                    if (other != null) {
+                        // Setting someone else's readiness: operators only, announced with who did it.
+                        if (name !in operators) continue
+                        val isReady = o["isReady"]?.jsonPrimitive?.booleanOrNull
+                        peers[other]?.ready = isReady
+                        connections.firstOrNull { it.username == other }?.ready = isReady
+                        broadcast(set {
+                            putJsonObject("ready") {
+                                put("username", other)
+                                isReady?.let { put("isReady", it) }
+                                put("manuallyInitiated", true)
+                                put("setBy", name)
+                            }
+                        })
+                        continue
+                    }
                     c.ready = o["isReady"]?.jsonPrimitive?.booleanOrNull
                     broadcast(set {
                         putJsonObject("ready") {
@@ -304,17 +355,17 @@ class FakeSyncplayServer(val port: Int = PORT) : AutoCloseable {
             putJsonObject(room) {
                 connections.forEach { c ->
                     val name = c.username ?: return@forEach
-                    putJsonObject(name) { userEntry(c.file, c.ready) }
+                    putJsonObject(name) { userEntry(c.file, c.ready, name in operators) }
                 }
-                peers.values.forEach { p -> putJsonObject(p.name) { userEntry(p.file, p.ready) } }
+                peers.values.forEach { p -> putJsonObject(p.name) { userEntry(p.file, p.ready, p.name in operators) } }
             }
         }
     }
 
-    private fun kotlinx.serialization.json.JsonObjectBuilder.userEntry(file: PeerFile?, ready: Boolean?) {
+    private fun kotlinx.serialization.json.JsonObjectBuilder.userEntry(file: PeerFile?, ready: Boolean?, operator: Boolean) {
         put("position", 0)
         put("file", fileObj(file))
-        put("controller", false)
+        put("controller", operator)
         put("isReady", ready?.let(::JsonPrimitive) ?: JsonNull)
         putJsonObject("features") { put("sharedPlaylists", true); put("chat", true); put("readiness", true) }
     }
@@ -336,5 +387,7 @@ class FakeSyncplayServer(val port: Int = PORT) : AutoCloseable {
     companion object {
         const val PORT = 18999
         const val ROOM = "movie-night"
+        /** The 12 characters every managed room of this fake ends in; real servers derive them from a salt. */
+        const val MANAGED_HASH = "D6A85289CDB5"
     }
 }

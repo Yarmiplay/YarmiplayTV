@@ -70,6 +70,7 @@ import com.yarmiplaytv.relay.RelayHint
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.sync.PlaylistStatus
+import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.ui.mobile.PictureInPicture
 import com.yarmiplaytv.ui.mobile.RelayDownloadBar
 import com.yarmiplaytv.ui.mobile.pictureInPictureLabel
@@ -510,7 +511,7 @@ private fun RoomChip(room: com.yarmiplaytv.syncplay.RoomState, streaming: String
         ConnectionStatus.CONNECTED -> {
             val ready = room.users.count { it.isReady == true }
             val ping = if (room.rttMillis > 0) " · %.0f ms".format(room.rttMillis) else ""
-            text = "${room.room} · ${room.users.size} watching · $ready ready$ping" + (streaming?.let { " · $it" } ?: "")
+            text = "${ManagedRooms.label(room.room)} · ${room.users.size} watching · $ready ready$ping" + (streaming?.let { " · $it" } ?: "")
             color = AppColors.Ready
         }
         ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> { text = "Connecting to Syncplay…"; color = AppColors.NotReady }

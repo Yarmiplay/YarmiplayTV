@@ -52,6 +52,7 @@ import com.yarmiplaytv.media.MediaSource
 import com.yarmiplaytv.media.jellyfin.JellyfinSource
 import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.browse.openItem
@@ -131,7 +132,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
             ) {
                 val (title, detail, color) = when (room.status) {
                     ConnectionStatus.CONNECTED -> Triple(
-                        "Room: ${room.room}",
+                        "Room: ${ManagedRooms.label(room.room)}",
                         "${room.users.size} watching · ${room.users.count { it.isReady == true }} ready",
                         AppColors.Ready,
                     )

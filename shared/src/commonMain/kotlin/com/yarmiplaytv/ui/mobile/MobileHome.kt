@@ -47,6 +47,7 @@ import com.yarmiplaytv.media.MediaSource
 import com.yarmiplaytv.media.jellyfin.JellyfinSource
 import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.ui.browse.openItem
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
@@ -97,7 +98,7 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
             CardGrid(multiColumn = kind != DeviceKind.PHONE, modifier = Modifier.padding(horizontal = 16.dp)) {
                 val (title, detail, color) = when (room.status) {
                     ConnectionStatus.CONNECTED -> Triple(
-                        "Room: ${room.room}",
+                        "Room: ${ManagedRooms.label(room.room)}",
                         "${room.users.size} watching · ${room.users.count { it.isReady == true }} ready",
                         AppColors.Ready,
                     )

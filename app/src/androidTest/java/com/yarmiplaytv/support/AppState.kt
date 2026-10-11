@@ -120,8 +120,8 @@ class AppState {
 
     private fun removeAllServers() = container.servers.value.forEach { container.removeServer(it.key) }
 
-    fun joinRoom(server: FakeSyncplayServer) {
-        container.sync.connect(PROFILE.copy(host = "127.0.0.1", port = server.port).toConfig())
+    fun joinRoom(server: FakeSyncplayServer, room: String = server.room) {
+        container.sync.connect(PROFILE.copy(host = "127.0.0.1", port = server.port, room = room).toConfig())
         waitUntil(10_000) {
             container.sync.room.value.status == ConnectionStatus.CONNECTED && PROFILE.username in server.connectedUsers &&
                 container.sync.feed.value.any { it.text.startsWith("Joined room") }

@@ -49,6 +49,7 @@ class RecordingHost(
     override var isReady: Boolean? = false,
     override var currentFileDuration: Double = 1440.0,
     var othersReady: Boolean = true,
+    override var controlsPlayback: Boolean = true,
 ) : SyncEngine.Host {
     data class SentState(val position: Double?, val paused: Boolean?, val doSeek: Boolean, val stateChange: Boolean)
 

@@ -63,6 +63,55 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `a non-operator's local pause and seek are put back, not sent, and readiness stays`() {
+        host.controlsPlayback = false
+        host.isReady = true
+        serverState(10.0, paused = false)
+        step(1.0)
+        host.sent.clear()
+
+        player.setPaused(true)
+        step(0.2)
+        assertFalse("back to the room's play state", player.isPaused)
+        player.seek(300.0)
+        step(0.2)
+        assertEquals("back to the room's position", 11.4, player.position, 0.5)
+        step(1.0)
+        assertTrue("nothing sent as a change: ${host.sent}", host.sent.none { it.stateChange || it.doSeek })
+        assertTrue("readiness untouched: ${host.readyChanges}", host.readyChanges.isEmpty())
+        assertTrue(host.notifications.none { it.startsWith("You jumped") })
+        assertEquals("one notice for both", 1, host.notifications.count { it == "Only room operators can control playback" })
+
+        // Again after 10 s.
+        step(10.0)
+        player.setPaused(true)
+        step(0.2)
+        assertEquals(2, host.notifications.count { it == "Only room operators can control playback" })
+    }
+
+    @Test
+    fun `a non-operator still follows the operators' pause and seek`() {
+        host.controlsPlayback = false
+        serverState(10.0, paused = false)
+        step(1.0)
+        serverState(600.0, paused = true, doSeek = true, setBy = "op")
+        assertTrue(player.isPaused)
+        assertEquals(600.0, player.position, 0.2)
+        assertTrue(host.notifications.none { it == "Only room operators can control playback" })
+    }
+
+    @Test
+    fun `an operator's local pause and seek are sent as before`() {
+        host.controlsPlayback = true
+        serverState(10.0, paused = false)
+        step(1.0)
+        player.seek(300.0)
+        step(0.2)
+        assertTrue(host.sent.last().doSeek)
+        assertTrue(host.notifications.none { it == "Only room operators can control playback" })
+    }
+
+    @Test
     fun `local seek is reported with doSeek`() {
         serverState(10.0, paused = false)
         step(1.0)

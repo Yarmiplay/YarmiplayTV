@@ -72,6 +72,7 @@ import com.yarmiplaytv.relay.RelayHint
 import com.yarmiplaytv.sync.FeedMessage
 import com.yarmiplaytv.sync.PlaylistStatus
 import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
@@ -334,7 +335,7 @@ private fun RoomStatusChip(room: RoomState, streaming: String? = null) {
             val ready = room.users.count { it.isReady == true }
             val via = streaming?.let { " · ${it.withPing(room.rttMillis)}" }.orEmpty()
             Chip(
-                "${room.room} · ${room.users.size} · $ready ready$via",
+                "${ManagedRooms.label(room.room)} · ${room.users.size} · $ready ready$via",
                 AppColors.Ready,
                 if (streaming != null) Modifier.widthIn(max = 420.dp).testTag("relay_streaming") else Modifier,
             )

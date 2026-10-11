@@ -50,6 +50,7 @@ import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.MediaItemType
 import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.ui.browse.aspectFor
 import com.yarmiplaytv.ui.browse.openItem
 import com.yarmiplaytv.ui.browse.serverNameOf
@@ -195,7 +196,7 @@ fun MobileItemActionsSheet(container: AppContainer, item: MediaItem, onDismiss: 
             item.overview?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis) }
             if (inRoom) {
                 Button({ container.playlist.playInRoom(item); onDismiss() }, Modifier.fillMaxWidth().testTag("action_play_room")) {
-                    Icon(Icons.Filled.Groups, contentDescription = null); Text("  Play for everyone in '${room.room}'")
+                    Icon(Icons.Filled.Groups, contentDescription = null); Text("  Play for everyone in '${ManagedRooms.label(room.room)}'")
                 }
                 FilledTonalButton({ container.playlist.addToRoomPlaylist(item); onDismiss() }, Modifier.fillMaxWidth()) {
                     Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null); Text("  Add to room playlist")

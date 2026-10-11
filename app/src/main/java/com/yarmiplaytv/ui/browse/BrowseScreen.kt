@@ -48,6 +48,7 @@ import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.MediaItemType
 import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.components.ActionButton
@@ -204,7 +205,7 @@ fun ItemActionsDialog(container: AppContainer, item: MediaItem, onDismiss: () ->
                 }
                 Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (inRoom) {
-                        ActionButton("Play for everyone in '${room.room}'", {
+                        ActionButton("Play for everyone in '${ManagedRooms.label(room.room)}'", {
                             container.playlist.playInRoom(item); onDismiss()
                         }, Modifier.fillMaxWidth().focusRequester(firstFocus), icon = Icons.Filled.Groups, primary = true)
                         ActionButton("Add to room playlist", {

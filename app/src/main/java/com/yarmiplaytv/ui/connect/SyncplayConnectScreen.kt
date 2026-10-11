@@ -32,6 +32,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.ui.components.ActionButton
 import com.yarmiplaytv.ui.components.Pill
 import com.yarmiplaytv.ui.components.ToggleRow
@@ -68,7 +69,7 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Syncplay room", style = MaterialTheme.typography.headlineMedium)
             when (room.status) {
-                ConnectionStatus.CONNECTED -> Pill("Connected to ${room.room}" + if (room.tls) " · TLS" else "", AppColors.Ready)
+                ConnectionStatus.CONNECTED -> Pill("Connected to ${ManagedRooms.label(room.room)}" + if (room.tls) " · TLS" else "", AppColors.Ready)
                 ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> Pill("Connecting…", AppColors.NotReady)
                 ConnectionStatus.DISCONNECTED -> Unit
             }
@@ -86,6 +87,9 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             TvTextField(model.username, { model.username = it.take(40) }, "Your name", Modifier.weight(1f))
             TvTextField(model.room, { model.room = it.take(60) }, "Room", Modifier.weight(1f), onSubmit = ::connect)
+        }
+        if (model.showsOperatorPassword) {
+            TvTextField(model.operatorPassword, { model.operatorPassword = it.uppercase().take(20) }, "Operator password (optional)", placeholder = "AB-123-456", onSubmit = ::connect)
         }
         if (!approvedOnly(settings.knownServers, model.host, model.port)) {
             TvTextField(model.password, { model.password = it }, "Server password (optional)", password = true)

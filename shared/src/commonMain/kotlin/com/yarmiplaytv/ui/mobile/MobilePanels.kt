@@ -28,7 +28,10 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -39,6 +42,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -51,9 +55,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -61,6 +68,8 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.Filenames
+import com.yarmiplaytv.syncplay.ManagedRooms
+import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.ui.player.fileDifferenceNote
 import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.player.sizeWarning
@@ -84,7 +93,7 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
     val room by container.sync.room.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        SheetTitle("Shared playlist", if (room.status == ConnectionStatus.CONNECTED) "Everyone in '${room.room}' sees these changes" else null)
+        SheetTitle("Shared playlist", if (room.status == ConnectionStatus.CONNECTED) "Everyone in '${ManagedRooms.label(room.room)}' sees these changes" else null)
         if (room.status != ConnectionStatus.CONNECTED) {
             Text("Join a Syncplay room to use the shared playlist.", color = AppColors.TextDim)
             return@Column
@@ -144,7 +153,7 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
             Text(if (room.status == ConnectionStatus.DISCONNECTED) "Not connected to Syncplay." else "Connecting…", color = AppColors.TextDim)
             return@Column
         }
-        SheetTitle(room.room, "${container.sync.client?.config?.host ?: ""} · Syncplay ${room.serverVersion ?: ""}")
+        SheetTitle(ManagedRooms.label(room.room), "${container.sync.client?.config?.host ?: ""} · Syncplay ${room.serverVersion ?: ""}")
         serverStatusLine(room.yarmiplay)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall) }
         val relayStatus = container.relay?.let { relay ->
             val current by relay.status.collectAsStateWithLifecycle()
@@ -178,7 +187,7 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★" else "") + (if (user.name in streamingFrom) " · streaming" else ""),
+                        user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★ operator" else "") + (if (user.name in streamingFrom) " · streaming" else ""),
                         style = MaterialTheme.typography.titleSmall,
                         modifier = if (user.name in streamingFrom) Modifier.testTag("relay_status") else Modifier,
                     )
@@ -192,6 +201,16 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
                     if (difference != null) Text(difference, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
                     relayNote(room, user)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall) }
                     if (user.name in blocked) Text(BLOCKED_NOTE, color = AppColors.Error, style = MaterialTheme.typography.labelSmall)
+                }
+                if (!isMe && room.isOperator) {
+                    val markReady = user.isReady != true
+                    IconButton({ container.sync.setOthersReady(user.name, markReady) }, Modifier.testTag("mark_ready_${user.name}")) {
+                        Icon(
+                            if (markReady) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                            if (markReady) "Mark ${user.name} ready" else "Mark ${user.name} not ready",
+                            tint = if (markReady) AppColors.Ready else AppColors.NotReady,
+                        )
+                    }
                 }
                 if (!isMe) {
                     val isBlocked = user.name in blocked
@@ -213,15 +232,72 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
             OutlinedTextField(
                 newRoom, { newRoom = it.take(60) },
                 label = { Text("Switch room") },
-                placeholder = { Text(room.room) },
+                placeholder = { Text(ManagedRooms.label(room.room)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { change() }),
                 trailingIcon = { IconButton(::change) { Icon(Icons.Filled.MeetingRoom, "Change room") } },
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (room.managedRooms) ManagedRoomActions(container, room)
         }
     }
+}
+
+/**
+ * Syncplay's managed rooms, on servers that have them: the room's full name and (for its operator) the password to
+ * share, identifying as operator, and creating a new managed room.
+ */
+@Composable
+private fun ManagedRoomActions(container: AppContainer, room: RoomState) {
+    val clipboard = LocalClipboardManager.current
+    var newManaged by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    if (room.inManagedRoom) {
+        val saved = if (room.isOperator) container.sync.savedOperatorPassword(room.room) else null
+        Surface(color = AppColors.SurfaceHigh, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().testTag("managed_room_info")) {
+            Row(Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Lock, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (room.isOperator) "Managed room · you're an operator" else "Managed room · only operators control playback and the playlist",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(room.room, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
+                    saved?.let { Text("Operator password: $it", style = MaterialTheme.typography.labelMedium, modifier = Modifier.testTag("operator_password")) }
+                }
+                IconButton(
+                    { clipboard.setText(AnnotatedString(listOfNotNull("Room: ${room.room}", saved?.let { "Operator password: $it" }).joinToString("\n"))) },
+                    Modifier.testTag("copy_managed"),
+                ) { Icon(Icons.Filled.ContentCopy, "Copy the room name" + if (saved != null) " and password" else "", tint = AppColors.TextDim) }
+            }
+        }
+        if (!room.isOperator) {
+            fun identify() { if (password.isNotBlank()) { container.sync.identifyAsOperator(password); password = "" } }
+            OutlinedTextField(
+                password, { password = it.uppercase().take(20) },
+                label = { Text("Operator password") },
+                placeholder = { Text("AB-123-456") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { identify() }),
+                trailingIcon = { IconButton(::identify, Modifier.testTag("identify_operator")) { Icon(Icons.Filled.Key, "Identify as operator") } },
+                modifier = Modifier.fillMaxWidth().testTag("operator_password_field"),
+            )
+        }
+    }
+    fun create() { if (container.sync.createManagedRoom(newManaged)) newManaged = "" }
+    OutlinedTextField(
+        newManaged, { newManaged = it.take(ManagedRooms.MAX_BASE_NAME_LENGTH) },
+        label = { Text("Create managed room") },
+        supportingText = { Text("Only its operators control playback; you get a password to make others operators") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+        keyboardActions = KeyboardActions(onGo = { create() }),
+        trailingIcon = { IconButton(::create, Modifier.testTag("managed_create")) { Icon(Icons.Filled.Lock, "Create managed room") } },
+        modifier = Modifier.fillMaxWidth().testTag("managed_create_field"),
+    )
 }
 
 @Composable

@@ -27,6 +27,20 @@ sealed interface SyncplayEvent {
     /** Playback reached the end of the file and the next playlist entry should be loaded locally. */
     data class AdvancePlaylist(val nextIndex: Int, val filename: String) : SyncplayEvent
 
+    // --- Managed rooms ---------------------------------------------------------------
+
+    /** [SyncplayClient.createManagedRoom] made [room] (the full `+name:HASH`), which we've joined; [password] makes its operators. */
+    data class ManagedRoomCreated(val room: String, val password: String) : SyncplayEvent
+
+    /**
+     * Someone tried to become an operator of [room]. For our own attempts [password] is the one we sent, so it can
+     * be saved on success and forgotten on failure; null for other users.
+     */
+    data class ControllerAuth(val user: String, val room: String, val success: Boolean, val password: String? = null) : SyncplayEvent
+
+    /** [setBy], an operator, marked [user] (maybe us) ready or not ready. */
+    data class ReadySetBy(val user: String, val setBy: String, val isReady: Boolean) : SyncplayEvent
+
     // --- YarmiplayServerTV extensions ------------------------------------------------
 
     /** The device state changed (see [YarmiplayInfo.device]); pending, approved and the refusals each come once. */

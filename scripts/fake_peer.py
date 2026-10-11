@@ -20,14 +20,18 @@ Script / interactive commands (separated by ';' or one per line on stdin):
   drift <seconds>          shift our clock without telling the room (simulates a lagging player)
   ready | unready          set readiness
   chat <text>              send a chat message
+  create <name>            create a managed room named <name> and join it as its operator
+  auth <password>          identify as operator of the managed room we're in
+  setready <user> ready|unready   as an operator, set someone else's readiness
   status                   print the room as we see it
-  expect-user <name> <key>=<value>   fail unless the user's field matches (file, ready)
+  expect-user <name> <key>=<value>   fail unless the user's field matches (file, ready, controller)
   expect-room <key>=<value> [within=<s>]  e.g. paused=false, position~300 (±3s)
   quit
 """
 import argparse
 import hashlib
 import json
+import secrets
 import socket
 import sys
 import threading
@@ -65,6 +69,7 @@ class Peer:
         self.global_pos = 0.0
         self.global_set_by = None
         self.synced = False
+        self.pending_password = None
         self.logged_in = threading.Event()
         self.failed = False
         self.running = True
@@ -148,7 +153,8 @@ class Peer:
             elif cmd == "List":
                 room = val.get(self.room, {})
                 with self.lock:
-                    self.users = {n: {"file": u.get("file") or None, "ready": u.get("isReady")} for n, u in room.items()}
+                    self.users = {n: {"file": u.get("file") or None, "ready": u.get("isReady"), "controller": u.get("controller", False)}
+                                  for n, u in room.items()}
             elif cmd == "State":
                 self.handle_state(val)
             elif cmd == "Chat":
@@ -179,8 +185,26 @@ class Peer:
                 name = v.get("username")
                 with self.lock:
                     self.users.setdefault(name, {"file": None, "ready": None})["ready"] = v.get("isReady")
-                if name != self.name:
+                by = v.get("setBy")
+                if by and by != name:
+                    log(f"{by} marked {name} {'ready' if v.get('isReady') else 'not ready'}")
+                elif name != self.name:
                     log(f"{name} is {'ready' if v.get('isReady') else 'not ready'}")
+            elif key == "newControlledRoom":
+                room, password = v.get("roomName"), v.get("password")
+                if password and password == self.pending_password:
+                    self.pending_password = None
+                    self.room = room
+                    log(f"created managed room '{room}' with operator password {password}")
+                    self.send({"Set": {"room": {"name": room}}})
+                    self.send({"Set": {"controllerAuth": {"room": room, "password": password}}})
+                    self.send({"List": None})
+            elif key == "controllerAuth":
+                user, ok = v.get("user"), v.get("success")
+                if ok and v.get("room") == self.room:
+                    with self.lock:
+                        self.users.setdefault(user, {"file": None, "ready": None})["controller"] = True
+                log(f"{user} {'is now an operator of' if ok else 'failed to become an operator of'} '{v.get('room')}'")
             elif key == "playlistChange":
                 self.playlist = v.get("files", [])
                 log(f"playlist changed by {v.get('user')}: {self.playlist}")
@@ -284,6 +308,16 @@ class Peer:
             self.send({"Set": {"ready": {"isReady": cmd == "ready", "manuallyInitiated": True}}})
         elif cmd == "chat":
             self.send({"Chat": arg})
+        elif cmd == "create":
+            # Syncplay's password format: two letters, then two groups of three digits.
+            letters = "".join(secrets.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ") for _ in range(2))
+            self.pending_password = f"{letters}-{secrets.randbelow(1000):03d}-{secrets.randbelow(1000):03d}"
+            self.send({"Set": {"controllerAuth": {"room": arg, "password": self.pending_password}}})
+        elif cmd == "auth":
+            self.send({"Set": {"controllerAuth": {"room": self.room, "password": arg.strip().upper()}}})
+        elif cmd == "setready":
+            user, state = arg.rsplit(" ", 1)
+            self.send({"Set": {"ready": {"username": user, "isReady": state == "ready", "manuallyInitiated": True}}})
         elif cmd == "status":
             self.send({"List": None})
             time.sleep(0.5)
@@ -318,8 +352,8 @@ class Peer:
                 u = next((v for n, v in self.users.items() if n.lower().startswith(name.lower())), None)
             if u is None:
                 continue
-            if key == "ready":
-                got = str(u.get("ready")).lower()
+            if key in ("ready", "controller"):
+                got = str(u.get(key)).lower()
             elif key in ("file", "size", "duration"):
                 f = u.get("file") or {}
                 got = str(f.get("name" if key == "file" else key))

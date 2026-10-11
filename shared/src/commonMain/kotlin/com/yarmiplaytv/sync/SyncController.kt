@@ -5,6 +5,7 @@ import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.DeviceAuth
 import com.yarmiplaytv.syncplay.FileInfo
+import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.syncplay.RelayOffer
 import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.syncplay.SyncSettings
@@ -27,6 +28,13 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** Saved operator passwords of managed rooms, by "host:port/+name:HASH" (see [SyncController.passwordKey]). */
+interface OperatorPasswords {
+    fun get(key: String): String?
+    /** Saves [password] for [key]; null forgets it. */
+    fun save(key: String, password: String?)
+}
 
 /** A line in the on-screen chat / notification feed. */
 data class FeedMessage(val text: String, val from: String? = null, val isError: Boolean = false, val at: Long = System.currentTimeMillis())
@@ -104,16 +112,22 @@ class SyncController(
 
     /** This device's keys; with them the client opts in to the YarmiplayServerTV extensions. */
     var deviceAuth: DeviceAuth? = null
+    /** Where operator passwords of managed rooms are kept; without it none are remembered. */
+    var operatorPasswords: OperatorPasswords? = null
     var appVersion: String = ""
 
     /**
      * Joins [config]'s room. [requestAccess] asks a YarmiplayServerTV host to approve this device if they haven't
      * yet; pass false for connections the user didn't start (connecting on launch).
      */
-    fun connect(config: SyncplayConfig, requestAccess: Boolean = true) {
+    fun connect(config: SyncplayConfig, requestAccess: Boolean = true, operatorPassword: String? = null) {
         disconnect()
         lastConfig = config
         server = serverKey(config.host, config.port)
+        // Typed on the join form for a managed room: saved like any other, so it's sent once the room is joined.
+        operatorPassword?.let(ManagedRooms::normalizePassword)?.takeIf { it.isNotEmpty() && ManagedRooms.isManaged(config.room.trim()) }?.let { password ->
+            passwordKey(config.room.trim())?.let { operatorPasswords?.save(it, password) }
+        }
         val newClient = SyncplayClient(
             config = config.copy(deviceAuth = deviceAuth, appVersion = appVersion, requestAccess = requestAccess),
             player = adapter,
@@ -121,6 +135,7 @@ class SyncController(
             parentScope = scope,
             log = { Logger.d(TAG, it) },
         )
+        newClient.savedOperatorPassword = { room -> passwordKey(room)?.let { operatorPasswords?.get(it) } }
         clientFlow.value = newClient
         // Subscribe before start(): events has no replay, and a local server answers within a millisecond.
         eventsJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -131,8 +146,18 @@ class SyncController(
                     is SyncplayEvent.Notification -> post(FeedMessage(event.message, isError = event.isError))
                     is SyncplayEvent.Connected -> {
                         _connectionError.value = null
-                        post(FeedMessage("Joined room '${event.room}' as ${event.username}" + if (event.tls) " (TLS)" else ""))
+                        post(FeedMessage("Joined room '${ManagedRooms.label(event.room)}' as ${event.username}" + if (event.tls) " (TLS)" else ""))
                         event.motd?.let { post(FeedMessage(it.trim())) }
+                    }
+                    is SyncplayEvent.ManagedRoomCreated -> {
+                        passwordKey(event.room)?.let { operatorPasswords?.save(it, event.password) }
+                        post(FeedMessage("Created managed room '${ManagedRooms.display(event.room)}' (${event.room}). Operator password: ${event.password}"))
+                    }
+                    is SyncplayEvent.ControllerAuth -> controllerAuth(event)
+                    is SyncplayEvent.ReadySetBy -> {
+                        val what = if (event.isReady) "ready" else "not ready"
+                        val whom = if (event.user == room.value.username) "you" else event.user
+                        post(FeedMessage("${event.setBy} marked $whom $what"))
                     }
                     is SyncplayEvent.Disconnected -> {
                         _connectionError.value = event.reason ?: "Connection closed"
@@ -188,6 +213,34 @@ class SyncController(
         reportedFile = file
         clientFlow.value?.fileLoaded(file, resetPosition)
     }
+
+    private fun controllerAuth(event: SyncplayEvent.ControllerAuth) {
+        val mine = event.user == room.value.username
+        val key = passwordKey(event.room)
+        when {
+            mine && event.success -> {
+                event.password?.let { password -> key?.let { operatorPasswords?.save(it, password) } }
+                post(FeedMessage("You are now a room operator"))
+            }
+            mine -> {
+                key?.let { operatorPasswords?.save(it, null) }
+                post(FeedMessage("Wrong room password", isError = true))
+            }
+            event.success && event.room == room.value.room -> post(FeedMessage("${event.user} is now a room operator"))
+        }
+    }
+
+    /** Makes a managed room named [baseName] and joins it as its operator; false when the server can't or the name is too long. */
+    fun createManagedRoom(baseName: String): Boolean = clientFlow.value?.createManagedRoom(baseName) == true
+    fun identifyAsOperator(password: String) = clientFlow.value?.identifyAsOperator(password)
+    /** As an operator: marks [username] ready or not ready. */
+    fun setOthersReady(username: String, isReady: Boolean) = clientFlow.value?.setOthersReady(username, isReady)
+
+    /** The saved operator password for [room] on the current server, e.g. to show it to its operator. */
+    fun savedOperatorPassword(room: String): String? = passwordKey(room)?.let { operatorPasswords?.get(it) }
+
+    /** "host:port/+name:HASH": where [room]'s operator password is kept, like room playlists. */
+    private fun passwordKey(room: String): String? = server?.let { "$it/$room" }
 
     fun toggleReady() = clientFlow.value?.toggleReady()
     fun setReady(ready: Boolean, manuallyInitiated: Boolean = true) = clientFlow.value?.setReady(ready, manuallyInitiated)

@@ -139,6 +139,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         /** Followed by "host:port/room"; the value is the playlist, one entry per line. */
         const val ROOM_PLAYLIST_PREFIX = "room_playlist:"
         fun roomPlaylist(key: String) = stringPreferencesKey(ROOM_PLAYLIST_PREFIX + key)
+        const val ROOM_PASSWORD_PREFIX = "room_password:"
+        fun roomPassword(key: String) = stringPreferencesKey(ROOM_PASSWORD_PREFIX + key)
 
         val hwdec = booleanPreferencesKey("pb_hwdec")
         val pip = booleanPreferencesKey("pb_pip")
@@ -348,6 +350,17 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
     suspend fun replaceRoomPlaylists(playlists: Map<String, List<String>>) = dataStore.edit { prefs ->
         prefs.asMap().keys.filter { it.name.startsWith(Keys.ROOM_PLAYLIST_PREFIX) }.forEach { prefs.remove(it) }
         playlists.filterValues { it.isNotEmpty() }.forEach { (room, files) -> prefs[Keys.roomPlaylist(room)] = files.joinToString("\n") }
+    }
+
+    /** Operator passwords of managed rooms by "host:port/+name:HASH", like room playlists. */
+    suspend fun roomPasswords(): Map<String, String> =
+        dataStore.data.first().asMap().entries
+            .filter { it.key.name.startsWith(Keys.ROOM_PASSWORD_PREFIX) }
+            .associate { (key, value) -> key.name.removePrefix(Keys.ROOM_PASSWORD_PREFIX) to value as String }
+
+    /** Saves [key]'s operator password; null forgets it. */
+    suspend fun saveRoomPassword(key: String, password: String?) = dataStore.edit {
+        if (password.isNullOrEmpty()) it.remove(Keys.roomPassword(key)) else it[Keys.roomPassword(key)] = password
     }
 
     suspend fun savePlayback(prefs: PlaybackPrefs) {

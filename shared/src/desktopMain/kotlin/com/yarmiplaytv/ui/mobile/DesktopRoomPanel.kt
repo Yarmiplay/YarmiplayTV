@@ -314,7 +314,8 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
                     HorizontalDivider()
                     DropdownMenuItem({ Text("Save playlist…") }, {
                         open = false
-                        DesktopDialogs.savePlaylist("${room.room}.txt")?.let { path ->
+                        // The full name (a managed room's hash included), with what file names can't hold replaced.
+                        DesktopDialogs.savePlaylist("${room.room.replace(Regex("[\\\\/:*?\"<>|]"), "-")}.txt")?.let { path ->
                             runCatching { Files.writeString(path, PlaylistEdits.format(playlist)) }
                                 .onSuccess { container.sync.postLocal("Saved the playlist to ${path.fileName}") }
                                 .onFailure { container.sync.postLocal("Couldn't save the playlist: ${it.message}", isError = true) }

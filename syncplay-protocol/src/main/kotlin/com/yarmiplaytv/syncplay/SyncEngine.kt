@@ -19,6 +19,8 @@ class SyncEngine(
     interface Host {
         val username: String
         val readinessSupported: Boolean
+        /** False in a managed room we're not an operator of: the room's operators control playback. */
+        val controlsPlayback: Boolean get() = true
         val isReady: Boolean?
         /** Duration of the file we reported to the server, 0 when none. */
         val currentFileDuration: Double
@@ -43,6 +45,7 @@ class SyncEngine(
     private var speedChanged = false
     private var lastRewindTime: Double? = null
     private var lastAdvanceTime: Double? = null
+    private var lastBlockedNotice: Double? = null
     /** After a reset-to-start file switch the player reports position 0 until this time, like Syncplay's mpv wrapper. */
     private var resetIgnoreUntil: Double? = null
     /**
@@ -89,6 +92,10 @@ class SyncEngine(
 
     private fun updatePlayerStatus(paused: Boolean, position: Double) {
         var (pauseChange, seeked) = determinePlayerStateChange(paused, position)
+        if ((pauseChange || seeked) && lastGlobalUpdate != null && !host.controlsPlayback) {
+            followOperators(pauseChange, seeked)
+            return
+        }
         playerPosition = position
         playerPaused = paused
         val length = host.currentFileDuration
@@ -110,6 +117,25 @@ class SyncEngine(
                 if (seeked) host.notify("You jumped to ${formatTime(position)}")
                 host.sendState(getPlayerPosition(), getPlayerPaused(), seeked, null, true)
             }
+        }
+    }
+
+    /**
+     * In a managed room we're not an operator of: a local pause, unpause or seek isn't sent (the server would put it
+     * back anyway). The player goes straight back to the room's state, without touching readiness.
+     */
+    private fun followOperators(pauseChange: Boolean, seeked: Boolean) {
+        val position = getGlobalPosition()
+        val paused = getGlobalPaused()
+        if (seeked) setPosition(position)
+        if (pauseChange) setPlayerPaused(paused)
+        playerPosition = position
+        playerPaused = paused
+        lastPlayerUpdate = clock.now()
+        val now = clock.now()
+        if (lastBlockedNotice.let { it == null || now - it >= BLOCKED_NOTICE_INTERVAL }) {
+            lastBlockedNotice = now
+            host.notify("Only room operators can control playback")
         }
     }
 
@@ -306,6 +332,11 @@ class SyncEngine(
     }
 
     fun getGlobalPaused(): Boolean = if (lastGlobalUpdate == null) true else globalPaused
+
+    private companion object {
+        /** Seconds between "Only room operators can control playback" notices. */
+        const val BLOCKED_NOTICE_INTERVAL = 10.0
+    }
 }
 
 fun formatTime(seconds: Double): String {
