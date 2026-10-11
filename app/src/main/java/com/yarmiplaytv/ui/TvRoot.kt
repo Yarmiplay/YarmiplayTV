@@ -11,6 +11,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -37,8 +38,7 @@ import com.yarmiplaytv.ui.settings.SettingsScreen
 import com.yarmiplaytv.ui.theme.AppColors
 /** The D-pad driven UI used on Google TV / Android TV. */
 @Composable
-fun TvRoot(container: AppContainer) {
-    val stack = remember { mutableStateListOf<Screen>(Screen.Home) }
+fun TvRoot(container: AppContainer, stack: SnapshotStateList<Screen> = remember { mutableStateListOf(Screen.Home) }) {
     val saveable = rememberSaveableStateHolder()
     val nav = remember { Navigator(stack) { saveable.removeState(it.key) } }
 

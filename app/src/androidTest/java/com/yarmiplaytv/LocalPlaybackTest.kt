@@ -88,6 +88,18 @@ class LocalPlaybackTest {
     }
 
     @Test
+    fun aRecreatedActivityComesBackOnThePlayer() {
+        // The system recreates the activity for changes no app can handle itself (CI emulators do it when System UI
+        // restarts and reapplies its overlays); the video mustn't vanish behind the home screen.
+        playClipAndWaitLoaded()
+        val before = compose.activity
+        compose.activityRule.scenario.recreate()
+        compose.waitUntil(10_000) { compose.activity !== before }
+        compose.waitUntilExactlyOneExists(hasTestTag("player"), 10_000)
+        assertTrue(container.player.state.value.fileLoaded)
+    }
+
+    @Test
     fun unreadableUriFailsAndDoesNotBlockTheNextLoad() {
         val missing = Uri.parse("content://media/external/video/media/987654321")
         container.playlist.playLocal(missing.toString(), inRoom = false)

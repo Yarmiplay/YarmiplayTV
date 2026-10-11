@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import com.yarmiplaytv.ui.TvRoot
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
+import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.YarmiplayTvTheme
 
 class MainActivity : ComponentActivity() {
@@ -22,15 +23,21 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         deviceKind = DeviceUi.kind(this, intent)
         container.deviceKind = deviceKind
+        // Like saved instance state: a recreated activity carries on where it was, a new one starts at Home.
+        val screens = (application as YarmiplayTvApp).screens
+        if (savedInstanceState == null) {
+            screens.clear()
+            screens.add(Screen.Home)
+        }
         if (deviceKind == DeviceKind.TV) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            setContent { YarmiplayTvTheme { TvRoot(container) } }
+            setContent { YarmiplayTvTheme { TvRoot(container, screens) } }
         } else {
             enableEdgeToEdge(
                 statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
                 navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             )
-            setContent { MobileTheme { MobileRoot(container, deviceKind) } }
+            setContent { MobileTheme { MobileRoot(container, deviceKind, screens) } }
         }
         if (savedInstanceState == null) handleIntent(intent)
     }

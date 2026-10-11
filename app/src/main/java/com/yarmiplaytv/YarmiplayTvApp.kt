@@ -3,6 +3,8 @@ package com.yarmiplaytv
 import android.app.Application
 import android.content.Context
 import android.os.Build
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.datastore.preferences.preferencesDataStore
 import com.yarmiplaytv.data.SettingsStore
 import com.yarmiplaytv.device.AndroidDeviceKeyStore
@@ -11,12 +13,19 @@ import com.yarmiplaytv.local.SafLocalLibrary
 import com.yarmiplaytv.player.MpvOptions
 import com.yarmiplaytv.player.MpvPlayer
 import com.yarmiplaytv.screenshot.AndroidScreenshotStore
+import com.yarmiplaytv.ui.nav.Screen
 
 private val Context.dataStore by preferencesDataStore("settings")
 
 class YarmiplayTvApp : Application() {
     lateinit var container: AppContainer
         private set
+
+    /**
+     * The UI's screens, kept outside the activity: when the system recreates it (e.g. a theme or overlay change no
+     * app can handle itself) the player stays on screen instead of falling back to Home. A fresh start resets it.
+     */
+    val screens: SnapshotStateList<Screen> = mutableStateListOf(Screen.Home)
 
     override fun onCreate() {
         super.onCreate()

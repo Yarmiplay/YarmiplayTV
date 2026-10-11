@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -52,10 +53,12 @@ private val tabs = listOf(
     Tab(Screen.Settings, "Settings", Icons.Filled.Settings),
 )
 
-/** Touch UI for phones and tablets: bottom navigation on phones, a navigation rail on tablets. */
+/**
+ * Touch UI for phones and tablets: bottom navigation on phones, a navigation rail on tablets. [stack] is the screen
+ * stack; Android keeps it outside the activity so a recreated activity comes back on the same screen.
+ */
 @Composable
-fun MobileRoot(container: AppContainer, kind: DeviceKind) {
-    val stack = remember { mutableStateListOf<Screen>(Screen.Home) }
+fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateList<Screen> = remember { mutableStateListOf(Screen.Home) }) {
     val saveable = rememberSaveableStateHolder()
     val nav = remember { Navigator(stack) { saveable.removeState(it.key) } }
     val snackbar = remember { SnackbarHostState() }
