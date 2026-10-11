@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.7.3" date="2026-10-11">
+      <description>
+        <p>Picture-in-picture: leaving the app while a video plays on Android (phones, tablets and TVs that support it) keeps it playing in sync in a small window, and the desktop app has a mini player (P) that stays on top in the corner of the screen.</p>
+      </description>
+    </release>
     <release version="1.7.2" date="2026-10-11">
       <description>
         <p>A Player tab on phones, tablets and desktop that opens the player from any screen, preview frames for the videos in Files on this device, and on Android the TV's thin seek bar and a media volume slider in the player.</p>
