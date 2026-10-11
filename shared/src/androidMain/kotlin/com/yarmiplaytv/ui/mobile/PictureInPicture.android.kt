@@ -71,19 +71,26 @@ actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: 
             // Some Android versions stop the activity first, others report leaving PiP first.
             if (!info.isInPictureInPictureMode && !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) closed()
         }
-        val stopObserver = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP && active) closed() }
+        val lifecycleObserver = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> if (active) closed()
+                // Back at full size: Android can skip telling a window that left PiP while it was still animating in.
+                Lifecycle.Event.ON_RESUME -> active = activity.isInPictureInPictureMode
+                else -> Unit
+            }
+        }
         // Android 12 enters by itself (setAutoEnterEnabled); older versions get the leave hint.
         val leaveHint = Runnable { if (latestAuto) runCatching { activity.enterPictureInPictureMode(latestParams) } }
         val playPause = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) = player.setPaused(!player.isPaused)
         }
         activity.addOnPictureInPictureModeChangedListener(modeListener)
-        lifecycle.addObserver(stopObserver)
+        lifecycle.addObserver(lifecycleObserver)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) activity.addOnUserLeaveHintListener(leaveHint)
         ContextCompat.registerReceiver(activity, playPause, IntentFilter(ACTION_PLAY_PAUSE), ContextCompat.RECEIVER_NOT_EXPORTED)
         onDispose {
             activity.removeOnPictureInPictureModeChangedListener(modeListener)
-            lifecycle.removeObserver(stopObserver)
+            lifecycle.removeObserver(lifecycleObserver)
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) activity.removeOnUserLeaveHintListener(leaveHint)
             runCatching { activity.unregisterReceiver(playPause) }
             PlayerPictureInPicture.active = false

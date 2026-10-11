@@ -265,10 +265,13 @@ class LocalPlaybackTest {
             // asking for full screen then cancels it without the app ever hearing it left.
             waitFor(15_000) { activity.isInPictureInPictureMode && PlayerPictureInPicture.active }
             leavePictureInPicture(activity)
-            compose.waitUntilExactlyOneExists(hasTestTag("player"), 10_000)
+            // Back to the full layout in the same activity. (The PiP button test checks the controls are back; on a
+            // slow emulator the compose rule can take a while to see the hierarchy again after the rotation.)
+            waitFor(15_000) { !PlayerPictureInPicture.active }
+            assertSame(activity, compose.activity)
 
             runBlocking { container.settingsStore.savePlayback(saved.copy(pictureInPicture = false)) }
-            compose.waitUntil(5_000) { !container.settings.value.playback.pictureInPicture }
+            waitFor(5_000) { !container.settings.value.playback.pictureInPicture }
             play()
             Screenshots.shell("input keyevent KEYCODE_HOME")
             Thread.sleep(3_000)
@@ -284,8 +287,10 @@ class LocalPlaybackTest {
     /** Plays the loaded clip and waits until the PiP parameters have caught up with it playing. */
     private fun play() {
         compose.runOnUiThread { container.player.setPaused(false) }
-        compose.waitUntil(5_000) { !container.player.state.value.paused }
-        compose.waitForIdle()
+        waitFor(5_000) { !container.player.state.value.paused }
+        // A few frames for the parameters (auto-enter on) to be set from the new state.
+        repeat(5) { compose.mainClock.advanceTimeByFrame() }
+        Thread.sleep(300)
     }
 
     /**
