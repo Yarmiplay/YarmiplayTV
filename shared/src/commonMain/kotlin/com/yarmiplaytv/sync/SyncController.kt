@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -127,7 +128,7 @@ class SyncController(
         server = serverKey(config.host, config.port)
         // Typed on the join form for a managed room: saved like any other, so it's sent once the room is joined.
         operatorPassword?.let(ManagedRooms::normalizePassword)?.takeIf { it.isNotEmpty() && ManagedRooms.isManaged(config.room.trim()) }?.let { password ->
-            passwordKey(config.room.trim())?.let { operatorPasswords?.save(it, password) }
+            passwordKey(config.room.trim())?.let { savePassword(it, password) }
         }
         val newClient = SyncplayClient(
             config = config.copy(deviceAuth = deviceAuth, appVersion = appVersion, requestAccess = requestAccess),
@@ -160,7 +161,7 @@ class SyncController(
                         }
                     }
                     is SyncplayEvent.ManagedRoomCreated -> {
-                        passwordKey(event.room)?.let { operatorPasswords?.save(it, event.password) }
+                        passwordKey(event.room)?.let { savePassword(it, event.password) }
                         lastConfig = lastConfig?.copy(room = event.room)
                         post(FeedMessage("Created managed room '${ManagedRooms.display(event.room)}' (${event.room}). Operator password: ${event.password}"))
                     }
@@ -230,11 +231,11 @@ class SyncController(
         val key = passwordKey(event.room)
         when {
             mine && event.success -> {
-                event.password?.let { password -> key?.let { operatorPasswords?.save(it, password) } }
+                event.password?.let { password -> key?.let { savePassword(it, password) } }
                 post(FeedMessage("You are now a room operator"))
             }
             mine -> {
-                key?.let { operatorPasswords?.save(it, null) }
+                key?.let { savePassword(it, null) }
                 post(FeedMessage("Wrong room password", isError = true))
             }
             event.success && event.room == room.value.room -> post(FeedMessage("${event.user} is now a room operator"))
@@ -249,6 +250,18 @@ class SyncController(
 
     /** The saved operator password for [room] on the current server, e.g. to show it to its operator. */
     fun savedOperatorPassword(room: String): String? = passwordKey(room)?.let { operatorPasswords?.get(it) }
+
+    private val _operatorPasswordChanges = MutableStateFlow(0)
+    /**
+     * Counts saved or forgotten operator passwords. The room state can change before a password is saved (the
+     * server confirms an operator before the client's own event is handled), so what shows one watches this too.
+     */
+    val operatorPasswordChanges: StateFlow<Int> = _operatorPasswordChanges.asStateFlow()
+
+    private fun savePassword(key: String, password: String?) {
+        operatorPasswords?.save(key, password)
+        _operatorPasswordChanges.update { it + 1 }
+    }
 
     /** "host:port/+name:HASH": where [room]'s operator password is kept, like room playlists. */
     private fun passwordKey(room: String): String? = server?.let { "$it/$room" }
