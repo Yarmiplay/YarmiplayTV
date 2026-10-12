@@ -1,5 +1,6 @@
 package com.yarmiplaytv.ui.mobile
 
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -356,8 +357,9 @@ private fun ManagedRoomActions(container: AppContainer, room: RoomState) {
     )
 }
 
+/** The room's chat; with [fill], it takes the whole height it's given, with the message box at the bottom. */
 @Composable
-fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeight: androidx.compose.ui.unit.Dp = 420.dp) {
+fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeight: androidx.compose.ui.unit.Dp = 420.dp, fill: Boolean = false) {
     val feed by container.sync.feed.collectAsStateWithLifecycle()
     val settings by container.settings.collectAsStateWithLifecycle()
     val room by container.sync.room.collectAsStateWithLifecycle()
@@ -371,7 +373,7 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
             message = ""
         }
     }
-    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp).imePadding()) {
+    Column(modifier.fillMaxWidth().then(if (fill) Modifier.fillMaxHeight().padding(bottom = 12.dp) else Modifier).padding(horizontal = 16.dp).imePadding()) {
         Row(verticalAlignment = Alignment.Top) {
             Box(Modifier.weight(1f)) { SheetTitle("Chat") }
             TextButton(
@@ -380,7 +382,7 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
             ) { Text(if (showChat) "Hide chat" else "Show chat") }
         }
         if (!showChat) Text(HIDDEN_CHAT_NOTE, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
-        LazyColumn(Modifier.heightIn(max = maxHeight), state = listState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        LazyColumn(if (fill) Modifier.weight(1f).fillMaxWidth() else Modifier.heightIn(max = maxHeight), state = listState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(feed) { msg ->
                 val from = msg.from
                 var menu by remember { mutableStateOf(false) }

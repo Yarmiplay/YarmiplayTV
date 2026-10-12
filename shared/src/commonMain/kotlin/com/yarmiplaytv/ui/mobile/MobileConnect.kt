@@ -136,7 +136,7 @@ private fun RoomLayout(container: AppContainer, nav: Navigator, model: SyncplayC
                 }
                 VerticalDivider(color = AppColors.SurfaceHigh)
                 Column(Modifier.weight(1f).fillMaxHeight().padding(top = 8.dp)) {
-                    ChatContent(container, maxHeight = (height - 140.dp).coerceAtLeast(200.dp))
+                    ChatContent(container, fill = true)
                 }
                 VerticalDivider(color = AppColors.SurfaceHigh)
                 Column(Modifier.width(340.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(top = 8.dp, bottom = 16.dp)) {
@@ -151,7 +151,7 @@ private fun RoomLayout(container: AppContainer, nav: Navigator, model: SyncplayC
                 }
                 VerticalDivider(color = AppColors.SurfaceHigh)
                 Column(Modifier.weight(1f).fillMaxHeight().padding(top = 8.dp)) {
-                    ChatContent(container, maxHeight = (height - 140.dp).coerceAtLeast(200.dp))
+                    ChatContent(container, fill = true)
                 }
             }
             else -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp).testTag("room_columns_1")) {

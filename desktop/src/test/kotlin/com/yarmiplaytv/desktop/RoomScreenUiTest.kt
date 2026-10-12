@@ -3,7 +3,10 @@ package com.yarmiplaytv.desktop
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.test.ComposeUiTest
@@ -24,10 +27,18 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.data.SavedRoom
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
+import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.syncplay.SyncplayConfig
 import com.yarmiplaytv.ui.mobile.MobileRoomScreen
 import com.yarmiplaytv.ui.mobile.MobileTheme
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import java.io.File
+import java.io.PrintWriter
+import java.net.ServerSocket
+import java.util.concurrent.Executors
+import javax.imageio.ImageIO
+import kotlin.concurrent.thread
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
@@ -35,17 +46,16 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.io.File
-import java.util.concurrent.Executors
-import javax.imageio.ImageIO
 
 /** The "Join a Syncplay room" screen on desktop: rooms you know beside the form; phones stack them. */
 @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
@@ -55,6 +65,7 @@ class RoomScreenUiTest {
     private lateinit var main: ExecutorCoroutineDispatcher
     private lateinit var storeScope: CoroutineScope
     private lateinit var app: AppContainer
+    private var server: ServerSocket? = null
 
     @Before
     fun setUp() {
@@ -77,6 +88,8 @@ class RoomScreenUiTest {
 
     @After
     fun tearDown() {
+        runBlocking(main) { app.sync.disconnect() }
+        server?.close()
         app.scope.cancel()
         storeScope.cancel()
         Dispatchers.resetMain()
@@ -118,6 +131,59 @@ class RoomScreenUiTest {
         onNodeWithTag("join_card").assertIsDisplayed()
         onNodeWithTag("join_two_panes").assertDoesNotExist()
         screenshot("join_narrow")
+    }
+
+    @Test
+    fun `in a room, wide windows show the playlist, the chat and the room side by side`() = runComposeUiTest {
+        joinRoom()
+        show(1280, 800)
+        onNodeWithTag("room_columns_3").assertIsDisplayed()
+        screenshot("room_wide")
+    }
+
+    @Test
+    fun `in a room, middle widths use two columns and phones one`() = runComposeUiTest {
+        joinRoom()
+        var width by mutableStateOf(800)
+        val lifecycle = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
+        }
+        val nav = Navigator(mutableStateListOf(Screen.Home, Screen.SyncplayConnect))
+        setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
+                MobileTheme { Box(Modifier.size(width.dp, 800.dp)) { MobileRoomScreen(app, nav) } }
+            }
+        }
+        onNodeWithTag("room_columns_2").assertExists()
+        width = 420
+        waitForIdle()
+        onNodeWithTag("room_columns_1").assertExists()
+    }
+
+    /** Joins a room on a server that answers Hello and nothing else. */
+    private fun joinRoom() {
+        val socket = ServerSocket(0).also { server = it }
+        thread(isDaemon = true) {
+            runCatching {
+                val client = socket.accept()
+                val reader = client.getInputStream().bufferedReader()
+                val writer = PrintWriter(client.getOutputStream().writer(), true)
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    if (line.contains("\"Hello\"")) {
+                        writer.print(
+                            """{"Hello":{"username":"Sam","room":{"name":"movie-night"},"version":"1.2.255","realversion":"1.7.0",""" +
+                                """"features":{"chat":true,"readiness":true,"sharedPlaylists":true},"motd":""}}""" + "\r\n",
+                        )
+                        writer.flush()
+                    }
+                }
+            }
+        }
+        runBlocking(main) { app.sync.connect(SyncplayConfig("127.0.0.1", socket.localPort, "Sam", "movie-night", useTls = false)) }
+        runBlocking {
+            withTimeout(10_000) { while (app.sync.room.value.status != ConnectionStatus.CONNECTED) delay(20) }
+        }
     }
 
     private fun ComposeUiTest.screenshot(name: String) {
