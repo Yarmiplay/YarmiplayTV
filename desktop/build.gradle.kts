@@ -185,7 +185,9 @@ compose.desktop {
             targetFormats(TargetFormat.Msi, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "YarmiplayTV"
             packageVersion = appVersion
-            description = "Watch videos in sync with friends on Syncplay servers"
+            // On Windows this becomes the launcher's FileDescription, which Task Manager shows as the process name.
+            description = if (System.getProperty("os.name").startsWith("Windows")) "YarmiplayTV"
+                else "Watch videos in sync with friends on Syncplay servers"
             vendor = "Yarmiplay"
             copyright = "© 2026 Yarmiplay"
             appResourcesRootDir.set(layout.dir(prepareDesktopAppResources.map { it.destinationDir }))
