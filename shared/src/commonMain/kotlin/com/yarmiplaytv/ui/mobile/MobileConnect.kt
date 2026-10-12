@@ -339,6 +339,7 @@ private fun KnownRoomRow(container: AppContainer, model: SyncplayConnectModel, r
                     ManagedRooms.label(room.room).takeIf { room.label.isNotBlank() },
                     "${room.host}:${room.port}",
                     room.username.takeIf { it.isNotBlank() }?.let { "as $it" },
+                    "skips openings".takeIf { room.autoSkip },
                 ).joinToString(" · ")
                 Text(where, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }

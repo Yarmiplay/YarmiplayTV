@@ -59,6 +59,12 @@ New to it? The [user manual](https://tv.yarmiplay.com/manual/) explains everythi
   in a web view); the app keeps only its tokens, on the device, and signing out deletes everything it kept. Builds need a
   MyAnimeList Client ID (`MAL_CLIENT_ID` in `~/.gradle/gradle.properties` or the CI secret; never in the
   repository), registered with the redirect URL `http://localhost:47821/mal-callback`.
+- Skips anime openings and endings: AniSkip's times for the episode MyAnimeList says is playing (no account
+  needed), with a Skip button for 3 seconds as one starts (S on desktop, OK on a TV remote), or by themselves.
+  Automatic skipping is a room setting: on YarmiplayServerTV (1.7.3 or later) it's the room's, the same for
+  everyone and changed only by operators in a managed room; on other servers each device decides, and a skip
+  moves the room like any seek. A saved room remembers it and turns it on again when joined. Watching alone,
+  Settings > Playback decides, and can also hide the button.
 - Like Syncplay, it warns when someone's copy of a file differs from yours: the playlist marks the entry when
   their file size differs (with both sizes when they're shared), and the room list says whether the name, size
   or duration differ. It's only a warning; playback and sync carry on as usual.

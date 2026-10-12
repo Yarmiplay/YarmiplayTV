@@ -33,6 +33,24 @@ class SavedRoomsTest {
     }
 
     @Test
+    fun `skipping openings is remembered with the room, and lines from before it read as off`() = runBlocking {
+        val old = "syncplay.pl\t8999\t1\tSam\tanime\t\tFriday\t1\t5"
+        assertFalse(SavedRooms.decode(old).single().autoSkip)
+        val on = room("anime", 5, saved = true).copy(autoSkip = true)
+        assertTrue(SavedRooms.decode(SavedRooms.encode(listOf(on))).single().autoSkip)
+        assertTrue("rejoining keeps it", SavedRooms.visited(listOf(on), room("anime", 9)).single().autoSkip)
+
+        val store = desktopSettingsStore(tmp.newFolder("config"), scope)
+        store.saveRoomVisit(room("anime", 1))
+        val key = store.current().savedRooms.single().key
+        store.setRoomAutoSkip(key, true)
+        store.setRoomSaved(key, true, "Anime")
+        assertTrue("saving a recent room keeps it", store.current().savedRooms.single().autoSkip)
+        store.setRoomAutoSkip(key, false)
+        assertFalse(store.current().savedRooms.single().autoSkip)
+    }
+
+    @Test
     fun `recent rooms are newest first and capped, saved ones are kept and come first`() {
         var rooms = listOf(room("keep", 1, saved = true, label = "Mine"))
         for (i in 1..20) rooms = SavedRooms.visited(rooms, room("r$i", 100L + i))

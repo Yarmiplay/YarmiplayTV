@@ -16,6 +16,7 @@ import com.yarmiplaytv.media.jellyfin.ClientInfo
 import com.yarmiplaytv.media.jellyfin.JellyfinClient
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
 import com.yarmiplaytv.media.jellyfin.JellyfinSource
+import com.yarmiplaytv.media.aniskip.AniSkipClient
 import com.yarmiplaytv.media.mal.MalClient
 import com.yarmiplaytv.media.plex.PlexClient
 import com.yarmiplaytv.media.plex.PlexSession
@@ -31,6 +32,7 @@ import com.yarmiplaytv.sync.OperatorPasswords
 import com.yarmiplaytv.sync.PlaybackReporter
 import com.yarmiplaytv.sync.PlaylistAutosave
 import com.yarmiplaytv.sync.PlaylistController
+import com.yarmiplaytv.sync.RoomAutoSkip
 import com.yarmiplaytv.sync.RoomHistory
 import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.sync.discoverSyncplayServers
@@ -39,6 +41,7 @@ import com.yarmiplaytv.syncplay.SyncplayEvent
 import com.yarmiplaytv.syncplay.YarmiplayInfo
 import com.yarmiplaytv.tracking.MalService
 import com.yarmiplaytv.tracking.MalTracker
+import com.yarmiplaytv.tracking.SkipService
 import com.yarmiplaytv.update.Updates
 import com.yarmiplaytv.update.WhatsNew
 import java.io.File
@@ -150,6 +153,13 @@ class AppContainer(
     private val autosave = PlaylistAutosave(scope, sync, playlist.shared, settingsStore).apply { enabled = initial.autosavePlaylists }
     /** The rooms joined, for the Saved and Recent lists. */
     val roomHistory = RoomHistory(scope, sync, settingsStore).also { it.start() }
+    /** The room's "skip openings and endings" setting. */
+    val roomAutoSkip = RoomAutoSkip(scope, sync, roomHistory, settingsStore, settings)
+    /** Skips anime openings and endings (times from AniSkip), or offers a Skip button. */
+    val skips = SkipService(
+        scope, player, playlist.nowPlaying, mal, AniSkipClient(), sync.room, roomAutoSkip.state, settings,
+        notify = { sync.postLocal(it) },
+    )
     private val jellyfinSharing = HostJellyfinSharing(
         scope, sync, jellyfinClient,
         saved = { jellyfinServers.value.map { it.session } },

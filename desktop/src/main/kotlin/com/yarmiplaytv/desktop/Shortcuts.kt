@@ -20,13 +20,17 @@ internal interface ShortcutTarget {
     fun screenshot()
     /** Opens or closes the picture-in-picture window. */
     fun togglePictureInPicture()
+    /** Skips the opening or ending the Skip button offers; false when none is offered. */
+    fun skipSegment(): Boolean
 }
 
 /**
  * Window-level shortcuts. The window only passes keys nothing focused has used, and the side panel keeps its
  * keys to itself, so typing in a text field never triggers them. Esc leaves full screen, else goes back; the
  * rest only work on the player screen, and all but H (which hides or shows the controls), F5 (screenshot) and
- * P (picture-in-picture) show the controls. N and B (or the media keys) go to the room playlist's next and previous entry. Esc brings the video back from picture-in-picture (the player's back handler).
+ * P (picture-in-picture) show the controls. N and B (or the media keys) go to the room playlist's next and previous entry. S
+ * skips the opening or ending while its Skip button shows. Esc brings the video back from picture-in-picture (the
+ * player's back handler).
  */
 internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget): Boolean {
     if (key == Key.Escape) {
@@ -50,6 +54,7 @@ internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget)
         target.togglePictureInPicture()
         return true
     }
+    if (key == Key.S) return target.skipSegment()
     when (key) {
         Key.Spacebar, Key.K -> input.togglePause()
         Key.DirectionLeft, Key.J -> input.seekBy(-input.seekStep)

@@ -21,6 +21,11 @@ class ShortcutsTest {
         override fun focusChat() { log += "chat" }
         override fun screenshot() { log += "screenshot" }
         override fun togglePictureInPicture() { log += "picture-in-picture" }
+        var skipOffered = false
+        override fun skipSegment(): Boolean {
+            if (skipOffered) log += "skip"
+            return skipOffered
+        }
     }
 
     private val input = PlayerInput(
@@ -62,6 +67,15 @@ class ShortcutsTest {
         assertTrue(handleShortcut(Key.MediaPrevious, false, t))
         assertFalse(handleShortcut(Key.N, true, t))
         assertEquals(listOf("next", "show", "previous", "show", "next", "show", "previous", "show"), log)
+    }
+
+    @Test
+    fun sSkipsTheOpeningOnlyWhileTheSkipButtonShows() {
+        val t = Target()
+        assertFalse(handleShortcut(Key.S, false, t))
+        t.skipOffered = true
+        assertTrue(handleShortcut(Key.S, false, t))
+        assertEquals(listOf("skip"), log)
     }
 
     @Test

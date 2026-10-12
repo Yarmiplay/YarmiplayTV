@@ -221,6 +221,11 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             }
             override fun focusChat() = DesktopRoomPanel.focusChat()
             override fun screenshot() { container.screenshots?.take() }
+            override fun skipSegment(): Boolean {
+                if (container.skips.prompt.value == null) return false
+                container.skips.skip()
+                return true
+            }
         }
     }
     val drop = remember {

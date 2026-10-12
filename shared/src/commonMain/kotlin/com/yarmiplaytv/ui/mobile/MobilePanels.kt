@@ -1,6 +1,5 @@
 package com.yarmiplaytv.ui.mobile
 
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -9,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
@@ -48,6 +48,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -71,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.player.TrackType
+import com.yarmiplaytv.sync.RoomSkip
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.Filenames
 import com.yarmiplaytv.syncplay.ManagedRooms
@@ -80,8 +82,10 @@ import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.player.sizeWarning
 import com.yarmiplaytv.ui.shared.BLOCKED_NOTE
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
+import com.yarmiplaytv.ui.shared.ROOM_SKIP_TITLE
 import com.yarmiplaytv.ui.shared.connectionRouteLine
 import com.yarmiplaytv.ui.shared.relayNote
+import com.yarmiplaytv.ui.shared.roomSkipSubtitle
 import com.yarmiplaytv.ui.shared.roomsOnServer
 import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serverStatusLine
@@ -155,6 +159,22 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
  * The room, its ready button and its users; with [showChangeRoom] also [RoomSwitchContent]'s options under them
  * (the player's room sheet and the desktop panel). The Room tab shows those at its very end instead.
  */
+/** The room's "skip openings and endings" switch, with whose setting it is under it. */
+@Composable
+private fun RoomSkipToggle(skip: RoomSkip, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().testTag("toggle_room_auto_skip"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(ROOM_SKIP_TITLE, style = MaterialTheme.typography.bodyMedium)
+            Text(roomSkipSubtitle(skip), color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+        }
+        Switch(skip.on, onChange, enabled = skip.canChange)
+    }
+}
+
 @Composable
 fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, showChangeRoom: Boolean = true) {
     val room by container.sync.room.collectAsStateWithLifecycle()
@@ -180,6 +200,11 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
             s.error?.let { Text(it, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall) }
         }
         ReadyChip(room.isReady == true, { container.sync.toggleReady() }, Modifier.testTag("ready_toggle"))
+        // Openings and endings are found through MyAnimeList, which needs the build's Client ID.
+        if (container.mal.client.configured) {
+            val skip by container.roomAutoSkip.state.collectAsStateWithLifecycle()
+            RoomSkipToggle(skip) { container.roomAutoSkip.set(it) }
+        }
         val blocked by container.sync.blocked.collectAsStateWithLifecycle()
         val me = room.users.firstOrNull { it.name == room.username }
         room.users.forEach { user ->

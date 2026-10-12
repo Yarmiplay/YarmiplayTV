@@ -177,6 +177,8 @@ actual val autoPictureInPictureSetting = true
 actual val autoPictureInPictureTitle = "Picture-in-picture when minimized"
 actual val autoPictureInPictureSubtitle = "A playing video keeps going in a small window on top when you minimize YarmiplayTV"
 actual val pictureInPictureLabel = "Picture-in-picture (P)"
+
+actual val skipKeyHint: String? = "S"
 actual val pictureInPictureWindow = true
 
 /** Picture-in-picture is [DesktopPip]'s window: the button or P opens and closes it, and so does minimizing (a setting). */

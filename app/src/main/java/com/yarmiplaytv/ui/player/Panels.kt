@@ -59,6 +59,7 @@ import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.ui.components.ActionButton
 import com.yarmiplaytv.ui.components.Dot
 import com.yarmiplaytv.ui.components.IconAction
+import com.yarmiplaytv.ui.components.ToggleRow
 import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.components.TvTile
 import com.yarmiplaytv.ui.mobile.RelayDownloadBar
@@ -66,8 +67,10 @@ import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.BLOCKED_NOTE
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
+import com.yarmiplaytv.ui.shared.ROOM_SKIP_TITLE
 import com.yarmiplaytv.ui.shared.connectionRouteLine
 import com.yarmiplaytv.ui.shared.relayNote
+import com.yarmiplaytv.ui.shared.roomSkipSubtitle
 import com.yarmiplaytv.ui.shared.roomsOnServer
 import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serverStatusLine
@@ -183,6 +186,11 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
             icon = if (ready) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
             tint = if (ready) AppColors.Ready else AppColors.NotReady,
         )
+        // Openings and endings are found through MyAnimeList, which needs the build's Client ID.
+        if (container.mal.client.configured) {
+            val skip by container.roomAutoSkip.state.collectAsStateWithLifecycle()
+            ToggleRow(ROOM_SKIP_TITLE, skip.on, { if (skip.canChange) container.roomAutoSkip.set(!skip.on) }, subtitle = roomSkipSubtitle(skip))
+        }
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(room.users, key = { it.name }) { user ->
                 val isMe = user.name == room.username

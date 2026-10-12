@@ -49,6 +49,10 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.AboutLink
 import com.yarmiplaytv.ui.shared.CHANGELOG_URL
 import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
+import com.yarmiplaytv.ui.shared.SKIP_ALONE_SUBTITLE
+import com.yarmiplaytv.ui.shared.SKIP_ALONE_TITLE
+import com.yarmiplaytv.ui.shared.SKIP_BUTTON_SUBTITLE
+import com.yarmiplaytv.ui.shared.SKIP_BUTTON_TITLE
 import com.yarmiplaytv.ui.shared.UpdateCheckModel
 import com.yarmiplaytv.ui.shared.aboutLinks
 import com.yarmiplaytv.ui.shared.nextPreferred
@@ -207,6 +211,11 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                 { savePlayback(pb.copy(pictureInPicture = !pb.pictureInPicture)) },
                 subtitle = "A playing video keeps going, in sync, in a small window over other apps",
             )
+        }
+        // Openings and endings are found through MyAnimeList, which needs the build's Client ID.
+        if (container.mal.client.configured) {
+            ToggleRow(SKIP_ALONE_TITLE, pb.autoSkipAlone, { savePlayback(pb.copy(autoSkipAlone = !pb.autoSkipAlone)) }, subtitle = SKIP_ALONE_SUBTITLE)
+            ToggleRow(SKIP_BUTTON_TITLE, pb.showSkipButton, { savePlayback(pb.copy(showSkipButton = !pb.showSkipButton)) }, subtitle = SKIP_BUTTON_SUBTITLE)
         }
         ValueRow("Seek step", "${pb.seekStepSeconds} s", {
             val steps = listOf(5, 10, 15, 30)

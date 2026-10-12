@@ -108,6 +108,8 @@ fun PipContent(
                 PlayerVolumeControl(onInteract = {})
             }
         }
+        // Shown with or without the pointer over the window, above the seek bar's place.
+        SkipSegmentButton(container, Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 72.dp))
         // Resizing: the window has no frame, so the corner does it.
         Box(
             Modifier.align(Alignment.BottomEnd).size(18.dp).pointerHoverIcon(PointerIcon(Cursor(Cursor.SE_RESIZE_CURSOR)))

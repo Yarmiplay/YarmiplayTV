@@ -99,6 +99,11 @@ The Room tab shows, in order:
 
 On a computer or a wide tablet these sit side by side: the playlist, the chat, and the room.
 
+**Skip openings and endings**: in the room panel. On a YarmiplayServerTV server it's the room's setting, the
+same for everyone, and says who changed it last; in a managed room only operators can change it. On other
+servers it's your choice on this device, and when you skip, the room jumps with you. A saved room you had it on
+in turns it on again when you join it.
+
 **Ready**: everyone marks themselves ready before the video starts. By default you're ready when a playlist
 entry has loaded; Settings > Syncing changes when you're ready and what happens when you unpause.
 
@@ -149,6 +154,13 @@ of the video on a phone), the previous and next playlist entry, the seek bar and
 bottom open the shared playlist, the room, the chat, audio tracks, subtitles and MyAnimeList. Dragging along the
 seek bar, or holding the mouse over it, shows the time there, and for a video on your device a picture of that
 moment too.
+
+**Openings and endings:** for an anime episode, the app looks up where its opening and ending are (AniSkip's
+times, for the episode MyAnimeList says it is; no MyAnimeList account needed). As one starts, a **Skip opening**
+or **Skip ending** button shows for 3 seconds: tap or click it, press **S** on a computer, or **OK** on a TV
+remote. In a room the whole room jumps, as when anyone seeks. To skip them by themselves instead, turn on **Skip
+openings and endings** in the room (see [In the room](#in-the-room)), or, watching alone, in Settings > Playback.
+Settings > Playback can also stop showing the button.
 
 - **Audio and subtitles:** pick a track in the player. Settings > Playback sets the languages chosen
   automatically.
@@ -283,7 +295,8 @@ On a computer or a wide tablet, settings are grouped in categories on the left:
 - **MyAnimeList:** opens the MyAnimeList screen.
 - **Syncing:** when you unpause, catching up and slowing down, when you're ready, remembering playlists, the
   chat, and your device's name.
-- **Playback:** hardware decoding, picture-in-picture, the seek step and the audio and subtitle languages.
+- **Playback:** hardware decoding, picture-in-picture, skipping openings and endings when watching alone and
+  the Skip button, the seek step and the audio and subtitle languages.
 - **Updates:** checking for and installing new versions.
 - **About:** the version, what's new, this manual, the website, privacy, the community rules, the source code,
   reporting a problem, and open-source licenses. On a TV, these links show a QR code to open on your phone.

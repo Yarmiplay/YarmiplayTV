@@ -3,6 +3,9 @@ package com.yarmiplaytv.ui.player
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -75,6 +78,7 @@ import com.yarmiplaytv.relay.RelayHint
 import com.yarmiplaytv.sync.PlaylistStatus
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.ManagedRooms
+import com.yarmiplaytv.tracking.SkipService
 import com.yarmiplaytv.ui.components.ActionButton
 import com.yarmiplaytv.ui.components.Dot
 import com.yarmiplaytv.ui.components.IconAction
@@ -108,6 +112,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
     val tracks by player.tracks.collectAsStateWithLifecycle()
     val room by container.sync.room.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
+    val skipPrompt by container.skips.prompt.collectAsStateWithLifecycle()
     val status by container.playlist.status.collectAsStateWithLifecycle()
     val settings by container.settings.collectAsStateWithLifecycle()
 
@@ -208,6 +213,12 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                     return@onPreviewKeyEvent true
                 }
                 if (overlay != Overlay.Hidden) return@onPreviewKeyEvent false
+                // While the Skip button shows, OK presses it instead of opening the controls.
+                val ok = code == AndroidKeyEvent.KEYCODE_DPAD_CENTER || code == AndroidKeyEvent.KEYCODE_ENTER || code == AndroidKeyEvent.KEYCODE_NUMPAD_ENTER
+                if (ok && skipPrompt != null) {
+                    if (firstPress) container.skips.skip()
+                    return@onPreviewKeyEvent true
+                }
                 when (code) {
                     AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
                     AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_MENU -> { if (firstPress) overlay = Overlay.Controls; true }
@@ -238,6 +249,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
 
         ToastHost(container.sync.toasts, Modifier.align(Alignment.TopStart).padding(32.dp))
         TvMalNotice(container, Modifier.align(Alignment.TopEnd).padding(32.dp))
+        if (overlay == Overlay.Hidden) skipPrompt?.let { TvSkipPrompt(it.label, Modifier.align(Alignment.BottomEnd).padding(end = 64.dp, bottom = 48.dp)) }
 
         val flashVisible = remember(seekFlash) { mutableStateOf(seekFlash != 0L) }
         LaunchedEffect(seekFlash) { delay(1800); flashVisible.value = false }
@@ -536,6 +548,24 @@ private fun RoomChip(room: com.yarmiplaytv.syncplay.RoomState, streaming: String
         StreamingChip(text, modifier.testTag("relay_streaming"))
     } else {
         Pill(text, color, modifier)
+    }
+}
+
+/**
+ * The Skip button on TV: not focusable (focus stays on the player, so Left and Right still seek); OK presses it while
+ * it shows. A line under it runs out over the seconds it stays.
+ */
+@Composable
+private fun TvSkipPrompt(label: String, modifier: Modifier = Modifier) {
+    val left = remember(label) { Animatable(1f) }
+    LaunchedEffect(label) { left.animateTo(0f, tween(SkipService.PROMPT_MILLIS.toInt(), easing = LinearEasing)) }
+    Box(modifier.clip(RoundedCornerShape(10.dp)).background(Color.White.copy(alpha = 0.92f)).testTag("skip_segment")) {
+        Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = Color.Black, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.width(12.dp))
+            Text("OK", color = Color.Black.copy(alpha = 0.6f), style = MaterialTheme.typography.labelLarge)
+        }
+        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(left.value).height(3.dp).background(AppColors.Accent))
     }
 }
 

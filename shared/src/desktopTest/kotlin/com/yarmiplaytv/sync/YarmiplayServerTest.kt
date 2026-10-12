@@ -35,6 +35,7 @@ import okhttp3.Request
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -148,6 +149,32 @@ class YarmiplayServerTest {
         awaitTrue("the leecher to show where the file comes from") {
             leecher.relay?.status?.value?.text?.contains("via seeder") == true
         }
+    }
+
+    @Test
+    fun `skipping openings is the room's setting, and a saved room turns it on again when joined`() {
+        val server = System.getenv("YARMIPLAY_TEST_SERVER").orEmpty()
+        assumeTrue("YARMIPLAY_TEST_SERVER not set", server.isNotBlank())
+        val ana = join(server, "ana")
+        val bob = join(server, "bob")
+        awaitTrue("the room's settings") { listOf(ana, bob).all { it.roomAutoSkip.state.value.shared } }
+        assertFalse(bob.roomAutoSkip.state.value.on)
+
+        onMain { ana.roomAutoSkip.set(true) }
+        awaitTrue("Bob to have it on") { bob.roomAutoSkip.state.value.let { it.on && it.setBy == "ana" } }
+        awaitTrue("Bob to be told") { bob.sync.feed.value.any { it.text == "ana turned on skipping openings and endings" } }
+        awaitTrue("Ana's room to remember it") { ana.settings.value.savedRooms.any { it.room == room && it.autoSkip } }
+
+        // Ana keeps the room, Bob turns it off, and Ana comes back: her saved room turns it on again.
+        val key = ana.settings.value.savedRooms.first { it.room == room }.key
+        runBlocking { ana.settingsStore.setRoomSaved(key, true) }
+        onMain { bob.roomAutoSkip.set(false) }
+        awaitTrue("off for everyone") { !ana.roomAutoSkip.state.value.on && !bob.roomAutoSkip.state.value.on }
+        val (host, port) = server.split(":").let { it[0] to it[1].toInt() }
+        onMain { ana.sync.disconnect() }
+        awaitTrue("Ana to leave") { bob.sync.room.value.users.none { it.name == "ana" } }
+        onMain { ana.sync.connect(SyncplayConfig(host, port, "ana", room)) }
+        awaitTrue("Ana's saved room to turn it on again") { bob.roomAutoSkip.state.value.let { it.on && it.setBy == "ana" } }
     }
 
     @Test

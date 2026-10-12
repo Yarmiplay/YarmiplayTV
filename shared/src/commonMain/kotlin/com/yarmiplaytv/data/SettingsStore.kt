@@ -63,6 +63,11 @@ data class SavedRoom(
     val label: String = "",
     val saved: Boolean = false,
     val lastUsedMillis: Long = 0,
+    /**
+     * Skip openings and endings in this room: what this device last chose there. Joining it when [saved] turns the
+     * room's shared setting on; on servers without shared room settings it is this device's setting for the room.
+     */
+    val autoSkip: Boolean = false,
 ) {
     /** Identifies the room: the same room on the same server is one entry. */
     val key: String get() = "${host.trim().lowercase()}:$port/$room"
@@ -75,7 +80,10 @@ data class SavedRoom(
     }
 }
 
-/** The `sp_saved_rooms` format: one room per line, tab-separated fields (tabs and newlines in values become spaces). */
+/**
+ * The `sp_saved_rooms` format: one room per line, tab-separated fields (tabs and newlines in values become spaces).
+ * Fields added later go at the end, so older lines still read.
+ */
 internal object SavedRooms {
     /** How many recent (not saved) rooms are kept. */
     const val MAX_RECENT = 15
@@ -84,11 +92,14 @@ internal object SavedRooms {
         val f = line.split('\t')
         if (f.size < 9) return@mapNotNull null
         val port = f[1].toIntOrNull() ?: return@mapNotNull null
-        SavedRoom(f[0], port, f[2] == "1", f[3], f[4], f[5], f[6], f[7] == "1", f[8].toLongOrNull() ?: 0)
+        SavedRoom(f[0], port, f[2] == "1", f[3], f[4], f[5], f[6], f[7] == "1", f[8].toLongOrNull() ?: 0, autoSkip = f.getOrNull(9) == "1")
     }
 
     fun encode(rooms: List<SavedRoom>): String = rooms.joinToString("\n") { r ->
-        listOf(r.host, r.port.toString(), if (r.useTls) "1" else "0", r.username, r.room, r.password, r.label, if (r.saved) "1" else "0", r.lastUsedMillis.toString())
+        listOf(
+            r.host, r.port.toString(), if (r.useTls) "1" else "0", r.username, r.room, r.password, r.label, if (r.saved) "1" else "0",
+            r.lastUsedMillis.toString(), if (r.autoSkip) "1" else "0",
+        )
             .joinToString("\t") { it.replace('\t', ' ').replace('\n', ' ') }
     }
 
@@ -100,7 +111,7 @@ internal object SavedRooms {
         return saved + recent
     }
 
-    /** [rooms] after joining [visit]: a known room keeps its name and saved state, a new one becomes a recent. */
+    /** [rooms] after joining [visit]: a known room keeps its name, saved state and choices, a new one becomes a recent. */
     fun visited(rooms: List<SavedRoom>, visit: SavedRoom): List<SavedRoom> {
         val known = rooms.firstOrNull { it.key == visit.key }
         val updated = known?.copy(
@@ -119,6 +130,10 @@ data class PlaybackPrefs(
     val controlsHideSeconds: Int = 3,
     /** Android: leaving the app while a video plays shrinks it to a picture-in-picture window. */
     val pictureInPicture: Boolean = true,
+    /** Skip anime openings and endings automatically when watching alone (in a room, the room decides). */
+    val autoSkipAlone: Boolean = false,
+    /** Offer a Skip button for a few seconds as an opening or ending starts, when it isn't skipped automatically. */
+    val showSkipButton: Boolean = true,
 )
 
 data class AppSettings(
@@ -268,6 +283,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val slang = stringPreferencesKey("pb_slang")
         val seekStep = intPreferencesKey("pb_seek_step")
         val controlsHide = intPreferencesKey("pb_controls_hide")
+        val autoSkipAlone = booleanPreferencesKey("pb_auto_skip")
+        val skipButton = booleanPreferencesKey("pb_skip_button")
 
         /** JSON lists of [JellyfinSession] and [PlexSession]. */
         val jfServers = stringPreferencesKey("jf_servers")
@@ -353,6 +370,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
                 subtitleLanguages = p[Keys.slang] ?: defaults.playback.subtitleLanguages,
                 seekStepSeconds = p[Keys.seekStep] ?: 10,
                 controlsHideSeconds = p[Keys.controlsHide] ?: defaults.playback.controlsHideSeconds,
+                autoSkipAlone = p[Keys.autoSkipAlone] ?: defaults.playback.autoSkipAlone,
+                showSkipButton = p[Keys.skipButton] ?: defaults.playback.showSkipButton,
             ),
             jellyfinServers = jellyfinServers,
             lastJellyfinUrl = p[Keys.jfLastUrl] ?: "",
@@ -452,8 +471,14 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
     /** Adds [room] to the saved rooms (e.g. "Save this room" on a room not joined yet). */
     suspend fun saveRoom(room: SavedRoom) = dataStore.edit { p ->
         val rooms = read(p).savedRooms
-        val kept = rooms.firstOrNull { it.key == room.key }?.let { it.copy(saved = true, label = room.label.ifBlank { it.label }) } ?: room.copy(saved = true)
+        val kept = rooms.firstOrNull { it.key == room.key }?.let { it.copy(saved = true, label = room.label.ifBlank { it.label }, autoSkip = it.autoSkip || room.autoSkip) }
+            ?: room.copy(saved = true)
         p[Keys.savedRooms] = SavedRooms.encode(SavedRooms.normalize(rooms.filterNot { it.key == room.key } + kept))
+    }
+
+    /** Remembers [on] as this device's choice for skipping openings and endings in room [key]. */
+    suspend fun setRoomAutoSkip(key: String, on: Boolean) = dataStore.edit { p ->
+        p[Keys.savedRooms] = SavedRooms.encode(read(p).savedRooms.map { if (it.key == key) it.copy(autoSkip = on) else it })
     }
 
     suspend fun forgetSavedRoom(key: String) = dataStore.edit { p ->
@@ -557,6 +582,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             it[Keys.slang] = prefs.subtitleLanguages
             it[Keys.seekStep] = prefs.seekStepSeconds
             it[Keys.controlsHide] = prefs.controlsHideSeconds
+            it[Keys.autoSkipAlone] = prefs.autoSkipAlone
+            it[Keys.skipButton] = prefs.showSkipButton
         }
     }
 

@@ -41,6 +41,8 @@ actual val autoPictureInPictureSubtitle = "A playing video keeps going, in sync,
 
 actual val pictureInPictureLabel = "Picture-in-picture"
 
+actual val skipKeyHint: String? = null
+
 actual val pictureInPictureWindow = false
 
 @Composable

@@ -1,6 +1,7 @@
 package com.yarmiplaytv.sync
 
 import com.yarmiplaytv.FakePlayer
+import com.yarmiplaytv.data.AppSettings
 import com.yarmiplaytv.data.SettingsStore
 import com.yarmiplaytv.data.SyncplayProfile
 import com.yarmiplaytv.data.desktopSettingsStore
@@ -13,6 +14,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -90,6 +93,21 @@ class RoomHistoryTest {
         history.saveWhenJoined(server.port, "movie night ")
         join("movie night")
         awaitTrue("the room to be saved") { rooms().any { it.room == "movie night" && it.saved } }
+    }
+
+    @Test
+    fun `without shared room settings, skipping openings is this device's choice, remembered with the room`() {
+        val settings = store.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
+        val skip = RoomAutoSkip(scope, sync, history, store, settings)
+        join("anime")
+        awaitTrue("the room") { skip.state.value.inRoom && rooms().any { it.room == "anime" } }
+        assertEquals(RoomSkip(inRoom = true, on = false, shared = false, canChange = true), skip.state.value)
+        onMain { skip.set(true) }
+        awaitTrue("it to be on") { skip.state.value.on }
+        assertTrue(rooms().single { it.room == "anime" }.autoSkip)
+
+        onMain { sync.changeRoom("movie night") }
+        awaitTrue("another room, with its own choice") { sync.room.value.room == "movie night" && skip.state.value.inRoom && !skip.state.value.on }
     }
 
     @Test

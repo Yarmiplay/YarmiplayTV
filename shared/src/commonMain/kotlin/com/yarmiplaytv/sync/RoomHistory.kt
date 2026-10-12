@@ -34,19 +34,25 @@ class RoomHistory(
         }
     }
 
-    private suspend fun record(room: String) {
-        val config = sync.client?.config ?: return
+    /** [room] on the current connection as a list entry; [SavedRoom.key] identifies its entry in the lists. */
+    fun visitOf(room: String): SavedRoom? {
+        val config = sync.client?.config ?: return null
         // The server as the app knows it now: a typed IP that turned out to have a name is saved under the name.
         val server = sync.server ?: SyncController.serverKey(config.host, config.port)
         val host = server.substringBeforeLast(':')
         val port = server.substringAfterLast(':').toIntOrNull() ?: config.port
-        val visit = SavedRoom(host, port, config.useTls, config.username, room, config.password.orEmpty(), lastUsedMillis = now())
+        return SavedRoom(host, port, config.useTls, config.username, room, config.password.orEmpty(), lastUsedMillis = now())
+    }
+
+    private suspend fun record(room: String) {
+        val visit = visitOf(room) ?: return
+        val port = visit.port
         store.saveRoomVisit(visit)
         if (saveNext == (port to room)) {
             saveNext = null
             if (store.current().savedRooms.none { it.key == visit.key && it.saved }) store.setRoomSaved(visit.key, true)
         }
         val profile = store.current().syncplay
-        if (profile.room != room && profile.host.equals(host, ignoreCase = true) && profile.port == port) store.saveSyncplay(profile.copy(room = room))
+        if (profile.room != room && profile.host.equals(visit.host, ignoreCase = true) && profile.port == port) store.saveSyncplay(profile.copy(room = room))
     }
 }

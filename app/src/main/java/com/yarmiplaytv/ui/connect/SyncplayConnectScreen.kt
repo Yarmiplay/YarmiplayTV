@@ -103,6 +103,7 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
                     rooms.forEach { r ->
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             ActionButton(savedRoomLabel(r), { model.pick(r); connect() }, Modifier.testTag("known_room_${r.room}"), icon = if (r.saved) Icons.Filled.Star else Icons.Filled.Groups)
+                            if (r.autoSkip) Text("Skips openings", color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 IconAction(
                                     if (r.saved) Icons.Filled.Star else Icons.Filled.StarBorder,

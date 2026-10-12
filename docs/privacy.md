@@ -57,11 +57,18 @@ unless you turn it off, to GitHub to check for a new version.
   when you've watched an episode or change something in the MyAnimeList panel, updates your list: the episodes
   watched, status, score, rewatching and start and finish dates. MyAnimeList handles this under its
   [privacy policy](https://myanimelist.net/about/privacy_policy). Nothing about MyAnimeList goes anywhere else.
+- **MyAnimeList and AniSkip, to skip openings and endings:** when an anime episode plays, the app works out
+  which MyAnimeList entry it is, also without a MyAnimeList account: it asks MyAnimeList, with the app's id
+  rather than yours, about the show (its title, or the MyAnimeList id your media server has for it) and its
+  seasons. It then asks [AniSkip](https://aniskip.com) (api.aniskip.com) where the episode's opening and ending
+  are, sending the MyAnimeList id, the episode number and the file's length, nothing else. The answers are kept
+  in memory only. In a room on a YarmiplayServerTV server, turning automatic skipping on or off goes to the
+  server, which tells the room who changed it.
 - **Your local network:** when you look for Jellyfin servers, the app sends a discovery message on the local
   network that Jellyfin servers answer. To connect to a Plex server, the app tries the addresses plex.tv lists
   for it, local ones first. The Syncplay connect screen also sends a discovery message, on Wi-Fi or Ethernet
-  only, that YarmiplayServerTV servers answer. Signing in to MyAnimeList on a phone or computer listens on this
-  device only (`localhost`) for MyAnimeList's page to hand back the sign-in.
+  only, that YarmiplayServerTV servers answer. Signing in to MyAnimeList on a computer listens on this device
+  only (`localhost`) for MyAnimeList's page to hand back the sign-in.
 - **GitHub, to check for updates:** when it starts, the app from the download page (the APK and the desktop
   apps) reads the latest version number from the download page (tv.yarmiplay.com, hosted on GitHub Pages). The
   request contains nothing about you, your settings or your device; like any web request it reaches GitHub
