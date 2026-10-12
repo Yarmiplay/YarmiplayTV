@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.8.5" date="2026-10-12">
+      <description>
+        <p>Saved and recent rooms with quick switching and one-tap rejoining, automatic MyAnimeList season and part matching with a dedicated library screen, three-column room layout with full-height chat, in-app update installation, and What's new notes after each update.</p>
+      </description>
+    </release>
     <release version="1.8.2" date="2026-10-12">
       <description>
         <p>A cleaner window while the desktop app updates itself on launch: the app's logo, the version and progress, and a quiet Skip for now (also Esc).</p>
