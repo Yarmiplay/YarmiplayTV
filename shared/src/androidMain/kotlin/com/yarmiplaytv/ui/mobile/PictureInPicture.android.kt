@@ -36,10 +36,12 @@ import kotlin.math.roundToInt
 
 actual val autoPictureInPictureSetting = true
 
+actual val autoPictureInPictureTitle = "Picture-in-picture when leaving the app"
+actual val autoPictureInPictureSubtitle = "A playing video keeps going, in sync, in a small window over other apps"
+
 actual val pictureInPictureLabel = "Picture-in-picture"
 
-/** Android's PiP window takes no touches of its own: the system shows its controls instead. */
-actual fun Modifier.miniPlayerGestures(onExit: () -> Unit): Modifier = this
+actual val pictureInPictureWindow = false
 
 @Composable
 actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: Boolean): PictureInPicture {

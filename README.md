@@ -32,6 +32,18 @@ desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin]
   and a room created from the join form is saved as the one to join next time. Managed rooms show their chosen
   name with a lock instead of the hash. The Room tab lists the shared playlist first, then the chat, the
   people in the room, and last switching rooms.
+- MyAnimeList: sign in under Settings > MyAnimeList and your list follows what you watch. When an episode is 90%
+  watched, its progress is updated (and the show's status: watching, or completed with a finish date at the last
+  episode; a completed show you watch again counts as a rewatch), with Undo, or after asking if you prefer. The
+  app works out which MyAnimeList entry an episode is, from your media server (or the file and folder names):
+  MyAnimeList has an entry per season, so season 2 episode 5 is the second season's entry, and an episode
+  numbered from the start of the show (episode 50, say) is counted through the seasons to the right one. When it
+  isn't sure, it asks you to pick, and remembers your choice for the show. The player's MyAnimeList panel shows
+  the entry and lets you change the episodes watched, status and score, fix a wrong match or stop tracking a show;
+  shows in the library have it too. You sign in on MyAnimeList's own page (in your browser, or on TV in a web
+  view); the app keeps only its tokens, on the device, and signing out deletes everything it kept. Builds need a
+  MyAnimeList Client ID (`MAL_CLIENT_ID` in `~/.gradle/gradle.properties` or the CI secret; never in the
+  repository), registered with the redirect URL `http://localhost:47821/mal-callback`.
 - Like Syncplay, it warns when someone's copy of a file differs from yours: the playlist marks the entry when
   their file size differs (with both sizes when they're shared), and the room list says whether the name, size
   or duration differ. It's only a warning; playback and sync carry on as usual.
@@ -148,10 +160,13 @@ slider in the player's bar), M mutes, N and B (or the media keys) go to the play
 F or F11 toggles full screen, F5 saves a screenshot to
 Pictures\YarmiplayTV or the folder picked under Settings > Save screenshots to (the camera button in the player's
 bar does too, also on Android, where they go to Pictures/YarmiplayTV unless another folder is picked), H hides or shows the controls (they also hide after 2 s unless the mouse is on them), P (or the
-picture-in-picture button in the player's top bar) shrinks the window to a mini player: a small, always-on-top
-video in the corner of the screen (borderless on Windows) that you drag to move, with play/pause and the way back
-on hover; double-click or Esc returns to the full window. Esc leaves full screen
-or goes back. The command line follows the official client:
+picture-in-picture button in the player's top bar) moves the video to a picture-in-picture window: small,
+borderless and always on top, in the corner of the screen (or where you left it), while the main window stays
+free to browse, chat or change settings. Hovering it shows the title, play/pause, a seek bar, the volume, the way
+back and close; drag it to move it, drag its corner to resize it (it keeps the video's shape), and double-click it
+or press Esc to go back to the app. Space, ←/→, ↑/↓ and M work in it too. Minimizing the app while a video plays
+opens it as well (Settings > Picture-in-picture when minimized), and restoring the app brings the video back. Esc
+leaves full screen or goes back. The command line follows the official client:
 `YarmiplayTV [--host host[:port]] [--name name] [--room room] [--password pw] [file]`.
 
 From source (downloads the pinned libmpv on Windows; use `brew install mpv` or `sudo apt install libmpv2`

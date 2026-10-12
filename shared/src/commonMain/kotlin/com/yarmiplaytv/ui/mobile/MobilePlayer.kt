@@ -160,7 +160,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
         if (tab == null || !toggleRoomSidePanel(tab)) sheet = kind
     }
     if (pip.active) {
-        PictureInPictureView(container, pip, state.paused, onTogglePause = ::togglePause)
+        if (pictureInPictureWindow) PictureInPictureElsewhere(pip) else PictureInPictureView(container)
         return
     }
     Row(Modifier.fillMaxSize()) {
@@ -301,27 +301,25 @@ private fun BottomControls(
     }
 }
 
+/** The player as Android's picture-in-picture window: only the video (the system adds its own controls). */
+@Composable
+private fun PictureInPictureView(container: AppContainer) {
+    Box(Modifier.fillMaxSize().background(Color.Black).testTag("player_pip")) {
+        VideoSurface(container.player, Modifier.fillMaxSize())
+    }
+}
+
 /**
- * The player in picture-in-picture: only the video. On desktop (the mini player) hovering shows play/pause and the
- * way back to the full window; dragging the video moves the window and double-clicking it goes back too. Android's
- * PiP window has its own controls.
+ * The player screen while the video plays in the desktop's picture-in-picture window (only one place can show it):
+ * a note, and the way to bring the video back here.
  */
 @Composable
-private fun PictureInPictureView(container: AppContainer, pip: PictureInPicture, paused: Boolean, onTogglePause: () -> Unit) {
-    val hover = remember { MutableInteractionSource() }
-    val hovered by hover.collectIsHoveredAsState()
-    Box(Modifier.fillMaxSize().background(Color.Black).testTag("player_pip").hoverable(hover).miniPlayerGestures(onExit = pip.toggle)) {
-        VideoSurface(container.player, Modifier.fillMaxSize())
-        if (hovered) {
-            RoundButton(
-                if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                if (paused) "Play" else "Pause",
-                modifier = Modifier.align(Alignment.Center).testTag("pip_play_pause"),
-                onClick = onTogglePause,
-            )
-            IconButton(pip.toggle, Modifier.align(Alignment.TopEnd).testTag("pip_restore")) {
-                Icon(Icons.Filled.OpenInFull, contentDescription = "Back to the full window", tint = Color.White)
-            }
+private fun PictureInPictureElsewhere(pip: PictureInPicture) {
+    Box(Modifier.fillMaxSize().background(Color.Black).testTag("player_pip_elsewhere"), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Filled.PictureInPictureAlt, contentDescription = null, tint = AppColors.TextDim, modifier = Modifier.size(48.dp))
+            Text("Playing in picture-in-picture", style = MaterialTheme.typography.titleMedium, color = Color.White)
+            Button(pip.toggle, Modifier.testTag("pip_back_here")) { Text("Show the video here") }
         }
     }
 }

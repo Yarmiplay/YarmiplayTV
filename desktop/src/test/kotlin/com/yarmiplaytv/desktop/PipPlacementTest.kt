@@ -1,9 +1,10 @@
 package com.yarmiplaytv.desktop
 
-import com.yarmiplaytv.desktop.MiniPlayer.Companion.DEFAULT_WIDTH
-import com.yarmiplaytv.desktop.MiniPlayer.Companion.MARGIN
-import com.yarmiplaytv.desktop.MiniPlayer.Companion.MIN_WIDTH
-import com.yarmiplaytv.desktop.MiniPlayer.Companion.miniBounds
+import com.yarmiplaytv.desktop.PipPlacement.DEFAULT_WIDTH
+import com.yarmiplaytv.desktop.PipPlacement.MARGIN
+import com.yarmiplaytv.desktop.PipPlacement.MIN_WIDTH
+import com.yarmiplaytv.desktop.PipPlacement.resizedWidth
+import com.yarmiplaytv.desktop.PipPlacement.bounds as miniBounds
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowState
@@ -14,7 +15,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.awt.Rectangle
 
-class MiniPlayerTest {
+class PipPlacementTest {
     @get:Rule val tmp = TemporaryFolder()
 
     /** A 1920×1080 screen with a 40 px taskbar at the bottom. */
@@ -61,12 +62,21 @@ class MiniPlayerTest {
     }
 
     @Test
-    fun theMiniPlayersPlaceIsKeptWithTheWindowBounds() {
+    fun thePictureInPictureWindowsPlaceIsKeptWithTheWindowBounds() {
         val file = tmp.root.resolve("window.properties")
         WindowBounds.save(file, WindowState(size = DpSize(1000.dp, 700.dp)), MiniBounds(-300, 40, 480))
         assertEquals(MiniBounds(-300, 40, 480), WindowBounds.load(file).mini)
         // Saving without one keeps none.
         WindowBounds.save(file, WindowState())
         assertEquals(null, WindowBounds.load(file).mini)
+    }
+
+    @Test
+    fun theCornerGripResizesByTheLargerMoveAndNeverBelowTheMinimum() {
+        // Dragging right by 40 (or down by 30, which is 53 in width at 16:9): the larger wins.
+        assertEquals(440, resizedWidth(400, 40, 10, 16.0 / 9.0))
+        assertEquals(453, resizedWidth(400, 10, 30, 16.0 / 9.0))
+        assertEquals(360, resizedWidth(400, -40, 0, 16.0 / 9.0))
+        assertEquals(MIN_WIDTH, resizedWidth(300, -500, 0, 16.0 / 9.0))
     }
 }

@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -32,8 +35,8 @@ import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.data.DesktopPaths
 import com.yarmiplaytv.data.SettingsStore
-import com.yarmiplaytv.defaultSyncplayName
 import com.yarmiplaytv.data.desktopSettingsStore
+import com.yarmiplaytv.defaultSyncplayName
 import com.yarmiplaytv.device.FileDeviceKeyStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.local.FrameGrabber
@@ -45,8 +48,9 @@ import com.yarmiplaytv.player.desktop.VideoSurface
 import com.yarmiplaytv.screenshot.FolderScreenshotStore
 import com.yarmiplaytv.ui.mobile.DesktopBack
 import com.yarmiplaytv.ui.mobile.DesktopDialogs
-import com.yarmiplaytv.ui.mobile.DesktopRoomPanel
+import com.yarmiplaytv.ui.mobile.DesktopPip
 import com.yarmiplaytv.ui.mobile.DesktopPlayerInput
+import com.yarmiplaytv.ui.mobile.DesktopRoomPanel
 import com.yarmiplaytv.ui.mobile.DesktopVideo
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
@@ -54,8 +58,6 @@ import com.yarmiplaytv.ui.mobile.PlayerVolume
 import com.yarmiplaytv.ui.mobile.appLogoPainter
 import com.yarmiplaytv.update.UpdateChecker
 import com.yarmiplaytv.update.Updates
-import kotlinx.coroutines.runBlocking
-import okhttp3.OkHttpClient
 import java.awt.Desktop
 import java.awt.Dimension
 import java.io.File
@@ -65,6 +67,8 @@ import java.util.concurrent.TimeUnit
 import javax.swing.JOptionPane
 import javax.swing.SwingUtilities
 import kotlin.system.exitProcess
+import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
 
 internal fun runApp(args: List<String>) {
     val configDir = DesktopPaths.portableDir() ?: DesktopPaths.migrateLegacyConfig()
@@ -181,19 +185,23 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
     val bounds = remember { WindowBounds.load(boundsFile) }
     val state = rememberWindowState(placement = bounds.placement, position = bounds.position, size = bounds.size)
     val fullscreen = remember { Fullscreen(state) }
-    val mini = remember { MiniPlayer(state, fullscreen, bounds.mini) }
-    fun setMini(on: Boolean) {
-        DesktopPlayerInput.miniPlayer = mini.set(on, container.player.state.value.displayAspect)
+    var pipBounds by remember { mutableStateOf(bounds.mini) }
+    var mainWindow by remember { mutableStateOf<java.awt.Window?>(null) }
+    /** Picture-in-picture opened by minimizing: restoring the window closes it again. */
+    var pipFromMinimize by remember { mutableStateOf(false) }
+    fun setPip(on: Boolean) {
+        if (on) fullscreen.set(false) else pipFromMinimize = false
+        DesktopPip.open = on
     }
     fun applyFullscreen(on: Boolean) {
-        if (on) setMini(false)
+        if (on) setPip(false)
         fullscreen.set(on)
     }
     val shortcuts = remember {
         object : ShortcutTarget {
             override val isFullscreen get() = fullscreen.isFullscreen
             override fun setFullscreen(on: Boolean) = applyFullscreen(on)
-            override fun togglePictureInPicture() = setMini(!mini.isActive)
+            override fun togglePictureInPicture() = setPip(!DesktopPip.open)
             override fun back() = DesktopBack.dispatch()
             override val player get() = DesktopPlayerInput.input?.value
             override fun changeVolume(delta: Double) = DesktopPlayerInput.changeVolume(delta)
@@ -218,9 +226,9 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
         }
     }
     val close = {
-        setMini(false)
+        DesktopPip.open = false
         fullscreen.set(false)
-        WindowBounds.save(boundsFile, state, mini.remembered)
+        WindowBounds.save(boundsFile, state, pipBounds)
         exitApplication()
     }
     container.updates.exitApp = close
@@ -237,17 +245,23 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
         LaunchedEffect(Unit) {
             window.minimumSize = Dimension(WindowBounds.MIN_WIDTH.toInt(), WindowBounds.MIN_HEIGHT.toInt())
             fullscreen.attach(window)
-            mini.attach(window)
+            mainWindow = window
             DesktopPlayerInput.toggleFullscreen = { applyFullscreen(!fullscreen.isFullscreen) }
-            DesktopPlayerInput.toggleMiniPlayer = { setMini(!mini.isActive) }
-            DesktopPlayerInput.moveWindowBy = { dx, dy -> window.setLocation(window.x + dx, window.y + dy) }
+            DesktopPip.toggle = { setPip(!DesktopPip.open) }
         }
         LaunchedEffect(Unit) {
-            // Leaving the player leaves full screen and the mini player.
-            snapshotFlow { DesktopPlayerInput.input != null }.collect { showing ->
-                if (!showing) {
-                    setMini(false)
-                    fullscreen.set(false)
+            // Leaving the player leaves full screen. Picture-in-picture stays: browsing meanwhile is what it's for.
+            snapshotFlow { DesktopPlayerInput.input != null }.collect { showing -> if (!showing) fullscreen.set(false) }
+        }
+        LaunchedEffect(Unit) {
+            // Minimizing while a video plays goes on in picture-in-picture (a setting); restoring comes back.
+            snapshotFlow { state.isMinimized }.collect { minimized ->
+                val playing = container.player.state.value.let { it.fileLoaded && !it.paused }
+                if (minimized && !DesktopPip.open && playing && container.settings.value.playback.pictureInPicture) {
+                    setPip(true)
+                    pipFromMinimize = true
+                } else if (!minimized && pipFromMinimize) {
+                    setPip(false)
                 }
             }
         }
@@ -258,5 +272,20 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
         ) {
             MobileTheme { MobileRoot(container, DeviceKind.DESKTOP) }
         }
+    }
+    if (DesktopPip.open) {
+        PipWindow(
+            container,
+            remembered = pipBounds,
+            near = mainWindow,
+            onBounds = { pipBounds = it },
+            onBack = {
+                setPip(false)
+                state.isMinimized = false
+                mainWindow?.toFront()
+                container.playlist.showPlayer()
+            },
+            onClose = { setPip(false) },
+        )
     }
 }

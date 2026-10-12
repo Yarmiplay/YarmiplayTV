@@ -82,11 +82,15 @@ object DesktopPlayerInput {
     var changeVolume: (Double) -> Unit = {}
     /** The player's volume for the player bar's volume control; without it the control isn't shown. */
     var volume: PlayerVolume? = null
-    /** The window is the mini player: small, always on top, only the video. */
-    var miniPlayer: Boolean by mutableStateOf(false)
-    var toggleMiniPlayer: () -> Unit = {}
-    /** Moves the window by the given pixels, for dragging the mini player by its video. */
-    var moveWindowBy: (dx: Int, dy: Int) -> Unit = { _, _ -> }
+}
+
+/**
+ * The desktop's picture-in-picture: a small always-on-top window of its own with the video ([open]), while the main
+ * window stays usable. The desktop app shows the window and sets [toggle].
+ */
+object DesktopPip {
+    var open: Boolean by mutableStateOf(false)
+    var toggle: () -> Unit = { open = !open }
 }
 
 private val hiddenCursor: PointerIcon by lazy {
@@ -169,16 +173,16 @@ actual fun VideoSurface(player: Player, modifier: Modifier) = DesktopVideo.surfa
 @Composable
 actual fun FullscreenLandscape(pictureInPicture: Boolean) = Unit
 
-actual val autoPictureInPictureSetting = false
+actual val autoPictureInPictureSetting = true
+actual val autoPictureInPictureTitle = "Picture-in-picture when minimized"
+actual val autoPictureInPictureSubtitle = "A playing video keeps going in a small window on top when you minimize YarmiplayTV"
+actual val pictureInPictureLabel = "Picture-in-picture (P)"
+actual val pictureInPictureWindow = true
 
-/** The mini player: only opened by hand (the button or P), and left the same way, by double-click or Esc. */
+/** Picture-in-picture is [DesktopPip]'s window: the button or P opens and closes it, and so does minimizing (a setting). */
 @Composable
-actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: Boolean): PictureInPicture {
-    val active = DesktopPlayerInput.miniPlayer
-    SideEffect { PlayerPictureInPicture.active = active }
-    DisposableEffect(Unit) { onDispose { PlayerPictureInPicture.active = false } }
-    return PictureInPicture(supported = true, active = active) { DesktopPlayerInput.toggleMiniPlayer() }
-}
+actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: Boolean): PictureInPicture =
+    PictureInPicture(supported = true, active = DesktopPip.open) { DesktopPip.toggle() }
 
 @Composable
 actual fun rememberVideoPicker(onPicked: (String) -> Unit): () -> Unit {

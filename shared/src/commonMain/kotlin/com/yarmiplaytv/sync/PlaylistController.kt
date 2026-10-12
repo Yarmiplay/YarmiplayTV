@@ -509,6 +509,11 @@ class PlaylistController(
     fun removeIndex(index: Int) = shared.remove(setOf(index))
     fun move(from: Int, to: Int) = shared.move(from, to)
 
+    /** Asks the UI to show the player screen (e.g. back from the desktop's picture-in-picture window). */
+    fun showPlayer() {
+        _openPlayerRequests.value++
+    }
+
     fun dismissStatus() {
         _status.value = PlaylistStatus.Idle
     }

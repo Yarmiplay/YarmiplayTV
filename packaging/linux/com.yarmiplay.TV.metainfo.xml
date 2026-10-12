@@ -103,7 +103,8 @@
     </release>
     <release version="1.7.3" date="2026-10-11">
       <description>
-        <p>Picture-in-picture: leaving the app while a video plays on Android (phones, tablets and TVs that support it) keeps it playing in sync in a small window, and the desktop app has a mini player (P) that stays on top in the corner of the screen.</p>
+        <p>Picture-in-picture: leaving the app while a video plays on Android (phones, tablets and TVs that support it) keeps it playing in sync in a small window, and the desktop app has a picture-in-picture window (P, or minimizing) that stays on top while you use the rest of the app.</p>
+        <p>MyAnimeList: your list follows what you watch, including shows numbered across seasons, with Undo, ratings and status from the player.</p>
       </description>
     </release>
     <release version="1.7.2" date="2026-10-11">

@@ -148,8 +148,8 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
             }
             if (autoPictureInPictureSetting) {
                 ToggleSetting(
-                    "Picture-in-picture when leaving the app",
-                    "A playing video keeps going, in sync, in a small window over other apps",
+                    autoPictureInPictureTitle,
+                    autoPictureInPictureSubtitle,
                     pb.pictureInPicture,
                     Modifier.testTag("toggle_pip"),
                 ) { savePlayback(pb.copy(pictureInPicture = it)) }

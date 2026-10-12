@@ -96,14 +96,21 @@ object PlayerPictureInPicture {
 @Composable
 expect fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: Boolean): PictureInPicture
 
-/** Android: settings have "Picture-in-picture when leaving the app". The desktop's mini player only opens by hand. */
+/** Settings have a row to go into picture-in-picture automatically ([autoPictureInPictureTitle]). */
 expect val autoPictureInPictureSetting: Boolean
 
-/** The player's picture-in-picture button: "Picture-in-picture" on Android, "Mini player (P)" on desktop. */
+/** That row: "when leaving the app" on Android, "when minimized" on desktop. */
+expect val autoPictureInPictureTitle: String
+expect val autoPictureInPictureSubtitle: String
+
+/** The player's picture-in-picture button: "Picture-in-picture" on Android, "Picture-in-picture (P)" on desktop. */
 expect val pictureInPictureLabel: String
 
-/** Desktop's mini player: dragging the video moves the window, double-clicking it calls [onExit]. Nothing on Android. */
-expect fun Modifier.miniPlayerGestures(onExit: () -> Unit): Modifier
+/**
+ * Picture-in-picture is a window of its own (desktop): while it's open the player screen shows where the video went,
+ * and the rest of the app stays usable. On Android the activity itself becomes the PiP window.
+ */
+expect val pictureInPictureWindow: Boolean
 
 /** System "open video" picker; [onPicked] gets a content:// (Android) or file:// (desktop) URI. */
 @Composable

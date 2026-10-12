@@ -32,6 +32,10 @@ concurrency:
   group: linux-packages-${{ github.ref }}
   cancel-in-progress: true
 
+# MyAnimeList's Client ID for the builds (a repository secret, never in the repository); empty leaves MyAnimeList off.
+env:
+  MAL_CLIENT_ID: ${{ secrets.MAL_CLIENT_ID }}
+
 jobs:
   deb:
     runs-on: ubuntu-22.04

@@ -31,12 +31,17 @@ import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.ui.mobile.DesktopBack
+import com.yarmiplaytv.ui.mobile.DesktopPip
 import com.yarmiplaytv.ui.mobile.DesktopPlayerInput
-import com.yarmiplaytv.ui.mobile.PlayerVolume
 import com.yarmiplaytv.ui.mobile.MobilePlayerScreen
 import com.yarmiplaytv.ui.mobile.MobileTheme
+import com.yarmiplaytv.ui.mobile.PipContent
+import com.yarmiplaytv.ui.mobile.PlayerVolume
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import java.io.File
+import java.util.concurrent.Executors
+import javax.imageio.ImageIO
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
@@ -55,9 +60,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.io.File
-import java.util.concurrent.Executors
-import javax.imageio.ImageIO
 
 /**
  * The player's controls on desktop: they hide quickly while a video plays, can be hidden by hand, and have a
@@ -98,8 +100,8 @@ class PlayerControlsUiTest {
     @After
     fun tearDown() {
         DesktopPlayerInput.volume = null
-        DesktopPlayerInput.miniPlayer = false
-        DesktopPlayerInput.toggleMiniPlayer = {}
+        DesktopPip.open = false
+        DesktopPip.toggle = { DesktopPip.open = !DesktopPip.open }
         app.scope.cancel()
         storeScope.cancel()
         Dispatchers.resetMain()
@@ -174,46 +176,67 @@ class PlayerControlsUiTest {
     }
 
     @Test
-    fun `the mini player shows only the video, with play-pause and the way back on hover`() = runComposeUiTest {
-        var toggles = 0
-        DesktopPlayerInput.toggleMiniPlayer = { toggles++; DesktopPlayerInput.miniPlayer = !DesktopPlayerInput.miniPlayer }
-        player.state.value = player.state.value.copy(paused = true)
+    fun `picture-in-picture moves the video to its own window, and the player says where it went`() = runComposeUiTest {
+        DesktopPip.toggle = { DesktopPip.open = !DesktopPip.open }
         showPlayer()
-        onNodeWithTag("pip").assertContentDescriptionEquals("Mini player (P)")
-        // The click action, not a mouse click: the pointer left over the video would show the hover buttons straight away.
+        onNodeWithTag("pip").assertContentDescriptionEquals("Picture-in-picture (P)")
+        // The click action, not a mouse click: the pointer left over the video would show the hover controls.
         onNodeWithTag("pip").performSemanticsAction(SemanticsActions.OnClick)
         settle()
-        assertEquals(1, toggles)
-        onNodeWithTag("player_pip").assertExists()
-        assertFalse("no controls in the mini player", controlsShowing())
-        onNodeWithTag("seek_slider").assertDoesNotExist()
-        onNodeWithTag("pip_restore").assertDoesNotExist()
+        assertTrue(DesktopPip.open)
+        onNodeWithTag("player_pip_elsewhere").assertExists()
+        assertFalse("no controls while it plays elsewhere", controlsShowing())
 
-        onNodeWithTag("player_pip").performMouseInput { moveTo(center) }
+        onNodeWithTag("pip_back_here").performMouseInput { click() }
         settle()
-        screenshot("mini_player")
-        onNodeWithTag("pip_play_pause").performMouseInput { click() }
-        settle()
-        assertEquals(listOf(false), player.pauses)
-
-        onNodeWithTag("pip_restore").performMouseInput { click() }
-        settle()
-        assertEquals(2, toggles)
-        onNodeWithTag("player_pip").assertDoesNotExist()
+        assertFalse(DesktopPip.open)
+        onNodeWithTag("player_pip_elsewhere").assertDoesNotExist()
         assertTrue("the controls are back", controlsShowing())
 
-        // Double-clicking the video and Esc (the back handler) go back to the full window too, not off the player.
-        DesktopPlayerInput.miniPlayer = true
-        settle()
-        onNodeWithTag("player_pip").performMouseInput { doubleClick(Offset(width * 0.15f, height * 0.8f)) }
-        settle()
-        assertEquals(3, toggles)
-        DesktopPlayerInput.miniPlayer = true
+        // Esc (the back handler) brings it back here too, without leaving the player.
+        DesktopPip.open = true
         settle()
         runOnUiThread { assertTrue(DesktopBack.dispatch()) }
         settle()
-        assertEquals(4, toggles)
+        assertFalse(DesktopPip.open)
         onNodeWithTag("player").assertExists()
+    }
+
+    @Test
+    fun `the picture-in-picture window plays, pauses, goes back and closes`() = runComposeUiTest {
+        var back = 0
+        var closed = 0
+        val moves = mutableListOf<Pair<Int, Int>>()
+        player.state.value = player.state.value.copy(paused = true)
+        val lifecycle = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
+        }
+        mainClock.autoAdvance = false
+        setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
+                MobileTheme {
+                    Box(Modifier.size(400.dp, 225.dp)) {
+                        PipContent(app, onBack = { back++ }, onClose = { closed++ }, onMove = { dx, dy -> moves += dx to dy }, onResize = { _, _ -> })
+                    }
+                }
+            }
+        }
+        settle()
+        onNodeWithTag("pip_play_pause").assertDoesNotExist()
+        onNodeWithTag("pip_window").performMouseInput { moveTo(center) }
+        settle()
+        screenshot("pip_window")
+        onNodeWithTag("pip_play_pause").performMouseInput { click() }
+        settle()
+        assertEquals(listOf(false), player.pauses)
+        onNodeWithTag("seek_slider").assertExists()
+        onNodeWithTag("pip_back").performMouseInput { click() }
+        onNodeWithTag("pip_close").performMouseInput { click() }
+        settle()
+        assertEquals(1 to 1, back to closed)
+        onNodeWithTag("pip_window").performMouseInput { doubleClick(Offset(width * 0.15f, height * 0.5f)) }
+        settle()
+        assertEquals("double-click goes back to the app", 2, back)
     }
 
     private fun ComposeUiTest.screenshot(name: String) {
