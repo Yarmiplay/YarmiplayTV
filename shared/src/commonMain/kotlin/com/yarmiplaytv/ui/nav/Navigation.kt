@@ -20,6 +20,8 @@ sealed interface Screen {
     data object Licenses : Screen { override val key = "licenses" }
     data class Browse(val item: MediaItem) : Screen { override val key = "browse/${item.uniqueKey}" }
     data object MalLogin : Screen { override val key = "mal-login" }
+    /** MyAnimeList: the account, your list, matches and settings. */
+    data object Mal : Screen { override val key = "mal" }
     /** A show from the library on MyAnimeList. */
     data class MalEntry(val item: MediaItem) : Screen { override val key = "mal/${item.uniqueKey}" }
 

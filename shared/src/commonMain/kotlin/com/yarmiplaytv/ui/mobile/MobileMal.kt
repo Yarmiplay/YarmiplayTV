@@ -2,11 +2,14 @@ package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,23 +25,28 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -60,8 +68,10 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.media.EpisodeInfo
 import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.mal.MalAnime
+import com.yarmiplaytv.media.mal.MalListStatus
 import com.yarmiplaytv.media.mal.MalListUpdate
 import com.yarmiplaytv.media.mal.MalStatus
+import com.yarmiplaytv.tracking.MalService
 import com.yarmiplaytv.tracking.MalState
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
@@ -220,7 +230,7 @@ private fun MalEntry(container: AppContainer, state: MalState.Matched, onChanged
     if (canUndo) OutlinedButton({ mal.undo(); onChanged() }, Modifier.testTag("mal_undo")) { Text("Undo the last update") }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TextButton(onWrongEntry, Modifier.testTag("mal_wrong_entry")) { Text("Wrong entry?") }
-        TextButton({ mal.ignore(state.info.seriesKey, true); onChanged() }, Modifier.testTag("mal_ignore")) { Text("Don't track this show") }
+        TextButton({ mal.ignore(state.info.seriesKey, true, state.info.seriesName); onChanged() }, Modifier.testTag("mal_ignore")) { Text("Don't track this show") }
     }
     TextButton({ uriHandler.openUri(anime.url) }) { Text("Open on MyAnimeList") }
 }
@@ -325,5 +335,235 @@ fun MalNoticeCard(container: AppContainer, onPick: () -> Unit, modifier: Modifie
             if (n.pick) TextButton({ onPick(); container.mal.dismissNotice() }, Modifier.testTag("mal_notice_pick")) { Text("Pick") }
             TextButton(container.mal::dismissNotice) { Text("✕", color = AppColors.TextDim) }
         }
+    }
+}
+
+/**
+ * Everything MyAnimeList in one place (the home card opens it): the account, what's playing, your list (to update
+ * by hand), the update settings, the shows you matched or stopped tracking, and updates waiting to be sent. Wide
+ * windows put your list beside the rest.
+ */
+@Composable
+fun MobileMalScreen(container: AppContainer, nav: Navigator) {
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val state by container.mal.state.collectAsStateWithLifecycle()
+    Column(Modifier.fillMaxSize()) {
+        MobileTopBar("MyAnimeList", nav)
+        val account = settings.mal
+        if (!container.mal.client.configured || account == null) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(if (container.mal.client.configured) MAL_PRIVACY_NOTE else "MyAnimeList isn't set up in this build of YarmiplayTV.", color = AppColors.TextDim)
+                if (container.mal.client.configured) Button({ nav.push(Screen.MalLogin) }, Modifier.testTag("mal_hub_sign_in")) { Text("Sign in") }
+            }
+            return@Column
+        }
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            if (maxWidth >= 900.dp) {
+                Row(Modifier.fillMaxSize().testTag("mal_hub_wide")) {
+                    Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        MalAccountCard(container, account.userName, account.picture)
+                        MalNowPlaying(container, state, nav)
+                        MalHubSettings(container)
+                    }
+                    Column(Modifier.weight(1.2f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        MalYourList(container)
+                    }
+                }
+            } else {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    MalAccountCard(container, account.userName, account.picture)
+                    MalNowPlaying(container, state, nav)
+                    MalYourList(container)
+                    MalHubSettings(container)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MalSection(title: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Surface(color = AppColors.Surface, shape = RoundedCornerShape(16.dp), modifier = modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun MalAccountCard(container: AppContainer, userName: String, picture: String?) {
+    var confirm by remember { mutableStateOf(false) }
+    Surface(color = AppColors.Surface, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(48.dp).clip(RoundedCornerShape(24.dp)).background(AppColors.SurfaceHigh)) {
+                picture?.let { AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(userName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.testTag("mal_hub_user"))
+                Text(MAL_ATTRIBUTION, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
+            }
+            TextButton({ confirm = true }, Modifier.testTag("mal_hub_sign_out")) { Text("Sign out") }
+        }
+    }
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text("Sign out of MyAnimeList?") },
+            text = { Text("Everything YarmiplayTV keeps for MyAnimeList on this device is deleted: the sign-in, your matched shows and updates not sent yet.") },
+            confirmButton = { TextButton({ confirm = false; container.mal.signOut() }, Modifier.testTag("mal_sign_out")) { Text("Sign out") } },
+            dismissButton = { TextButton({ confirm = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun MalNowPlaying(container: AppContainer, state: MalState, nav: Navigator) {
+    if (state == MalState.Idle) return
+    Surface(color = AppColors.Surface, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(vertical = 12.dp)) {
+            Text("Now playing", style = MaterialTheme.typography.labelLarge, color = AppColors.TextDim, modifier = Modifier.padding(horizontal = 16.dp))
+            MalContent(container, state, onSignIn = { nav.push(Screen.MalLogin) })
+        }
+    }
+}
+
+/** Your list by status, newest change first; each entry's episodes and score can be changed right here. */
+@Composable
+private fun MalYourList(container: AppContainer) {
+    val statuses = listOf(MalStatus.WATCHING, MalStatus.PLAN_TO_WATCH, MalStatus.COMPLETED, MalStatus.ON_HOLD, MalStatus.DROPPED)
+    var status by remember { mutableStateOf(MalStatus.WATCHING) }
+    var entries by remember { mutableStateOf<List<Pair<MalAnime, MalListStatus>>?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var reload by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(status, reload) {
+        entries = null
+        error = null
+        runCatching { container.mal.myList(status, fresh = reload > 0) }
+            .onSuccess { entries = it }
+            .onFailure { error = it.message ?: "Couldn't load your list" }
+    }
+    MalSection("Your list") {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            statuses.forEach { s ->
+                FilterChip(status == s, { status = s }, label = { Text(s.label) }, modifier = Modifier.testTag("mal_list_${s.api}"))
+            }
+        }
+        when {
+            error != null -> Text(error!!, color = AppColors.Error)
+            entries == null -> CircularProgressIndicator(Modifier.size(28.dp))
+            entries!!.isEmpty() -> Text("Nothing here.", color = AppColors.TextDim)
+            else -> entries!!.forEach { (anime, list) ->
+                MalListRow(anime, list) { update ->
+                    scope.launch {
+                        container.mal.update(anime.copy(myListStatus = list), update)
+                        reload++
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MalListRow(anime: MalAnime, list: MalListStatus, onUpdate: (MalListUpdate) -> Unit) {
+    val uriHandler = LocalUriHandler.current
+    var menu by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().testTag("mal_list_entry_${anime.id}"), verticalAlignment = Alignment.CenterVertically) {
+        Cover(anime, Modifier.width(40.dp).height(56.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(anime.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val of = if (anime.numEpisodes > 0) " of ${anime.numEpisodes}" else ""
+            Text(
+                "${list.watchedEpisodes}$of watched" + (if (list.score > 0) " · ${list.score}/10" else "") + (if (list.isRewatching) " · rewatching" else ""),
+                color = AppColors.TextDim,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        IconButton({ onUpdate(MalListUpdate(watchedEpisodes = (list.watchedEpisodes - 1).coerceAtLeast(0))) }, enabled = list.watchedEpisodes > 0) {
+            Icon(Icons.Filled.Remove, "One episode fewer")
+        }
+        IconButton(
+            { onUpdate(MalService.progressUpdate(list, list.watchedEpisodes + 1, anime.numEpisodes, java.time.LocalDate.now().toString()) ?: MalListUpdate(watchedEpisodes = list.watchedEpisodes + 1)) },
+            enabled = anime.numEpisodes == 0 || list.watchedEpisodes < anime.numEpisodes,
+            modifier = Modifier.testTag("mal_list_plus_${anime.id}"),
+        ) { Icon(Icons.Filled.Add, "One episode more") }
+        Box {
+            IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
+            DropdownMenu(menu, { menu = false }) {
+                MalStatus.entries.filter { it != list.statusValue }.forEach { s ->
+                    DropdownMenuItem({ Text("Move to ${s.label}") }, { menu = false; onUpdate(MalListUpdate(status = s)) })
+                }
+                (10 downTo 1).forEach { score ->
+                    DropdownMenuItem({ Text("Score $score/10") }, { menu = false; onUpdate(MalListUpdate(score = score)) })
+                }
+                DropdownMenuItem({ Text("Open on MyAnimeList") }, { menu = false; uriHandler.openUri(anime.url) })
+            }
+        }
+    }
+}
+
+/** The update settings, matched shows, shows not tracked, and updates waiting to be sent. */
+@Composable
+private fun MalHubSettings(container: AppContainer) {
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    fun savePrefs(auto: Boolean = settings.malAutoUpdate, ask: Boolean = settings.malAskFirst) =
+        container.scope.launch { container.settingsStore.saveMalPrefs(auto, ask) }
+    MalSection("Updating your list") {
+        MalSwitchRow("Update my list as I watch", "When an episode is 90% watched, with Undo", settings.malAutoUpdate, "mal_hub_auto") { savePrefs(auto = it) }
+        if (settings.malAutoUpdate) MalSwitchRow("Ask before each update", null, settings.malAskFirst, "mal_hub_ask") { savePrefs(ask = it) }
+    }
+    if (settings.malMappings.isNotEmpty()) {
+        MalSection("Shows you matched") {
+            val titles = remember { mutableStateMapOf<Int, String>() }
+            LaunchedEffect(settings.malMappings) {
+                settings.malMappings.values.map { it.malId }.distinct().filter { it !in titles }.forEach { id ->
+                    runCatching { container.mal.anime(id) }.onSuccess { titles[id] = it.title }
+                }
+            }
+            settings.malMappings.forEach { (key, mapping) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val show = key.substringBefore('|').substringAfterLast('/')
+                    val season = key.substringAfter('|').toIntOrNull()?.takeIf { it > 0 }?.let { " · season $it" }.orEmpty()
+                    Column(Modifier.weight(1f)) {
+                        Text(titles[mapping.malId] ?: "MyAnimeList #${mapping.malId}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("Your $show$season", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    TextButton({ container.scope.launch { container.settingsStore.saveMalMapping(key, null) } }) { Text("Forget") }
+                }
+            }
+            TextButton({ container.scope.launch { container.settingsStore.clearMalMappings() } }) { Text("Forget all") }
+        }
+    }
+    if (settings.malIgnored.isNotEmpty()) {
+        MalSection("Not tracked") {
+            settings.malIgnored.forEach { key ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(settings.malIgnoredNames[key]?.ifBlank { null } ?: key.substringAfterLast('/'), Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    TextButton({ container.mal.ignore(key, false) }) { Text("Track again") }
+                }
+            }
+        }
+    }
+    if (settings.malQueue.isNotEmpty()) {
+        MalSection("Waiting to be sent") {
+            Text("${settings.malQueue.size} update${if (settings.malQueue.size == 1) "" else "s"} couldn't reach MyAnimeList yet; they're sent again by themselves.", color = AppColors.TextDim)
+            OutlinedButton({ scope.launch { container.mal.flushQueue() } }, Modifier.testTag("mal_hub_send_now")) { Text("Send now") }
+        }
+    }
+}
+
+@Composable
+private fun MalSwitchRow(title: String, subtitle: String?, checked: Boolean, tag: String, onChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title)
+            subtitle?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall) }
+        }
+        Switch(checked, onChange, Modifier.testTag(tag))
     }
 }

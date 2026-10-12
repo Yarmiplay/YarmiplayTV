@@ -168,7 +168,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                         user?.let { "Signed in as $it" } ?: "Keep your anime list up to date",
                         if (user != null) AppColors.Ready else AppColors.TextDim,
                         Modifier.weight(1f).testTag("card_mal"),
-                    ) { nav.push(if (user == null) Screen.MalLogin else Screen.Settings) }
+                    ) { nav.push(if (user == null) Screen.MalLogin else Screen.Mal) }
                 }
             }
         }

@@ -10,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.DevicePlatform
+import com.yarmiplaytv.data.SavedRoom
 import com.yarmiplaytv.data.SyncplayProfile
 import com.yarmiplaytv.defaultSyncplayName
 import com.yarmiplaytv.media.jellyfin.DiscoveredServer
@@ -66,6 +67,22 @@ class SyncplayConnectModel(private val container: AppContainer) {
     /** Looks for YarmiplayServerTVs on this network, on Wi-Fi or Ethernet only (stock Syncplay servers don't answer). */
     suspend fun discover() {
         discovered = discoverSyncplayServers(SyncplayDiscovery.COMMON_PORTS + listOfNotNull(port.toIntOrNull()))
+    }
+
+    /** Keep the room in the Saved rooms list once it's joined. */
+    var saveRoom by mutableStateOf(false)
+
+    /** Fills the form with a saved or recent room, to join it. */
+    fun pick(room: SavedRoom) {
+        host = room.host
+        port = room.port.toString()
+        tls = room.useTls
+        username = room.username.ifBlank { username }
+        this.room = room.room
+        password = room.password
+        operatorPassword = ""
+        saveRoom = false
+        error = null
     }
 
     /** Fills the form with a found server: its certificate's name (verified with TLS) or else its address. */
@@ -149,6 +166,7 @@ class SyncplayConnectModel(private val container: AppContainer) {
 
     private fun join(profile: SyncplayProfile, create: Boolean = false) {
         val auto = autoConnect
+        if (saveRoom && !create) container.roomHistory.saveWhenJoined(profile.port, profile.room)
         container.scope.launch { container.settingsStore.saveSyncplay(profile, auto) }
         if (create) {
             // Subscribed before connecting: events aren't replayed.

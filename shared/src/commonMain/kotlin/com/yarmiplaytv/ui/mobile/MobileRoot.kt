@@ -109,6 +109,7 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                             Screen.LocalFiles -> MobileLocalFilesScreen(container, nav)
                             Screen.Licenses -> MobileLicensesScreen(nav)
                             Screen.MalLogin -> MobileMalLoginScreen(container, nav)
+                            Screen.Mal -> MobileMalScreen(container, nav)
                             is Screen.MalEntry -> MobileMalEntryScreen(container, nav, screen.item)
                             is Screen.Browse -> MobileBrowseScreen(container, nav, screen.item, kind)
                             is Screen.Search -> MobileSearchScreen(container, nav, screen.initialQuery, screen.pickFor, kind)

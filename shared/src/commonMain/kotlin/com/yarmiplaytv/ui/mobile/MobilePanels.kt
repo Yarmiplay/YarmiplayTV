@@ -90,7 +90,7 @@ private fun SheetTitle(title: String, subtitle: String? = null) {
 }
 
 @Composable
-fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Modifier = Modifier) {
+fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Modifier = Modifier, maxHeight: androidx.compose.ui.unit.Dp = 480.dp) {
     val room by container.sync.room.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -113,7 +113,7 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
             return@Column
         }
         val state = rememberLazyListState(initialFirstVisibleItemIndex = (room.playlistIndex ?: 0).coerceIn(0, room.playlist.lastIndex))
-        LazyColumn(state = state, modifier = Modifier.heightIn(max = 480.dp)) {
+        LazyColumn(state = state, modifier = Modifier.heightIn(max = maxHeight)) {
             itemsIndexed(room.playlist) { index, file ->
                 val current = index == room.playlistIndex
                 Row(

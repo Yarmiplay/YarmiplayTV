@@ -49,6 +49,67 @@ data class SyncplayProfile(
     val isComplete: Boolean get() = host.isNotBlank() && username.isNotBlank() && room.isNotBlank()
 }
 
+/**
+ * A room joined before: a recent one (kept automatically, the newest [SavedRooms.MAX_RECENT]) or, when [saved], one
+ * the user chose to keep, under [label] if they named it.
+ */
+data class SavedRoom(
+    val host: String,
+    val port: Int,
+    val useTls: Boolean,
+    val username: String,
+    val room: String,
+    val password: String = "",
+    val label: String = "",
+    val saved: Boolean = false,
+    val lastUsedMillis: Long = 0,
+) {
+    /** Identifies the room: the same room on the same server is one entry. */
+    val key: String get() = "${host.trim().lowercase()}:$port/$room"
+
+    fun toProfile() = SyncplayProfile(host, port, username, room, password, useTls)
+
+    companion object {
+        fun of(profile: SyncplayProfile, now: Long) =
+            SavedRoom(profile.host.trim(), profile.port, profile.useTls, profile.username.trim(), profile.room.trim(), profile.password, lastUsedMillis = now)
+    }
+}
+
+/** The `sp_saved_rooms` format: one room per line, tab-separated fields (tabs and newlines in values become spaces). */
+internal object SavedRooms {
+    /** How many recent (not saved) rooms are kept. */
+    const val MAX_RECENT = 15
+
+    fun decode(text: String): List<SavedRoom> = text.lines().mapNotNull { line ->
+        val f = line.split('\t')
+        if (f.size < 9) return@mapNotNull null
+        val port = f[1].toIntOrNull() ?: return@mapNotNull null
+        SavedRoom(f[0], port, f[2] == "1", f[3], f[4], f[5], f[6], f[7] == "1", f[8].toLongOrNull() ?: 0)
+    }
+
+    fun encode(rooms: List<SavedRoom>): String = rooms.joinToString("\n") { r ->
+        listOf(r.host, r.port.toString(), if (r.useTls) "1" else "0", r.username, r.room, r.password, r.label, if (r.saved) "1" else "0", r.lastUsedMillis.toString())
+            .joinToString("\t") { it.replace('\t', ' ').replace('\n', ' ') }
+    }
+
+    /** Saved rooms first (by name), then recents newest first; recents beyond [MAX_RECENT] are dropped. */
+    fun normalize(rooms: List<SavedRoom>): List<SavedRoom> {
+        val unique = rooms.groupBy { it.key }.map { (_, same) -> same.maxBy { it.lastUsedMillis } }
+        val saved = unique.filter { it.saved }.sortedByDescending { it.lastUsedMillis }
+        val recent = unique.filterNot { it.saved }.sortedByDescending { it.lastUsedMillis }.take(MAX_RECENT)
+        return saved + recent
+    }
+
+    /** [rooms] after joining [visit]: a known room keeps its name and saved state, a new one becomes a recent. */
+    fun visited(rooms: List<SavedRoom>, visit: SavedRoom): List<SavedRoom> {
+        val known = rooms.firstOrNull { it.key == visit.key }
+        val updated = known?.copy(
+            host = visit.host, useTls = visit.useTls, username = visit.username, password = visit.password, lastUsedMillis = visit.lastUsedMillis,
+        ) ?: visit
+        return normalize(rooms.filterNot { it.key == visit.key } + updated)
+    }
+}
+
 data class PlaybackPrefs(
     val hardwareDecoding: Boolean = true,
     val audioLanguages: String = "jpn,ja",
@@ -115,8 +176,12 @@ data class AppSettings(
     val malMappings: Map<String, MalMapping> = emptyMap(),
     /** Shows ([com.yarmiplaytv.media.EpisodeInfo.seriesKey]) never tracked on MyAnimeList. */
     val malIgnored: Set<String> = emptySet(),
+    /** The shows' names for [malIgnored], to list them. */
+    val malIgnoredNames: Map<String, String> = emptyMap(),
     /** MyAnimeList updates that couldn't be sent yet (offline, or MyAnimeList busy). */
     val malQueue: List<MalQueued> = emptyList(),
+    /** Saved rooms (chosen by the user) first, then the rooms joined recently. */
+    val savedRooms: List<SavedRoom> = emptyList(),
 )
 
 
@@ -236,8 +301,10 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val malAsk = booleanPreferencesKey("mal_ask")
         val malMappings = stringPreferencesKey("mal_mappings")
         val malIgnored = stringSetPreferencesKey("mal_ignored")
+        val malIgnoredNames = stringSetPreferencesKey("mal_ignored_names")
         val malQueue = stringPreferencesKey("mal_queue")
-        val malKeys = listOf(malAccount, malAuto, malAsk, malMappings, malIgnored, malQueue)
+        val savedRooms = stringPreferencesKey("sp_saved_rooms")
+        val malKeys = listOf(malAccount, malAuto, malAsk, malMappings, malIgnored, malIgnoredNames, malQueue)
     }
 
     val settings: Flow<AppSettings> = dataStore.data.map(::read)
@@ -306,7 +373,9 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             malAskFirst = p[Keys.malAsk] ?: defaults.malAskFirst,
             malMappings = p[Keys.malMappings]?.let { runCatching { json.decodeFromString(malMappingsSerializer, it) }.getOrNull() } ?: emptyMap(),
             malIgnored = p[Keys.malIgnored] ?: emptySet(),
+            malIgnoredNames = p[Keys.malIgnoredNames]?.associate { it.substringBefore('	') to it.substringAfter('	', "") } ?: emptyMap(),
             malQueue = p[Keys.malQueue]?.let { runCatching { json.decodeFromString(malQueueSerializer, it) }.getOrNull() } ?: emptyList(),
+            savedRooms = p[Keys.savedRooms]?.let(SavedRooms::decode) ?: emptyList(),
         )
     }
 
@@ -330,7 +399,10 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
 
     suspend fun clearMalMappings() = dataStore.edit { it.remove(Keys.malMappings) }
 
-    suspend fun saveMalIgnored(seriesKeys: Set<String>) = dataStore.edit { it[Keys.malIgnored] = seriesKeys }
+    suspend fun saveMalIgnored(seriesKeys: Set<String>, names: Map<String, String> = emptyMap()) = dataStore.edit {
+        it[Keys.malIgnored] = seriesKeys
+        it[Keys.malIgnoredNames] = names.filterKeys { k -> k in seriesKeys }.map { (k, v) -> "$k	${v.replace('	', ' ')}" }.toSet()
+    }
 
     suspend fun saveMalQueue(queue: List<MalQueued>) = dataStore.edit {
         if (queue.isEmpty()) it.remove(Keys.malQueue) else it[Keys.malQueue] = json.encodeToString(malQueueSerializer, queue)
@@ -357,6 +429,28 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val map = read(it).knownServers.toMutableMap()
         if (known == null) map.remove(server) else map[server] = known
         it[Keys.knownServers] = KnownServers.encode(map)
+    }
+
+    /** Records joining a room: a recent room, or an update of a saved one. */
+    suspend fun saveRoomVisit(visit: SavedRoom) = dataStore.edit {
+        it[Keys.savedRooms] = SavedRooms.encode(SavedRooms.visited(read(it).savedRooms, visit))
+    }
+
+    /** Keeps the room [key] (with [label]) among the saved rooms, or with [saved] false makes it a recent one again. */
+    suspend fun setRoomSaved(key: String, saved: Boolean, label: String = "") = dataStore.edit { p ->
+        val rooms = read(p).savedRooms.map { if (it.key == key) it.copy(saved = saved, label = if (saved) label.trim() else "") else it }
+        p[Keys.savedRooms] = SavedRooms.encode(SavedRooms.normalize(rooms))
+    }
+
+    /** Adds [room] to the saved rooms (e.g. "Save this room" on a room not joined yet). */
+    suspend fun saveRoom(room: SavedRoom) = dataStore.edit { p ->
+        val rooms = read(p).savedRooms
+        val kept = rooms.firstOrNull { it.key == room.key }?.let { it.copy(saved = true, label = room.label.ifBlank { it.label }) } ?: room.copy(saved = true)
+        p[Keys.savedRooms] = SavedRooms.encode(SavedRooms.normalize(rooms.filterNot { it.key == room.key } + kept))
+    }
+
+    suspend fun forgetSavedRoom(key: String) = dataStore.edit { p ->
+        p[Keys.savedRooms] = SavedRooms.encode(read(p).savedRooms.filterNot { it.key == key })
     }
 
     suspend fun saveSyncplay(profile: SyncplayProfile, autoConnect: Boolean? = null) {

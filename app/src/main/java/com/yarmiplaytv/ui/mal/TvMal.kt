@@ -53,11 +53,16 @@ import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.mal.MalAnime
 import com.yarmiplaytv.media.mal.MalListUpdate
 import com.yarmiplaytv.media.mal.MalStatus
+import com.yarmiplaytv.tracking.MalService
 import com.yarmiplaytv.tracking.MalState
 import com.yarmiplaytv.ui.components.ActionButton
+import com.yarmiplaytv.ui.components.SectionTitle
+import com.yarmiplaytv.ui.components.ToggleRow
 import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.components.TvTile
+import com.yarmiplaytv.ui.components.ValueRow
 import com.yarmiplaytv.ui.nav.Navigator
+import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
 import com.yarmiplaytv.ui.shared.MAL_PRIVACY_NOTE
 import com.yarmiplaytv.ui.shared.PRIVACY_POLICY_URL
@@ -232,7 +237,7 @@ private fun TvEntry(container: AppContainer, state: MalState.Matched, focus: Foc
     }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         ActionButton("Wrong entry?", onWrongEntry, Modifier.testTag("mal_wrong_entry"))
-        ActionButton("Don't track this show", { mal.ignore(state.info.seriesKey, true); onChanged() })
+        ActionButton("Don't track this show", { mal.ignore(state.info.seriesKey, true, state.info.seriesName); onChanged() })
     }
 }
 
@@ -294,5 +299,99 @@ private fun TvPicker(container: AppContainer, info: EpisodeInfo, candidates: Lis
 private fun Cover(anime: MalAnime, modifier: Modifier) {
     Box(modifier.clip(RoundedCornerShape(6.dp)).background(AppColors.SurfaceHigh)) {
         anime.mainPicture?.let { pic -> AsyncImage(model = pic.medium ?: pic.large, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+    }
+}
+
+/** MyAnimeList on TV: the account, what's playing, your list, the update settings, matches and the queue. */
+@Composable
+fun MalHubScreen(container: AppContainer, nav: Navigator) {
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val state by container.mal.state.collectAsStateWithLifecycle()
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    val account = settings.mal
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 96.dp, vertical = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text("MyAnimeList", style = MaterialTheme.typography.headlineMedium)
+        if (account == null) {
+            Text("Sign in to keep your MyAnimeList list up to date as you watch.", color = AppColors.TextDim)
+            ActionButton("Sign in", { nav.push(Screen.MalLogin) }, Modifier.focusRequester(focus), primary = true)
+            return@Column
+        }
+        var confirmSignOut by remember { mutableStateOf(false) }
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Signed in as ${account.userName}", style = MaterialTheme.typography.titleLarge)
+            if (confirmSignOut) {
+                Text("Sign out and delete everything kept for MyAnimeList on this TV?", color = AppColors.TextDim)
+                ActionButton("Sign out", { confirmSignOut = false; container.mal.signOut() }, Modifier.testTag("mal_sign_out"))
+                ActionButton("Cancel", { confirmSignOut = false })
+            } else {
+                ActionButton("Sign out", { confirmSignOut = true }, Modifier.focusRequester(focus).testTag("mal_hub_sign_out"))
+            }
+        }
+        if (state != MalState.Idle) {
+            SectionTitle("Now playing")
+            TvMalContent(container, state, remember { FocusRequester() })
+        }
+
+        SectionTitle("Your list")
+        var status by remember { mutableStateOf(MalStatus.WATCHING) }
+        var entries by remember { mutableStateOf<List<Pair<MalAnime, com.yarmiplaytv.media.mal.MalListStatus>>?>(null) }
+        var reload by remember { mutableStateOf(0) }
+        val scope = rememberCoroutineScope()
+        LaunchedEffect(status, reload) {
+            entries = runCatching { container.mal.myList(status, fresh = reload > 0) }.getOrDefault(emptyList())
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MalStatus.entries.forEach { s -> ActionButton(s.label, { status = s }, primary = s == status) }
+        }
+        when (val list = entries) {
+            null -> Text("Loading…", color = AppColors.TextDim)
+            emptyList<Pair<MalAnime, com.yarmiplaytv.media.mal.MalListStatus>>() -> Text("Nothing here.", color = AppColors.TextDim)
+            else -> list.forEach { (anime, entry) ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Cover(anime, Modifier.width(44.dp).height(62.dp))
+                    Column(Modifier.width(560.dp)) {
+                        Text(anime.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val of = if (anime.numEpisodes > 0) " of ${anime.numEpisodes}" else ""
+                        Text("${entry.watchedEpisodes}$of watched" + if (entry.score > 0) " · ${entry.score}/10" else "", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                    }
+                    fun update(u: MalListUpdate) = scope.launch { container.mal.update(anime.copy(myListStatus = entry), u); reload++ }
+                    ActionButton("−1", { update(MalListUpdate(watchedEpisodes = (entry.watchedEpisodes - 1).coerceAtLeast(0))) }, enabled = entry.watchedEpisodes > 0)
+                    ActionButton("+1", {
+                        update(MalService.progressUpdate(entry, entry.watchedEpisodes + 1, anime.numEpisodes, java.time.LocalDate.now().toString()) ?: MalListUpdate(watchedEpisodes = entry.watchedEpisodes + 1))
+                    }, enabled = anime.numEpisodes == 0 || entry.watchedEpisodes < anime.numEpisodes)
+                }
+            }
+        }
+
+        SectionTitle("Updating your list")
+        ToggleRow("Update my list as I watch", settings.malAutoUpdate,
+            { container.scope.launch { container.settingsStore.saveMalPrefs(!settings.malAutoUpdate, settings.malAskFirst) } },
+            subtitle = "When an episode is 90% watched; Undo in the player's MyAnimeList panel")
+        if (settings.malAutoUpdate) {
+            ToggleRow("Ask before each update", settings.malAskFirst,
+                { container.scope.launch { container.settingsStore.saveMalPrefs(settings.malAutoUpdate, !settings.malAskFirst) } })
+        }
+        if (settings.malMappings.isNotEmpty()) {
+            SectionTitle("Shows you matched")
+            settings.malMappings.forEach { (key, mapping) ->
+                ValueRow("MyAnimeList #${mapping.malId}", "Forget", { container.scope.launch { container.settingsStore.saveMalMapping(key, null) } },
+                    subtitle = key.substringBefore('|').substringAfterLast('/'))
+            }
+        }
+        if (settings.malIgnored.isNotEmpty()) {
+            SectionTitle("Not tracked")
+            settings.malIgnored.forEach { key ->
+                ValueRow(settings.malIgnoredNames[key]?.ifBlank { null } ?: key.substringAfterLast('/'), "Track again", { container.mal.ignore(key, false) })
+            }
+        }
+        if (settings.malQueue.isNotEmpty()) {
+            SectionTitle("Waiting to be sent")
+            ValueRow("${settings.malQueue.size} update(s) waiting", "Send now", { scope.launch { container.mal.flushQueue() } })
+        }
+        Text(MAL_ATTRIBUTION, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
     }
 }

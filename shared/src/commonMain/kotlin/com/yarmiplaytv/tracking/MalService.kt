@@ -221,11 +221,18 @@ class MalService(
 
     suspend fun search(query: String): List<MalAnime> = runCatching { client.search(query, limit = 15) }.getOrDefault(emptyList())
 
+    /** Your MyAnimeList entries with [status] (for the MyAnimeList screen); [fresh] reads them again. */
+    suspend fun myList(status: MalStatus, fresh: Boolean = false): List<Pair<MalAnime, MalListStatus>> = catalog.list(status, fresh)
+
+    /** An anime's details (cached for at most 24 hours), e.g. a matched show's title. */
+    suspend fun anime(id: Int): MalAnime = catalog.anime(id)
+
     /** Stop (or start again) tracking [seriesKey]. */
-    fun ignore(seriesKey: String, ignored: Boolean) {
+    fun ignore(seriesKey: String, ignored: Boolean, name: String = "") {
         scope.launch {
             val set = settings.value.malIgnored.let { if (ignored) it + seriesKey else it - seriesKey }
-            store.saveMalIgnored(set)
+            val names = settings.value.malIgnoredNames.let { if (ignored && name.isNotBlank()) it + (seriesKey to name) else it }
+            store.saveMalIgnored(set, names)
             playing?.let { if (it.seriesKey == seriesKey) rematchAfterSave(it, ignored) }
         }
     }
@@ -253,6 +260,12 @@ class MalService(
         val before = current.myListStatus
         val update = progressUpdate(before, episode, current.numEpisodes, today()) ?: return
         send(current, update, before, automatic)
+    }
+
+    /** Changes [anime]'s list entry now and returns it as it is after (for lists that show it), or null if it failed. */
+    suspend fun update(anime: MalAnime, update: MalListUpdate): MalListStatus? {
+        send(anime, update, anime.myListStatus, automatic = false)
+        return catalog.anime(anime.id).myListStatus
     }
 
     /** Changes [anime]'s list entry by hand (status, score, episodes, rewatching). */
@@ -391,33 +404,45 @@ class MalService(
 internal class MalCache(private val client: MalClient, private val now: () -> Long, private val ttlMillis: Long = 24 * 60 * 60 * 1000L) : MalCatalog {
     private class Entry(val anime: MalAnime, val at: Long)
     private val entries = ConcurrentHashMap<Int, Entry>()
-    private var watching: Pair<Long, List<Pair<MalAnime, MalListStatus>>>? = null
+    private val searches = ConcurrentHashMap<String, Pair<Long, List<MalAnime>>>()
+    /** The user's list by status; refreshed after 10 minutes or any change made here. */
+    private val lists = ConcurrentHashMap<MalStatus, Pair<Long, List<Pair<MalAnime, MalListStatus>>>>()
 
-    override suspend fun search(query: String): List<MalAnime> = client.search(query)
+    override suspend fun search(query: String): List<MalAnime> {
+        val key = query.trim().lowercase()
+        searches[key]?.takeIf { now() - it.first < ttlMillis }?.let { return it.second }
+        return client.search(query).also { searches[key] = now() to it }
+    }
 
     override suspend fun anime(id: Int): MalAnime {
         entries[id]?.takeIf { now() - it.at < ttlMillis }?.let { return it.anime }
         return client.anime(id).also { put(it) }
     }
 
-    override suspend fun watching(): List<Pair<MalAnime, MalListStatus>> {
-        watching?.takeIf { now() - it.first < 10 * 60_000 }?.let { return it.second }
-        return client.myList(MalStatus.WATCHING).also { watching = now() to it }
+    override suspend fun watching(): List<Pair<MalAnime, MalListStatus>> = list(MalStatus.WATCHING)
+
+    override suspend fun completed(): List<Pair<MalAnime, MalListStatus>> = list(MalStatus.COMPLETED)
+
+    /** Your list entries with [status], newest change first; [fresh] reads them again. */
+    suspend fun list(status: MalStatus, fresh: Boolean = false): List<Pair<MalAnime, MalListStatus>> {
+        if (!fresh) lists[status]?.takeIf { now() - it.first < 10 * 60_000 }?.let { return it.second }
+        return client.myList(status).also { lists[status] = now() to it }
     }
 
     fun put(anime: MalAnime) {
         entries[anime.id] = Entry(anime, now())
-        watching = null
+        lists.clear()
     }
 
     fun forget(id: Int) {
         entries.remove(id)
-        watching = null
+        lists.clear()
     }
 
     fun clear() {
         entries.clear()
-        watching = null
+        searches.clear()
+        lists.clear()
     }
 }
 

@@ -30,6 +30,7 @@ import com.yarmiplaytv.ui.connect.ServersScreen
 import com.yarmiplaytv.ui.connect.SyncplayConnectScreen
 import com.yarmiplaytv.ui.home.HomeScreen
 import com.yarmiplaytv.ui.mal.MalEntryScreen
+import com.yarmiplaytv.ui.mal.MalHubScreen
 import com.yarmiplaytv.ui.mal.MalLoginScreen
 import com.yarmiplaytv.ui.mobile.PlayerPictureInPicture
 import com.yarmiplaytv.ui.nav.Navigator
@@ -73,6 +74,7 @@ fun TvRoot(container: AppContainer, stack: SnapshotStateList<Screen> = remember 
                     Screen.Settings, Screen.LocalFiles -> SettingsScreen(container, nav)
                     Screen.Licenses -> LicensesScreen()
                     Screen.MalLogin -> MalLoginScreen(container, nav)
+                    Screen.Mal -> MalHubScreen(container, nav)
                     is Screen.MalEntry -> MalEntryScreen(container, nav, screen.item)
                     is Screen.Browse -> BrowseScreen(container, nav, screen.item)
                     is Screen.Search -> SearchScreen(container, nav, screen.initialQuery, screen.pickFor)

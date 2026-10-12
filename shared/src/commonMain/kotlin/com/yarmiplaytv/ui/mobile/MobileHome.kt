@@ -146,7 +146,7 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
                         "MyAnimeList",
                         user?.let { "Signed in as $it · your list follows what you watch" } ?: "Keep your anime list up to date as you watch",
                         if (user != null) AppColors.Ready else AppColors.TextDim,
-                        { if (user == null) nav.push(Screen.MalLogin) else nav.switchTab(Screen.Settings) },
+                        { nav.push(if (user == null) Screen.MalLogin else Screen.Mal) },
                         Modifier.fillMaxWidth().testTag("card_mal"),
                     )
                 }

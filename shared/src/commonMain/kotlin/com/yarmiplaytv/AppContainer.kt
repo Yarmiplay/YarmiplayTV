@@ -29,6 +29,7 @@ import com.yarmiplaytv.sync.MediaLocator
 import com.yarmiplaytv.sync.OperatorPasswords
 import com.yarmiplaytv.sync.PlaybackReporter
 import com.yarmiplaytv.sync.PlaylistAutosave
+import com.yarmiplaytv.sync.RoomHistory
 import com.yarmiplaytv.sync.PlaylistController
 import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.sync.discoverSyncplayServers
@@ -143,6 +144,8 @@ class AppContainer(
     val mal = MalService(scope, settingsStore, settings, MalClient(malClientId))
     private val malTracker = MalTracker(scope, player, playlist.nowPlaying, mal)
     private val autosave = PlaylistAutosave(scope, sync, playlist.shared, settingsStore).apply { enabled = initial.autosavePlaylists }
+    /** The rooms joined, for the Saved and Recent lists. */
+    val roomHistory = RoomHistory(scope, sync, settingsStore).also { it.start() }
     private val jellyfinSharing = HostJellyfinSharing(
         scope, sync, jellyfinClient,
         saved = { jellyfinServers.value.map { it.session } },
