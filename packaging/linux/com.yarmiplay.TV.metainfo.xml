@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.8.0" date="2026-10-12">
+      <description>
+        <p>MyAnimeList: sign in and your list follows what you watch, even for shows numbered across seasons (with Undo), and rate shows or change their status from the player. Desktop picture-in-picture is now a floating window that keeps playing while you use the rest of the app (P, the button, or minimizing). The join form finds YarmiplayServerTVs on your network, and a DuckDNS server connects with TLS at home even without NAT loopback.</p>
+      </description>
+    </release>
     <release version="1.7.6" date="2026-10-12">
       <description>
         <p>Previous and next buttons in the player move the room's playlist (desktop: B/N and the media keys). While one entry plays, the next is looked up ahead of time, and when only another viewer has it, its start is fetched through the file relay, so moving on starts at once. A new operator password now shows as soon as the room is created.</p>
