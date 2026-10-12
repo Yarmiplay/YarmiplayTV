@@ -11,14 +11,27 @@ import com.yarmiplaytv.media.PlayableMedia
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.PlayerEvent
 import com.yarmiplaytv.relay.RelayManager
+import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.FileInfo
 import com.yarmiplaytv.syncplay.Filenames
+import com.yarmiplaytv.syncplay.RoomState
+import com.yarmiplaytv.syncplay.SyncplayClient
 import com.yarmiplaytv.syncplay.SyncplayEvent
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -48,7 +61,8 @@ sealed interface PlaylistStatus {
  * Keeps the room's shared playlist and the local player in step: when the room selects an entry
  * (or playback reaches the end and advances) the entry's filename is found in the media folders or
  * on the media servers ([MediaLocator]), played in mpv, reported to the room and marked ready — the
- * TV equivalent of the desktop client's media directories.
+ * TV equivalent of the desktop client's media directories. While one entry plays, the next is looked up (and,
+ * when only another viewer has it, its start fetched through the relay), so moving on starts at once.
  */
 class PlaylistController(
     private val scope: CoroutineScope,
@@ -89,9 +103,29 @@ class PlaylistController(
     /** Items the user picked explicitly, so the room echo doesn't need a (possibly ambiguous) lookup. */
     private val knownPlayables = LinkedHashMap<String, Known>()
 
+    /** Where the playlist's next entry was found ahead of time; used when the room gets to it. */
+    private class Prepared(val fileName: String, val location: RoomLocation, val atMillis: Long)
+
+    private var prepared: Prepared? = null
+    /** The lookup of the next entry under way: an entry selected meanwhile waits for it instead of searching again. */
+    private var preparing: Pair<String, Deferred<RoomLocation>>? = null
+
     init {
         scope.launch { sync.events.collect(::onSyncEvent) }
         scope.launch { player.events.collect(::onPlayerEvent) }
+        // Once this entry is loading or playing, look up the next one; again when the playlist, the selection or the
+        // relay's files change (a viewer who has it may have joined).
+        scope.launch {
+            combine(
+                sync.room.map { Triple(it.status == ConnectionStatus.CONNECTED, it.playlist, it.playlistIndex) }.distinctUntilChanged(),
+                _status.map { it is PlaylistStatus.Resolving }.distinctUntilChanged(),
+                relay?.files ?: flowOf(emptyList()),
+            ) { room, busy, _ -> room to busy }.collectLatest { (_, busy) ->
+                if (busy) return@collectLatest
+                delay(PREPARE_DELAY_MS)
+                prepareNext()
+            }
+        }
         // A viewer who has the room's file joining (or seeding it) makes "not found" playable.
         relay?.let { r ->
             scope.launch {
@@ -136,6 +170,66 @@ class PlaylistController(
         }
     }
 
+    /** The entry after the selected one, as the room advances to it, or null when there's none (or a URL, or this one). */
+    private fun nextEntry(room: RoomState): String? {
+        if (room.status != ConnectionStatus.CONNECTED) return null
+        val index = room.playlistIndex ?: return null
+        val settings = sync.syncSettings
+        val next = SyncplayClient.nextPlaylistIndex(room.playlist.size, index, settings.loopPlaylist, settings.loopSingleFile)
+            ?.takeIf { it != index } ?: return null
+        return room.playlist.getOrNull(next)?.takeUnless { Filenames.isUrl(it) }
+    }
+
+    /**
+     * Looks up the playlist's next entry, so it starts at once when the room gets there; when only another viewer has
+     * it, fetches its start through the relay. Nothing to do for entries picked here (already known) or URLs.
+     */
+    private suspend fun prepareNext() {
+        val name = nextEntry(sync.room.value) ?: return
+        if (knownPlayables.keys.any { Filenames.same(it, name) }) return
+        if (!locator.hasServers && !local.hasFolders && !locator.hasRelay(name)) return
+        val fresh = prepared?.takeIf { Filenames.same(it.fileName, name) && System.currentTimeMillis() - it.atMillis < PREPARED_MAX_AGE_MS }
+        // A relay entry can show up later (a viewer who has the file joins); found elsewhere it won't get better.
+        val location = if (fresh != null && fresh.location !is RoomLocation.Relay) {
+            fresh.location
+        } else {
+            val lookup = preparing?.takeIf { Filenames.same(it.first, name) }?.second
+                ?: scope.async { locate(name) }.also { preparing = name to it }
+            lookup.await().also { if (preparing?.second === lookup) preparing = null }
+        }
+        if (location is RoomLocation.Missing) {
+            prepared = null
+            return
+        }
+        if (fresh?.location != location) Logger.i(TAG, "Prepared the next entry '$name': ${location.describe()}")
+        prepared = Prepared(name, location, fresh?.atMillis ?: System.currentTimeMillis())
+        if (location is RoomLocation.Relay) relay?.prefetch(location.file)
+    }
+
+    private suspend fun locate(fileName: String): RoomLocation = try {
+        locator.locateForRoom(fileName)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        RoomLocation.Missing(e.message ?: "Lookup failed")
+    }
+
+    /** What was found for [filename] ahead of time, or the lookup still under way; null when it wasn't prepared. */
+    private fun takePrepared(filename: String): Deferred<RoomLocation>? {
+        prepared?.takeIf { Filenames.same(it.fileName, filename) }?.let { p ->
+            prepared = null
+            if (System.currentTimeMillis() - p.atMillis < PREPARED_MAX_AGE_MS) return CompletableDeferred(p.location)
+        }
+        return preparing?.takeIf { Filenames.same(it.first, filename) }?.second
+    }
+
+    private fun RoomLocation.describe(): String = when (this) {
+        is RoomLocation.Local -> "in the media folders"
+        is RoomLocation.Server -> "on ${playable.sourceKey}"
+        is RoomLocation.Relay -> "through the relay"
+        is RoomLocation.Missing -> "not found"
+    }
+
     private fun loadFromRoom(filename: String, resetPosition: Boolean) {
         resolveJob?.cancel()
         _openPlayerRequests.value++
@@ -152,6 +246,16 @@ class PlaylistController(
             load(it.playable.toNowPlaying(it.copies), resetPosition, fromRoom = true)
             return
         }
+        takePrepared(filename)?.let { ahead ->
+            _status.value = PlaylistStatus.Resolving(filename)
+            resolveJob = scope.launch {
+                val found = ahead.await()
+                Logger.i(TAG, "'$filename' was prepared ahead: ${found.describe()}")
+                // Missing ahead of time may be there now (e.g. a viewer who has it joined): look again.
+                play(if (found is RoomLocation.Missing) locate(filename) else found, filename, resetPosition)
+            }
+            return
+        }
         if (!locator.hasServers && !local.hasFolders && !locator.hasRelay(filename)) {
             if (sync.room.value.yarmiplay.relayActive) {
                 _status.value = PlaylistStatus.NotFound(filename, "Nobody in the room is sharing it yet")
@@ -163,31 +267,33 @@ class PlaylistController(
             return
         }
         _status.value = PlaylistStatus.Resolving(filename)
-        resolveJob = scope.launch {
-            when (val found = locator.locateForRoom(filename)) {
-                is RoomLocation.Local -> {
-                    Logger.i(TAG, "Resolved '$filename' locally via ${found.match.kind} -> ${found.match.file.uri}")
-                    val playable = found.match.file.toPlayable()
-                    load(playable.toNowPlaying(), resetPosition, fromRoom = true)
-                    findCopies(playable)
-                }
-                is RoomLocation.Server -> {
-                    Logger.i(TAG, "Resolved '$filename' via ${found.matchedBy} -> ${found.playable.sourceKey}/${found.playable.itemId}, copies ${found.copies}")
-                    load(found.playable.toNowPlaying(found.copies), resetPosition, fromRoom = true)
-                }
-                is RoomLocation.Relay -> {
-                    val r = relay ?: return@launch
-                    Logger.i(TAG, "Resolved '$filename' via the room's file relay (${found.file.sources} source(s))")
-                    val url = r.open(found.file)
-                    val name = found.file.name
-                    load(NowPlaying(name, name, found.file.size, found.file.duration, url), resetPosition, fromRoom = true)
-                }
-                is RoomLocation.Missing -> {
-                    val servers = mediaSource.value?.let { s -> if (s is CompositeMediaSource && s.sources.size > 2) "your media servers" else s.displayName }
-                    val where = listOfNotNull(servers, "your media folders".takeIf { local.hasFolders }).joinToString(" or ")
-                    _status.value = PlaylistStatus.NotFound(filename, found.reason)
-                    sync.postLocal("'$filename' not found in $where", isError = true)
-                }
+        resolveJob = scope.launch { play(locate(filename), filename, resetPosition) }
+    }
+
+    private suspend fun play(found: RoomLocation, filename: String, resetPosition: Boolean) {
+        when (found) {
+            is RoomLocation.Local -> {
+                Logger.i(TAG, "Resolved '$filename' locally via ${found.match.kind} -> ${found.match.file.uri}")
+                val playable = found.match.file.toPlayable()
+                load(playable.toNowPlaying(), resetPosition, fromRoom = true)
+                findCopies(playable)
+            }
+            is RoomLocation.Server -> {
+                Logger.i(TAG, "Resolved '$filename' via ${found.matchedBy} -> ${found.playable.sourceKey}/${found.playable.itemId}, copies ${found.copies}")
+                load(found.playable.toNowPlaying(found.copies), resetPosition, fromRoom = true)
+            }
+            is RoomLocation.Relay -> {
+                val r = relay ?: return
+                Logger.i(TAG, "Resolved '$filename' via the room's file relay (${found.file.sources} source(s))")
+                val url = r.open(found.file)
+                val name = found.file.name
+                load(NowPlaying(name, name, found.file.size, found.file.duration, url), resetPosition, fromRoom = true)
+            }
+            is RoomLocation.Missing -> {
+                val servers = mediaSource.value?.let { s -> if (s is CompositeMediaSource && s.sources.size > 2) "your media servers" else s.displayName }
+                val where = listOfNotNull(servers, "your media folders".takeIf { local.hasFolders }).joinToString(" or ")
+                _status.value = PlaylistStatus.NotFound(filename, found.reason)
+                sync.postLocal("'$filename' not found in $where", isError = true)
             }
         }
     }
@@ -379,6 +485,17 @@ class PlaylistController(
     }
 
     fun selectIndex(index: Int) = sync.client?.selectPlaylistIndex(index)
+
+    /** The entry the next ([forward]) or previous button selects, or null when there's none or the room's operators decide. */
+    fun skipTarget(room: RoomState, forward: Boolean): Int? {
+        if (room.status != ConnectionStatus.CONNECTED || room.followsOperators) return null
+        return skipTarget(room.playlist.size, room.playlistIndex, forward, sync.syncSettings.loopPlaylist)
+    }
+
+    /** Selects the playlist's next ([forward]) or previous entry for everyone in the room. */
+    fun skip(forward: Boolean) {
+        skipTarget(sync.room.value, forward)?.let(::selectIndex)
+    }
     fun removeIndex(index: Int) = shared.remove(setOf(index))
     fun move(from: Int, to: Int) = shared.move(from, to)
 
@@ -423,5 +540,19 @@ class PlaylistController(
 
     companion object {
         private const val TAG = "PlaylistController"
+        /** Lets the selected entry start opening before the next one is looked up. */
+        private const val PREPARE_DELAY_MS = 1_500L
+        /** A lookup this old is done again: the servers' libraries may have changed. */
+        private const val PREPARED_MAX_AGE_MS = 30 * 60 * 1000L
+
+        /** Next/previous among [size] entries from [index]; with [loop] the ends wrap around. Nothing selected yet: the first. */
+        fun skipTarget(size: Int, index: Int?, forward: Boolean, loop: Boolean): Int? = when {
+            size == 0 -> null
+            index == null -> if (forward) 0 else null
+            forward && index + 1 < size -> index + 1
+            !forward && index > 0 -> index - 1
+            loop && size > 1 -> if (forward) 0 else size - 1
+            else -> null
+        }
     }
 }

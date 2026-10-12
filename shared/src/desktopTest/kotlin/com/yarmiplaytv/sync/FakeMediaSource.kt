@@ -28,6 +28,8 @@ internal class FakeMediaSource(
     override val displayName = key.substringAfter(':').replaceFirstChar { it.uppercase() }
 
     val exactLookups = AtomicInteger()
+    /** The file names [findExact] was asked for, in order. */
+    val lookedUp: MutableList<String> = Collections.synchronizedList(ArrayList())
     val looseLookups = AtomicInteger()
     val reports: MutableList<PlaybackReport> = Collections.synchronizedList(ArrayList())
 
@@ -38,6 +40,7 @@ internal class FakeMediaSource(
 
     override suspend fun findExact(fileName: String): ResolveResult.Found? {
         exactLookups.incrementAndGet()
+        lookedUp += fileName
         delay(lookupDelayMs)
         val name = exact.keys.firstOrNull { it.equals(fileName, ignoreCase = true) } ?: return null
         return ResolveResult.Found(item(name), playableFor(name), MatchKind.EXACT_FILENAME)

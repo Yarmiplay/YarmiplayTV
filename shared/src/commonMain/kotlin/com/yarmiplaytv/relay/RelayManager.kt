@@ -128,6 +128,19 @@ object RelayPolicy {
     fun eta(size: Long, have: Long, rate: Double?): Double? =
         rate?.takeIf { it > 0 }?.let { (size - have).coerceAtLeast(0) / it }
 
+    /** How much of the start of the playlist's next file to fetch ahead: about [PREFETCH_SECONDS] of it. */
+    fun prefetchBytes(size: Long, duration: Double): Long {
+        val wanted = bitrate(size, duration)?.let { (it * PREFETCH_SECONDS).toLong() } ?: PREFETCH_DEFAULT
+        return wanted.coerceIn(PREFETCH_MIN, PREFETCH_MAX).coerceAtMost(size)
+    }
+
+    const val PREFETCH_SECONDS = 60
+    const val PREFETCH_MIN = 16L shl 20
+    const val PREFETCH_MAX = 96L shl 20
+    private const val PREFETCH_DEFAULT = 32L shl 20
+    /** The end of the file too: players read an index there (Matroska cues, an MP4 moov written last) when opening. */
+    const val PREFETCH_TAIL = 4L shl 20
+
     fun formatEta(seconds: Double): String = when {
         seconds < 60 -> "less than a minute"
         seconds < 3600 -> "about ${(seconds / 60).toInt() + 1} min"
@@ -162,6 +175,8 @@ class RelayManager(
     private var lastRoom: String? = null
     /** Refreshes the download bar as blocks land. The stream-or-download choice stays on [tick]. */
     private var progressJob: Job? = null
+    /** The playlist's next file, fetched ahead of time ([prefetch]). */
+    private var prefetching: RelayTransfer? = null
     /** The transfer being saved; it downloads in full whatever the network speed. */
     private var saving: RelayTransfer? = null
     private var saveJob: Job? = null
@@ -206,10 +221,10 @@ class RelayManager(
     /** Starts fetching [entry] and returns the URL the player opens. */
     suspend fun open(entry: RelayFile): String {
         Logger.i(TAG, "Opening ${entry.name}: ${entry.size} bytes, ${entry.sources} source(s), server has ${entry.cachedBytes}")
-        val key = "${entry.quickHash}-${entry.size}"
-        val transfer = transfers[key] ?: withContext(Dispatchers.IO) {
-            RelayTransfer(key, entry.name, entry.size, cache.open(key, entry.size), http, scope) { sourceFor(entry.quickHash, entry.size) }
-        }.also { transfers[key] = it }
+        val transfer = transferFor(entry)
+        // Playing it now: the player's own reads come first.
+        transfer.stopPrefetch()
+        if (prefetching === transfer) prefetching = null
         if (current !== transfer) detach()
         current = transfer
         currentEntry = entry
@@ -220,6 +235,29 @@ class RelayManager(
         watch(transfer)
         update()
         return url
+    }
+
+    /**
+     * Fetches the start of [entry] (about a minute of it) and its last few MB into the cache ahead of time, so it opens
+     * at once when the playlist gets to it. For the playlist's next file; one at a time, never the one playing.
+     */
+    suspend fun prefetch(entry: RelayFile) {
+        val transfer = transferFor(entry)
+        if (transfer === current || transfer === prefetching) return
+        prefetching?.stopPrefetch()
+        prefetching = transfer
+        val head = RelayPolicy.prefetchBytes(entry.size, entry.duration)
+        val tail = maxOf(head, entry.size - RelayPolicy.PREFETCH_TAIL)
+        val mode = if (sync.room.value.yarmiplay.capabilities.prefetch) "prefetch" else "download"
+        Logger.i(TAG, "Prefetching ${entry.name}: the first $head bytes and from $tail on ($mode)")
+        transfer.prefetch(listOf(0L until head, tail until entry.size), mode)
+    }
+
+    private suspend fun transferFor(entry: RelayFile): RelayTransfer {
+        val key = "${entry.quickHash}-${entry.size}"
+        return transfers[key] ?: withContext(Dispatchers.IO) {
+            RelayTransfer(key, entry.name, entry.size, cache.open(key, entry.size), http, scope) { sourceFor(entry.quickHash, entry.size) }
+        }.also { transfers[key] = it }
     }
 
     /** Moves the download bar as each block lands. The stream-or-download choice stays on [tick]. */
@@ -343,8 +381,8 @@ class RelayManager(
                 readyAgain()
             }
         }
-        val keep = t.key
-        scope.launch(Dispatchers.IO) { cache.trim(setOf(keep)) }
+        val keep = setOfNotNull(t.key, prefetching?.key)
+        scope.launch(Dispatchers.IO) { cache.trim(keep) }
         update()
     }
 
@@ -388,6 +426,7 @@ class RelayManager(
         val names = playlist.map { FileNames.baseName(it) }.toSet()
         val drop = transfers.filter { (_, t) -> t !== current && (roomChanged || t.name !in names) }
         for ((key, t) in drop) {
+            if (t === prefetching) prefetching = null
             t.stop()
             proxy.remove(t)
             transfers.remove(key)

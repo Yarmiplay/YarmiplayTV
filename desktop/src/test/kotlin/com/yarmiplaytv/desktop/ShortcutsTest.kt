@@ -30,6 +30,7 @@ class ShortcutsTest {
         showControls = { log += "show" },
         togglePause = { log += "pause" },
         seekBy = { log += "seek $it" },
+        skip = { log += if (it) "next" else "previous" },
     )
 
     @Test
@@ -50,6 +51,17 @@ class ShortcutsTest {
             ),
             log,
         )
+    }
+
+    @Test
+    fun nAndBOrTheMediaKeysGoToTheNextAndPreviousPlaylistEntry() {
+        val t = Target()
+        assertTrue(handleShortcut(Key.N, false, t))
+        assertTrue(handleShortcut(Key.B, false, t))
+        assertTrue(handleShortcut(Key.MediaNext, false, t))
+        assertTrue(handleShortcut(Key.MediaPrevious, false, t))
+        assertFalse(handleShortcut(Key.N, true, t))
+        assertEquals(listOf("next", "show", "previous", "show", "next", "show", "previous", "show"), log)
     }
 
     @Test

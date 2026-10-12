@@ -27,7 +27,7 @@ data class RelaySource(val session: YarmiplaySession, val fileId: String)
 /**
  * Fetches one relayed file into its [cache] copy. In stream mode it keeps [READ_AHEAD] after the player's read
  * position filled (asking the server for `mode=stream`); with [download] on it also fetches every missing block
- * in the background (`mode=download`).
+ * in the background (`mode=download`). Before the file plays, [prefetch] fills the parts a player reads first.
  */
 class RelayTransfer(
     val key: String,
@@ -45,6 +45,7 @@ class RelayTransfer(
     private val readerIds = AtomicInteger()
     private var streamJob: Job? = null
     private var downloadJob: Job? = null
+    private var prefetchJob: Job? = null
     private val samples = ArrayDeque<Sample>()
 
     @Volatile var downloading = false
@@ -73,9 +74,37 @@ class RelayTransfer(
     fun stop() {
         streamJob?.cancel()
         downloadJob?.cancel()
+        stopPrefetch()
         streamJob = null
         downloadJob = null
         downloading = false
+    }
+
+    /**
+     * Fetches the missing blocks of each byte range in [ranges], in order, with the server's [mode] (`prefetch`, or
+     * `download` on servers without it). Gives up after a few failures: it only saves time, nothing waits for it.
+     */
+    fun prefetch(ranges: List<LongRange>, mode: String) {
+        if (prefetchJob?.isActive == true || cache.complete) return
+        prefetchJob = scope.launch(Dispatchers.IO) {
+            var failures = 0
+            for (range in ranges) {
+                if (range.isEmpty()) continue
+                val last = cache.blockOf(range.last.coerceAtMost(size - 1))
+                while (currentCoroutineContext().isActive && !cache.isDeleted) {
+                    val first = cache.firstMissing(cache.blockOf(range.first))?.takeIf { it <= last } ?: break
+                    if (fetch(first, runEnd(first, last + 1), mode, measure = false) { false }) continue
+                    if (++failures >= MAX_PREFETCH_FAILURES) return@launch
+                    delay(2_000L * failures)
+                }
+            }
+            Logger.i(TAG, "Prefetched $name: ${cache.cachedBytes} of $size bytes")
+        }
+    }
+
+    fun stopPrefetch() {
+        prefetchJob?.cancel()
+        prefetchJob = null
     }
 
     /** The player wants bytes from [offset]. */
@@ -149,7 +178,7 @@ class RelayTransfer(
                 continue
             }
             val end = runEnd(first, cache.blockOf(minOf(limit, size - 1)) + 1)
-            val ok = fetch(first, end, download = false) { !wanted(first, end) }
+            val ok = fetch(first, end, "stream") { !wanted(first, end) }
             failures = if (ok) 0 else failures + 1
             if (!ok) delay(minOf(5_000L, 500L * failures))
         }
@@ -162,7 +191,7 @@ class RelayTransfer(
             val from = cache.blockOf(readerPos.value)
             val first = cache.firstMissing(from) ?: cache.firstMissing(0) ?: break
             val end = runEnd(first, first + MAX_REQUEST_BLOCKS)
-            val ok = fetch(first, end, download = true) { false }
+            val ok = fetch(first, end, "download") { false }
             failures = if (ok) 0 else failures + 1
             if (!ok) delay(minOf(10_000L, 1_000L * failures))
         }
@@ -198,15 +227,18 @@ class RelayTransfer(
         return end
     }
 
-    /** Fetches blocks `[first, end)`; returns false on an error. [abandon] stops early when the player moved away. */
-    private suspend fun fetch(first: Int, end: Int, download: Boolean, abandon: () -> Boolean): Boolean {
+    /**
+     * Fetches blocks `[first, end)` with the server's [mode]; returns false on an error. [abandon] stops early when the
+     * player moved away. Only [measure]d fetches count toward [rate].
+     */
+    private suspend fun fetch(first: Int, end: Int, mode: String, measure: Boolean = true, abandon: () -> Boolean): Boolean {
+        val download = mode != "stream"
         val src = source() ?: run {
             fail("No viewer is sharing this file right now")
             return false
         }
         val start = cache.blockStart(first)
         val last = minOf(size, cache.blockStart(end)) - 1
-        val mode = if (download) "download" else "stream"
         val t0 = System.nanoTime()
         val request = Request.Builder()
             .url("${src.session.baseUrl}/yarmiplay/files/${src.fileId}?mode=$mode")
@@ -238,7 +270,7 @@ class RelayTransfer(
                     val t0 = System.nanoTime()
                     val n = stream.read(buffer, 0, minOf(BUFFER.toLong(), last + 1 - pos).toInt())
                     if (n < 0) break
-                    record(n, System.nanoTime() - t0, download)
+                    if (measure) record(n, System.nanoTime() - t0, download)
                     cache.write(pos, buffer, n)
                     pos += n
                     while (block < end && pos >= cache.blockStart(block) + cache.blockLength(block)) {
@@ -289,5 +321,6 @@ class RelayTransfer(
         private const val BUFFER = 64 * 1024
         const val WINDOW_MS = 15_000L
         private const val MIN_BUSY_NANOS = 3_000_000_000L
+        private const val MAX_PREFETCH_FAILURES = 3
     }
 }

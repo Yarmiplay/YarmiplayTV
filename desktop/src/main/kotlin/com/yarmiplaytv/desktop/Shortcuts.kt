@@ -26,7 +26,7 @@ internal interface ShortcutTarget {
  * Window-level shortcuts. The window only passes keys nothing focused has used, and the side panel keeps its
  * keys to itself, so typing in a text field never triggers them. Esc leaves full screen, else goes back; the
  * rest only work on the player screen, and all but H (which hides or shows the controls), F5 (screenshot) and
- * P (mini player) show the controls. In the mini player, Esc's back goes to the full window (the player's back handler).
+ * P (mini player) show the controls. N and B (or the media keys) go to the room playlist's next and previous entry. In the mini player, Esc's back goes to the full window (the player's back handler).
  */
 internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget): Boolean {
     if (key == Key.Escape) {
@@ -59,6 +59,8 @@ internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget)
         Key.M -> target.toggleMute()
         Key.F, Key.F11 -> target.setFullscreen(!target.isFullscreen)
         Key.Enter, Key.NumPadEnter -> target.focusChat()
+        Key.N, Key.MediaNext -> input.skip(true)
+        Key.B, Key.MediaPrevious -> input.skip(false)
         else -> return false
     }
     input.showControls()

@@ -1161,7 +1161,7 @@ class SyncplayClient(
 
         internal fun parseCapabilities(element: JsonElement?): YarmiplayCapabilities? {
             val o = element as? JsonObject ?: return null
-            return YarmiplayCapabilities(fileRelay = o.bool("fileRelay"), jellyfin = o.bool("jellyfin"), https = o.bool("https"))
+            return YarmiplayCapabilities(fileRelay = o.bool("fileRelay"), jellyfin = o.bool("jellyfin"), https = o.bool("https"), prefetch = o.bool("prefetch"))
         }
 
         internal fun parseSharedJellyfin(o: JsonObject): SharedJellyfin = SharedJellyfin(

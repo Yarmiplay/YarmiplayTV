@@ -77,6 +77,11 @@ data class YarmiplayCapabilities(
     val fileRelay: Boolean = false,
     val jellyfin: Boolean = false,
     val https: Boolean = false,
+    /**
+     * The relay takes `mode=prefetch` reads: the start of the playlist's next file, fetched ahead at the lowest
+     * priority. Older servers get `mode=download` for those reads instead.
+     */
+    val prefetch: Boolean = false,
 ) {
     /** Vanilla mode: the host switched every extension off, and the session token is revoked. */
     val allOff: Boolean get() = !fileRelay && !jellyfin && !https

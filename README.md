@@ -14,7 +14,11 @@ desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin]
 - Shared playlists: when someone selects an entry, the app finds that filename in your media folders or on your
   servers and loads it automatically. Each file is streamed from one place only: your media folders first, then
   a server with exactly that file name (Settings > Preferred server decides when several have it), and only if
-  no server has the exact name, a looser match (punctuation and case ignored, then a title search).
+  no server has the exact name, a looser match (punctuation and case ignored, then a title search). While one
+  entry plays, the next is already looked up, so the playlist moves on without waiting for a search. The player's
+  previous and next buttons (next to the seek buttons; on desktop also B and N or the media keys, on TV also the
+  remote's previous and next keys) select the neighbouring entry for everyone, wrapping around when the playlist
+  loops; in a managed room only operators can.
 - Reports what you watch back to your servers: progress while playing, and "watched" once 90% is played. When
   several servers have the same file, each is told, also when the file plays from your media folders.
   The app never jumps to a server's saved position, since the room decides where playback is. Turn reporting
@@ -44,7 +48,9 @@ desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin]
   - Device access: the host approves each device once (it shows a code to compare), after which it joins
     without the password. Settings > Device name sets what the host sees; the connect screen can forget the key.
   - File relay: someone who doesn't have the playlist's file streams it from a viewer who does, through the
-    Syncplay server, or downloads it first when the connection is too slow to play it smoothly. Relayed files
+    Syncplay server, or downloads it first when the connection is too slow to play it smoothly. When the
+    playlist's next entry can only come through the relay, its start (about a minute) and its end are fetched
+    ahead while the current one plays, so it starts at once. Relayed files
     are cached for at most 24 hours (up to 4 GB) and deleted when you leave the room. Settings > Share my files
     with the room stops this device from offering its files; it can still play files others share.
   - A Jellyfin server the host shares is added automatically, as "<name> (via <server>)"
@@ -129,7 +135,8 @@ In a room, the player's playlist, room and chat buttons open a side panel:
 - **Chat:** Enter in the player opens it; ↑/↓ recall what you sent.
 
 Player keys: Space or K pauses, ←/→ or J/L seek, ↑/↓ change the volume (also the scroll wheel and the volume
-slider in the player's bar), M mutes, F or F11 toggles full screen, F5 saves a screenshot to
+slider in the player's bar), M mutes, N and B (or the media keys) go to the playlist's next and previous entry,
+F or F11 toggles full screen, F5 saves a screenshot to
 Pictures\YarmiplayTV or the folder picked under Settings > Save screenshots to (the camera button in the player's
 bar does too, also on Android, where they go to Pictures/YarmiplayTV unless another folder is picked), H hides or shows the controls (they also hide after 2 s unless the mouse is on them), P (or the
 picture-in-picture button in the player's top bar) shrinks the window to a mini player: a small, always-on-top

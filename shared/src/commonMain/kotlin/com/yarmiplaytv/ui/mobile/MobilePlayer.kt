@@ -37,6 +37,8 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -144,6 +146,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
         showControls = { controls = true; touch() },
         togglePause = ::togglePause,
         seekBy = ::seekBy,
+        skip = { forward -> container.playlist.skip(forward); touch() },
     )
     fun openSheet(kind: PlayerSheet) {
         val tab = when (kind) {
@@ -195,10 +198,22 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         }
                     }
                     if (state.fileLoaded) {
-                        Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.CenterVertically) {
+                        // Previous and next entry of the room's playlist, on either side of the seek buttons.
+                        val skips = inRoom && room.playlist.isNotEmpty()
+                        Row(
+                            Modifier.align(Alignment.Center),
+                            horizontalArrangement = Arrangement.spacedBy(if (skips) 16.dp else 32.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (skips) {
+                                RoundButton(Icons.Filled.SkipPrevious, "Previous in the playlist", enabled = container.playlist.skipTarget(room, forward = false) != null, modifier = Modifier.testTag("skip_previous")) { input.skip(false) }
+                            }
                             RoundButton(Icons.Filled.FastRewind, "Back ${step.toInt()} seconds") { seekBy(-step) }
                             RoundButton(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, if (state.paused) "Play" else "Pause", big = true, modifier = Modifier.testTag("play_pause")) { togglePause() }
                             RoundButton(Icons.Filled.FastForward, "Forward ${step.toInt()} seconds") { seekBy(step) }
+                            if (skips) {
+                                RoundButton(Icons.Filled.SkipNext, "Next in the playlist", enabled = container.playlist.skipTarget(room, forward = true) != null, modifier = Modifier.testTag("skip_next")) { input.skip(true) }
+                            }
                         }
                     }
                     BottomControls(
@@ -309,10 +324,17 @@ private fun SheetButton(icon: androidx.compose.ui.graphics.vector.ImageVector, l
 }
 
 @Composable
-private fun RoundButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, big: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(50), color = Color.Black.copy(alpha = 0.45f), modifier = modifier.size(if (big) 72.dp else 56.dp)) {
+private fun RoundButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    big: Boolean = false,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(onClick = onClick, enabled = enabled, shape = RoundedCornerShape(50), color = Color.Black.copy(alpha = 0.45f), modifier = modifier.size(if (big) 72.dp else 56.dp)) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(if (big) 44.dp else 32.dp))
+            Icon(icon, contentDescription = label, tint = Color.White.copy(alpha = if (enabled) 1f else 0.35f), modifier = Modifier.size(if (big) 44.dp else 32.dp))
         }
     }
 }

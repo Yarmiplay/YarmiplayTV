@@ -26,6 +26,8 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Downloading
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Pause
@@ -189,8 +191,8 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                     AndroidKeyEvent.KEYCODE_MEDIA_PAUSE -> { if (down) player.setPaused(true); true }
                     AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { if (down) seekBy(30.0); true }
                     AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> { if (down) seekBy(-30.0); true }
-                    AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> { if (down) room.playlistIndex?.let { container.playlist.selectIndex(it + 1) }; true }
-                    AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> { if (down) room.playlistIndex?.takeIf { it > 0 }?.let { container.playlist.selectIndex(it - 1) }; true }
+                    AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> { if (down) container.playlist.skip(true); true }
+                    AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> { if (down) container.playlist.skip(false); true }
                     AndroidKeyEvent.KEYCODE_CAPTIONS -> { if (down) cycleSubtitles(); true }
                     else -> false
                 }
@@ -464,6 +466,13 @@ private fun ControlsBar(
             IconAction(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, "Play/pause", onTogglePause, Modifier.focusRequester(controlsFocus))
             IconAction(Icons.Filled.Replay10, "Back", { onSeek(-10.0) })
             IconAction(Icons.Filled.Forward10, "Forward", { onSeek(10.0) })
+            // The room playlist's previous and next entry, when there is one to go to.
+            if (inRoom && room.playlist.isNotEmpty()) {
+                val previous = container.playlist.skipTarget(room, forward = false)
+                val next = container.playlist.skipTarget(room, forward = true)
+                IconAction(Icons.Filled.SkipPrevious, "Previous in the playlist", { container.playlist.skip(false) }, Modifier.testTag("skip_previous"), enabled = previous != null)
+                IconAction(Icons.Filled.SkipNext, "Next in the playlist", { container.playlist.skip(true) }, Modifier.testTag("skip_next"), enabled = next != null)
+            }
             if (inRoom) {
                 val ready = room.isReady == true
                 ActionButton(

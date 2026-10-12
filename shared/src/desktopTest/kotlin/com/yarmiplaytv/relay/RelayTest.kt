@@ -17,6 +17,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.mockwebserver.Dispatcher
@@ -306,6 +309,73 @@ class RelayTest {
         val shared = SharedJellyfin(true, "id", "Jelly", proxy = true, addresses = listOf("http://192.168.1.20:8096", "http://sync.example:8999"))
         assertEquals(listOf("http://sync.example:8999", "http://192.168.1.20:8096"), HostJellyfinSharing.candidates(shared, session))
         assertEquals(listOf("http://192.168.1.20:8096", "http://sync.example:8999"), HostJellyfinSharing.candidates(shared.copy(proxy = false), session))
+    }
+
+    // --- Prefetching the playlist's next file ------------------------------------------------------
+
+    @Test
+    fun `prefetches about a minute of the next file, within bounds`() {
+        val gb = 1L shl 30
+        // 1 GiB over 40 minutes: 60 s is about 25 MiB.
+        assertEquals((gb / 2400.0 * 60).toLong(), RelayPolicy.prefetchBytes(gb, 2400.0))
+        assertEquals(RelayPolicy.PREFETCH_MIN, RelayPolicy.prefetchBytes(gb, 36_000.0))
+        assertEquals(RelayPolicy.PREFETCH_MAX, RelayPolicy.prefetchBytes(20 * gb, 600.0))
+        assertEquals(32L shl 20, RelayPolicy.prefetchBytes(gb, 0.0))
+        assertEquals(5_000L, RelayPolicy.prefetchBytes(5_000, 10.0))
+    }
+
+    @Test
+    fun `prefetch fills the requested ranges with its own mode, then the player reads them without asking again`() {
+        val size = 12 * RelayCache.BLOCK + 500
+        val data = ByteArray(size.toInt()) { ((it * 17 + 3) % 251).toByte() }
+        val requests = CopyOnWriteArrayList<RecordedRequest>()
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                requests += request
+                val (start, end) = RelayProxy.parseRange(request.getHeader("Range"), size) ?: return MockResponse().setResponseCode(416)
+                return MockResponse().setResponseCode(206)
+                    .setHeader("Content-Range", "bytes $start-$end/$size")
+                    .setBody(Buffer().write(data, start.toInt(), (end - start + 1).toInt()))
+            }
+        }
+        server.start()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val proxy = RelayProxy(scope)
+        try {
+            val session = YarmiplaySession("secret-token", 1, server.url("/").toString().trimEnd('/'))
+            val cache = RelayCache(tmp.newFolder("relay"))
+            val file = cache.open("k", size)
+            val transfer = RelayTransfer("k", "next.mkv", size, file, relayHttpClient(), scope) { RelaySource(session, "file2") }
+            val head = 3 * RelayCache.BLOCK
+            val tail = size - RelayCache.BLOCK
+            transfer.prefetch(listOf(0L until head, tail until size), "prefetch")
+            runBlocking { withTimeout(10_000) { while (!(file.has(0) && file.has(2) && file.has(11) && file.has(12))) delay(20) } }
+            // The tail starts partway into block 11.
+            assertTrue("only the head and the tail", (3..10).none(file::has) && file.has(11))
+            assertTrue(requests.all { it.path == "/yarmiplay/files/file2?mode=prefetch" })
+            assertTrue(requests.all { it.getHeader("Authorization") == "Bearer secret-token" })
+
+            // Played now: the start comes out of the cache.
+            val before = requests.size
+            transfer.start()
+            val url = proxy.url(transfer)
+            val client = OkHttpClient.Builder().readTimeout(30, TimeUnit.SECONDS).build()
+            val start = client.newCall(Request.Builder().url(url).header("Range", "bytes=0-99999").build()).execute().use { r ->
+                assertEquals(206, r.code)
+                r.body!!.bytes()
+            }
+            assertArrayEquals(data.copyOfRange(0, 100_000), start)
+            assertTrue(
+                "the start wasn't fetched again",
+                requests.drop(before).none { RelayProxy.parseRange(it.getHeader("Range"), size)!!.first < head },
+            )
+            transfer.stop()
+        } finally {
+            proxy.close()
+            scope.cancel()
+            server.shutdown()
+        }
     }
 
     // --- Proxy ------------------------------------------------------------------------------------

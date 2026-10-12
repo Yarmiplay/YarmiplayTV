@@ -30,6 +30,8 @@ class PlayerInput(
     val showControls: () -> Unit,
     val togglePause: () -> Unit,
     val seekBy: (Double) -> Unit,
+    /** The room playlist's next (true) or previous entry; nothing when there's none. */
+    val skip: (Boolean) -> Unit = {},
 )
 
 /** How long the player controls stay up without input while a video plays and the pointer isn't on them. */
