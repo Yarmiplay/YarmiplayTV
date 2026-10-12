@@ -10,8 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -37,14 +37,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.shared.CHANGELOG_URL
+import kotlinx.coroutines.launch
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.update.ReleaseNote
 import com.yarmiplaytv.update.ReleaseNotes
 import com.yarmiplaytv.update.WhatsNew
-import kotlinx.coroutines.launch
-
-/** The website's page with every version's patch notes. */
-const val CHANGELOG_URL = "https://tv.yarmiplay.com/changelog/"
 
 /** Every version's patch notes, newest first. */
 @Composable

@@ -34,15 +34,26 @@ New to it? The [user manual](https://tv.yarmiplay.com/manual/) explains everythi
   others ready or not ready. Passwords are remembered per server and room and sent again whenever you rejoin,
   and a room created from the join form is saved as the one to join next time. Managed rooms show their chosen
   name with a lock instead of the hash. The Room tab lists the shared playlist first, then the chat, the
-  people in the room, and last switching rooms.
+  people in the room, and last switching rooms. On a computer or a wide tablet the Room tab shows the playlist,
+  the chat and the room side by side.
+- Saved and recent rooms: every room you join is kept as a recent room (the 15 latest), and **Save this room**
+  (a star, or a checkbox on the join form) keeps one for good, with a name of your own if you like. Both lists
+  are on the join form, with **Rejoin** to connect in one click, and the room panel has the other rooms on the
+  same server to switch to. The home screen's room card says which room it would rejoin.
 - MyAnimeList: sign in from the MyAnimeList card on the home screen (or Settings > MyAnimeList) and your list
-  follows what you watch. When an episode is 90%
+  follows what you watch. Once you're signed in, the card opens the MyAnimeList screen: your list (watching, plan
+  to watch, completed) with episode and score changes, the update switches, the shows you matched or stopped
+  tracking, and updates waiting to be sent. When an episode is 90%
   watched, its progress is updated (and the show's status: watching, or completed with a finish date at the last
   episode; a completed show you watch again counts as a rewatch), with Undo, or after asking if you prefer. The
   app works out which MyAnimeList entry an episode is, from your media server (or the file and folder names):
   MyAnimeList has an entry per season, so season 2 episode 5 is the second season's entry, and an episode
-  numbered from the start of the show (episode 50, say) is counted through the seasons to the right one. When it
-  isn't sure, it asks you to pick, and remembers your choice for the show. The player's MyAnimeList panel shows
+  numbered from the start of the show (episode 50, say) is counted through the seasons to the right one: episode
+  27 of a show whose first two seasons have 12 episodes each is season 3 episode 3. It follows MyAnimeList's
+  prequel and sequel links for the order, skips recaps, movies and specials, counts a season MyAnimeList splits
+  into parts (Attack on Titan's "Season 3 Part 2") as one, matches short or slightly different library names,
+  and trusts a show that's already on your list. Only when it still isn't sure does it ask you to pick, and it
+  remembers your choice for the show. The player's MyAnimeList panel shows
   the entry and lets you change the episodes watched, status and score, fix a wrong match or stop tracking a show;
   shows in the library have it too. You sign in on MyAnimeList's own page (in your browser, or on TV in a web
   view); the app keeps only its tokens, on the device, and signing out deletes everything it kept. Builds need a
@@ -117,15 +128,34 @@ python -m http.server -d build/site 8000
 
 When it starts, the app from the download page reads `version.json` and shows a notice on the home screen if
 its platform's package has a higher version than the one running (so only bumping `appVersion` makes an
-update; builds of the same version don't). Phones and tablets link to the download page, TVs show the
-Downloader short link, and the installed Windows app (the `.msi` or winget) downloads the `.msi`, checks its
-SHA-256 and installs it (per user, no administrator prompt) with **Install**, or by itself with **Automatic
-updates** in Settings: before the window opens, it shows a small window with the download's progress (and
-Skip), installs the new version quietly and starts it with the same arguments. If the check doesn't answer
-within 5 seconds, the download fails or the installer does, the current version opens with the notice
-instead, and doesn't try the same installer again on that start. The portable Windows app only links to the
-download page, and the Microsoft Store, Flatpak, snap and AUR packages leave updates to their store. "Check
-for updates" in Settings turns it all off. Release builds, which go to Google Play, never check: Play doesn't allow apps to update outside it.
+update; builds of the same version don't). **Settings > Updates > Check for updates** does the same on
+request, also for a version whose notice was dismissed. Every download's SHA-256 is checked against
+`version.json` before anything is installed, and an installer that fails isn't tried again on that start.
+
+| Installed from | Installing |
+|---|---|
+| Windows `.msi` (or winget) | Downloads the `.msi` and installs it per user (no administrator prompt) after the app closes, then starts the new version with the same arguments |
+| Windows portable `.zip` | Downloads the zip (`windows-portable` in `version.json`) and, after the app closes, replaces `app` and `runtime` next to the executable, keeping `data` |
+| macOS `.dmg` | Mounts the disk image after the app closes and replaces the app bundle (asking for an administrator password only when its folder isn't writable) |
+| Linux `.deb` | `pkexec apt-get install` with the downloaded `.deb`, or opens it in the software installer without pkexec |
+| Android APK from the download page (phones, tablets, TVs) | Downloads the APK and hands it to Android's installer; the first time, Android asks to allow installs from YarmiplayTV |
+| Google Play | Play's in-app update; the Play build never reads `version.json` |
+| Microsoft Store, Flatpak, snap, AUR | Opens the store, or shows the command that updates it |
+
+Where the app installs updates on a computer, **Automatic updates** in Settings installs a new version before
+the window opens: a small window shows the download's progress (and Skip), and if the check doesn't answer
+within 5 seconds or the download fails, the current version opens with the notice instead. "Check for updates
+when the app starts" in Settings turns the launch check off.
+
+The two Android builds are kept apart at build time, as Google Play's policy requires (apps from Play update
+only through Play). The Play build (`release`) has `UPDATE_CHECK = false`, the Play In-App Updates library
+(`releaseImplementation`) and none of the APK installer; the download-page build (`debug`) has the APK installer
+and `REQUEST_INSTALL_PACKAGES` in its own manifest (`app/src/debug/`) and no Play library. CI fails the build if
+the release manifest ever has that permission.
+
+After an update the home screen shows "What's new" once, from the same patch notes as the website's
+[patch notes](https://tv.yarmiplay.com/changelog/) page: `packaging/linux/com.yarmiplay.TV.metainfo.xml`, turned
+into `ReleaseNotes.kt` at build time.
 
 The download page's APK is signed with a fixed key from the repository secrets
 `YARMIPLAYTV_APK_KEYSTORE_BASE64` and `YARMIPLAYTV_APK_KEYSTORE_PASSWORD` (alias `yarmiplaytv-apk`), so a new
@@ -485,7 +515,8 @@ The download page links the stores whose variable is set.
 
 See the [privacy policy](docs/privacy.md). The program connects to the Syncplay, Jellyfin and Plex
 servers you enter or pick (and to plex.tv to sign in to Plex and find its servers) and, when it starts, reads the latest version number from the download page on GitHub Pages; that
-request carries no information about the user and can be turned off with "Check for updates" in Settings.
+request carries no information about the user and can be turned off with "Check for updates when the app starts"
+in Settings. The Google Play build asks Google Play instead, and only when you check for updates.
 
 ## License
 

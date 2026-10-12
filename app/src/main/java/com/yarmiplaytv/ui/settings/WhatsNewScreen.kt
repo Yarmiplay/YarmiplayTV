@@ -37,9 +37,9 @@ import com.yarmiplaytv.ui.components.ActionButton
 import com.yarmiplaytv.ui.components.IconAction
 import com.yarmiplaytv.ui.components.QrLinkDialog
 import com.yarmiplaytv.ui.components.TvTile
-import com.yarmiplaytv.ui.mobile.CHANGELOG_URL
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.shared.CHANGELOG_URL
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.update.ReleaseNotes
 import com.yarmiplaytv.update.WhatsNew

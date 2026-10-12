@@ -67,10 +67,12 @@ unless you turn it off, to GitHub to check for a new version.
   request contains nothing about you, your settings or your device; like any web request it reaches GitHub
   from your IP address, and GitHub handles it under the
   [GitHub Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
-  The developer doesn't receive it. Turn it off with **Check for updates** in Settings. When you install an
-  update on Windows, or **Automatic updates** installs one before the app opens, the installer is downloaded
-  from the same page. The apps from Google Play, the Microsoft Store, Flathub, the Snap Store and the AUR
-  don't check: their store updates them.
+  The developer doesn't receive it. Turn it off with **Check for updates when the app starts** in Settings;
+  **Check for updates** in Settings asks the same page when you choose to. When you install an update, or
+  **Automatic updates** installs one before the app opens, the new version is downloaded from the same page.
+  The app from Google Play never reads that page: **Check for updates** asks Google Play, which handles it under
+  [Google's Privacy Policy](https://policies.google.com/privacy), and the update comes from Google Play. The
+  apps from the Microsoft Store, Flathub, the Snap Store and the AUR don't check: their store updates them.
 
 Connections are encrypted when the server supports it: Syncplay servers with TLS, and Jellyfin and Plex
 servers on HTTPS. plex.tv is always HTTPS. Media servers on a home network often use plain HTTP, and the app

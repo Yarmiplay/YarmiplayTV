@@ -232,7 +232,8 @@ class MobileUiTest {
         compose.runOnUiThread { container.updates.show(TEST_UPDATE) }
         compose.waitUntilExactlyOneExists(hasTestTag("update_banner"), 5_000)
         compose.onNodeWithText("YarmiplayTV 99.0 is available").assertIsDisplayed()
-        compose.onNodeWithText("Download page").assertIsDisplayed()
+        // The download-page build installs it itself.
+        compose.onNodeWithText(if (container.updates.installer != null) "Install" else "Download page").assertIsDisplayed()
         compose.onNodeWithText("Not now").performClick()
         compose.waitUntilDoesNotExist(hasTestTag("update_banner"), 5_000)
         compose.waitUntil(5_000) { container.settings.value.dismissedUpdate == "99.0" }

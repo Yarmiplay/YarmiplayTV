@@ -27,7 +27,9 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,6 +43,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
@@ -55,6 +58,7 @@ import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.ui.browse.openItem
+import com.yarmiplaytv.ui.components.ActionButton
 import com.yarmiplaytv.ui.components.Dot
 import com.yarmiplaytv.ui.components.IconAction
 import com.yarmiplaytv.ui.components.Pill
@@ -65,10 +69,12 @@ import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.settings.TvWhatsNewCard
 import com.yarmiplaytv.ui.shared.ServerRecent
+import com.yarmiplaytv.ui.shared.readyButtonLabel
 import com.yarmiplaytv.ui.shared.recentByServer
 import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serversDetail
 import com.yarmiplaytv.ui.shared.serversTitle
+import com.yarmiplaytv.ui.shared.updateStateLine
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.update.UpdateState
 import kotlinx.coroutines.flow.map
@@ -122,10 +128,10 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
         }
         update?.let { u ->
             item(key = "update") {
-                UpdateNotice(u, {
+                UpdateNotice(container, u, {
                     container.updates.dismiss()
                     runCatching { firstFocus.requestFocus() }
-                }, Modifier.padding(horizontal = 48.dp).focusRequester(updateFocus))
+                }, Modifier.padding(horizontal = 48.dp), Modifier.focusRequester(updateFocus))
             }
         }
         item(key = "whats-new") { TvWhatsNewCard(container, nav, Modifier.padding(horizontal = 48.dp)) }
@@ -243,22 +249,57 @@ private fun RecentRow(container: AppContainer, nav: Navigator, title: String, it
 }
 
 /**
- * TVs rarely have a browser, so this says how to get the update with Downloader, like the download page.
- * One full-width tile, so the D-pad reaches it from the tiles below; OK dismisses it.
+ * A newer version. The download-page APK installs it from here: OK downloads it and hands it to Android's
+ * installer, with "Not now" beside it. Without an installer (TVs rarely have a browser) it says how to get it with
+ * Downloader, like the download page, and OK dismisses it. A full-width tile, so the D-pad reaches it from the
+ * tiles below.
  */
 @Composable
-private fun UpdateNotice(state: UpdateState, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+private fun UpdateNotice(container: AppContainer, state: UpdateState, onDismiss: () -> Unit, modifier: Modifier = Modifier, tileModifier: Modifier = Modifier) {
+    val updates = container.updates
+    val canInstall = updates.installer != null
     val shortLink = state.update.pageUrl.substringAfter("://").trimEnd('/') + "/a"
-    TvTile(onClick = onDismiss, modifier = modifier.fillMaxWidth().testTag("update_banner"), focusedScale = 1.02f) {
-        Row(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.SystemUpdate, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(32.dp))
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text("YarmiplayTV ${state.update.version} is available", style = MaterialTheme.typography.titleMedium)
-                Text("To install it, open Downloader and enter $shortLink", style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
+    // Coming back from Android's "install unknown apps" setting changes what the notice says.
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    key(lifecycleState) {
+        Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            TvTile(
+                onClick = {
+                    when {
+                        !canInstall -> onDismiss()
+                        state is UpdateState.Ready -> updates.restartToInstall()
+                        state is UpdateState.Downloading -> Unit
+                        else -> updates.download(thenRestart = true)
+                    }
+                },
+                modifier = tileModifier.weight(1f).testTag("update_banner"),
+                focusedScale = 1.02f,
+            ) {
+                Row(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.SystemUpdate, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(32.dp))
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("YarmiplayTV ${state.update.version} is available", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (canInstall) updateStateLine(updates, state) else "To install it, open Downloader and enter $shortLink",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = AppColors.TextDim,
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    when {
+                        !canInstall -> Pill("Not now", AppColors.TextDim)
+                        state is UpdateState.Ready -> Pill(readyButtonLabel(updates), AppColors.Accent)
+                        state is UpdateState.Downloading -> Pill("${(state.progress * 100).toInt()}%", AppColors.TextDim)
+                        else -> Pill(if (state is UpdateState.Failed) "Try again" else "Install", AppColors.Accent)
+                    }
+                }
             }
-            Spacer(Modifier.width(16.dp))
-            Pill("Not now", AppColors.TextDim)
+            if (canInstall) {
+                ActionButton(if (state is UpdateState.Downloading) "Cancel" else "Not now", {
+                    if (state is UpdateState.Downloading) updates.dismiss(remember = false) else onDismiss()
+                })
+            }
         }
     }
 }

@@ -267,8 +267,9 @@ your copy was installed:
 - **Microsoft Store:** opens the Store page, where **Update** is.
 - **Flatpak, Snap and the AUR:** shows the command that updates it, to copy, and opens your software center.
 
-**Check for updates** in the same section turns off the check when the app starts. Each update's notes are
-under **Settings > About > What's new** and on the [patch notes](../changelog/) page.
+Turn off **Check for updates when the app starts** in the same section to only check when you ask. After an
+update, the home screen shows what's new once; **Settings > About > What's new** has it any time, and the
+[patch notes](../changelog/) page has every version's.
 
 ## Settings
 
