@@ -137,6 +137,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material.icons)
     implementation(libs.tv.material)
+    implementation(libs.zxing.core)
     implementation(libs.compose.material3)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)

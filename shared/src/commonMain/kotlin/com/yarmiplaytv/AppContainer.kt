@@ -29,8 +29,8 @@ import com.yarmiplaytv.sync.MediaLocator
 import com.yarmiplaytv.sync.OperatorPasswords
 import com.yarmiplaytv.sync.PlaybackReporter
 import com.yarmiplaytv.sync.PlaylistAutosave
-import com.yarmiplaytv.sync.RoomHistory
 import com.yarmiplaytv.sync.PlaylistController
+import com.yarmiplaytv.sync.RoomHistory
 import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.sync.discoverSyncplayServers
 import com.yarmiplaytv.syncplay.ServerKind
@@ -39,6 +39,7 @@ import com.yarmiplaytv.syncplay.YarmiplayInfo
 import com.yarmiplaytv.tracking.MalService
 import com.yarmiplaytv.tracking.MalTracker
 import com.yarmiplaytv.update.Updates
+import com.yarmiplaytv.update.WhatsNew
 import java.io.File
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -156,6 +157,7 @@ class AppContainer(
     val updates = Updates(scope, settingsStore, appVersion)
 
     init {
+        scope.launch { WhatsNew.onLaunch(settingsStore, appVersion) }
         scope.launch {
             settings.collect { s ->
                 sync.syncSettings = s.sync

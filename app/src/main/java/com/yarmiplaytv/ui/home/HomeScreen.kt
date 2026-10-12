@@ -63,6 +63,7 @@ import com.yarmiplaytv.ui.components.SectionTitle
 import com.yarmiplaytv.ui.components.TvTile
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.settings.TvWhatsNewCard
 import com.yarmiplaytv.ui.shared.ServerRecent
 import com.yarmiplaytv.ui.shared.recentByServer
 import com.yarmiplaytv.ui.shared.savedRoomLabel
@@ -127,6 +128,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                 }, Modifier.padding(horizontal = 48.dp).focusRequester(updateFocus))
             }
         }
+        item(key = "whats-new") { TvWhatsNewCard(container, nav, Modifier.padding(horizontal = 48.dp)) }
         item(key = "tiles") {
             // Tiles share the row width so they always fit inside the TV-safe area.
             Row(

@@ -97,6 +97,7 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
             }
         }
         item { UpdateBanner(container, Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) }
+        item { WhatsNewCard(container, nav, Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) }
         item {
             CardGrid(multiColumn = kind != DeviceKind.PHONE, modifier = Modifier.padding(horizontal = 16.dp)) {
                 val (title, detail, color) = when (room.status) {

@@ -150,6 +150,11 @@ data class AppSettings(
     val installUpdatesOnLaunch: Boolean = false,
     /** The update version the user dismissed; it isn't shown again. */
     val dismissedUpdate: String = "",
+    /**
+     * The newest version whose "What's new" was seen (or that was installed fresh); empty before the first launch,
+     * [SettingsStore.USED_BEFORE_WHATS_NEW] for an app used before this setting existed.
+     */
+    val lastSeenVersion: String = "",
     /** Show other people's chat in rooms; off hides all of it, whatever names they use. */
     val showRoomChat: Boolean = true,
     /** The user agreed to the community rules, asked once before the first room join. */
@@ -248,6 +253,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val checkForUpdates = booleanPreferencesKey("update_check")
         val installUpdatesOnLaunch = booleanPreferencesKey("update_install_on_launch")
         val dismissedUpdate = stringPreferencesKey("update_dismissed")
+        val lastSeenVersion = stringPreferencesKey("last_seen_version")
         val showRoomChat = booleanPreferencesKey("chat_show")
         val acceptedRoomRules = booleanPreferencesKey("room_rules_accepted")
         /** Followed by "host:port/room"; the value is the playlist, one entry per line. */
@@ -360,6 +366,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             checkForUpdates = p[Keys.checkForUpdates] ?: true,
             installUpdatesOnLaunch = p[Keys.installUpdatesOnLaunch] ?: false,
             dismissedUpdate = p[Keys.dismissedUpdate] ?: "",
+            lastSeenVersion = p[Keys.lastSeenVersion] ?: if (p.asMap().isEmpty()) "" else USED_BEFORE_WHATS_NEW,
             showRoomChat = p[Keys.showRoomChat] ?: true,
             acceptedRoomRules = p[Keys.acceptedRoomRules] ?: false,
             deviceName = p[Keys.deviceName] ?: "",
@@ -505,6 +512,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
 
     suspend fun saveDismissedUpdate(version: String) = dataStore.edit { it[Keys.dismissedUpdate] = version }
 
+    suspend fun saveLastSeenVersion(version: String) = dataStore.edit { it[Keys.lastSeenVersion] = version }
+
     suspend fun saveShowRoomChat(on: Boolean) = dataStore.edit { it[Keys.showRoomChat] = on }
 
     suspend fun saveAcceptedRoomRules(accepted: Boolean) = dataStore.edit { it[Keys.acceptedRoomRules] = accepted }
@@ -591,11 +600,14 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
     private fun <T> decode(text: String, serializer: KSerializer<List<T>>): List<T> =
         runCatching { json.decodeFromString(serializer, text) }.getOrDefault(emptyList())
 
-    private companion object {
-        val json = Json { ignoreUnknownKeys = true }
-        val jellyfinList = ListSerializer(JellyfinSession.serializer())
-        val plexList = ListSerializer(PlexSession.serializer())
-        val LEGACY_SERVER_KEYS = listOf(
+    companion object {
+        /** [AppSettings.lastSeenVersion] of an app that was used before it kept one: older than any version. */
+        const val USED_BEFORE_WHATS_NEW = "0"
+
+        private val json = Json { ignoreUnknownKeys = true }
+        private val jellyfinList = ListSerializer(JellyfinSession.serializer())
+        private val plexList = ListSerializer(PlexSession.serializer())
+        private val LEGACY_SERVER_KEYS = listOf(
             Keys.jfUrl, Keys.jfServerName, Keys.jfServerId, Keys.jfUserId, Keys.jfUserName, Keys.jfToken,
             Keys.pxUrl, Keys.pxServerName, Keys.pxMachineId, Keys.pxUserName, Keys.pxServerToken, Keys.pxAccountToken,
         )
