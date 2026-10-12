@@ -22,6 +22,8 @@ sealed interface Screen {
     data object MalLogin : Screen { override val key = "mal-login" }
     /** MyAnimeList: the account, your list, matches and settings. */
     data object Mal : Screen { override val key = "mal" }
+    /** The patch notes of this version and the ones before it. */
+    data object WhatsNew : Screen { override val key = "whats-new" }
     /** A show from the library on MyAnimeList. */
     data class MalEntry(val item: MediaItem) : Screen { override val key = "mal/${item.uniqueKey}" }
 

@@ -75,6 +75,7 @@ fun TvRoot(container: AppContainer, stack: SnapshotStateList<Screen> = remember 
                     Screen.Licenses -> LicensesScreen()
                     Screen.MalLogin -> MalLoginScreen(container, nav)
                     Screen.Mal -> MalHubScreen(container, nav)
+                    Screen.WhatsNew -> Unit
                     is Screen.MalEntry -> MalEntryScreen(container, nav, screen.item)
                     is Screen.Browse -> BrowseScreen(container, nav, screen.item)
                     is Screen.Search -> SearchScreen(container, nav, screen.initialQuery, screen.pickFor)

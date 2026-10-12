@@ -49,13 +49,16 @@ class UpdateChecker(
     private val http: OkHttpClient = OkHttpClient.Builder().callTimeout(20, TimeUnit.SECONDS).build(),
 ) {
     /** The update for [platform] when the page has a newer version than [current]; null otherwise or on any error. */
-    suspend fun check(platform: String, current: String): Update? = withContext(Dispatchers.IO) {
+    suspend fun check(platform: String, current: String): Update? = fetch(platform, current).getOrNull()
+
+    /** Like [check], but tells "up to date" (success with null) from "couldn't ask" (failure). */
+    suspend fun fetch(platform: String, current: String): Result<Update?> = withContext(Dispatchers.IO) {
         runCatching {
             http.newCall(Request.Builder().url(manifestUrl).build()).execute().use { response ->
-                if (!response.isSuccessful) return@runCatching null
+                if (!response.isSuccessful) error("the download page answered HTTP ${response.code}")
                 parse(response.body!!.string(), platform, current, manifestUrl)
             }
-        }.getOrNull()
+        }
     }
 
     companion object {

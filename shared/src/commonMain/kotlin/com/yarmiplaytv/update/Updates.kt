@@ -19,7 +19,10 @@ sealed interface UpdateState {
     data class Failed(override val update: Update, val message: String) : UpdateState
 }
 
-/** Installs updates itself (the Windows installer); without one, the app only points to the download page. */
+/**
+ * Installs updates from the download page itself (the Windows installer, the portable zip, the macOS disk image,
+ * the .deb, Android's APK); without one, the app only points to the download page.
+ */
 interface UpdateInstaller {
     /** Downloads [update]'s package and checks its SHA-256; [progress] gets 0 to 1. Throws on failure. */
     suspend fun download(update: Update, progress: (Float) -> Unit)
@@ -29,6 +32,48 @@ interface UpdateInstaller {
      * afterwards: the new version, or this one with a notice when the installer failed.
      */
     fun installAfterExit(relaunch: Boolean)
+
+    /**
+     * Whether installing replaces this app right away rather than after it closes (Android's installer):
+     * then there's no "installs when you close" and no relaunch to wait for.
+     */
+    val installsNow: Boolean get() = false
+
+    /**
+     * A step the person has to take before installing can work, as a sentence (Android: allowing installs
+     * from YarmiplayTV), or null when there's none. [openPendingStep] takes them there.
+     */
+    fun pendingStep(): String? = null
+    fun openPendingStep() {}
+}
+
+/**
+ * Where a store or package manager installed the app (Google Play, the Microsoft Store, Flatpak, Snap, the AUR):
+ * only it may update the app, so the app never looks at the download page.
+ */
+interface StoreUpdates {
+    /** "Google Play", "Microsoft Store", "Flathub"… */
+    val name: String
+    /** The app's page in the store, opened by [Updates] when [update] can't do it in the app; null when none. */
+    val pageUrl: String?
+    /** A command that updates the app, shown with a Copy button (Flatpak, Snap, AUR); null when none. */
+    val command: String? get() = null
+
+    /** Asks the store: true when an update is out, false when up to date, null when it can't be asked. */
+    suspend fun check(): Boolean? = null
+
+    /** Starts the store's own update in the app (Play's in-app update); false when it can't. */
+    fun update(): Boolean = false
+}
+
+/** What "Check for updates" found. */
+sealed interface UpdateCheck {
+    data object UpToDate : UpdateCheck
+    /** A newer version on the download page, now also in [Updates.state]. */
+    data class Found(val update: Update) : UpdateCheck
+    /** Updates come from [store]; [available] is what it said, null when it can't be asked. */
+    data class InStore(val store: StoreUpdates, val available: Boolean?) : UpdateCheck
+    data class Failed(val message: String) : UpdateCheck
 }
 
 /** Looks for a newer version on the download page when the app starts and, where possible, installs it. */
@@ -44,6 +89,8 @@ class Updates(
      */
     var platform: String? = null
     var installer: UpdateInstaller? = null
+    /** Set instead of [platform] where a store installed the app. */
+    var store: StoreUpdates? = null
     /** Closes the app, for [restartToInstall]. */
     var exitApp: () -> Unit = {}
 
@@ -69,6 +116,27 @@ class Updates(
             Logger.i(TAG, "Version ${update.version} is available")
             show(update)
         }
+    }
+
+    /**
+     * "Check for updates" in Settings: asks the download page (or the store) now, also for a version the notice was
+     * dismissed for, and shows what it found in [state] so Install works from there.
+     */
+    suspend fun checkNow(): UpdateCheck {
+        store?.let { s -> return UpdateCheck.InStore(s, runCatching { s.check() }.getOrNull()) }
+        val platform = platform ?: return UpdateCheck.Failed("This version is updated by the store it came from.")
+        return checker.fetch(platform, currentVersion).fold(
+            onSuccess = { update ->
+                if (update == null) return UpdateCheck.UpToDate
+                val now = _state.value
+                // Keep a download in progress or done for the same version.
+                if (now == null || now.update.version != update.version || now is UpdateState.Available || now is UpdateState.Failed) {
+                    _state.value = UpdateState.Available(update)
+                }
+                UpdateCheck.Found(update)
+            },
+            onFailure = { UpdateCheck.Failed("Couldn't reach the download page: ${it.message ?: "no connection"}") },
+        )
     }
 
     /** Shows [update] as available, e.g. from tests. */
@@ -102,14 +170,24 @@ class Updates(
 
     fun restartToInstall() {
         if (_state.value !is UpdateState.Ready) return
-        installer?.installAfterExit(relaunch = true)
+        val installer = installer ?: return
+        if (installer.pendingStep() != null) {
+            installer.openPendingStep()
+            return
+        }
+        if (installer.installsNow) {
+            // The system's installer takes over; if it's cancelled the update can be installed again.
+            installer.installAfterExit(relaunch = true)
+            return
+        }
+        installer.installAfterExit(relaunch = true)
         _state.value = null
         exitApp()
     }
 
     /** Called when the app closes: starts the installer of a downloaded update that wasn't installed yet. */
     fun onExit() {
-        if (_state.value is UpdateState.Ready) installer?.installAfterExit(relaunch = false)
+        if (_state.value is UpdateState.Ready && installer?.installsNow == false) installer?.installAfterExit(relaunch = false)
     }
 
     /** Hides the notice; with [remember], this version isn't shown again. */
