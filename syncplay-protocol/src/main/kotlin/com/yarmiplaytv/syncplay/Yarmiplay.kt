@@ -82,10 +82,20 @@ data class YarmiplayCapabilities(
      * priority. Older servers get `mode=download` for those reads instead.
      */
     val prefetch: Boolean = false,
+    /** Room-wide settings everyone in the room shares ([RoomSettings]); older servers lack them. */
+    val roomSettings: Boolean = false,
 ) {
     /** Vanilla mode: the host switched every extension off, and the session token is revoked. */
     val allOff: Boolean get() = !fileRelay && !jellyfin && !https
 }
+
+/** Settings that are the room's, the same for everyone in it, as the server keeps them. */
+data class RoomSettings(
+    /** Skip anime openings and endings automatically (the room jumps, as when anyone seeks). */
+    val autoSkip: Boolean = false,
+    /** Who last changed them; null when nobody has in this room yet. */
+    val setBy: String? = null,
+)
 
 /** The host's Jellyfin, as the server shares it. */
 data class SharedJellyfin(
@@ -149,8 +159,13 @@ data class YarmiplayInfo(
     val session: Boolean = false,
     /** The server's certificate name and LAN addresses; null without a certificate (or in vanilla mode). */
     val tls: ServerTls? = null,
+    /** The current room's shared settings; null until the server sent them (or when it doesn't keep any). */
+    val roomSettings: RoomSettings? = null,
 ) {
     val relayActive: Boolean get() = session && capabilities.fileRelay
+
+    /** Whether the room's settings are shared through the server (else each device decides for itself). */
+    val roomSettingsShared: Boolean get() = session && capabilities.roomSettings
 }
 
 /**

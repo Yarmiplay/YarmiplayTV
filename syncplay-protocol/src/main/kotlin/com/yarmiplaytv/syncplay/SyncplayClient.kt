@@ -303,7 +303,7 @@ class SyncplayClient(
         _state.update {
             it.copy(
                 room = room, playlist = emptyList(), playlistReceived = false, playlistIndex = null,
-                yarmiplay = it.yarmiplay.copy(relayFiles = emptyList()),
+                yarmiplay = it.yarmiplay.copy(relayFiles = emptyList(), roomSettings = null),
             )
         }
         // The server forgets offers on a room change; the new room's playlist decides the next one.
@@ -348,6 +348,17 @@ class SyncplayClient(
             }
             sendYarmiplay { putJsonObject("jellyfinAuthorize") { put("code", code) } }
         }
+    }
+
+    /**
+     * Turn the room's automatic skipping of openings and endings on or off, for everyone in it; it changes when
+     * the server sends the room's settings back (in a managed room, only for operators). False, and nothing sent,
+     * when the server doesn't keep room settings.
+     */
+    fun setRoomAutoSkip(on: Boolean): Boolean {
+        if (!sessionActive || !state.value.yarmiplay.capabilities.roomSettings) return false
+        scope.launch { sendYarmiplay { putJsonObject("roomSettings") { put("autoSkip", on) } } }
+        return true
     }
 
     /** Ask the room to switch to playlist entry [index]; the switch happens when the server echoes it. */
@@ -893,6 +904,12 @@ class SyncplayClient(
             val ok = (a["ok"] as? JsonPrimitive)?.booleanOrNull ?: false
             emit(SyncplayEvent.JellyfinAuthorized(code, ok, a.str("error")))
         }
+        (message["roomSettings"] as? JsonObject)?.let { r ->
+            val settings = RoomSettings(autoSkip = r.bool("autoSkip"), setBy = r.str("setBy")?.takeIf { it.isNotEmpty() })
+            val before = state.value.yarmiplay.roomSettings
+            updateExt { it.copy(roomSettings = settings) }
+            if (settings != before) emit(SyncplayEvent.RoomSettingsChanged(settings, first = before == null))
+        }
     }
 
     private fun answerChallenge(challenge: JsonObject) {
@@ -963,7 +980,7 @@ class SyncplayClient(
             !active && current != null -> {
                 _session.value = null
                 offerSent = null
-                updateExt { it.copy(session = false, protocol = 0, relayFiles = emptyList()) }
+                updateExt { it.copy(session = false, protocol = 0, relayFiles = emptyList(), roomSettings = null) }
                 emit(SyncplayEvent.SessionEnded)
             }
         }
@@ -1300,7 +1317,10 @@ class SyncplayClient(
 
         internal fun parseCapabilities(element: JsonElement?): YarmiplayCapabilities? {
             val o = element as? JsonObject ?: return null
-            return YarmiplayCapabilities(fileRelay = o.bool("fileRelay"), jellyfin = o.bool("jellyfin"), https = o.bool("https"), prefetch = o.bool("prefetch"))
+            return YarmiplayCapabilities(
+                fileRelay = o.bool("fileRelay"), jellyfin = o.bool("jellyfin"), https = o.bool("https"), prefetch = o.bool("prefetch"),
+                roomSettings = o.bool("roomSettings"),
+            )
         }
 
         internal fun parseSharedJellyfin(o: JsonObject): SharedJellyfin = SharedJellyfin(

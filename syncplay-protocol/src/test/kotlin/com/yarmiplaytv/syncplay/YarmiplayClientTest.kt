@@ -229,6 +229,36 @@ class YarmiplayClientTest {
     }
 
     @Test
+    fun `room settings are shared only by servers that keep them, and arrive as state and events`() {
+        val c = client()
+        transport.receive(hello(marker))
+        transport.receive(session())
+        eventually("session") { c.state.value.yarmiplay.session }
+        assertFalse("an older server keeps no room settings", c.state.value.yarmiplay.roomSettingsShared)
+        assertFalse(c.setRoomAutoSkip(true))
+
+        transport.receive("""{"Yarmiplay":{"capabilities":{"fileRelay":true,"jellyfin":false,"https":false,"roomSettings":true}}}""")
+        eventually("capability") { c.state.value.yarmiplay.roomSettingsShared }
+        transport.receive("""{"Yarmiplay":{"roomSettings":{"autoSkip":false}}}""")
+        eventually("first settings") { c.state.value.yarmiplay.roomSettings == RoomSettings(autoSkip = false) }
+        assertTrue(c.setRoomAutoSkip(true))
+        eventually("change sent") { yarmiplaySent().any { it["roomSettings"]?.jsonObject?.get("autoSkip")?.jsonPrimitive?.content == "true" } }
+
+        transport.receive("""{"Yarmiplay":{"roomSettings":{"autoSkip":true,"setBy":"bob"}}}""")
+        eventually("changed") { c.state.value.yarmiplay.roomSettings == RoomSettings(autoSkip = true, setBy = "bob") }
+        eventually("events") {
+            events.filterIsInstance<SyncplayEvent.RoomSettingsChanged>() == listOf(
+                SyncplayEvent.RoomSettingsChanged(RoomSettings(false), first = true),
+                SyncplayEvent.RoomSettingsChanged(RoomSettings(true, "bob"), first = false),
+            )
+        }
+
+        // Another room has its own settings: the server sends them on joining.
+        c.changeRoom("anime club")
+        eventually("forgotten on a room change") { c.state.value.yarmiplay.roomSettings == null }
+    }
+
+    @Test
     fun `peers with an extension session are marked`() {
         val c = client()
         transport.receive(hello(marker))

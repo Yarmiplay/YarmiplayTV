@@ -63,5 +63,8 @@ sealed interface SyncplayEvent {
     data class UploadCancelled(val id: String) : SyncplayEvent
 
     /** The server's answer to [SyncplayClient.authorizeJellyfin]. */
+    /** The room's shared settings arrived ([first]: on joining) or someone changed them. */
+    data class RoomSettingsChanged(val settings: RoomSettings, val first: Boolean) : SyncplayEvent
+
     data class JellyfinAuthorized(val code: String, val ok: Boolean, val error: String?) : SyncplayEvent
 }
