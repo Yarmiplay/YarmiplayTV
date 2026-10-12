@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.9.0" date="2026-10-13">
+      <description>
+        <p>Skip anime openings and endings: times from AniSkip for the episode MyAnimeList recognises (no account needed), a Skip button for 3 seconds as one starts, or automatic skipping as a room setting shared by everyone in the room on YarmiplayServerTV 1.7.3, remembered by saved rooms; watching alone, Settings decides.</p>
+      </description>
+    </release>
     <release version="1.8.9" date="2026-10-13">
       <description>
         <p>A seek bar that shows the time you point at, with a picture of that moment for videos on your device; a desktop side list for the app's sections and home cards that show their text in full on desktop and TV; MyAnimeList sign-in inside the app on phones and tablets; a brief MyAnimeList update note in the corner; and video progress on the Windows taskbar.</p>
