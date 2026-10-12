@@ -260,6 +260,7 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             // Leaving the player leaves full screen. Picture-in-picture stays: browsing meanwhile is what it's for.
             snapshotFlow { DesktopPlayerInput.input != null }.collect { showing -> if (!showing) fullscreen.set(false) }
         }
+        LaunchedEffect(Unit) { showPlaybackOnTaskbar(window, container.player) }
         LaunchedEffect(Unit) {
             // Minimizing while a video plays goes on in picture-in-picture (a setting); restoring comes back.
             snapshotFlow { state.isMinimized }.collect { minimized ->
