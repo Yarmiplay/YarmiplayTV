@@ -49,7 +49,11 @@ sealed interface MalState {
  * A MyAnimeList message for the player: [text] with, when set, an Undo, a "pick the entry" or a "yes, update"
  * action. TV shows the text and leaves the actions to the MyAnimeList panel.
  */
-data class MalNotice(val text: String, val undo: (() -> Unit)? = null, val pick: Boolean = false, val confirm: (() -> Unit)? = null, val at: Long = System.nanoTime())
+data class MalNotice(val text: String, val undo: (() -> Unit)? = null, val pick: Boolean = false, val confirm: (() -> Unit)? = null, val at: Long = System.nanoTime()) {
+    /** A question stays up long enough to answer; anything else is a brief note in the corner. */
+    val question: Boolean get() = confirm != null || pick
+    val showMillis: Long get() = if (question) 30_000 else 2_000
+}
 
 /**
  * MyAnimeList for the app: the account, which entry the playing episode is, and the list updates (automatic when
@@ -285,13 +289,13 @@ class MalService(
                     scope.launch {
                         if (undo != null) send(updated, undo, after, automatic = false) else runCatching { client.deleteStatus(anime.id) }
                         lastUndo = null
-                        _notice.value = MalNotice("Undone on MyAnimeList")
+                        _notice.value = MalNotice("MAL: undone")
                         if (undo == null) refreshState(updated.copy(myListStatus = null))
                     }
                 }
-                val of = if (anime.numEpisodes > 0) " of ${anime.numEpisodes}" else ""
-                val done = if (after.statusValue == MalStatus.COMPLETED && before?.statusValue != MalStatus.COMPLETED) " · completed — rate it in the panel" else ""
-                _notice.value = MalNotice("MyAnimeList: ${anime.title} · episode ${after.watchedEpisodes}$of$done", undo = lastUndo)
+                val of = if (anime.numEpisodes > 0) "/${anime.numEpisodes}" else ""
+                val completed = after.statusValue == MalStatus.COMPLETED && before?.statusValue != MalStatus.COMPLETED
+                _notice.value = MalNotice("MAL: ${anime.title} · " + if (completed) "completed" else "ep ${after.watchedEpisodes}$of", undo = lastUndo)
             }
             if (settings.value.malQueue.isNotEmpty()) scheduleRetry(0)
         } catch (e: CancellationException) {

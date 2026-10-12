@@ -208,8 +208,9 @@ waiting to be sent.
 
 When you've watched 90% of an episode, the app updates your list: the episodes you've watched (never fewer than
 before), **Watching** when you start a show, **Completed** with the date at the last episode, and **Rewatching**
-when you watch a completed show again. A message shows what changed, with **Undo**. If you prefer, **Ask before
-each update** on the MyAnimeList screen asks first every time, and **Update my list as I watch** turns it off.
+when you watch a completed show again. A short note in the corner shows what changed for two seconds, with
+**Undo** (also in the player's MyAnimeList panel until the next update). If you prefer, **Ask before each update**
+on the MyAnimeList screen asks first every time, and **Update my list as I watch** turns it off.
 
 ### Seasons, parts and episode numbers
 

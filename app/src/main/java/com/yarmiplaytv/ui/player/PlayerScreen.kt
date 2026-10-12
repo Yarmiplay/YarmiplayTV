@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -236,7 +237,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
         }
 
         ToastHost(container.sync.toasts, Modifier.align(Alignment.TopStart).padding(32.dp))
-        TvMalNotice(container, Modifier.align(Alignment.TopCenter).padding(top = 32.dp))
+        TvMalNotice(container, Modifier.align(Alignment.TopEnd).padding(32.dp))
 
         val flashVisible = remember(seekFlash) { mutableStateOf(seekFlash != 0L) }
         LaunchedEffect(seekFlash) { delay(1800); flashVisible.value = false }
@@ -544,17 +545,16 @@ private fun TvMalNotice(container: AppContainer, modifier: Modifier = Modifier) 
     val notice by container.mal.notice.collectAsStateWithLifecycle()
     val n = notice ?: return
     LaunchedEffect(n) {
-        delay(if (n.confirm != null || n.pick) 30_000 else 10_000)
+        delay(n.showMillis)
         container.mal.dismissNotice()
     }
-    val hint = when {
-        n.confirm != null -> " · answer in the MyAnimeList panel"
-        n.pick -> ""
-        n.undo != null -> " · Undo in the MyAnimeList panel"
-        else -> ""
-    }
+    val hint = if (n.confirm != null) " · answer in the MyAnimeList panel" else ""
     Text(
         n.text + hint,
-        modifier = modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xE6161A21)).padding(horizontal = 16.dp, vertical = 10.dp),
+        maxLines = if (n.question) Int.MAX_VALUE else 1,
+        overflow = TextOverflow.Ellipsis,
+        style = if (n.question) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
+        modifier = modifier.widthIn(max = if (n.question) 640.dp else 420.dp)
+            .clip(RoundedCornerShape(10.dp)).background(Color(0xB3161A21)).padding(horizontal = 14.dp, vertical = 8.dp),
     )
 }

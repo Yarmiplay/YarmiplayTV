@@ -176,7 +176,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
             }
             seekFlash?.let { Chip(it, AppColors.Accent, Modifier.align(Alignment.Center)) }
             PlayerToasts(container, Modifier.align(Alignment.TopStart).padding(16.dp))
-            MalNoticeCard(container, onPick = { openSheet(PlayerSheet.MAL) }, Modifier.align(Alignment.TopCenter).padding(top = 72.dp, start = 16.dp, end = 16.dp))
+            MalNoticeCard(container, onPick = { openSheet(PlayerSheet.MAL) }, Modifier.align(Alignment.TopEnd).padding(top = 72.dp, start = 16.dp, end = 16.dp))
 
             androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize().testTag("player_controls")) {

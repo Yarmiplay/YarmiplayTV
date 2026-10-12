@@ -332,22 +332,29 @@ private fun Choice(label: String, value: String, options: List<String>, modifier
     }
 }
 
-/** The player's MyAnimeList message: the update made (with Undo), or a question. */
+/** The player's MyAnimeList message: the update made (a brief note, with Undo), or a question. */
 @Composable
 fun MalNoticeCard(container: AppContainer, onPick: () -> Unit, modifier: Modifier = Modifier) {
     val notice by container.mal.notice.collectAsStateWithLifecycle()
     val n = notice ?: return
     LaunchedEffect(n) {
-        kotlinx.coroutines.delay(if (n.confirm != null || n.pick) 30_000 else 10_000)
+        kotlinx.coroutines.delay(n.showMillis)
         container.mal.dismissNotice()
     }
-    Surface(color = Color.Black.copy(alpha = 0.75f), shape = RoundedCornerShape(12.dp), modifier = modifier.widthIn(max = 460.dp).testTag("mal_notice")) {
-        Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(n.text, color = Color.White, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f, fill = false))
+    Surface(color = Color.Black.copy(alpha = 0.6f), shape = RoundedCornerShape(10.dp), modifier = modifier.widthIn(max = if (n.question) 460.dp else 300.dp).testTag("mal_notice")) {
+        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                n.text,
+                color = Color.White,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = if (n.question) Int.MAX_VALUE else 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false).padding(vertical = if (n.undo == null && !n.question) 8.dp else 0.dp),
+            )
             n.undo?.let { undo -> TextButton({ undo(); container.mal.dismissNotice() }, Modifier.testTag("mal_notice_undo")) { Text("Undo") } }
             n.confirm?.let { yes -> TextButton({ yes(); container.mal.dismissNotice() }, Modifier.testTag("mal_notice_yes")) { Text("Yes") } }
             if (n.pick) TextButton({ onPick(); container.mal.dismissNotice() }, Modifier.testTag("mal_notice_pick")) { Text("Pick") }
-            TextButton(container.mal::dismissNotice) { Text("✕", color = AppColors.TextDim) }
+            if (n.question) TextButton(container.mal::dismissNotice) { Text("✕", color = AppColors.TextDim) }
         }
     }
 }

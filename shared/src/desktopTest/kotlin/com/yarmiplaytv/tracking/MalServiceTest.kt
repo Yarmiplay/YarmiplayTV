@@ -146,7 +146,7 @@ class MalServiceTest {
         eventually("the update") { writes.isNotEmpty() }
         assertEquals("status=watching&num_watched_episodes=1&start_date=2026-10-12", writes.single())
         eventually("the notice") { mal.notice.value?.undo != null }
-        assertTrue(mal.notice.value!!.text, "Hero Academy · episode 1 of 12" in mal.notice.value!!.text)
+        assertTrue(mal.notice.value!!.text, "Hero Academy · ep 1/12" in mal.notice.value!!.text)
         assertTrue(mal.canUndo.value)
 
         mal.undo()
