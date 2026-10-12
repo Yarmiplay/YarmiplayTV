@@ -11,7 +11,8 @@ Files in --dist are sorted onto platforms by extension (.apk: TV and phone/table
 keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader, <site>/privacy/
 is docs/privacy.md (the Play Store privacy policy), <site>/terms/ is docs/terms.md (the community rules the
 apps ask users to agree to), <site>/test/ is docs/testers.md (how to join the Google Play
-test), <site>/screenshots/ holds the desktop screenshots the Linux metainfo points to, and <site>/version.json
+test), <site>/manual/ is docs/manual.md (the user manual, with a table of contents and the store screenshots),
+<site>/changelog/ lists every version's patch notes from the Linux metainfo's <releases>, <site>/screenshots/ holds the desktop screenshots the Linux metainfo points to, and <site>/version.json
 lists each platform's package
 and version for the apps' update check. With --site-url the pages carry canonical URLs and the site a
 sitemap.xml and a robots.txt pointing to it for search engines; --indexnow-key publishes the key file that lets the Pages workflow notify IndexNow.
@@ -63,7 +64,25 @@ DOCS = (
     ("testers.md", "test", "Help test on Google Play",
      f"Help test {NAME} on Google Play: join the testers group, opt in, install it on your Android phone, tablet "
      "or Google TV and use it for 14 days."),
+    ("manual.md", "manual", "User manual",
+     f"The {NAME} user manual: joining Syncplay rooms, media servers and files, the player, managed rooms, "
+     "MyAnimeList, picture-in-picture, updates and troubleshooting on Google TV, Android, Windows, macOS and Linux."),
 )
+# Pages whose numbered lists are steps, shown as numbered cards with a button (the testers page). Elsewhere "1. "
+# lists are ordinary numbered lists.
+STEP_PAGES = {"test"}
+# Pages with a table of contents (their ## headings) at the top.
+TOC_PAGES = {"manual"}
+# Images the docs pages use, copied next to them: (folder in the repo, page folder, folder in the page).
+DOC_IMAGES = (
+    (os.path.join("docs", "play", "screenshots"), "manual", "screenshots"),
+    (os.path.join("docs", "screenshots"), "manual", os.path.join("screenshots", "desktop")),
+)
+# The patch notes page, from the Linux metainfo's <releases> (every version's notes).
+METAINFO = os.path.join("packaging", "linux", "com.yarmiplay.TV.metainfo.xml")
+CHANGELOG = ("changelog", "Patch notes",
+             f"{NAME} patch notes: what changed in each version of the app for Google TV, Android, Windows, macOS "
+             "and Linux.")
 # Store listings (label, url, note): the platform's first one is its main button, the rest and its files smaller
 # links below.
 STORE_LINKS = {
@@ -371,14 +390,35 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
 
 
 def inline_markdown(text):
-    """`code`, **bold** and [text](url) in already-escaped text."""
+    """`code`, **bold**, ![alt](image) and [text](url) in already-escaped text."""
     text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
     text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"!\[([^\]]*)\]\(([^)\s]+)\)", r'<img src="\2" alt="\1" loading="lazy">', text)
     return re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", r'<a href="\2">\1</a>', text)
 
 
+def slug(text):
+    """A heading's anchor: "Joining a room" -> "joining-a-room", "1.8.2" -> "1-8-2"."""
+    text = re.sub(r"<[^>]+>|&[a-z]+;", "", text).lower()
+    return re.sub(r"[^a-z0-9]+", "-", text).strip("-") or "section"
+
+
+def headings(md, level=2):
+    """The text of the document's headings of [level] (## by default), for a table of contents."""
+    marks = "#" * level
+    return [l.strip()[level + 1:].strip() for l in md.splitlines() if re.match(rf"{marks} \S", l.strip())]
+
+
+def toc_html(md):
+    """A table of contents linking the ## headings."""
+    entries = "".join(f'<li><a href="#{slug(h)}">{inline_markdown(html.escape(h, quote=False))}</a></li>'
+                      for h in headings(md))
+    return f'<nav class="toc" aria-label="Contents"><h2>Contents</h2><ul>{entries}</ul></nav>' if entries else ""
+
+
 def markdown_to_html(md):
-    """The Markdown the docs pages use: # headings, paragraphs, "- " and "1. " lists, lines wrapped freely."""
+    """The Markdown the docs pages use: # to #### headings (with anchors), paragraphs, "- " and "1. " lists, a
+    line with only an image as a figure, lines wrapped freely."""
     blocks, para, items = [], [], []
     list_tag = "ul"
 
@@ -393,14 +433,20 @@ def markdown_to_html(md):
 
     for line in md.splitlines():
         stripped = line.strip()
-        heading = re.match(r"(#{1,3}) (.+)", stripped)
+        heading = re.match(r"(#{1,4}) (.+)", stripped)
+        image = re.fullmatch(r"!\[[^\]]*\]\([^)\s]+\)", stripped)
         item = re.match(r"(-|\d+\.) (.+)", stripped)
         if not stripped:
             flush()
         elif heading:
             flush()
             level = len(heading.group(1))
-            blocks.append(f"<h{level}>{inline_markdown(html.escape(heading.group(2), quote=False))}</h{level}>")
+            text = heading.group(2)
+            anchor = f' id="{slug(text)}"' if level > 1 else ""
+            blocks.append(f"<h{level}{anchor}>{inline_markdown(html.escape(text, quote=False))}</h{level}>")
+        elif image:
+            flush()
+            blocks.append(f"<figure>{inline_markdown(html.escape(stripped, quote=False))}</figure>")
         elif item:
             tag = "ul" if item.group(1) == "-" else "ol"
             if para or (items and tag != list_tag):
@@ -417,9 +463,18 @@ def markdown_to_html(md):
     return "\n".join(blocks)
 
 
-def render_doc(md, description, site_url=None, path=""):
-    """A Markdown document as a page in the download page's style, one folder below the main page."""
+def render_doc(md, description, site_url=None, path="", steps=False, toc=False):
+    """A Markdown document as a page in the download page's style, one folder below the main page. With [steps] its
+    numbered lists are step cards (the testers page); with [toc] a table of contents of its ## headings comes after
+    the title."""
     title = next((l[2:].strip() for l in md.splitlines() if l.startswith("# ")), NAME)
+    body = markdown_to_html(md)
+    if toc:
+        # After the title and the paragraph that introduces the page.
+        intro = body.find("</p>")
+        at = intro + len("</p>") if intro >= 0 else body.find("</h1>") + len("</h1>")
+        body = body[:at] + "\n" + toc_html(md) + body[at:]
+    list_style = STEP_CSS if steps else PLAIN_LIST_CSS
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -434,22 +489,66 @@ def render_doc(md, description, site_url=None, path=""):
  p, li {{ color:#C4C7CC; }}
  a {{ color:#3DA5F4; }}
  code {{ font-family:ui-monospace,Consolas,monospace; font-size:.9em; background:#171B22; padding:.1em .35em; border-radius:4px; }}
- ol {{ list-style:none; counter-reset:step; padding:0; }}
- ol li {{ counter-increment:step; position:relative; background:#171B22; border:1px solid #262C36; border-radius:14px;
-         padding:1em 1.2em 1.1em 3.8em; margin:.8em 0; }}
- ol li::before {{ content:counter(step); position:absolute; left:1.1em; top:1em; width:1.8em; height:1.8em; border-radius:50%;
-                 background:#3DA5F4; color:#0E1116; font-weight:700; display:flex; align-items:center; justify-content:center; }}
- ol li b {{ display:block; color:#E8EAED; font-size:1.1em; }}
- ol li a {{ display:block; width:max-content; margin-top:.7em; padding:.5em 1.1em; border-radius:10px; background:#3DA5F4; color:#0E1116;
-           font-weight:700; text-decoration:none; }}
- ol li a:hover {{ filter:brightness(1.1); }}
+ h3 {{ font-size:1.1em; margin:1.4em 0 .3em; color:#E8EAED; }}
+ h4 {{ font-size:1em; margin:1.2em 0 .2em; color:#E8EAED; }}
+ h2[id], h3[id], h4[id] {{ scroll-margin-top:1em; }}
+ figure {{ margin:1.2em 0; }}
+ figure img {{ max-width:100%; height:auto; border-radius:12px; border:1px solid #262C36; display:block; }}
+ .toc {{ background:#171B22; border:1px solid #262C36; border-radius:14px; padding:.6em 1.4em 1em; margin:1.4em 0 2em; }}
+ .toc h2 {{ font-size:1em; margin:.6em 0 .3em; color:#9AA0A6; text-transform:uppercase; letter-spacing:.06em; }}
+ .toc ul {{ columns:2; column-gap:2em; margin:0; padding-left:1.1em; }}
+ .toc li {{ margin:.15em 0; break-inside:avoid; }}
+ @media (max-width:600px) {{ .toc ul {{ columns:1; }} }}
+{list_style}
  a:focus-visible {{ outline:3px solid #E8EAED; outline-offset:3px; }}
 </style></head>
 <body><main>
-{markdown_to_html(md)}
+{body}
 <p><a href="../">{NAME} downloads</a> &middot; <a href="{HOME_URL}">yarmiplay.com</a></p>
 </main></body></html>
 """
+
+
+STEP_CSS = """ ol { list-style:none; counter-reset:step; padding:0; }
+ ol li { counter-increment:step; position:relative; background:#171B22; border:1px solid #262C36; border-radius:14px;
+         padding:1em 1.2em 1.1em 3.8em; margin:.8em 0; }
+ ol li::before { content:counter(step); position:absolute; left:1.1em; top:1em; width:1.8em; height:1.8em; border-radius:50%;
+                 background:#3DA5F4; color:#0E1116; font-weight:700; display:flex; align-items:center; justify-content:center; }
+ ol li b { display:block; color:#E8EAED; font-size:1.1em; }
+ ol li a { display:block; width:max-content; margin-top:.7em; padding:.5em 1.1em; border-radius:10px; background:#3DA5F4; color:#0E1116;
+           font-weight:700; text-decoration:none; }
+ ol li a:hover { filter:brightness(1.1); }"""
+PLAIN_LIST_CSS = """ ol, ul { padding-left:1.4em; }
+ li { margin:.25em 0; }"""
+
+
+def changelog_markdown(metainfo_path):
+    """The patch notes page as Markdown: every <release> in the metainfo, newest first, with its date and notes."""
+    import xml.etree.ElementTree as ET
+    root = ET.parse(metainfo_path).getroot()
+    lines = ["# Patch notes", "",
+             f"What changed in each version of {NAME}. The app shows the same notes under **Settings > About > "
+             "What's new**.", ""]
+    releases = root.findall("./releases/release")
+    releases.sort(key=lambda r: [int(x) if x.isdigit() else 0 for x in r.get("version", "0").split(".")], reverse=True)
+    for release in releases:
+        version = release.get("version", "")
+        lines += [f"## {version}", ""]
+        date = release.get("date")
+        if date:
+            try:
+                day = datetime.date.fromisoformat(date)
+                lines += [f"Released {day.day} {day.strftime('%B %Y')}.", ""]
+            except ValueError:
+                pass
+        description = release.find("description")
+        for el in (list(description) if description is not None else []):
+            if el.tag == "p":
+                lines += [" ".join("".join(el.itertext()).split()), ""]
+            elif el.tag in ("ul", "ol"):
+                bullet = "-" if el.tag == "ul" else "1."
+                lines += [f"{bullet} {' '.join(''.join(li.itertext()).split())}" for li in el.findall("li")] + [""]
+    return "\n".join(lines)
 
 
 def redirect_page(target):
@@ -526,9 +625,20 @@ def build(dist, out, version, site_url, desktop_version=None, google_verificatio
         os.makedirs(os.path.join(out, folder))
         with open(md, encoding="utf-8") as src, \
                 open(os.path.join(out, folder, "index.html"), "w", encoding="utf-8") as f:
-            f.write(render_doc(src.read(), description, site_url, f"{folder}/"))
+            f.write(render_doc(src.read(), description, site_url, f"{folder}/",
+                               steps=folder in STEP_PAGES, toc=folder in TOC_PAGES))
         pages.append(f"{folder}/")
         docs.append(doc)
+    for images, page, sub in DOC_IMAGES:
+        if os.path.isdir(os.path.join(root, images)) and os.path.isdir(os.path.join(out, page)):
+            shutil.copytree(os.path.join(root, images), os.path.join(out, page, sub), dirs_exist_ok=True)
+    if os.path.isfile(os.path.join(root, METAINFO)):
+        folder, label, description = CHANGELOG
+        os.makedirs(os.path.join(out, folder))
+        with open(os.path.join(out, folder, "index.html"), "w", encoding="utf-8") as f:
+            f.write(render_doc(changelog_markdown(os.path.join(root, METAINFO)), description, site_url, f"{folder}/"))
+        pages.append(f"{folder}/")
+        docs.append(("", folder, label, description))
 
     with open(os.path.join(out, "favicon.svg"), "w", encoding="utf-8") as f:
         f.write(LOGO_SVG.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ', 1))

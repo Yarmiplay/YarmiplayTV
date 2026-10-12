@@ -4,6 +4,9 @@ A [Syncplay](https://syncplay.pl/) client for Android TV / Google TV, phones, ta
 desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin](https://jellyfin.org/) and
 [Plex](https://www.plex.tv/) servers or from files on the device.
 
+New to it? The [user manual](https://tv.yarmiplay.com/manual/) explains everything step by step, and the
+[patch notes](https://tv.yarmiplay.com/changelog/) list what changed in each version.
+
 - Joins any Syncplay server/room; play, pause and seek are synchronised with desktop Syncplay users.
 - Plays through libmpv (hardware decoding with software fallback, libass subtitles, audio/subtitle track switching).
 - Browses Jellyfin libraries (Quick Connect or username/password login) and Plex libraries (link the device at

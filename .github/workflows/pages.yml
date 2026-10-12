@@ -113,8 +113,8 @@ jobs:
         run: |
           site="${SITE_URL%/}"
           host=$(echo "$site" | sed -E 's#^https?://([^/]+).*#\1#')
-          body=$(printf '{"host":"%s","key":"%s","keyLocation":"%s/%s.txt","urlList":["%s/","%s/privacy/"]}' \
-            "$host" "$INDEXNOW_KEY" "$site" "$INDEXNOW_KEY" "$site" "$site")
+          body=$(printf '{"host":"%s","key":"%s","keyLocation":"%s/%s.txt","urlList":["%s/","%s/privacy/","%s/manual/","%s/changelog/"]}' \
+            "$host" "$INDEXNOW_KEY" "$site" "$INDEXNOW_KEY" "$site" "$site" "$site" "$site")
           code=$(curl -s -o response.txt -w '%{http_code}' -X POST https://api.indexnow.org/indexnow \
             -H 'Content-Type: application/json; charset=utf-8' -d "$body" || true)
           echo "IndexNow answered HTTP $code"; cat response.txt 2>/dev/null || true
