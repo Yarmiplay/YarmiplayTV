@@ -7,6 +7,7 @@ import com.yarmiplaytv.device.DeviceKeyStore
 import com.yarmiplaytv.device.DeviceKeys
 import com.yarmiplaytv.local.FrameGrabber
 import com.yarmiplaytv.local.LocalLibrary
+import com.yarmiplaytv.local.SeekFrames
 import com.yarmiplaytv.local.VideoThumbnails
 import com.yarmiplaytv.media.CompositeMediaSource
 import com.yarmiplaytv.media.MediaSource
@@ -74,6 +75,8 @@ class AppContainer(
     screenshotStore: ScreenshotStore? = null,
     /** Makes the preview frames of the videos in the file lists (kept under [cacheDir]); without it they show an icon. */
     frameGrabber: FrameGrabber? = null,
+    /** Frames from inside the playing video for the seek bar's preview (files on this device); without it, time only. */
+    val seekFrames: SeekFrames? = null,
     /** This build's MyAnimeList Client ID (from the build, never the repository); empty leaves MyAnimeList off. */
     malClientId: String = "",
 ) {

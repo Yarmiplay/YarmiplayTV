@@ -36,6 +36,13 @@ class MpvFrameGrabberTest {
     }
 
     @Test
+    fun grabsAFrameAtAGivenTime() {
+        val target = tmp.root.resolve("at.jpg")
+        assertTrue(MpvFrameGrabber.grab(clip.path, 160, target, start = "1.500"))
+        assertEquals(160, ImageIO.read(target).width)
+    }
+
+    @Test
     fun handlesPathsWithSpacesAndNonAsciiNames() {
         val copy = tmp.newFolder("Shows", "Ünïcode Season 1").resolve("Episode 01 – pilot.mp4")
         clip.copyTo(copy)

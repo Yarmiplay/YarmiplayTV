@@ -6,6 +6,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeUiTest
@@ -15,6 +16,9 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
@@ -29,6 +33,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
+import com.yarmiplaytv.local.SeekFrames
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.ui.mobile.DesktopBack
 import com.yarmiplaytv.ui.mobile.DesktopPip
@@ -40,6 +45,7 @@ import com.yarmiplaytv.ui.mobile.PlayerVolume
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import java.io.File
+import java.util.Collections
 import java.util.concurrent.Executors
 import javax.imageio.ImageIO
 import kotlinx.coroutines.CoroutineScope
@@ -81,6 +87,15 @@ class PlayerControlsUiTest {
         override fun setMuted(muted: Boolean) { this.muted.value = muted }
     }
 
+    /** Seek bar previews: a blank frame, and which video and time each was asked for. */
+    private val frames = object : SeekFrames {
+        val asked: MutableList<Pair<String, Double>> = Collections.synchronizedList(mutableListOf())
+        override fun frame(uri: String, seconds: Double, width: Int): ImageBitmap {
+            asked += uri to seconds
+            return ImageBitmap(width, width * 9 / 16)
+        }
+    }
+
     @Before
     fun setUp() {
         main = Executors.newSingleThreadExecutor { Thread(it, "main") }.asCoroutineDispatcher()
@@ -92,6 +107,7 @@ class PlayerControlsUiTest {
             appVersion = "test",
             createPlayer = { player },
             createLocalLibrary = { s, scope, folders -> FileLocalLibrary(s, scope, folders, watchForChanges = false) },
+            seekFrames = frames,
         )
         player.state.value = PlaybackState(fileLoaded = true, duration = 600.0, paused = false)
         DesktopPlayerInput.volume = volume
@@ -128,6 +144,8 @@ class PlayerControlsUiTest {
         mainClock.advanceTimeBy(500)
         waitForIdle()
     }
+
+    private fun ComposeUiTest.bubbleText(text: String) = onNode(hasText(text) and hasAnyAncestor(hasTestTag("seek_preview")))
 
     private fun ComposeUiTest.controlsShowing() = onAllNodesWithTag("player_controls").fetchSemanticsNodes().isNotEmpty()
 
@@ -173,6 +191,40 @@ class PlayerControlsUiTest {
 
         onNodeWithTag("seek_slider").performSemanticsAction(SemanticsActions.SetProgress) { it(60f) }
         assertEquals(60.0, player.seeks.last(), 0.0)
+    }
+
+    @Test
+    fun `the seek bar shows the time it points at, with a frame there for a file on this device`() = runComposeUiTest {
+        player.state.value = player.state.value.copy(paused = true, url = "https://example.com/stream.mkv")
+        showPlayer()
+        onNodeWithTag("seek_slider").performMouseInput { moveTo(Offset(width * 0.5f, centerY)) }
+        settle()
+        onNodeWithTag("seek_preview").assertExists()
+        bubbleText("5:00").assertExists()
+        screenshot("seek_time")
+        assertTrue("a stream isn't previewed", frames.asked.isEmpty())
+        assertTrue(onAllNodesWithTag("seek_frame").fetchSemanticsNodes().isEmpty())
+
+        onNodeWithTag("seek_slider").performMouseInput { moveTo(Offset(width * 0.5f, -200f)) }
+        settle()
+        onNodeWithTag("seek_preview").assertDoesNotExist()
+
+        player.state.value = player.state.value.copy(url = File(tmp.root, "episode.mkv").toURI().toString())
+        settle()
+        onNodeWithTag("seek_slider").performMouseInput {
+            moveTo(Offset(width * 0.25f, centerY))
+            press()
+            moveTo(Offset(width * 0.75f, centerY))
+        }
+        settle()
+        bubbleText("7:30").assertExists()
+        waitUntil("the frame", timeoutMillis = 5_000) { onAllNodesWithTag("seek_frame").fetchSemanticsNodes().isNotEmpty() }
+        screenshot("seek_preview")
+        assertEquals("only where the drag stopped", 450.0, frames.asked.last().second, 3.0)
+        assertTrue(frames.asked.last().first.endsWith("episode.mkv"))
+        onNodeWithTag("seek_slider").performMouseInput { release() }
+        settle()
+        assertEquals(450.0, player.seeks.last(), 1.0)
     }
 
     @Test

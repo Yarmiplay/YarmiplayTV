@@ -9,6 +9,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.yarmiplaytv.data.SettingsStore
 import com.yarmiplaytv.device.AndroidDeviceKeyStore
 import com.yarmiplaytv.local.AndroidFrameGrabber
+import com.yarmiplaytv.local.AndroidSeekFrames
 import com.yarmiplaytv.local.SafLocalLibrary
 import com.yarmiplaytv.player.MpvOptions
 import com.yarmiplaytv.player.MpvPlayer
@@ -50,6 +51,7 @@ class YarmiplayTvApp : Application() {
             cacheDir = cacheDir,
             screenshotStore = AndroidScreenshotStore(this),
             frameGrabber = AndroidFrameGrabber(this),
+            seekFrames = AndroidSeekFrames(this),
             malClientId = BuildConfig.MAL_CLIENT_ID,
         )
         // The download page's APK (debug) installs its own updates; the Play build (release) leaves them to Play.

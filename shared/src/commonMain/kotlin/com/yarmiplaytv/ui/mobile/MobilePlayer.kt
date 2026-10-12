@@ -79,6 +79,7 @@ import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -135,8 +136,10 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     fun touch() { interaction = System.currentTimeMillis() }
     fun togglePause() { player.setPaused(!player.isPaused); touch() }
     fun seekBy(delta: Double) {
+        val to = (player.currentPosition() + delta).coerceIn(0.0, player.duration.takeIf { it > 0 } ?: Double.MAX_VALUE)
         player.seekRelative(delta)
-        seekFlash = if (delta < 0) "−${(-delta).toInt()} s" else "+${delta.toInt()} s"
+        val by = if (delta < 0) "−${(-delta).toInt()} s" else "+${delta.toInt()} s"
+        seekFlash = "$by · ${formatClock(to)}"
         touch()
     }
 
@@ -280,7 +283,7 @@ private fun BottomControls(
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        TvSeekBar(state, position, onInteract) { container.player.seek(it) }
+        TvSeekBar(state, position, onInteract, container.seekFrames) { container.player.seek(it) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             PlayerVolumeControl(onInteract, Modifier.padding(end = 8.dp))
             if (inRoom) ReadyChip(ready, { container.sync.toggleReady(); onInteract() }, Modifier.testTag("player_ready"))

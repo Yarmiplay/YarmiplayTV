@@ -146,7 +146,9 @@ Syncplay client's media directories. On a computer you can also drop files on th
 
 Tap or move the mouse to show the controls: play and pause, back and forward (double-tap the left or right side
 of the video on a phone), the previous and next playlist entry, the seek bar and the volume. The buttons at the
-bottom open the shared playlist, the room, the chat, audio tracks, subtitles and MyAnimeList.
+bottom open the shared playlist, the room, the chat, audio tracks, subtitles and MyAnimeList. Dragging along the
+seek bar, or holding the mouse over it, shows the time there, and for a video on your device a picture of that
+moment too.
 
 - **Audio and subtitles:** pick a track in the player. Settings > Playback sets the languages chosen
   automatically.
