@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
@@ -64,8 +66,10 @@ import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.BLOCKED_NOTE
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
-import com.yarmiplaytv.ui.shared.relayNote
 import com.yarmiplaytv.ui.shared.connectionRouteLine
+import com.yarmiplaytv.ui.shared.relayNote
+import com.yarmiplaytv.ui.shared.roomsOnServer
+import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serverStatusLine
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
@@ -235,6 +239,28 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
                 if (newRoom.isNotBlank()) container.sync.changeRoom(newRoom)
             })
             IconAction(Icons.Filled.MeetingRoom, "Change room", { if (newRoom.isNotBlank()) container.sync.changeRoom(newRoom) })
+        }
+        val settings by container.settings.collectAsStateWithLifecycle()
+        val server = container.sync.server
+        val others = roomsOnServer(settings.savedRooms, server, room.room)
+        if (others.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                others.take(4).forEach { r -> ActionButton(savedRoomLabel(r), { container.sync.changeRoom(r.room) }, icon = if (r.saved) Icons.Filled.Star else Icons.Filled.MeetingRoom) }
+            }
+        }
+        if (server != null) {
+            val key = "$server/${room.room}"
+            val saved = settings.savedRooms.firstOrNull { it.key == key }?.saved == true
+            ActionButton(if (saved) "Saved" else "Save this room", {
+                container.scope.launch {
+                    if (saved) container.settingsStore.setRoomSaved(key, false)
+                    else container.sync.client?.config?.let { c ->
+                        container.settingsStore.saveRoom(
+                            com.yarmiplaytv.data.SavedRoom(server.substringBeforeLast(':'), server.substringAfterLast(':').toIntOrNull() ?: c.port, c.useTls, c.username, room.room, c.password.orEmpty(), lastUsedMillis = System.currentTimeMillis()),
+                        )
+                    }
+                }
+            }, icon = if (saved) Icons.Filled.Star else Icons.Filled.StarBorder)
         }
         if (room.managedRooms) ManagedRoomActions(container, room)
     }

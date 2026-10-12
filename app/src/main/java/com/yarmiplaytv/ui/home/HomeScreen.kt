@@ -65,6 +65,7 @@ import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.ServerRecent
 import com.yarmiplaytv.ui.shared.recentByServer
+import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serversDetail
 import com.yarmiplaytv.ui.shared.serversTitle
 import com.yarmiplaytv.ui.theme.AppColors
@@ -139,7 +140,11 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                         AppColors.Ready,
                     )
                     ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> Triple("Connecting…", container.sync.client?.config?.host ?: "", AppColors.NotReady)
-                    ConnectionStatus.DISCONNECTED -> Triple("Join a Syncplay room", "Watch in sync with friends", AppColors.TextDim)
+                    ConnectionStatus.DISCONNECTED -> Triple(
+                        "Join a Syncplay room",
+                        container.settings.value.savedRooms.firstOrNull()?.let { "Rejoin ${savedRoomLabel(it)}" } ?: "Watch in sync with friends",
+                        AppColors.TextDim,
+                    )
                 }
                 StatusTile(Icons.Filled.Groups, title, detail, color, Modifier.weight(1f).focusRequester(firstFocus)) { nav.push(Screen.SyncplayConnect) }
                 nowPlaying?.let { np ->

@@ -2,6 +2,7 @@ package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -35,7 +37,9 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -77,6 +81,8 @@ import com.yarmiplaytv.ui.shared.BLOCKED_NOTE
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
 import com.yarmiplaytv.ui.shared.connectionRouteLine
 import com.yarmiplaytv.ui.shared.relayNote
+import com.yarmiplaytv.ui.shared.roomsOnServer
+import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serverStatusLine
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
@@ -260,6 +266,20 @@ private fun RoomSwitchOptions(container: AppContainer, room: RoomState) {
         trailingIcon = { IconButton(::change) { Icon(Icons.Filled.MeetingRoom, "Change room") } },
         modifier = Modifier.fillMaxWidth(),
     )
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val others = roomsOnServer(settings.savedRooms, container.sync.server, room.room)
+    if (others.isNotEmpty()) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            others.forEach { r ->
+                AssistChip(
+                    onClick = { container.sync.changeRoom(r.room) },
+                    label = { Text(savedRoomLabel(r), maxLines = 1) },
+                    leadingIcon = if (r.saved) ({ Icon(Icons.Filled.Star, null, Modifier.size(16.dp), tint = AppColors.Accent) }) else null,
+                    modifier = Modifier.testTag("switch_to_${r.room}"),
+                )
+            }
+        }
+    }
     if (room.managedRooms) ManagedRoomActions(container, room)
 }
 

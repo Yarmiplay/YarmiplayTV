@@ -209,6 +209,13 @@ fun lanServerLabel(server: LanServer): String {
     return server.tls?.let { "${it.name} ($at) · TLS" } ?: "YarmiplayServerTV at $at"
 }
 
+/** The saved (first) and recent rooms on [server] ("host:port") other than [current], to switch to. */
+fun roomsOnServer(rooms: List<SavedRoom>, server: String?, current: String): List<SavedRoom> =
+    if (server == null) emptyList() else rooms.filter { it.key.substringBeforeLast('/') == server && it.room != current }.take(8)
+
+/** A saved or recent room's button text: its name, or the room itself. */
+fun savedRoomLabel(room: SavedRoom): String = room.label.ifBlank { ManagedRooms.label(room.room) }
+
 /** "Connected at home via 192.168.1.20 · verified as myname.duckdns.org", when the server was reached at home. */
 fun connectionRouteLine(room: RoomState): String? {
     val route = room.route?.takeIf { it.atHome } ?: return null

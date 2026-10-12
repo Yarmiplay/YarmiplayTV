@@ -1,6 +1,7 @@
 package com.yarmiplaytv.ui.connect
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,19 +14,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -36,6 +43,7 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.ui.components.ActionButton
+import com.yarmiplaytv.ui.components.IconAction
 import com.yarmiplaytv.ui.components.Pill
 import com.yarmiplaytv.ui.components.ToggleRow
 import com.yarmiplaytv.ui.components.TvTextField
@@ -48,9 +56,11 @@ import com.yarmiplaytv.ui.shared.connectionRouteLine
 import com.yarmiplaytv.ui.shared.connectionStatusLine
 import com.yarmiplaytv.ui.shared.lanServerLabel
 import com.yarmiplaytv.ui.shared.rememberSyncplayConnectModel
+import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serverStatusLine
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
@@ -85,6 +95,27 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
                 ROOM_PRIVACY_HINT,
             color = AppColors.TextDim,
         )
+        val known = settings.savedRooms
+        listOf("Saved rooms" to known.filter { it.saved }, "Recent rooms" to known.filterNot { it.saved }.take(6)).forEach { (title, rooms) ->
+            if (rooms.isNotEmpty()) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    rooms.forEach { r ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            ActionButton(savedRoomLabel(r), { model.pick(r); connect() }, Modifier.testTag("known_room_${r.room}"), icon = if (r.saved) Icons.Filled.Star else Icons.Filled.Groups)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                IconAction(
+                                    if (r.saved) Icons.Filled.Star else Icons.Filled.StarBorder,
+                                    if (r.saved) "Remove from saved rooms" else "Save this room",
+                                    { container.scope.launch { container.settingsStore.setRoomSaved(r.key, !r.saved) } },
+                                )
+                                IconAction(Icons.Filled.Delete, "Forget", { container.scope.launch { container.settingsStore.forgetSavedRoom(r.key) } })
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             TvTextField(model.host, { model.host = it }, "Server", Modifier.weight(3f).focusRequester(firstFocus), placeholder = "syncplay.pl", keyboardType = KeyboardType.Uri)
             TvTextField(model.port, { model.port = it.filter(Char::isDigit).take(5) }, "Port", Modifier.weight(1f), keyboardType = KeyboardType.Number)
