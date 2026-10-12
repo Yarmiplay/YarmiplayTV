@@ -52,6 +52,12 @@ sealed interface SyncplayEvent {
     /** The session ended: vanilla mode switched on, or the connection closed. Stop all relay and Jellyfin work. */
     data object SessionEnded : SyncplayEvent
 
+    /**
+     * The server typed as IP address [address] has a certificate for [name]; the connection verifies it as that
+     * name. Saving the server under [name] lets it be joined away from home too.
+     */
+    data class ServerNamed(val address: String, val name: String) : SyncplayEvent
+
     /** The server wants bytes of a file this device offered. */
     data class UploadRequested(val request: UploadRequest) : SyncplayEvent
     data class UploadCancelled(val id: String) : SyncplayEvent

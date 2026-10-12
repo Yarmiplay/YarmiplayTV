@@ -14,15 +14,20 @@ import com.yarmiplaytv.data.SyncplayProfile
 import com.yarmiplaytv.defaultSyncplayName
 import com.yarmiplaytv.media.jellyfin.DiscoveredServer
 import com.yarmiplaytv.media.jellyfin.JellyfinDiscovery
-import com.yarmiplaytv.media.jellyfin.QuickConnectState
 import com.yarmiplaytv.media.jellyfin.JellyfinSource
+import com.yarmiplaytv.media.jellyfin.QuickConnectState
 import com.yarmiplaytv.media.plex.PlexLinkState
 import com.yarmiplaytv.media.plex.PlexServer
 import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.sync.SyncController
+import com.yarmiplaytv.sync.discoverSyncplayServers
 import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.syncplay.LanServer
 import com.yarmiplaytv.syncplay.ManagedRooms
+import com.yarmiplaytv.syncplay.RoomState
+import com.yarmiplaytv.syncplay.ServerTlsFormat
+import com.yarmiplaytv.syncplay.SyncplayDiscovery
 import com.yarmiplaytv.syncplay.SyncplayEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -53,6 +58,23 @@ class SyncplayConnectModel(private val container: AppContainer) {
     /** The form's server as "host:port", or null while it's incomplete. */
     val serverKey: String?
         get() = port.toIntOrNull()?.takeIf { host.isNotBlank() }?.let { SyncController.serverKey(host, it) }
+
+    /** YarmiplayServerTVs found on this network ([discover]). */
+    var discovered by mutableStateOf<List<LanServer>>(emptyList())
+        private set
+
+    /** Looks for YarmiplayServerTVs on this network, on Wi-Fi or Ethernet only (stock Syncplay servers don't answer). */
+    suspend fun discover() {
+        discovered = discoverSyncplayServers(SyncplayDiscovery.COMMON_PORTS + listOfNotNull(port.toIntOrNull()))
+    }
+
+    /** Fills the form with a found server: its certificate's name (verified with TLS) or else its address. */
+    fun pick(server: LanServer) {
+        host = server.host
+        port = server.port.toString()
+        tls = server.tls != null || tls
+        error = null
+    }
 
     /** Set when [connect] needs the community rules agreed first; answered with [acceptRules] or [declineRules]. */
     var askRules by mutableStateOf(false)
@@ -157,7 +179,23 @@ class SyncplayConnectModel(private val container: AppContainer) {
 }
 
 @Composable
-fun rememberSyncplayConnectModel(container: AppContainer): SyncplayConnectModel = remember { SyncplayConnectModel(container) }
+fun rememberSyncplayConnectModel(container: AppContainer): SyncplayConnectModel {
+    val model = remember { SyncplayConnectModel(container) }
+    LaunchedEffect(model) { runCatching { model.discover() } }
+    return model
+}
+
+/** A found server's button: "myname.duckdns.org (192.168.1.20:8999) · TLS", or its address without a certificate. */
+fun lanServerLabel(server: LanServer): String {
+    val at = "${ServerTlsFormat.urlHost(server.address)}:${server.port}"
+    return server.tls?.let { "${it.name} ($at) · TLS" } ?: "YarmiplayServerTV at $at"
+}
+
+/** "Connected at home via 192.168.1.20 · verified as myname.duckdns.org", when the server was reached at home. */
+fun connectionRouteLine(room: RoomState): String? {
+    val route = room.route?.takeIf { it.atHome } ?: return null
+    return "Connected at home via ${route.dialed}" + (route.verifiedAs?.let { " · verified as $it" } ?: "")
+}
 
 /** The connect form's line about the connection: connecting, why it's reconnecting, or why it stopped. */
 fun connectionStatusLine(status: ConnectionStatus, error: String?): String? = when (status) {

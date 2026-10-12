@@ -53,6 +53,15 @@ desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin]
     ahead while the current one plays, so it starts at once. Relayed files
     are cached for at most 24 hours (up to 4 GB) and deleted when you leave the room. Settings > Share my files
     with the room stops this device from offering its files; it can still play files others share.
+  - Found on your network: the join form lists the YarmiplayServerTVs on your Wi-Fi or Ethernet (1.7.2 and later
+    answer a broadcast on the Syncplay port; stock Syncplay servers don't), and picking one fills in its name and port.
+    Nothing is broadcast over mobile data.
+  - At home without NAT loopback: a server with a certificate (e.g. `myname.duckdns.org`) tells the app its own
+    addresses inside its network. When the name doesn't lead back in from home, the app connects to one of those
+    instead, with TLS still verified against the name ("Connected at home via 192.168.1.20 · verified as …" in the
+    room panel); away from home nothing changes. If nothing answers, it looks for the server on the network. Typing
+    the server's LAN IP works with TLS too: it's verified as the name the server gives, and saved under that name so
+    it also works away from home. Certificates are always verified; only the name they're checked against changes.
   - A Jellyfin server the host shares is added automatically, as "<name> (via <server>)"
     (Settings > Add media servers shared by Syncplay hosts).
 

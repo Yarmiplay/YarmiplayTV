@@ -23,7 +23,22 @@ data class SyncplayConfig(
      * false for a silent check. Reconnects never ask.
      */
     val requestAccess: Boolean = true,
-)
+    /**
+     * The name the server's TLS certificate is verified as; null for [host] itself. Set for a server typed as an IP
+     * address whose certificate names it (see [ServerInfo]).
+     */
+    val tlsName: String? = null,
+    /**
+     * The server's own addresses inside its network (`ip:port`), from its `tls` field last time: tried alongside
+     * [host], with the certificate verified as [verifyAs], for routers that don't loop their public address back in.
+     */
+    val lanAddresses: List<String> = emptyList(),
+    /** The YarmiplayServerTV's id from an earlier login, to recognise it among the servers discovery finds. */
+    val knownServerId: String? = null,
+) {
+    /** The name the certificate must be valid for. */
+    val verifyAs: String get() = tlsName ?: host.trim()
+}
 
 /** The desktop client's sync tuning, with the same defaults. */
 data class SyncSettings(
@@ -98,6 +113,8 @@ data class RoomState(
     val serverFeatures: Map<String, Any?> = emptyMap(),
     val rttMillis: Double = 0.0,
     val yarmiplay: YarmiplayInfo = YarmiplayInfo(),
+    /** How this connection reached the server; null while not connected. */
+    val route: ConnectionRoute? = null,
 ) {
     val others: List<RoomUser> get() = users.filter { it.name != username }
     val currentPlaylistFile: String? get() = playlistIndex?.let { playlist.getOrNull(it) }

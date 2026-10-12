@@ -51,7 +51,7 @@ class YarmiplayClientTest {
             FakePlayer(clock),
             parentScope = scope,
             clock = clock,
-            transportFactory = { _, _ -> ScriptedTransport().also { transports += it } },
+            transportFactory = { _, _, _ -> ScriptedTransport().also { transports += it } },
             log = { logs += it },
         )
         c.events.onEach { events += it }.launchIn(scope)

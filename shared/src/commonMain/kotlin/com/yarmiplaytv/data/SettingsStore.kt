@@ -108,7 +108,34 @@ data class KnownServer(
     val serverId: String = "",
     /** `open`, `password` or `approved`. */
     val access: String = "",
+    /** The name on the server's TLS certificate, when it has one. */
+    val tlsName: String? = null,
+    /** The server's own addresses inside its network (`ip:port`), tried at home. */
+    val lanAddresses: List<String> = emptyList(),
 )
+
+/**
+ * The `sp_known_servers` format: one server per line, tab-separated: `host:port`, kind, id, access, then (since
+ * 1.7.7) the certificate's name and the space-separated LAN addresses. Older lines without those still parse.
+ */
+internal object KnownServers {
+    fun decode(text: String): Map<String, KnownServer> = text.lines().mapNotNull { line ->
+        val f = line.split('\t')
+        if (f.size < 4 || f[0].isEmpty()) return@mapNotNull null
+        f[0] to KnownServer(
+            yarmiplay = f[1] == "yarmiplay",
+            serverId = f[2],
+            access = f[3],
+            tlsName = f.getOrNull(4)?.takeIf { it.isNotEmpty() },
+            lanAddresses = f.getOrNull(5)?.split(' ')?.filter { it.isNotEmpty() }.orEmpty(),
+        )
+    }.toMap()
+
+    fun encode(map: Map<String, KnownServer>): String = map.entries.joinToString("\n") { (server, k) ->
+        listOf(server, if (k.yarmiplay) "yarmiplay" else "syncplay", k.serverId, k.access, k.tlsName.orEmpty(), k.lanAddresses.joinToString(" "))
+            .joinToString("\t") { it.replace('\t', ' ').replace('\n', ' ') }
+    }
+}
 
 class SettingsStore(private val dataStore: DataStore<Preferences>) {
     private object Keys {
@@ -244,18 +271,10 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             shareFiles = p[Keys.shareFiles] ?: true,
             downloadDirectory = p[Keys.downloadDirectory] ?: "",
             screenshotDirectory = p[Keys.screenshotDirectory] ?: "",
-            knownServers = p[Keys.knownServers]?.let(::decodeKnown) ?: emptyMap(),
+            knownServers = p[Keys.knownServers]?.let(KnownServers::decode) ?: emptyMap(),
         )
     }
 
-    private fun decodeKnown(text: String): Map<String, KnownServer> = text.lines().mapNotNull { line ->
-        val f = line.split('\t')
-        if (f.size < 4 || f[0].isEmpty()) null else f[0] to KnownServer(f[1] == "yarmiplay", f[2], f[3])
-    }.toMap()
-
-    private fun encodeKnown(map: Map<String, KnownServer>): String = map.entries.joinToString("\n") { (server, k) ->
-        listOf(server, if (k.yarmiplay) "yarmiplay" else "syncplay", k.serverId, k.access).joinToString("\t") { it.replace('\t', ' ').replace('\n', ' ') }
-    }
 
     suspend fun saveDeviceName(name: String) = dataStore.edit { it[Keys.deviceName] = name.take(60) }
 
@@ -273,7 +292,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
     suspend fun saveKnownServer(server: String, known: KnownServer?) = dataStore.edit {
         val map = read(it).knownServers.toMutableMap()
         if (known == null) map.remove(server) else map[server] = known
-        it[Keys.knownServers] = encodeKnown(map)
+        it[Keys.knownServers] = KnownServers.encode(map)
     }
 
     suspend fun saveSyncplay(profile: SyncplayProfile, autoConnect: Boolean? = null) {

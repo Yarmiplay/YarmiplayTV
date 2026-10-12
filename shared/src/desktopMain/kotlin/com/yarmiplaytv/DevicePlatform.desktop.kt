@@ -13,5 +13,8 @@ actual object DevicePlatform {
 
     actual val isEmulator: Boolean get() = false
 
+    /** Desktops are on Wi-Fi or Ethernet (a phone's tethered connection looks the same, and is left to the user). */
+    actual val onLocalNetwork: Boolean get() = true
+
     actual suspend fun <T> withMulticastLock(tag: String, block: suspend () -> T): T = block()
 }

@@ -1,5 +1,7 @@
 package com.yarmiplaytv.syncplay
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +39,8 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import java.io.IOException
+import java.util.Collections
+import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.SSLException
 import javax.net.ssl.SSLHandshakeException
 import javax.net.ssl.SSLPeerUnverifiedException
@@ -56,7 +60,9 @@ class SyncplayClient(
     settings: SyncSettings = SyncSettings(),
     parentScope: CoroutineScope,
     private val clock: Clock = Clock.System,
-    private val transportFactory: (host: String, port: Int) -> Transport = { h, p -> SocketTransport(h, p) },
+    private val transportFactory: TransportFactory = { h, p, name -> SocketTransport(h, p, tlsName = name) },
+    /** What a server typed as an IP address says its certificate is ([ServerInfo]); tests replace it. */
+    private val serverInfo: suspend (host: String, port: Int) -> ServerTls? = { h, p -> ServerInfo.tls(h, p) },
     dispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1),
     private val log: (String) -> Unit = {},
 ) {
@@ -65,6 +71,12 @@ class SyncplayClient(
 
     var config: SyncplayConfig = config
         private set
+
+    /**
+     * Finds YarmiplayServerTVs on the local network ([SyncplayDiscovery]) when nothing else reached the server; null
+     * (the default) never looks. The caller makes sure it only broadcasts on Wi-Fi or Ethernet.
+     */
+    @Volatile var lanDiscovery: (suspend (port: Int) -> List<LanServer>)? = null
 
     private val _state = MutableStateFlow(RoomState(username = config.username, room = config.room))
     val state: StateFlow<RoomState> = _state.asStateFlow()
@@ -416,16 +428,12 @@ class SyncplayClient(
     }
 
     private suspend fun runSession() = coroutineScope {
-        val t = transportFactory(config.host, config.port)
+        _state.update { it.copy(yarmiplay = YarmiplayInfo(), route = null) }
+        val t = openTransport()
         transport = t
         val out = Channel<String>(Channel.UNLIMITED)
         outgoing = out
-        _state.update { it.copy(yarmiplay = YarmiplayInfo()) }
-        t.connect()
         lastMessageTime = clock.now()
-        log("Connected to ${config.host}:${config.port}")
-
-        if (config.useTls) negotiateTls(t)
 
         val writer = launch {
             for (line in out) {
@@ -448,32 +456,145 @@ class SyncplayClient(
         }
     }
 
-    private suspend fun negotiateTls(t: Transport) {
+    // --- Reaching the server -------------------------------------------------------------
+
+    /** A way to the server: dial [dial]:[port] and verify its certificate as [verifyAs]. */
+    private class Route(val dial: String, val port: Int, val verifyAs: String, val delayMs: Long, val atHome: Boolean) {
+        @Volatile var error: Throwable? = null
+        override fun toString() = "$dial:$port"
+    }
+
+    /** The certificate didn't verify as [name]; it won't on a retry either. */
+    private class CertificateMismatch(val name: String, cause: Throwable) : IOException(cause.message, cause)
+
+    /**
+     * Connects (and with TLS on, negotiates it) the best way there is from here. The address the user typed goes
+     * first; the server's own LAN addresses follow after [LAN_HEAD_START_MS] (routers that don't loop their public
+     * address back in make the name unreachable at home). Those count only with a certificate verified as the
+     * server's name, never in plain text. When nothing answers, YarmiplayServerTVs on this network are looked for.
+     */
+    private suspend fun openTransport(): Transport {
+        if (config.useTls && config.tlsName == null && ServerTlsFormat.isIpLiteral(config.host)) learnName()
+        val name = config.verifyAs
+        val typed = Route(config.host.trim(), config.port, name, 0, atHome = false)
+        val lan = if (config.useTls) lanRoutes(config.lanAddresses, name, LAN_HEAD_START_MS, exclude = typed) else emptyList()
+        var won = firstOpen(listOf(typed) + lan)
+        if (won == null && config.useTls && !ServerTlsFormat.isIpLiteral(config.host)) {
+            val found = lanDiscovery?.let { discover -> runCatching { discover(config.port) }.getOrNull() }.orEmpty()
+            val addresses = SyncplayDiscovery.matching(found, name, config.knownServerId).flatMap { it.tls?.lan.orEmpty() }.distinct()
+            if (addresses.isNotEmpty()) {
+                log("Found ${addresses.joinToString()} on this network")
+                won = firstOpen(lanRoutes(addresses, name, 0, exclude = typed))
+                if (won != null) config = config.copy(lanAddresses = addresses)
+            }
+        }
+        val (route, t) = won ?: run {
+            val error = typed.error
+            if (error is CertificateMismatch) {
+                fatalError = "The server's TLS certificate isn't valid for ${error.name} (${error.message}). " +
+                    "Turn TLS off, or connect using the name on the server's certificate."
+                throw IOException(fatalError, error)
+            }
+            throw error as? IOException ?: IOException(error?.message ?: "Couldn't reach ${config.host}", error)
+        }
+        val dialed = t.remoteAddress ?: route.dial
+        _state.update { it.copy(route = ConnectionRoute(dialed, name.takeIf { t.isTls }, route.atHome)) }
+        log("Connected to $route" + (if (route.atHome) " at home" else "") + (if (t.isTls) ", TLS verified as $name" else ""))
+        return t
+    }
+
+    /** Asks a server typed as an IP address for its certificate's name, so TLS can be verified there. */
+    private suspend fun learnName() {
+        val tls = serverInfo(config.host.trim(), config.port) ?: return
+        log("${config.host} has a certificate for ${tls.name}")
+        config = config.copy(tlsName = tls.name, lanAddresses = tls.lan)
+        emit(SyncplayEvent.ServerNamed(config.host.trim(), tls.name))
+    }
+
+    private fun lanRoutes(addresses: List<String>, name: String, delayMs: Long, exclude: Route): List<Route> =
+        addresses.mapNotNull(ServerTlsFormat::splitHostPort)
+            .filterNot { (host, port) -> host.equals(exclude.dial.removePrefix("[").removeSuffix("]"), ignoreCase = true) && port == exclude.port }
+            .distinct()
+            .map { (host, port) -> Route(host, port, name, delayMs, atHome = true) }
+
+    /**
+     * Opens [routes], each after its delay, and returns the first that's ready (TLS verified where it has to be);
+     * the others are closed. The attempts run outside the caller, so a loser stuck in a socket connect can't hold
+     * the winner up; each one's failure is kept on its route.
+     */
+    private suspend fun firstOpen(routes: List<Route>): Pair<Route, Transport>? {
+        if (routes.isEmpty()) return null
+        val result = CompletableDeferred<Pair<Route, Transport>?>()
+        val opened = Collections.synchronizedList(mutableListOf<Transport>())
+        val left = AtomicInteger(routes.size)
+        val attempts = routes.map { route ->
+            scope.launch {
+                try {
+                    delay(route.delayMs)
+                    if (result.isCompleted) return@launch
+                    val t = transportFactory(route.dial, route.port, route.verifyAs)
+                    opened += t
+                    try {
+                        open(route, t)
+                        if (!result.complete(route to t)) t.close()
+                    } catch (e: CancellationException) {
+                        t.close()
+                        throw e
+                    } catch (e: Exception) {
+                        route.error = e
+                        t.close()
+                        if (route.atHome) log("Not reachable at $route: ${e.message}")
+                    }
+                } finally {
+                    if (left.decrementAndGet() == 0) result.complete(null)
+                }
+            }
+        }
+        var won: Pair<Route, Transport>? = null
+        try {
+            won = result.await()
+            return won
+        } finally {
+            attempts.forEach { it.cancel() }
+            // Closing also ends a loser's blocking connect or handshake.
+            synchronized(opened) { opened.filter { it !== won?.second }.forEach { it.close() } }
+        }
+    }
+
+    /** Connects [t] and, with TLS on, upgrades it; a route at home is only good with TLS verified. */
+    private suspend fun open(route: Route, t: Transport) {
+        t.connect()
+        if (!config.useTls) return
+        val tls = negotiateTls(t, route.verifyAs)
+        if (route.atHome && !tls) throw IOException("No TLS at $route")
+    }
+
+    /** Syncplay's STARTTLS; returns whether the connection is now TLS. */
+    private suspend fun negotiateTls(t: Transport, name: String): Boolean {
         t.writeLine(obj { putJsonObject("TLS") { put("startTLS", "send") } }.toString())
         val reply = withTimeoutOrNull(5_000) { t.readLine() } ?: run {
             log("No STARTTLS reply; continuing without TLS")
-            return
+            return false
         }
-        val message = runCatching { json.parseToJsonElement(reply).jsonObject }.getOrNull() ?: return
+        val message = runCatching { json.parseToJsonElement(reply).jsonObject }.getOrNull() ?: return false
         val answer = (message["TLS"] as? JsonObject)?.get("startTLS")?.jsonPrimitive?.content
-        if (answer != null && "true" in answer) {
-            try {
-                t.startTls()
-            } catch (e: SSLException) {
-                if (e !is SSLHandshakeException && e !is SSLPeerUnverifiedException) throw e
-                // A certificate that fails here fails on every retry too.
-                fatalError = "The server's TLS certificate isn't valid for ${config.host} (${e.message}). " +
-                    "Turn TLS off, or connect using the name on the server's certificate."
-                throw IOException(fatalError, e)
-            }
-            log("TLS enabled")
-        } else {
+        if (answer == null || "true" !in answer) {
             log("Server does not support TLS")
+            return false
         }
+        try {
+            t.startTls()
+        } catch (e: SSLException) {
+            if (e !is SSLHandshakeException && e !is SSLPeerUnverifiedException) throw e
+            throw CertificateMismatch(name, e)
+        }
+        log("TLS enabled")
+        return true
     }
 
     private fun endSession() {
         logged = false
+        _state.update { it.copy(route = null) }
         transport?.close()
         transport = null
         outgoing?.close()
@@ -555,6 +676,7 @@ class SyncplayClient(
                         access = marker.str("access"),
                         approvedDevice = marker.str("device") == "approved",
                         capabilities = parseCapabilities(marker["capabilities"]) ?: ext.capabilities,
+                        tls = ServerTlsFormat.parse(marker["tls"]),
                     )
                     // A challenge already said who this is (it only comes from YarmiplayServerTV).
                     ext.serverKind == ServerKind.YARMIPLAY -> ext
@@ -563,6 +685,7 @@ class SyncplayClient(
             )
         }
         publishUsers()
+        rememberLanAddresses()
         emit(SyncplayEvent.Connected(username, room, motd, transport?.isTls == true))
 
         val ready = myReady ?: engine.settings.readyAtStart
@@ -752,6 +875,9 @@ class SyncplayClient(
             if (!caps.fileRelay) offerSent = null
         }
         (message["jellyfin"] as? JsonObject)?.let { j -> updateExt { it.copy(jellyfin = parseSharedJellyfin(j)) } }
+        // Present but null: the certificate went away.
+        if ("tls" in message) updateExt { it.copy(tls = ServerTlsFormat.parse(message["tls"])) }
+        rememberLanAddresses()
         (message["files"] as? JsonArray)?.let { files ->
             if (state.value.yarmiplay.capabilities.fileRelay) updateExt { it.copy(relayFiles = files.mapNotNull(::parseRelayFile)) }
         }
@@ -828,7 +954,7 @@ class SyncplayClient(
         val baseUrl = if (active) httpBase(ext.capabilities.https) else null
         when {
             active && (current == null || current.baseUrl != baseUrl) -> {
-                val session = YarmiplaySession(token!!, sessionProtocol, baseUrl!!)
+                val session = YarmiplaySession(token!!, sessionProtocol, baseUrl!!, resolveTo = transport?.remoteAddress)
                 _session.value = session
                 if (current == null) offerSent = null
                 updateExt { it.copy(session = true, protocol = sessionProtocol) }
@@ -843,10 +969,20 @@ class SyncplayClient(
         }
     }
 
+    /**
+     * The extension's HTTP base: over TLS, on the name the certificate was verified as (a typed IP's certificate
+     * names the server), which [YarmiplaySession.resolveTo] maps to the address this connection reached.
+     */
     private fun httpBase(https: Boolean): String {
-        val host = config.host.trim().let { if (':' in it && !it.startsWith("[")) "[$it]" else it }
-        val scheme = if (https && transport?.isTls == true) "https" else "http"
-        return "$scheme://$host:${config.port}"
+        val tls = https && transport?.isTls == true
+        val host = ServerTlsFormat.urlHost(if (tls) config.verifyAs else config.host)
+        return "${if (tls) "https" else "http"}://$host:${config.port}"
+    }
+
+    /** The server's LAN addresses, for the next connection's routes, when its certificate is the one we verify. */
+    private fun rememberLanAddresses() {
+        val tls = state.value.yarmiplay.tls ?: return
+        if (tls.name.equals(config.verifyAs, ignoreCase = true) && tls.lan != config.lanAddresses) config = config.copy(lanAddresses = tls.lan)
     }
 
     private fun sendOfferIfNeeded() {
@@ -1103,6 +1239,9 @@ class SyncplayClient(
     }
 
     companion object {
+        /** How long the address the user typed has to answer before the server's LAN addresses are tried too. */
+        const val LAN_HEAD_START_MS = 300L
+
         /**
          * Port of Syncplay's _thereIsNextPlaylistIndex/_nextPlaylistIndex: the entry to play after [index] ends,
          * [index] itself to replay a single-entry playlist, or null to stop.

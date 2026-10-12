@@ -31,7 +31,7 @@ class StartTlsTest {
             FakePlayer(clock),
             parentScope = scope,
             clock = clock,
-            transportFactory = { _, _ -> ScriptedTransport(tlsError).also { transports += it } },
+            transportFactory = { _, _, _ -> ScriptedTransport(tlsError).also { transports += it } },
         )
         c.events.onEach { events += it }.launchIn(scope)
         c.start()

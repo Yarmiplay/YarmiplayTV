@@ -36,7 +36,7 @@ class ManagedRoomsTest {
             FakePlayer(clock),
             parentScope = scope,
             clock = clock,
-            transportFactory = { _, _ -> ScriptedTransport().also { transports += it } },
+            transportFactory = { _, _, _ -> ScriptedTransport().also { transports += it } },
         )
         c.savedOperatorPassword = { saved[it] }
         c.events.onEach { events += it }.launchIn(scope)

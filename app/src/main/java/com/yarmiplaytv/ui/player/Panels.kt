@@ -65,6 +65,7 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.BLOCKED_NOTE
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
 import com.yarmiplaytv.ui.shared.relayNote
+import com.yarmiplaytv.ui.shared.connectionRouteLine
 import com.yarmiplaytv.ui.shared.serverStatusLine
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
@@ -157,6 +158,7 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
         }
         PanelHeader(ManagedRooms.label(room.room), "${container.sync.client?.config?.host ?: ""} · Syncplay ${room.serverVersion ?: ""}")
         serverStatusLine(room.yarmiplay)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall) }
+        connectionRouteLine(room)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall) }
         val relayStatus = container.relay?.let { relay ->
             val current by relay.status.collectAsStateWithLifecycle()
             current

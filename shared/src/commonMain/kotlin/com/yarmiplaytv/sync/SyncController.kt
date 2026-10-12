@@ -1,13 +1,16 @@
 package com.yarmiplaytv.sync
 
 import com.yarmiplaytv.Logger
+import com.yarmiplaytv.data.KnownServer
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.DeviceAuth
 import com.yarmiplaytv.syncplay.FileInfo
+import com.yarmiplaytv.syncplay.LanServer
 import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.syncplay.RelayOffer
 import com.yarmiplaytv.syncplay.RoomState
+import com.yarmiplaytv.syncplay.ServerTlsFormat
 import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.SyncplayClient
 import com.yarmiplaytv.syncplay.SyncplayConfig
@@ -24,10 +27,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** Saved operator passwords of managed rooms, by "host:port/+name:HASH" (see [SyncController.passwordKey]). */
@@ -115,6 +118,13 @@ class SyncController(
     var deviceAuth: DeviceAuth? = null
     /** Where operator passwords of managed rooms are kept; without it none are remembered. */
     var operatorPasswords: OperatorPasswords? = null
+    /** What a server ("host:port") was when last joined: its certificate's name, LAN addresses and id. */
+    var knownServer: (server: String) -> KnownServer? = { null }
+    /**
+     * Finds YarmiplayServerTVs on this network when nothing else reaches the server; null never looks. It must only
+     * broadcast on Wi-Fi or Ethernet.
+     */
+    var lanDiscovery: (suspend (port: Int) -> List<LanServer>)? = null
     var appVersion: String = ""
 
     /**
@@ -126,18 +136,28 @@ class SyncController(
         disconnect()
         lastConfig = config
         server = serverKey(config.host, config.port)
+        val known = server?.let(knownServer)
         // Typed on the join form for a managed room: saved like any other, so it's sent once the room is joined.
         operatorPassword?.let(ManagedRooms::normalizePassword)?.takeIf { it.isNotEmpty() && ManagedRooms.isManaged(config.room.trim()) }?.let { password ->
             passwordKey(config.room.trim())?.let { savePassword(it, password) }
         }
         val newClient = SyncplayClient(
-            config = config.copy(deviceAuth = deviceAuth, appVersion = appVersion, requestAccess = requestAccess),
+            config = config.copy(
+                deviceAuth = deviceAuth,
+                appVersion = appVersion,
+                requestAccess = requestAccess,
+                // Its LAN addresses are tried at home; a server saved as an IP is verified as its certificate's name.
+                lanAddresses = config.lanAddresses.ifEmpty { known?.lanAddresses.orEmpty() },
+                tlsName = config.tlsName ?: known?.tlsName?.takeIf { ServerTlsFormat.isIpLiteral(config.host) },
+                knownServerId = config.knownServerId ?: known?.serverId?.takeIf { it.isNotEmpty() },
+            ),
             player = adapter,
             settings = syncSettings,
             parentScope = scope,
             log = { Logger.d(TAG, it) },
         )
         newClient.savedOperatorPassword = { room -> passwordKey(room)?.let { operatorPasswords?.get(it) } }
+        newClient.lanDiscovery = lanDiscovery
         clientFlow.value = newClient
         // Only on the first join: a reconnect after creating it already goes to the managed room.
         var pendingCreate = createManagedRoom?.trim()?.takeIf { it.isNotEmpty() }
@@ -166,6 +186,12 @@ class SyncController(
                         post(FeedMessage("Created managed room '${ManagedRooms.display(event.room)}' (${event.room}). Operator password: ${event.password}"))
                     }
                     is SyncplayEvent.ControllerAuth -> controllerAuth(event)
+                    is SyncplayEvent.ServerNamed -> {
+                        // From now on it's this server by its name, which also works away from home.
+                        server = serverKey(event.name, config.port)
+                        lastConfig = lastConfig?.copy(host = event.name, tlsName = null)
+                        post(FeedMessage("This server's name is ${event.name}; saved for use away from home."))
+                    }
                     is SyncplayEvent.ReadySetBy -> {
                         val what = if (event.isReady) "ready" else "not ready"
                         val whom = if (event.user == room.value.username) "you" else event.user

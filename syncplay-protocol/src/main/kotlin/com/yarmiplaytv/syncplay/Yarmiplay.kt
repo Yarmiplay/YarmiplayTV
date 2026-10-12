@@ -147,6 +147,8 @@ data class YarmiplayInfo(
     val relayFiles: List<RelayFile> = emptyList(),
     /** Whether this connection has a live session token. */
     val session: Boolean = false,
+    /** The server's certificate name and LAN addresses; null without a certificate (or in vanilla mode). */
+    val tls: ServerTls? = null,
 ) {
     val relayActive: Boolean get() = session && capabilities.fileRelay
 }
@@ -155,7 +157,20 @@ data class YarmiplayInfo(
  * The HTTP side of an extension session: base URL on the Syncplay host and port, and the bearer token. Valid
  * only while the connection that got it stays logged in.
  */
-class YarmiplaySession(val token: String, val protocol: Int, val baseUrl: String) {
+class YarmiplaySession(
+    val token: String,
+    val protocol: Int,
+    val baseUrl: String,
+    /**
+     * The address the Syncplay connection reached when [baseUrl]'s host is a name that leads elsewhere from here
+     * (the server's LAN address at home): HTTP clients resolve the name to it, and still verify the certificate
+     * against the name.
+     */
+    val resolveTo: String? = null,
+) {
+    /** [baseUrl]'s host name. */
+    val host: String get() = runCatching { java.net.URI(baseUrl).host }.getOrNull().orEmpty().removePrefix("[").removeSuffix("]")
+
     val authorization: String get() = "Bearer $token"
 
     override fun toString(): String = "YarmiplaySession(protocol=$protocol, baseUrl=$baseUrl, token=…)"

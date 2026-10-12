@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
@@ -43,7 +44,9 @@ import com.yarmiplaytv.ui.shared.ROOM_PRIVACY_HINT
 import com.yarmiplaytv.ui.shared.ROOM_RULES
 import com.yarmiplaytv.ui.shared.ROOM_RULES_URL
 import com.yarmiplaytv.ui.shared.approvedOnly
+import com.yarmiplaytv.ui.shared.connectionRouteLine
 import com.yarmiplaytv.ui.shared.connectionStatusLine
+import com.yarmiplaytv.ui.shared.lanServerLabel
 import com.yarmiplaytv.ui.shared.rememberSyncplayConnectModel
 import com.yarmiplaytv.ui.shared.serverStatusLine
 import com.yarmiplaytv.ui.theme.AppColors
@@ -76,6 +79,7 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
             }
         }
         if (connected) serverStatusLine(room.yarmiplay)?.let { Text(it, color = AppColors.TextDim) }
+        if (connected) connectionRouteLine(room)?.let { Text(it, color = AppColors.TextDim) }
         Text(
             "Everyone in the same room on the same server watches in sync. Use the public server syncplay.pl (ports 8995–8999) or your own. " +
                 ROOM_PRIVACY_HINT,
@@ -84,6 +88,11 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             TvTextField(model.host, { model.host = it }, "Server", Modifier.weight(3f).focusRequester(firstFocus), placeholder = "syncplay.pl", keyboardType = KeyboardType.Uri)
             TvTextField(model.port, { model.port = it.filter(Char::isDigit).take(5) }, "Port", Modifier.weight(1f), keyboardType = KeyboardType.Number)
+        }
+        if (model.discovered.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                model.discovered.forEach { server -> ActionButton(lanServerLabel(server), { model.pick(server) }, icon = Icons.Filled.Dns) }
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             TvTextField(model.username, { model.username = it.take(40) }, "Your name", Modifier.weight(1f))

@@ -15,6 +15,7 @@ import com.yarmiplaytv.sync.FeedMessage
 import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.SyncSettings
+import com.yarmiplaytv.syncplay.SyncplayDiscovery
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
@@ -76,6 +77,8 @@ class AppState {
     fun baseline() {
         // The host's real servers would otherwise show up in "Found on your network".
         JellyfinDiscovery.scanner = { listOf(DiscoveredServer(address = "http://192.168.1.20:8096", id = "fake-server", name = "Living Room")) }
+        // Nor do YarmiplayServerTVs on the host's network show up on the join form.
+        SyncplayDiscovery.scanner = { emptyList() }
         onMain { container.playlist.stop(); container.updates.dismiss(remember = false) }
         container.sync.disconnect()
         runBlocking {

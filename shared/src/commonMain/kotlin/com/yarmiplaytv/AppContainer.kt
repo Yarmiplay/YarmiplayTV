@@ -20,6 +20,7 @@ import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.relay.RelayManager
+import com.yarmiplaytv.relay.SessionDns
 import com.yarmiplaytv.screenshot.ScreenshotStore
 import com.yarmiplaytv.screenshot.Screenshots
 import com.yarmiplaytv.sync.HostJellyfinSharing
@@ -29,9 +30,12 @@ import com.yarmiplaytv.sync.PlaybackReporter
 import com.yarmiplaytv.sync.PlaylistAutosave
 import com.yarmiplaytv.sync.PlaylistController
 import com.yarmiplaytv.sync.SyncController
+import com.yarmiplaytv.sync.discoverSyncplayServers
 import com.yarmiplaytv.syncplay.ServerKind
+import com.yarmiplaytv.syncplay.SyncplayEvent
 import com.yarmiplaytv.syncplay.YarmiplayInfo
 import com.yarmiplaytv.update.Updates
+import java.io.File
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,7 +53,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /** Process-wide singletons (one mpv instance, one Syncplay connection, the media servers). */
 class AppContainer(
@@ -120,6 +123,8 @@ class AppContainer(
                 scope.launch { settingsStore.saveRoomPassword(key, password) }
             }
         }
+        knownServer = { server -> settings.value.knownServers[server] }
+        lanDiscovery = { port -> discoverSyncplayServers(setOf(port)) }
     }
     /** The YarmiplayServerTV file relay; idle on other servers. */
     val relay: RelayManager? = cacheDir?.let { RelayManager(scope, sync, player, local, it, settings.map { s -> s.shareFiles }) }
@@ -155,6 +160,10 @@ class AppContainer(
         scope.launch {
             sync.room.map { it.yarmiplay }.distinctUntilChanged().collect { info -> rememberServer(info) }
         }
+        scope.launch { sync.session.collect(SessionDns::use) }
+        scope.launch {
+            sync.events.collect { event -> if (event is SyncplayEvent.ServerNamed) saveUnderName(event) }
+        }
         jellyfinSharing.start()
         if (initial.autoConnect && initial.syncplay.isComplete) sync.connect(initial.syncplay.toConfig(), requestAccess = false)
         // Each saved server is checked on its own, so a slow or offline one doesn't hold up the others.
@@ -174,10 +183,26 @@ class AppContainer(
             ServerKind.SYNCPLAY -> KnownServer(yarmiplay = false)
             ServerKind.YARMIPLAY -> {
                 val before = settings.value.knownServers[server]
-                KnownServer(true, info.serverId ?: before?.serverId.orEmpty(), info.access ?: before?.access.orEmpty())
+                KnownServer(
+                    true,
+                    info.serverId ?: before?.serverId.orEmpty(),
+                    info.access ?: before?.access.orEmpty(),
+                    tlsName = info.tls?.name,
+                    lanAddresses = info.tls?.lan.orEmpty(),
+                )
             }
         }
         if (settings.value.knownServers[server] != known) settingsStore.saveKnownServer(server, known)
+    }
+
+    /**
+     * A server saved as an IP address turned out to have a certificate for a name: the saved connection uses the
+     * name from now on, so it works away from home too (at home its LAN addresses are tried).
+     */
+    private suspend fun saveUnderName(event: SyncplayEvent.ServerNamed) {
+        val profile = settings.value.syncplay
+        if (!profile.host.trim().removePrefix("[").removeSuffix("]").equals(event.address, ignoreCase = true)) return
+        settingsStore.saveSyncplay(profile.copy(host = event.name))
     }
 
     /** The name YarmiplayServerTV hosts see when this device asks for access. */

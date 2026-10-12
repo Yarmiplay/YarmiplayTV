@@ -47,6 +47,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -58,12 +59,13 @@ import com.yarmiplaytv.ui.shared.ROOM_PRIVACY_HINT
 import com.yarmiplaytv.ui.shared.ROOM_RULES
 import com.yarmiplaytv.ui.shared.ROOM_RULES_URL
 import com.yarmiplaytv.ui.shared.approvedOnly
+import com.yarmiplaytv.ui.shared.connectionStatusLine
+import com.yarmiplaytv.ui.shared.isSharedServer
+import com.yarmiplaytv.ui.shared.lanServerLabel
 import com.yarmiplaytv.ui.shared.plexServerLabel
 import com.yarmiplaytv.ui.shared.rememberJellyfinLoginModel
 import com.yarmiplaytv.ui.shared.rememberPlexLoginModel
-import com.yarmiplaytv.ui.shared.connectionStatusLine
 import com.yarmiplaytv.ui.shared.rememberSyncplayConnectModel
-import com.yarmiplaytv.ui.shared.isSharedServer
 import com.yarmiplaytv.ui.shared.serverDetail
 import com.yarmiplaytv.ui.shared.serverTag
 import com.yarmiplaytv.ui.shared.signOutOfServer
@@ -106,6 +108,14 @@ private fun ConnectForm(container: AppContainer, model: com.yarmiplaytv.ui.share
     FormColumn {
         OutlinedTextField(model.host, { model.host = it.trim() }, label = { Text("Server") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("field_host"),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+        if (model.discovered.isNotEmpty()) {
+            Text("Found on your network", color = AppColors.TextDim, style = MaterialTheme.typography.labelLarge)
+            model.discovered.forEach { server ->
+                OutlinedButton({ model.pick(server) }, Modifier.fillMaxWidth().testTag("found_${server.address}:${server.port}")) {
+                    Text(lanServerLabel(server), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(model.port, { model.port = it.filter(Char::isDigit).take(5) }, label = { Text("Port") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f).testTag("field_port"))

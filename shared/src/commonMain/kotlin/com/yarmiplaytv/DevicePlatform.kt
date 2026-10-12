@@ -11,6 +11,9 @@ expect object DevicePlatform {
     /** True on the Android emulator, where the host machine is reachable at 10.0.2.2. */
     val isEmulator: Boolean
 
+    /** On Wi-Fi or Ethernet, where LAN broadcasts may go out; never on mobile data. */
+    val onLocalNetwork: Boolean
+
     /** Runs [block] while LAN multicast replies can be received (Android needs a Wi-Fi multicast lock). */
     suspend fun <T> withMulticastLock(tag: String, block: suspend () -> T): T
 }
