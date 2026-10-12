@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.8.1" date="2026-10-12">
+      <description>
+        <p>MyAnimeList is switched on in this build. Connect it from the new MyAnimeList card on the home screen, next to Syncplay, your media servers and the files on this device.</p>
+      </description>
+    </release>
     <release version="1.8.0" date="2026-10-12">
       <description>
         <p>MyAnimeList: sign in and your list follows what you watch, even for shows numbered across seasons (with Undo), and rate shows or change their status from the player. Desktop picture-in-picture is now a floating window that keeps playing while you use the rest of the app (P, the button, or minimizing). The join form finds YarmiplayServerTVs on your network, and a DuckDNS server connects with TLS at home even without NAT loopback.</p>
