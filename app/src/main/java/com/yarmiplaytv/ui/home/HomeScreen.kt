@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,8 +41,9 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -136,11 +138,8 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
         }
         item(key = "whats-new") { TvWhatsNewCard(container, nav, Modifier.padding(horizontal = 48.dp)) }
         item(key = "tiles") {
-            // Tiles share the row width so they always fit inside the TV-safe area.
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 48.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
+            // Three to a row, sharing its width inside the TV-safe area, so their text has room to show in full.
+            TileGrid(Modifier.fillMaxWidth().padding(horizontal = 48.dp, vertical = 8.dp)) {
                 val (title, detail, color) = when (room.status) {
                     ConnectionStatus.CONNECTED -> Triple(
                         "Room: ${ManagedRooms.label(room.room)}",
@@ -154,23 +153,21 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                         AppColors.TextDim,
                     )
                 }
-                StatusTile(Icons.Filled.Groups, title, detail, color, Modifier.weight(1f).focusRequester(firstFocus)) { nav.push(Screen.SyncplayConnect) }
+                StatusTile(Icons.Filled.Groups, title, detail, color, Modifier.focusRequester(firstFocus)) { nav.push(Screen.SyncplayConnect) }
                 nowPlaying?.let { np ->
-                    StatusTile(Icons.Filled.PlayCircle, "Now playing", np.title, AppColors.Accent, Modifier.weight(1f)) { nav.push(Screen.Player) }
+                    StatusTile(Icons.Filled.PlayCircle, "Now playing", np.title, AppColors.Accent) { nav.push(Screen.Player) }
                 }
                 StatusTile(
                     Icons.Filled.Cloud,
                     serversTitle(JellyfinSource.KIND, jellyfin),
                     if (jellyfin.isNotEmpty()) serversDetail(jellyfin) else "Browse your media server",
                     if (jellyfin.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
-                    Modifier.weight(1f),
                 ) { nav.push(if (jellyfin.isEmpty()) Screen.JellyfinLogin else Screen.Servers) }
                 StatusTile(
                     Icons.Filled.Cloud,
                     serversTitle(PlexSource.KIND, plex),
                     if (plex.isNotEmpty()) serversDetail(plex) else "Browse your Plex server",
                     if (plex.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
-                    Modifier.weight(1f),
                 ) { nav.push(if (plex.isEmpty()) Screen.PlexLogin else Screen.Servers) }
                 if (container.mal.client.configured) {
                     val malAccount by container.settings.map { it.mal?.userName }.collectAsStateWithLifecycle(container.settings.value.mal?.userName)
@@ -180,7 +177,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                         "MyAnimeList",
                         user?.let { "Signed in as $it" } ?: "Keep your anime list up to date",
                         if (user != null) AppColors.Ready else AppColors.TextDim,
-                        Modifier.weight(1f).testTag("card_mal"),
+                        Modifier.testTag("card_mal"),
                     ) { nav.push(if (user == null) Screen.MalLogin else Screen.Mal) }
                 }
             }
@@ -206,6 +203,8 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                                 },
                                 onClick = { nav.push(Screen.Browse(lib)) },
                                 modifier = Modifier.width(260.dp),
+                                titleLines = Int.MAX_VALUE,
+                                subtitleLines = Int.MAX_VALUE,
                             )
                         }
                     }
@@ -242,6 +241,8 @@ private fun RecentRow(container: AppContainer, nav: Navigator, title: String, it
                     placeholderIcon = Icons.Filled.Movie,
                     onClick = { openItem(container, nav, item) },
                     modifier = Modifier.width(260.dp),
+                    titleLines = Int.MAX_VALUE,
+                    subtitleLines = Int.MAX_VALUE,
                 )
             }
         }
@@ -304,17 +305,43 @@ private fun UpdateNotice(container: AppContainer, state: UpdateState, onDismiss:
     }
 }
 
+/** A home tile: what it is and how it stands, all of it shown (the text wraps rather than being cut off). */
 @Composable
 private fun StatusTile(icon: ImageVector, title: String, detail: String, color: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    TvTile(onClick = onClick, modifier = modifier.height(120.dp)) {
+    TvTile(onClick = onClick, modifier = modifier.heightIn(min = 120.dp)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(icon, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(28.dp))
                 Spacer(Modifier.width(10.dp))
                 Dot(color)
             }
-            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(detail, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
         }
     }
 }
+
+/** The home tiles, [TILES_PER_ROW] to a row and as tall as the row's tile with the most text. */
+@Composable
+private fun TileGrid(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Layout(content, modifier) { measurables, constraints ->
+        val gap = TILE_GAP.roundToPx()
+        val width = constraints.maxWidth
+        val cellWidth = (width - gap * (TILES_PER_ROW - 1)) / TILES_PER_ROW
+        val rows = measurables.chunked(TILES_PER_ROW).map { row ->
+            val height = row.maxOf { it.minIntrinsicHeight(cellWidth) }
+            row.map { it.measure(Constraints.fixed(cellWidth, height)) }
+        }
+        val rowHeights = rows.map { row -> row.maxOf { it.height } }
+        layout(width, rowHeights.sum() + gap * (rows.size - 1).coerceAtLeast(0)) {
+            var y = 0
+            rows.forEachIndexed { i, row ->
+                row.forEachIndexed { j, tile -> tile.placeRelative(j * (cellWidth + gap), y) }
+                y += rowHeights[i] + gap
+            }
+        }
+    }
+}
+
+private const val TILES_PER_ROW = 3
+private val TILE_GAP = 20.dp

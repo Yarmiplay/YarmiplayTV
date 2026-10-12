@@ -1,9 +1,16 @@
 ﻿package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
@@ -12,6 +19,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
@@ -20,6 +28,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -28,11 +37,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.syncplay.ConnectionStatus
@@ -53,9 +65,13 @@ private val tabs = listOf(
     Tab(Screen.Settings, "Settings", Icons.Filled.Settings),
 )
 
+/** How the sections are reached: a bar at the bottom (phones), a rail of icons (tablets) or a side list (desktop). */
+private enum class SectionNav { BAR, RAIL, SIDEBAR }
+
 /**
- * Touch UI for phones and tablets: bottom navigation on phones, a navigation rail on tablets. [stack] is the screen
- * stack; Android keeps it outside the activity so a recreated activity comes back on the same screen.
+ * The phone, tablet and desktop UI: bottom navigation on phones, a navigation rail on tablets, and on desktop a side
+ * list like the Settings categories. [stack] is the screen stack; Android keeps it outside the activity so a
+ * recreated activity comes back on the same screen.
  */
 @Composable
 fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateList<Screen> = remember { mutableStateListOf(Screen.Home) }) {
@@ -97,7 +113,12 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                 // Unlike the other screens, the player isn't inside a Scaffold that sets this.
                 CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
             } else {
-                MobileScaffold(snackbar, selectedTab, useRail = kind.isLarge, onTab = { if (it.screen == Screen.Player) nav.push(Screen.Player) else nav.switchTab(it.screen) }) {
+                val style = when {
+                    kind == DeviceKind.DESKTOP -> SectionNav.SIDEBAR
+                    kind.isLarge -> SectionNav.RAIL
+                    else -> SectionNav.BAR
+                }
+                MobileScaffold(snackbar, selectedTab, style, onTab = { if (it.screen == Screen.Player) nav.push(Screen.Player) else nav.switchTab(it.screen) }) {
                     saveable.SaveableStateProvider(screen.key) {
                         when (screen) {
                             Screen.Home -> MobileHomeScreen(container, nav, kind)
@@ -131,12 +152,12 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
 }
 
 @Composable
-private fun MobileScaffold(snackbar: SnackbarHostState, selected: Tab, useRail: Boolean, onTab: (Tab) -> Unit, content: @Composable () -> Unit) {
+private fun MobileScaffold(snackbar: SnackbarHostState, selected: Tab, style: SectionNav, onTab: (Tab) -> Unit, content: @Composable () -> Unit) {
     Scaffold(
         containerColor = AppColors.Background,
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
-            if (!useRail) {
+            if (style == SectionNav.BAR) {
                 NavigationBar(containerColor = AppColors.Surface) {
                     tabs.forEach { tab ->
                         NavigationBarItem(
@@ -152,8 +173,8 @@ private fun MobileScaffold(snackbar: SnackbarHostState, selected: Tab, useRail: 
         },
     ) { padding ->
         Row(Modifier.fillMaxSize().padding(padding)) {
-            if (useRail) {
-                NavigationRail(containerColor = AppColors.Surface) {
+            when (style) {
+                SectionNav.RAIL -> NavigationRail(containerColor = AppColors.Surface) {
                     tabs.forEach { tab ->
                         NavigationRailItem(
                             selected = tab == selected,
@@ -164,9 +185,28 @@ private fun MobileScaffold(snackbar: SnackbarHostState, selected: Tab, useRail: 
                         )
                     }
                 }
+                SectionNav.SIDEBAR -> {
+                    Sidebar(selected, onTab)
+                    VerticalDivider(color = AppColors.SurfaceHigh)
+                }
+                SectionNav.BAR -> Unit
             }
             Box(Modifier.weight(1f).fillMaxSize()) { content() }
         }
     }
 }
 
+/** Desktop: the app's name, then the sections as a list like the Settings categories. */
+@Composable
+private fun Sidebar(selected: Tab, onTab: (Tab) -> Unit) {
+    Column(Modifier.width(SIDEBAR_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState()).padding(12.dp).testTag("sidebar")) {
+        Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(appLogoPainter(), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(32.dp))
+            Spacer(Modifier.width(10.dp))
+            Text("YarmiplayTV", style = MaterialTheme.typography.titleLarge)
+        }
+        tabs.forEach { tab -> SideNavItem(tab.label, tab.icon, tab == selected, { onTab(tab) }, Modifier.testTag("tab_${tab.label}")) }
+    }
+}
+
+private val SIDEBAR_WIDTH = 220.dp

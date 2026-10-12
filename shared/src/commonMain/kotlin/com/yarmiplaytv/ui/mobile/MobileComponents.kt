@@ -21,6 +21,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -43,6 +45,7 @@ fun SectionHeader(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
+/** A home screen card: what it is and how it stands, all of it shown (the text wraps rather than being cut off). */
 fun StatusCard(icon: ImageVector, title: String, detail: String, dot: Color, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Card(
         onClick = onClick,
@@ -50,13 +53,15 @@ fun StatusCard(icon: ImageVector, title: String, detail: String, dot: Color, onC
         colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
         shape = RoundedCornerShape(16.dp),
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Fills the card when a grid row makes it taller than its text, with the text in the middle.
+        Row(Modifier.fillMaxSize().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(detail, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
             }
+            Spacer(Modifier.width(12.dp))
             Box(Modifier.size(10.dp).clip(CircleShape).background(dot))
         }
     }
@@ -72,6 +77,9 @@ fun PosterTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     badge: String? = null,
+    /** At most this many lines of the title and of the subtitle; the rest is cut off with an ellipsis. */
+    titleLines: Int = 2,
+    subtitleLines: Int = 1,
 ) {
     Column(modifier.clickable(onClick = onClick)) {
         Box(
@@ -90,11 +98,32 @@ fun PosterTile(
                 )
             }
         }
-        Text(title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+        Text(title, style = MaterialTheme.typography.bodyMedium, maxLines = titleLines, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         if (!subtitle.isNullOrBlank()) {
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim, maxLines = subtitleLines, overflow = TextOverflow.Ellipsis)
         }
     }
+}
+
+/**
+ * An entry in a side list of sections, like the Settings categories on wide windows and the desktop's sections: the
+ * chosen one on a lighter background with its icon in the accent colour.
+ */
+@Composable
+fun SideNavItem(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    NavigationDrawerItem(
+        label = { Text(label) },
+        icon = { Icon(icon, null) },
+        selected = selected,
+        onClick = onClick,
+        colors = NavigationDrawerItemDefaults.colors(
+            selectedContainerColor = AppColors.SurfaceHigh,
+            unselectedContainerColor = Color.Transparent,
+            selectedIconColor = AppColors.Accent,
+            selectedTextColor = AppColors.Text,
+        ),
+        modifier = modifier.padding(vertical = 2.dp),
+    )
 }
 
 @Composable

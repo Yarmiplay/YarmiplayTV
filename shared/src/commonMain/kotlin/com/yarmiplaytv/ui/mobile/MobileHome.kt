@@ -90,10 +90,15 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
     val cardWidth = if (kind.isLarge) 260.dp else 200.dp
     LazyColumn(Modifier.fillMaxSize().testTag("home"), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
-            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(appLogoPainter(), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(36.dp))
-                Spacer(Modifier.width(12.dp))
-                Text("YarmiplayTV", style = MaterialTheme.typography.headlineSmall)
+            // Desktop has the app's name at the top of its side list; there Home is titled like the other sections.
+            if (kind == DeviceKind.DESKTOP) {
+                MobileTopBar("Home", nav, showBack = false)
+            } else {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(appLogoPainter(), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(36.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text("YarmiplayTV", style = MaterialTheme.typography.headlineSmall)
+                }
             }
         }
         item { UpdateBanner(container, Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) }
@@ -178,6 +183,8 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
                             },
                             onClick = { nav.push(Screen.Browse(lib)) },
                             modifier = Modifier.width(cardWidth),
+                            titleLines = Int.MAX_VALUE,
+                            subtitleLines = Int.MAX_VALUE,
                         )
                     }
                 }
@@ -211,6 +218,8 @@ private fun RecentRow(container: AppContainer, nav: Navigator, title: String, it
                 placeholder = Icons.Filled.Movie,
                 onClick = { openItem(container, nav, item) },
                 modifier = Modifier.width(cardWidth),
+                titleLines = Int.MAX_VALUE,
+                subtitleLines = Int.MAX_VALUE,
             )
         }
     }
@@ -219,7 +228,10 @@ private fun RecentRow(container: AppContainer, nav: Navigator, title: String, it
 private val MinCardWidth = 280.dp
 private val CardGap = 10.dp
 
-/** One column on phones; on wider screens as many equal columns of at least [MinCardWidth] as fit. */
+/**
+ * One column on phones; on wider screens as many equal columns of at least [MinCardWidth] as fit. The cards of a
+ * row are as tall as the one with the most text.
+ */
 @Composable
 private fun CardGrid(multiColumn: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Layout(content, modifier) { measurables, constraints ->
@@ -227,7 +239,10 @@ private fun CardGrid(multiColumn: Boolean, modifier: Modifier = Modifier, conten
         val width = constraints.maxWidth
         val columns = if (multiColumn) ((width + gap) / (MinCardWidth.roundToPx() + gap)).coerceIn(1, measurables.size.coerceAtLeast(1)) else 1
         val cellWidth = (width - gap * (columns - 1)) / columns
-        val rows = measurables.map { it.measure(Constraints.fixedWidth(cellWidth)) }.chunked(columns)
+        val rows = measurables.chunked(columns).map { row ->
+            val height = row.maxOf { it.minIntrinsicHeight(cellWidth) }
+            row.map { it.measure(Constraints.fixed(cellWidth, height)) }
+        }
         val rowHeights = rows.map { row -> row.maxOf { it.height } }
         val height = rowHeights.sum() + gap * (rows.size - 1).coerceAtLeast(0)
         layout(width, height) {

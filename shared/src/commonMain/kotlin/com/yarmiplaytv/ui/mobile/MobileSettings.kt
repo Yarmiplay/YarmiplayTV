@@ -30,8 +30,6 @@ import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -93,19 +91,7 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                 Row(Modifier.fillMaxSize().testTag("settings_two_panes")) {
                     Column(Modifier.width(260.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(12.dp)) {
                         categories.forEach { c ->
-                            NavigationDrawerItem(
-                                label = { Text(c.title) },
-                                icon = { Icon(c.icon, null) },
-                                selected = c == category,
-                                onClick = { selected = c.name },
-                                colors = NavigationDrawerItemDefaults.colors(
-                                    selectedContainerColor = AppColors.SurfaceHigh,
-                                    unselectedContainerColor = AppColors.Background,
-                                    selectedIconColor = AppColors.Accent,
-                                    selectedTextColor = AppColors.Text,
-                                ),
-                                modifier = Modifier.padding(vertical = 2.dp).testTag("settings_category_${c.name.lowercase()}"),
-                            )
+                            SideNavItem(c.title, c.icon, c == category, { selected = c.name }, Modifier.testTag("settings_category_${c.name.lowercase()}"))
                         }
                     }
                     VerticalDivider(color = AppColors.SurfaceHigh)

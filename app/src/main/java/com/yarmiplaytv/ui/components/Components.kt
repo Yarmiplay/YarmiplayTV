@@ -272,6 +272,9 @@ fun PosterCard(
     modifier: Modifier = Modifier,
     placeholderIcon: ImageVector? = null,
     badge: String? = null,
+    /** At most this many lines of the title and of the subtitle; the rest is cut off with an ellipsis. */
+    titleLines: Int = 1,
+    subtitleLines: Int = 1,
 ) {
     Column(modifier) {
         Surface(
@@ -292,9 +295,9 @@ fun PosterCard(
                 Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) { Pill(badge, AppColors.Accent) }
             }
         }
-        Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp, start = 2.dp))
+        Text(title, style = MaterialTheme.typography.titleSmall, maxLines = titleLines, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp, start = 2.dp))
         if (subtitle != null) {
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 2.dp))
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim, maxLines = subtitleLines, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 2.dp))
         }
     }
 }
