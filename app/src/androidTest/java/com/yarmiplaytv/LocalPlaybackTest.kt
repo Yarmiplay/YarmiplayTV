@@ -356,13 +356,15 @@ class LocalPlaybackTest {
      * full screen if the system lets us, else the activity and its pinned task go.
      */
     private fun closePictureInPicture(activity: android.app.Activity) {
-        if (!activity.isInPictureInPictureMode) {
-            bringBack()
-            return
-        }
+        // A Home-started PiP can still be on its way in when a slow emulator's test gives up, and would then outlive
+        // it: only trust the window once it has focus, full size, and stays that way for a moment.
         repeat(3) {
             bringBack()
-            if (runCatching { waitFor(3_000) { !activity.isInPictureInPictureMode } }.isSuccess) return
+            val settled = runCatching { waitFor(3_000) { !activity.isInPictureInPictureMode && activity.hasWindowFocus() } }.isSuccess
+            if (settled) {
+                Thread.sleep(1_000)
+                if (!activity.isInPictureInPictureMode) return
+            }
         }
         compose.runOnUiThread { activity.finishAndRemoveTask() }
         waitFor(10_000) { activity.isDestroyed }
