@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.7.6" date="2026-10-12">
+      <description>
+        <p>Previous and next buttons in the player move the room's playlist (desktop: B/N and the media keys). While one entry plays, the next is looked up ahead of time, and when only another viewer has it, its start is fetched through the file relay, so moving on starts at once. A new operator password now shows as soon as the room is created.</p>
+      </description>
+    </release>
     <release version="1.7.5" date="2026-10-11">
       <description>
         <p>Create a managed room right from the join form; the room name and operator password each have their own copy button; the Room tab lists the shared playlist first, then chat, the people in the room, and last switching rooms.</p>
