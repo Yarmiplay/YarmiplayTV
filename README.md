@@ -32,7 +32,8 @@ desktops, with [mpv](https://mpv.io/) built in. Media comes from your [Jellyfin]
   and a room created from the join form is saved as the one to join next time. Managed rooms show their chosen
   name with a lock instead of the hash. The Room tab lists the shared playlist first, then the chat, the
   people in the room, and last switching rooms.
-- MyAnimeList: sign in under Settings > MyAnimeList and your list follows what you watch. When an episode is 90%
+- MyAnimeList: sign in from the MyAnimeList card on the home screen (or Settings > MyAnimeList) and your list
+  follows what you watch. When an episode is 90%
   watched, its progress is updated (and the show's status: watching, or completed with a finish date at the last
   episode; a completed show you watch again counts as a rewatch), with Undo, or after asking if you prefer. The
   app works out which MyAnimeList entry an episode is, from your media server (or the file and folder names):

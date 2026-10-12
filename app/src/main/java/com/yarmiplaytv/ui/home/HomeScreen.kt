@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Groups
@@ -53,8 +54,6 @@ import com.yarmiplaytv.media.jellyfin.JellyfinSource
 import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.ManagedRooms
-import com.yarmiplaytv.ui.nav.Navigator
-import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.browse.openItem
 import com.yarmiplaytv.ui.components.Dot
 import com.yarmiplaytv.ui.components.IconAction
@@ -62,12 +61,15 @@ import com.yarmiplaytv.ui.components.Pill
 import com.yarmiplaytv.ui.components.PosterCard
 import com.yarmiplaytv.ui.components.SectionTitle
 import com.yarmiplaytv.ui.components.TvTile
+import com.yarmiplaytv.ui.nav.Navigator
+import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.ServerRecent
 import com.yarmiplaytv.ui.shared.recentByServer
 import com.yarmiplaytv.ui.shared.serversDetail
 import com.yarmiplaytv.ui.shared.serversTitle
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.update.UpdateState
+import kotlinx.coroutines.flow.map
 
 @Composable
 fun HomeScreen(container: AppContainer, nav: Navigator) {
@@ -157,6 +159,17 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                     if (plex.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
                     Modifier.weight(1f),
                 ) { nav.push(if (plex.isEmpty()) Screen.PlexLogin else Screen.Servers) }
+                if (container.mal.client.configured) {
+                    val malAccount by container.settings.map { it.mal?.userName }.collectAsStateWithLifecycle(container.settings.value.mal?.userName)
+                    val user = malAccount
+                    StatusTile(
+                        Icons.Filled.Bookmarks,
+                        "MyAnimeList",
+                        user?.let { "Signed in as $it" } ?: "Keep your anime list up to date",
+                        if (user != null) AppColors.Ready else AppColors.TextDim,
+                        Modifier.weight(1f).testTag("card_mal"),
+                    ) { nav.push(if (user == null) Screen.MalLogin else Screen.Settings) }
+                }
             }
         }
         if (loadError != null) {

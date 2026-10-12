@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Groups
@@ -56,6 +57,7 @@ import com.yarmiplaytv.ui.shared.recentByServer
 import com.yarmiplaytv.ui.shared.serversDetail
 import com.yarmiplaytv.ui.shared.serversTitle
 import com.yarmiplaytv.ui.theme.AppColors
+import kotlinx.coroutines.flow.map
 
 @Composable
 fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) {
@@ -136,6 +138,18 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
                     { nav.push(Screen.LocalFiles) },
                     Modifier.fillMaxWidth().testTag("card_local"),
                 )
+                if (container.mal.client.configured) {
+                    val malAccount by container.settings.map { it.mal?.userName }.collectAsStateWithLifecycle(container.settings.value.mal?.userName)
+                    val user = malAccount
+                    StatusCard(
+                        Icons.Filled.Bookmarks,
+                        "MyAnimeList",
+                        user?.let { "Signed in as $it · your list follows what you watch" } ?: "Keep your anime list up to date as you watch",
+                        if (user != null) AppColors.Ready else AppColors.TextDim,
+                        { if (user == null) nav.push(Screen.MalLogin) else nav.switchTab(Screen.Settings) },
+                        Modifier.fillMaxWidth().testTag("card_mal"),
+                    )
+                }
             }
         }
         loadError?.let { err ->
