@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.8.2" date="2026-10-12">
+      <description>
+        <p>A cleaner window while the desktop app updates itself on launch: the app's logo, the version and progress, and a quiet Skip for now (also Esc).</p>
+      </description>
+    </release>
     <release version="1.8.1" date="2026-10-12">
       <description>
         <p>MyAnimeList is switched on in this build. Connect it from the new MyAnimeList card on the home screen, next to Syncplay, your media servers and the files on this device.</p>
