@@ -55,8 +55,8 @@ New to it? The [user manual](https://tv.yarmiplay.com/manual/) explains everythi
   and trusts a show that's already on your list. Only when it still isn't sure does it ask you to pick, and it
   remembers your choice for the show. The player's MyAnimeList panel shows
   the entry and lets you change the episodes watched, status and score, fix a wrong match or stop tracking a show;
-  shows in the library have it too. You sign in on MyAnimeList's own page (in your browser, or on TV in a web
-  view); the app keeps only its tokens, on the device, and signing out deletes everything it kept. Builds need a
+  shows in the library have it too. You sign in on MyAnimeList's own page (in your browser on desktop, or on Android
+  in a web view); the app keeps only its tokens, on the device, and signing out deletes everything it kept. Builds need a
   MyAnimeList Client ID (`MAL_CLIENT_ID` in `~/.gradle/gradle.properties` or the CI secret; never in the
   repository), registered with the redirect URL `http://localhost:47821/mal-callback`.
 - Like Syncplay, it warns when someone's copy of a file differs from yours: the playlist marks the entry when

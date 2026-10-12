@@ -50,8 +50,8 @@ unless you turn it off, to GitHub to check for a new version.
   it is and whether it's paused, and marks it watched once 90% is played. This goes only to the servers you
   signed in to, so they can show "continue watching" and watched marks. When several of your servers have the
   same file, each of them is told. Turn it off with **Report progress to your media servers** in Settings.
-- **MyAnimeList, only when you sign in to it:** you sign in on MyAnimeList's own page (in your browser, or on
-  a TV in a web view showing that page); the app never sees or stores your MyAnimeList password, only the sign-in
+- **MyAnimeList, only when you sign in to it:** you sign in on MyAnimeList's own page (in your browser on a
+  computer, or on Android in a web view showing that page); the app never sees or stores your MyAnimeList password, only the sign-in
   tokens MyAnimeList gives it (OAuth). With them the app asks MyAnimeList for your user name and picture, looks up
   the shows you watch (their titles, episode counts and related seasons) and your list entries for them, and,
   when you've watched an episode or change something in the MyAnimeList panel, updates your list: the episodes

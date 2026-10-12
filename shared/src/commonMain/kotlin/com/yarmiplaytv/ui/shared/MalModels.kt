@@ -8,7 +8,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.yarmiplaytv.AppContainer
-import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.media.EpisodeInfo
 import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.MediaItemType
@@ -32,13 +31,9 @@ const val MAL_PRIVACY_NOTE =
 /** Plain-text attribution for MyAnimeList content (no logo, no claim of endorsement). */
 const val MAL_ATTRIBUTION = "Data from MyAnimeList"
 
-/** Brings the phone app back from the browser after signing in (an intent filter on MainActivity). */
-const val MAL_APP_LINK = "yarmiplaytv://mal-done"
-
 /**
- * Signing in to MyAnimeList with OAuth: in the browser with a loopback callback on desktop, phones and tablets, or
- * in a web view that catches the redirect on TV ([onRedirect]). The password is only ever typed on MyAnimeList's
- * page.
+ * Signing in to MyAnimeList with OAuth: in the browser with a loopback callback on desktop, or in a web view that
+ * catches the redirect on Android ([onRedirect]). The password is only ever typed on MyAnimeList's page.
  */
 class MalLoginModel(private val container: AppContainer, private val scope: CoroutineScope) {
     var status by mutableStateOf<String?>(null)
@@ -68,10 +63,9 @@ class MalLoginModel(private val container: AppContainer, private val scope: Coro
         val url = begin()
         status = "Sign in on MyAnimeList's page in your browser, then come back here."
         val expected = state
-        val appLink = MAL_APP_LINK.takeIf { container.deviceKind != DeviceKind.DESKTOP }
         job = scope.launch {
             try {
-                val code = MalCallbackServer().await(expected, appLink = appLink)
+                val code = MalCallbackServer().await(expected)
                 finish(code, onSignedIn)
             } catch (e: CancellationException) {
                 throw e
@@ -87,7 +81,7 @@ class MalLoginModel(private val container: AppContainer, private val scope: Coro
         }
     }
 
-    /** TV web view: [url] is where the page is going. True (handled here) when it's the sign-in's redirect. */
+    /** Android web view: [url] is where the page is going. True (handled here) when it's the sign-in's redirect. */
     fun onRedirect(url: String, onSignedIn: () -> Unit): Boolean {
         if (!url.startsWith(MalClient.REDIRECT_URI)) return false
         val query = MalCallbackServer.parseQuery(url.substringAfter('?', ""))

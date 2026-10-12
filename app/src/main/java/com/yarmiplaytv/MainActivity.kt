@@ -53,8 +53,6 @@ class MainActivity : ComponentActivity() {
      */
     private fun handleIntent(intent: Intent?) {
         val data = intent?.data?.takeIf { intent.action == Intent.ACTION_VIEW }
-        // Back from signing in to MyAnimeList in the browser: bringing the app to the front was all it had to do.
-        if (data?.scheme == "yarmiplaytv") return
         if (data != null && (data.scheme == "content" || data.scheme == "file")) {
             container.playlist.playLocal(data.toString(), inRoom = false)
             return

@@ -139,3 +139,18 @@ expect fun uriFileName(uri: String): String?
 
 @Composable
 expect fun appLogoPainter(): Painter
+
+/**
+ * Signing in to MyAnimeList happens on its page inside the app ([MalSignInPage]) on Android: in the browser the app
+ * would be in the background, where Android freezes or closes it and the redirect to localhost goes unanswered.
+ * Desktop opens the browser and catches the redirect with a loopback server.
+ */
+expect val malSignInInApp: Boolean
+
+/**
+ * MyAnimeList's sign-in page at [url] in a web view (Android; nothing on desktop). [onNavigate] sees where the page
+ * goes and returns true for the redirect it handled; the app never reads the form, and the web view's cookies and
+ * storage are deleted afterwards.
+ */
+@Composable
+expect fun MalSignInPage(url: String, onNavigate: (String) -> Boolean, modifier: Modifier = Modifier)

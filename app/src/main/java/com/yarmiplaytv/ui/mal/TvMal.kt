@@ -1,11 +1,5 @@
 package com.yarmiplaytv.ui.mal
 
-import android.annotation.SuppressLint
-import android.webkit.CookieManager
-import android.webkit.WebResourceRequest
-import android.webkit.WebStorage
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,7 +20,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,7 +35,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -61,6 +53,7 @@ import com.yarmiplaytv.ui.components.ToggleRow
 import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.components.TvTile
 import com.yarmiplaytv.ui.components.ValueRow
+import com.yarmiplaytv.ui.mobile.MalSignInPage
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
@@ -84,7 +77,7 @@ fun MalLoginScreen(container: AppContainer, nav: Navigator) {
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     val page = url
     if (page != null && model.status == null && model.error == null) {
-        MalWebView(page) { target -> model.onRedirect(target) { nav.back() } }
+        MalSignInPage(page, { target -> model.onRedirect(target) { nav.back() } }, Modifier.fillMaxSize())
         return
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 96.dp, vertical = 40.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -100,34 +93,6 @@ fun MalLoginScreen(container: AppContainer, nav: Navigator) {
         model.error?.let { Text(it, color = AppColors.Error) }
         Text(MAL_ATTRIBUTION, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
     }
-}
-
-@SuppressLint("SetJavaScriptEnabled")
-@Composable
-private fun MalWebView(url: String, onNavigate: (String) -> Boolean) {
-    DisposableEffect(Unit) {
-        onDispose {
-            // Nothing of the sign-in stays behind in the web view.
-            CookieManager.getInstance().removeAllCookies(null)
-            WebStorage.getInstance().deleteAllData()
-        }
-    }
-    AndroidView(
-        factory = { context ->
-            WebView(context).apply {
-                // MyAnimeList's page needs JavaScript; the app adds none of its own.
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = onNavigate(request.url.toString())
-                }
-                loadUrl(url)
-                requestFocus()
-            }
-        },
-        onRelease = { it.clearCache(true); it.destroy() },
-        modifier = Modifier.fillMaxSize().background(AppColors.Background),
-    )
 }
 
 /** A show from the library on MyAnimeList (TV). */

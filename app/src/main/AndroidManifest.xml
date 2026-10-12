@@ -44,13 +44,6 @@
                 <data android:scheme="https" />
                 <data android:mimeType="video/*" />
             </intent-filter>
-            <!-- Back from the browser after signing in to MyAnimeList (the sign-in page links here) -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="yarmiplaytv" android:host="mal-done" />
-            </intent-filter>
         </activity>
     </application>
 </manifest>

@@ -239,3 +239,8 @@ actual fun appLogoPainter(): Painter {
     }
     return rememberVectorPainter(vector)
 }
+
+actual val malSignInInApp = false
+
+@Composable
+actual fun MalSignInPage(url: String, onNavigate: (String) -> Boolean, modifier: Modifier) = Unit

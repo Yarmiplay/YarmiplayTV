@@ -199,7 +199,7 @@ YarmiplayTV can keep your MyAnimeList list up to date as you watch.
 ### Signing in
 
 Choose the **MyAnimeList** card on the home screen. You sign in on MyAnimeList's own page: in your browser on
-phones, tablets and computers, or in a page inside the app on TV. YarmiplayTV never sees your password. Once
+computers, or in a page inside the app on phones, tablets and TV. YarmiplayTV never sees your password. Once
 you're signed in, the same card opens the **MyAnimeList screen**: your account, what's playing, your list
 (watching, plan to watch, completed), the shows you matched by hand, the shows you don't track, and updates
 waiting to be sent.

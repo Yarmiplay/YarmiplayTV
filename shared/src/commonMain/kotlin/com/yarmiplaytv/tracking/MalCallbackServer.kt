@@ -21,10 +21,9 @@ import java.net.URLDecoder
 class MalCallbackServer(private val port: Int = MalClient.CALLBACK_PORT) {
 
     /**
-     * Waits (up to [timeoutMs]) for the redirect with [state] and returns its code. [appLink], when set, is offered on
-     * the reply page to go back to the app (on phones, where the browser is in front).
+     * Waits (up to [timeoutMs]) for the redirect with [state] and returns its code.
      */
-    suspend fun await(state: String, timeoutMs: Long = 5 * 60_000L, appLink: String? = null): String = withTimeout(timeoutMs) {
+    suspend fun await(state: String, timeoutMs: Long = 5 * 60_000L): String = withTimeout(timeoutMs) {
         val sockets = listOf("127.0.0.1", "::1").mapNotNull { host ->
             runCatching { ServerSocket(port, 8, InetAddress.getByName(host)).apply { soTimeout = 500 } }.getOrNull()
         }
@@ -32,7 +31,7 @@ class MalCallbackServer(private val port: Int = MalClient.CALLBACK_PORT) {
         val result = CompletableDeferred<String>()
         try {
             coroutineScope {
-                val listeners = sockets.map { socket -> launch(Dispatchers.IO) { listen(socket, state, appLink, result) } }
+                val listeners = sockets.map { socket -> launch(Dispatchers.IO) { listen(socket, state, result) } }
                 val code = result.await()
                 listeners.forEach { it.cancel() }
                 code
@@ -42,7 +41,7 @@ class MalCallbackServer(private val port: Int = MalClient.CALLBACK_PORT) {
         }
     }
 
-    private suspend fun listen(server: ServerSocket, state: String, appLink: String?, result: CompletableDeferred<String>) = coroutineScope {
+    private suspend fun listen(server: ServerSocket, state: String, result: CompletableDeferred<String>) = coroutineScope {
         while (isActive && !result.isCompleted) {
             val client = try {
                 server.accept()
@@ -57,16 +56,16 @@ class MalCallbackServer(private val port: Int = MalClient.CALLBACK_PORT) {
                 val target = requestLine.split(' ').getOrNull(1).orEmpty()
                 val query = parseQuery(target.substringAfter('?', ""))
                 val (status, page) = when {
-                    !target.startsWith("/mal-callback") -> 404 to page("Not found", null)
-                    query["state"] != state -> 400 to page("This sign-in link is out of date. Start signing in again in YarmiplayTV.", null)
+                    !target.startsWith("/mal-callback") -> 404 to page("Not found")
+                    query["state"] != state -> 400 to page("This sign-in link is out of date. Start signing in again in YarmiplayTV.")
                     query["error"] != null -> {
                         result.completeExceptionally(IOException("MyAnimeList sign-in was cancelled (${query["error"]})"))
-                        200 to page("Sign-in cancelled. You can close this tab.", appLink)
+                        200 to page("Sign-in cancelled. You can close this tab.")
                     }
-                    query["code"].isNullOrEmpty() -> 400 to page("MyAnimeList didn't send a sign-in code. Try again.", null)
+                    query["code"].isNullOrEmpty() -> 400 to page("MyAnimeList didn't send a sign-in code. Try again.")
                     else -> {
                         result.complete(query.getValue("code")!!)
-                        200 to page("Signed in to MyAnimeList. You can close this tab and go back to YarmiplayTV.", appLink)
+                        200 to page("Signed in to MyAnimeList. You can close this tab and go back to YarmiplayTV.")
                     }
                 }
                 val body = page.toByteArray()
@@ -79,11 +78,10 @@ class MalCallbackServer(private val port: Int = MalClient.CALLBACK_PORT) {
         }
     }
 
-    private fun page(message: String, appLink: String?): String {
-        val link = appLink?.let { """<p><a href="$it" style="font-size:1.2em">Back to YarmiplayTV</a></p>""" }.orEmpty()
+    private fun page(message: String): String {
         return """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">""" +
             """<title>YarmiplayTV</title></head><body style="font-family:sans-serif;padding:2em;background:#111;color:#eee">""" +
-            "<p>${message.replace("<", "&lt;")}</p>$link</body></html>"
+            "<p>${message.replace("<", "&lt;")}</p></body></html>"
     }
 
     companion object {

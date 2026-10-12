@@ -88,6 +88,17 @@ import kotlinx.coroutines.launch
 fun MobileMalLoginScreen(container: AppContainer, nav: Navigator) {
     val model = rememberMalLoginModel(container)
     val uriHandler = LocalUriHandler.current
+    var page by remember { mutableStateOf<String?>(null) }
+    val signingIn = page?.takeIf { model.status == null && model.error == null }
+    if (signingIn != null) {
+        // Back leaves MyAnimeList's page for the screen before it.
+        PlatformBackHandler { page = null }
+        Column(Modifier.fillMaxSize()) {
+            MobileTopBar("MyAnimeList", nav, showBack = true, onBack = { page = null })
+            MalSignInPage(signingIn, { target -> model.onRedirect(target) { nav.back() } }, Modifier.fillMaxSize().imePadding().testTag("mal_page"))
+        }
+        return
+    }
     Column(Modifier.fillMaxSize()) {
         MobileTopBar("MyAnimeList", nav)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -99,7 +110,10 @@ fun MobileMalLoginScreen(container: AppContainer, nav: Navigator) {
                 Text(MAL_PRIVACY_NOTE)
                 TextButton({ uriHandler.openUri(PRIVACY_POLICY_URL) }, Modifier.testTag("mal_privacy")) { Text("Privacy policy") }
                 Button(
-                    { model.signInWithBrowser(uriHandler::openUri) { nav.back() } },
+                    {
+                        if (malSignInInApp) page = model.begin()
+                        else model.signInWithBrowser(uriHandler::openUri) { nav.back() }
+                    },
                     enabled = !model.busy,
                     modifier = Modifier.testTag("mal_sign_in"),
                 ) { Text("Sign in on MyAnimeList") }
