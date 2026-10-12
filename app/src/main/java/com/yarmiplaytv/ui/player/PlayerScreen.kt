@@ -21,13 +21,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Downloading
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Forward10
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Pause
@@ -37,6 +36,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -54,9 +55,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -68,11 +69,18 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.player.SurfacePlayer
-import com.yarmiplaytv.relay.RelayHint
 import com.yarmiplaytv.player.TrackType
-import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.relay.RelayHint
 import com.yarmiplaytv.sync.PlaylistStatus
+import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.ManagedRooms
+import com.yarmiplaytv.ui.components.ActionButton
+import com.yarmiplaytv.ui.components.Dot
+import com.yarmiplaytv.ui.components.IconAction
+import com.yarmiplaytv.ui.components.Panel
+import com.yarmiplaytv.ui.components.Pill
+import com.yarmiplaytv.ui.components.ToastHost
+import com.yarmiplaytv.ui.mal.MalPanel
 import com.yarmiplaytv.ui.mobile.PictureInPicture
 import com.yarmiplaytv.ui.mobile.RelayDownloadBar
 import com.yarmiplaytv.ui.mobile.pictureInPictureLabel
@@ -80,16 +88,10 @@ import com.yarmiplaytv.ui.mobile.rememberPictureInPicture
 import com.yarmiplaytv.ui.mobile.rememberRelaySave
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
-import com.yarmiplaytv.ui.components.ActionButton
-import com.yarmiplaytv.ui.components.Dot
-import com.yarmiplaytv.ui.components.IconAction
-import com.yarmiplaytv.ui.components.Panel
-import com.yarmiplaytv.ui.components.Pill
-import com.yarmiplaytv.ui.components.ToastHost
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.delay
 
-internal enum class PanelKind { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES }
+internal enum class PanelKind { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES, MAL }
 
 internal sealed interface Overlay {
     data object Hidden : Overlay
@@ -234,6 +236,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
         }
 
         ToastHost(container.sync.toasts, Modifier.align(Alignment.TopStart).padding(32.dp))
+        TvMalNotice(container, Modifier.align(Alignment.TopCenter).padding(top = 32.dp))
 
         val flashVisible = remember(seekFlash) { mutableStateOf(seekFlash != 0L) }
         LaunchedEffect(seekFlash) { delay(1800); flashVisible.value = false }
@@ -273,6 +276,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                     PanelKind.CHAT -> ChatPanel(container, panelFocus)
                     PanelKind.AUDIO -> TracksPanel(container, TrackType.AUDIO, panelFocus)
                     PanelKind.SUBTITLES -> TracksPanel(container, TrackType.SUBTITLE, panelFocus)
+                    PanelKind.MAL -> MalPanel(container, panelFocus)
                 }
             }
         }
@@ -504,7 +508,8 @@ private fun ControlsBar(
                 Triple(PanelKind.CHAT, Icons.Filled.Forum, "Chat"),
                 Triple(PanelKind.AUDIO, Icons.Filled.Audiotrack, "Audio"),
                 Triple(PanelKind.SUBTITLES, Icons.Filled.Subtitles, "Subtitles"),
-            ).forEach { (kind, icon, label) ->
+                Triple(PanelKind.MAL, Icons.Filled.Bookmarks, "MyAnimeList").takeIf { container.mal.client.configured },
+            ).filterNotNull().forEach { (kind, icon, label) ->
                 IconAction(icon, label, { onOpenPanel(kind) }, Modifier.focusRequester(panelButtons.getValue(kind)))
             }
             IconAction(Icons.Filled.Home, "Browse", onHome)
@@ -531,4 +536,25 @@ private fun RoomChip(room: com.yarmiplaytv.syncplay.RoomState, streaming: String
     } else {
         Pill(text, color, modifier)
     }
+}
+
+/** MyAnimeList's message on TV: text only (a remote can't reach it); Undo and the picker are in the panel. */
+@Composable
+private fun TvMalNotice(container: AppContainer, modifier: Modifier = Modifier) {
+    val notice by container.mal.notice.collectAsStateWithLifecycle()
+    val n = notice ?: return
+    LaunchedEffect(n) {
+        delay(if (n.confirm != null || n.pick) 30_000 else 10_000)
+        container.mal.dismissNotice()
+    }
+    val hint = when {
+        n.confirm != null -> " · answer in the MyAnimeList panel"
+        n.pick -> ""
+        n.undo != null -> " · Undo in the MyAnimeList panel"
+        else -> ""
+    }
+    Text(
+        n.text + hint,
+        modifier = modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xE6161A21)).padding(horizontal = 16.dp, vertical = 10.dp),
+    )
 }

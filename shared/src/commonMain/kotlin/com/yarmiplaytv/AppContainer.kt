@@ -15,6 +15,7 @@ import com.yarmiplaytv.media.jellyfin.ClientInfo
 import com.yarmiplaytv.media.jellyfin.JellyfinClient
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
 import com.yarmiplaytv.media.jellyfin.JellyfinSource
+import com.yarmiplaytv.media.mal.MalClient
 import com.yarmiplaytv.media.plex.PlexClient
 import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
@@ -34,6 +35,8 @@ import com.yarmiplaytv.sync.discoverSyncplayServers
 import com.yarmiplaytv.syncplay.ServerKind
 import com.yarmiplaytv.syncplay.SyncplayEvent
 import com.yarmiplaytv.syncplay.YarmiplayInfo
+import com.yarmiplaytv.tracking.MalService
+import com.yarmiplaytv.tracking.MalTracker
 import com.yarmiplaytv.update.Updates
 import java.io.File
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -69,6 +72,8 @@ class AppContainer(
     screenshotStore: ScreenshotStore? = null,
     /** Makes the preview frames of the videos in the file lists (kept under [cacheDir]); without it they show an icon. */
     frameGrabber: FrameGrabber? = null,
+    /** This build's MyAnimeList Client ID (from the build, never the repository); empty leaves MyAnimeList off. */
+    malClientId: String = "",
 ) {
     val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.Main.immediate +
@@ -134,6 +139,9 @@ class AppContainer(
         Screenshots(scope, player, store, folder = { settings.value.screenshotDirectory }) { playlist.nowPlaying.value?.title }
     }
     private val reporter = PlaybackReporter(scope, player, playlist.nowPlaying, servers).apply { enabled = initial.reportPlayback }
+    /** MyAnimeList: the account, the playing episode's entry, and list updates. */
+    val mal = MalService(scope, settingsStore, settings, MalClient(malClientId))
+    private val malTracker = MalTracker(scope, player, playlist.nowPlaying, mal)
     private val autosave = PlaylistAutosave(scope, sync, playlist.shared, settingsStore).apply { enabled = initial.autosavePlaylists }
     private val jellyfinSharing = HostJellyfinSharing(
         scope, sync, jellyfinClient,

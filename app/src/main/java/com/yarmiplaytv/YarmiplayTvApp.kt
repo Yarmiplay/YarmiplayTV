@@ -49,6 +49,7 @@ class YarmiplayTvApp : Application() {
             cacheDir = cacheDir,
             screenshotStore = AndroidScreenshotStore(this),
             frameGrabber = AndroidFrameGrabber(this),
+            malClientId = BuildConfig.MAL_CLIENT_ID,
         )
         if (BuildConfig.UPDATE_CHECK) {
             container.updates.platform = "android"

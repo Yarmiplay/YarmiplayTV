@@ -1,5 +1,6 @@
 package com.yarmiplaytv.media.jellyfin
 
+import com.yarmiplaytv.media.EpisodeInfo
 import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.media.FilenameIndex
 import com.yarmiplaytv.media.MatchKind
@@ -136,7 +137,16 @@ class JellyfinSource(
             durationSeconds = ticks / TICKS_PER_SECOND,
             title = dto.toMediaItem().let { m -> m.seriesName?.let { "$it · ${m.displayTitle}" } ?: m.displayTitle },
             sourceKey = key,
+            episode = dto.episodeInfo(),
         )
+    }
+
+    /** An episode's show, season and number as Jellyfin has them; a MyAnimeList id when an anime plugin set one. */
+    private fun BaseItemDto.episodeInfo(): EpisodeInfo? {
+        if (type != "Episode") return null
+        val series = seriesName?.takeIf { it.isNotBlank() } ?: return null
+        val mal = providerIds?.entries?.firstOrNull { it.key.equals("MyAnimeList", true) || it.key.equals("Mal", true) }?.value?.toIntOrNull()
+        return EpisodeInfo(series, parentIndexNumber, indexNumber, productionYear, seriesKey = "$key/${seriesId ?: series}", malId = mal)
     }
 
     /** The media source (version) each item was last resolved to, so reports name the one being played. */
@@ -338,7 +348,7 @@ class JellyfinSource(
         private const val TICKS_PER_SECOND = 10_000_000.0
         private const val PAGE_SIZE = 2000
         private const val MIN_REFRESH_MS = 30_000L
-        private const val LIST_FIELDS = "Overview,Path,ProductionYear"
+        private const val LIST_FIELDS = "Overview,Path,ProductionYear,ProviderIds"
         private val VIDEO_COLLECTIONS = setOf("movies", "tvshows", "homevideos", "musicvideos", "mixed", "folders", "boxsets")
     }
 }

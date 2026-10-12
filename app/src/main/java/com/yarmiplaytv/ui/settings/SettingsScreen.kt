@@ -29,13 +29,14 @@ import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.data.PlaybackPrefs
 import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.UnpauseMode
-import com.yarmiplaytv.ui.nav.Navigator
-import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.components.SectionTitle
 import com.yarmiplaytv.ui.components.ToggleRow
 import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.components.ValueRow
 import com.yarmiplaytv.ui.mobile.rememberDirectoryPicker
+import com.yarmiplaytv.ui.nav.Navigator
+import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
 import com.yarmiplaytv.ui.shared.nextPreferred
 import com.yarmiplaytv.ui.shared.preferredOf
 import com.yarmiplaytv.ui.shared.serverLabel
@@ -160,6 +161,28 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                 },
                 subtitle = if (folder.isEmpty()) "Pick another folder for the player's screenshot button" else "Select to use ${screenshots.defaultFolder} again",
             )
+        }
+
+        if (container.mal.client.configured) {
+            SectionTitle("MyAnimeList")
+            val account = settings.mal
+            if (account == null) {
+                ValueRow("MyAnimeList account", "Sign in", { nav.push(Screen.MalLogin) }, subtitle = "Update your list as you watch")
+            } else {
+                ValueRow("MyAnimeList account", account.userName, { container.mal.signOut() },
+                    subtitle = "Select to sign out: deletes everything kept for MyAnimeList on this TV")
+                ToggleRow("Update my list as I watch", settings.malAutoUpdate,
+                    { container.scope.launch { container.settingsStore.saveMalPrefs(!settings.malAutoUpdate, settings.malAskFirst) } },
+                    subtitle = "When an episode is 90% watched; Undo in the player's MyAnimeList panel")
+                if (settings.malAutoUpdate) {
+                    ToggleRow("Ask before each update", settings.malAskFirst,
+                        { container.scope.launch { container.settingsStore.saveMalPrefs(settings.malAutoUpdate, !settings.malAskFirst) } })
+                }
+                if (settings.malMappings.isNotEmpty()) {
+                    ValueRow("Shows you matched", "${settings.malMappings.size}", { container.scope.launch { container.settingsStore.clearMalMappings() } }, subtitle = "Select to forget them")
+                }
+            }
+            Text(MAL_ATTRIBUTION, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
         }
 
         SectionTitle("Playback")

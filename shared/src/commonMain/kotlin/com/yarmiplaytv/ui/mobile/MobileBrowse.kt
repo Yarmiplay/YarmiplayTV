@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Movie
@@ -27,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -57,6 +59,7 @@ import com.yarmiplaytv.ui.browse.serverNameOf
 import com.yarmiplaytv.ui.browse.subtitleFor
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.shared.malInfo
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.delay
 
@@ -133,6 +136,9 @@ fun MobileBrowseScreen(container: AppContainer, nav: Navigator, parent: MediaIte
     }
     Column(Modifier.fillMaxSize()) {
         MobileTopBar(parent.name, nav, subtitle = parent.seriesName?.takeIf { parent.type == MediaItemType.SEASON }) {
+            if (container.mal.client.configured && parent.malInfo() != null) {
+                IconButton(onClick = { nav.push(Screen.MalEntry(parent)) }, Modifier.testTag("browse_mal")) { Icon(Icons.Filled.Bookmarks, contentDescription = "MyAnimeList") }
+            }
             IconButton(onClick = { nav.push(Screen.Search()) }) { Icon(Icons.Filled.Search, contentDescription = "Search") }
         }
         when {
@@ -185,7 +191,7 @@ fun MobileSearchScreen(container: AppContainer, nav: Navigator, initialQuery: St
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MobileItemActionsSheet(container: AppContainer, item: MediaItem, onDismiss: () -> Unit) {
+fun MobileItemActionsSheet(container: AppContainer, item: MediaItem, onDismiss: () -> Unit, onMal: (() -> Unit)? = null) {
     val room by container.sync.room.collectAsStateWithLifecycle()
     val inRoom = room.status == ConnectionStatus.CONNECTED
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = AppColors.Surface, modifier = Modifier.exposeTestTags()) {
@@ -209,6 +215,11 @@ fun MobileItemActionsSheet(container: AppContainer, item: MediaItem, onDismiss: 
                     Icon(Icons.Filled.PlayArrow, contentDescription = null); Text("  Play")
                 }
                 Text("Join a Syncplay room to watch together.", color = AppColors.TextDim)
+            }
+            if (onMal != null && container.mal.client.configured && item.malInfo() != null) {
+                OutlinedButton({ onDismiss(); onMal() }, Modifier.fillMaxWidth().testTag("action_mal")) {
+                    Icon(Icons.Filled.Bookmarks, contentDescription = null); Text("  MyAnimeList…")
+                }
             }
         }
     }

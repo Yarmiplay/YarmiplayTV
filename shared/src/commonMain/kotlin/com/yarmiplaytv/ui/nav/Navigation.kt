@@ -19,6 +19,9 @@ sealed interface Screen {
     data object LocalFiles : Screen { override val key = "local" }
     data object Licenses : Screen { override val key = "licenses" }
     data class Browse(val item: MediaItem) : Screen { override val key = "browse/${item.uniqueKey}" }
+    data object MalLogin : Screen { override val key = "mal-login" }
+    /** A show from the library on MyAnimeList. */
+    data class MalEntry(val item: MediaItem) : Screen { override val key = "mal/${item.uniqueKey}" }
 
     /** [pickFor] is set when the user is choosing a substitute for a playlist entry that wasn't found. */
     data class Search(val initialQuery: String = "", val pickFor: String? = null) : Screen {

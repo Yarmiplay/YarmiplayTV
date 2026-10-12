@@ -51,4 +51,26 @@ class FileNamesTest {
         assertEquals("Your Name", p.title)
         assertEquals(2016, p.year)
     }
+
+    @Test
+    fun `episodes in anime release names`() {
+        fun check(name: String, title: String, season: Int?, episode: Int, dir: String? = null) {
+            val p = FileNames.parseEpisode(name, dir)!!
+            assertEquals(name, Triple(title, season, episode), Triple(p.title, p.season, p.episode))
+        }
+        check("[SubsPlease] Frieren - 05 (1080p) [ABCD1234].mkv", "Frieren", null, 5)
+        check("[Group] Hero Academy S2 - 05v2 [1080p].mkv", "Hero Academy", 2, 5)
+        check("Hero Academy 2nd Season - 13.mkv", "Hero Academy", 2, 13)
+        check("Hero Academy Season 3 - 01.mkv", "Hero Academy", 3, 1)
+        check("Hero.Academy.E50.1080p.mkv", "Hero Academy", null, 50)
+        check("Show - S01E02 - Name.mkv", "Show", 1, 2)
+        check("05.mkv", "Hero Academy", 2, 5, dir = "Hero Academy/Season 2")
+        check("Hero Academy - 07.mkv", "Hero Academy", 4, 7, dir = "Anime/Hero Academy/Season 04")
+    }
+
+    @Test
+    fun `movies aren't episodes`() {
+        assertEquals(null, FileNames.parseEpisode("Your Name (2016) [1080p].mkv"))
+        assertEquals(null, FileNames.parseEpisode("Movie - 1080p.mkv"))
+    }
 }

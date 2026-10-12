@@ -11,3 +11,6 @@ fun main(args: Array<String>) {
 
 /** Set by the Gradle build (run task and installers); "dev" when started some other way. */
 val APP_VERSION: String = System.getProperty("yarmiplaytv.version") ?: "dev"
+
+/** MyAnimeList's Client ID for this build (empty when the build had none). */
+val MAL_CLIENT_ID: String = System.getProperty("yarmiplaytv.malClientId").orEmpty()

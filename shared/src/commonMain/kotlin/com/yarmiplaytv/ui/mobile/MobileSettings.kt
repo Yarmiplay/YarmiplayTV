@@ -11,14 +11,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -31,6 +36,7 @@ import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.UnpauseMode
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
 import com.yarmiplaytv.ui.shared.nextPreferred
 import com.yarmiplaytv.ui.shared.preferredOf
 import com.yarmiplaytv.ui.shared.serverLabel
@@ -96,6 +102,8 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                     container.scope.launch { container.settingsStore.saveScreenshotDirectory(uri) }
                 }
             }
+
+            if (container.mal.client.configured) MalSettings(container, nav)
 
             SectionHeader("Syncing")
             ValueSetting(
@@ -187,6 +195,40 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
             }
             ValueSetting("Open-source licenses", "mpv, FFmpeg and the other parts this app is built on") { nav.push(Screen.Licenses) }
         }
+    }
+}
+
+@Composable
+private fun MalSettings(container: AppContainer, nav: Navigator) {
+    val settings by container.settings.collectAsStateWithLifecycle()
+    var confirmSignOut by remember { mutableStateOf(false) }
+    fun savePrefs(auto: Boolean = settings.malAutoUpdate, ask: Boolean = settings.malAskFirst) =
+        container.scope.launch { container.settingsStore.saveMalPrefs(auto, ask) }
+    SectionHeader("MyAnimeList")
+    val account = settings.mal
+    if (account == null) {
+        ValueSetting("MyAnimeList account", "Sign in to update your list as you watch", Modifier.testTag("settings_mal_sign_in")) { nav.push(Screen.MalLogin) }
+        return
+    }
+    ValueSetting("MyAnimeList account", "Signed in as ${account.userName} · tap to sign out", Modifier.testTag("settings_mal_account")) { confirmSignOut = true }
+    ToggleSetting("Update my list as I watch", "When an episode is 90% watched, with Undo", settings.malAutoUpdate, Modifier.testTag("toggle_mal_auto")) { savePrefs(auto = it) }
+    if (settings.malAutoUpdate) {
+        ToggleSetting("Ask before each update", null, settings.malAskFirst, Modifier.testTag("toggle_mal_ask")) { savePrefs(ask = it) }
+    }
+    if (settings.malMappings.isNotEmpty()) {
+        ValueSetting("Shows you matched", "${settings.malMappings.size} · tap to forget them") {
+            container.scope.launch { container.settingsStore.clearMalMappings() }
+        }
+    }
+    Text(MAL_ATTRIBUTION, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 16.dp))
+    if (confirmSignOut) {
+        AlertDialog(
+            onDismissRequest = { confirmSignOut = false },
+            title = { Text("Sign out of MyAnimeList?") },
+            text = { Text("Everything YarmiplayTV keeps for MyAnimeList on this device is deleted: the sign-in, your matched shows and updates not sent yet.") },
+            confirmButton = { TextButton({ confirmSignOut = false; container.mal.signOut() }, Modifier.testTag("mal_sign_out")) { Text("Sign out") } },
+            dismissButton = { TextButton({ confirmSignOut = false }) { Text("Cancel") } },
+        )
     }
 }
 

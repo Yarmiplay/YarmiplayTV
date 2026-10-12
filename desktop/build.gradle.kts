@@ -176,6 +176,9 @@ compose.desktop {
     application {
         mainClass = "com.yarmiplaytv.desktop.MainKt"
         jvmArgs += "-Dyarmiplaytv.version=$appVersion"
+        // MyAnimeList's Client ID: from ~/.gradle/gradle.properties or the CI secret, never the repository.
+        val malClientId = ((findProperty("MAL_CLIENT_ID") as String?) ?: System.getenv("MAL_CLIENT_ID") ?: "").filter { it.isLetterOrDigit() }
+        if (malClientId.isNotEmpty()) jvmArgs += "-Dyarmiplaytv.malClientId=$malClientId"
 
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Dmg, TargetFormat.Deb)

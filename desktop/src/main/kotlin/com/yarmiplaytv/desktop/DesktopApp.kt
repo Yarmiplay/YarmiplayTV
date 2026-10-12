@@ -155,6 +155,7 @@ private fun createContainer(configDir: File, store: SettingsStore): AppContainer
         cacheDir = if (DesktopPaths.portableDir() != null) File(configDir, "cache") else DesktopPaths.cacheDir(),
         screenshotStore = FolderScreenshotStore(File(System.getProperty("java.io.tmpdir"), "yarmiplaytv-screenshots"), pictures::value),
         frameGrabber = FrameGrabber { uri, width, target -> MpvFrameGrabber.grab(FileLocalLibrary.pathOf(uri).toString(), width, target) },
+        malClientId = MAL_CLIENT_ID,
     ).also { it.deviceKind = DeviceKind.DESKTOP }
 }
 

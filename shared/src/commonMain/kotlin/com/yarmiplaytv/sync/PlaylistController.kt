@@ -5,6 +5,8 @@ import com.yarmiplaytv.local.LocalFile
 import com.yarmiplaytv.local.LocalLibrary
 import com.yarmiplaytv.local.LocalMatcher
 import com.yarmiplaytv.media.CompositeMediaSource
+import com.yarmiplaytv.media.EpisodeInfo
+import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.MediaSource
 import com.yarmiplaytv.media.PlayableMedia
@@ -45,7 +47,15 @@ data class NowPlaying(
     val itemId: String? = null,
     /** Server items that are this file (whichever copy is streamed); playback is reported to each. */
     val copies: List<ServerCopy> = emptyList(),
+    /** Which episode of which show this is, from the server or the file name; null for movies and unknown files. */
+    val episode: EpisodeInfo? = null,
 )
+
+/** The episode a file is, from its name (and folder, e.g. "Show/Season 2"), for files no server describes. */
+fun episodeFromFile(fileName: String, directory: String? = null): EpisodeInfo? =
+    FileNames.parseEpisode(fileName, directory)?.let { p ->
+        EpisodeInfo(p.title, p.season, p.episode, p.year, seriesKey = "file/" + FileNames.normalize(p.title))
+    }
 
 sealed interface PlaylistStatus {
     data object Idle : PlaylistStatus
@@ -287,7 +297,7 @@ class PlaylistController(
                 Logger.i(TAG, "Resolved '$filename' via the room's file relay (${found.file.sources} source(s))")
                 val url = r.open(found.file)
                 val name = found.file.name
-                load(NowPlaying(name, name, found.file.size, found.file.duration, url), resetPosition, fromRoom = true)
+                load(NowPlaying(name, name, found.file.size, found.file.duration, url, episode = episodeFromFile(name)), resetPosition, fromRoom = true)
             }
             is RoomLocation.Missing -> {
                 val servers = mediaSource.value?.let { s -> if (s is CompositeMediaSource && s.sources.size > 2) "your media servers" else s.displayName }
@@ -365,7 +375,7 @@ class PlaylistController(
 
     private fun urlNowPlaying(url: String): NowPlaying {
         val name = url.substringBefore('?').substringAfterLast('/').let { runCatching { java.net.URLDecoder.decode(it, "UTF-8") }.getOrDefault(it) }
-        return NowPlaying(title = name.ifEmpty { url }, fileName = url, sizeBytes = 0, durationHint = 0.0, url = url)
+        return NowPlaying(title = name.ifEmpty { url }, fileName = url, sizeBytes = 0, durationHint = 0.0, url = url, episode = episodeFromFile(name))
     }
 
     /**
@@ -535,8 +545,11 @@ class PlaylistController(
 
     private fun Known.toNowPlaying() = playable.toNowPlaying(copies)
     private fun PlayableMedia.toNowPlaying(copies: List<ServerCopy> = MediaLocator.ownCopy(this)) =
-        NowPlaying(title, fileName, sizeBytes, durationSeconds, url, itemId, copies)
-    private fun LocalFile.toPlayable() = PlayableMedia(itemId = uri, url = uri, fileName = name, sizeBytes = sizeBytes, durationSeconds = 0.0, title = name)
+        NowPlaying(title, fileName, sizeBytes, durationSeconds, url, itemId, copies, episode = episode ?: episodeFromFile(fileName))
+    private fun LocalFile.toPlayable() = PlayableMedia(
+        itemId = uri, url = uri, fileName = name, sizeBytes = sizeBytes, durationSeconds = 0.0, title = name,
+        episode = episodeFromFile(name, directory),
+    )
 
     companion object {
         private const val TAG = "PlaylistController"

@@ -58,7 +58,7 @@ expect fun Modifier.playerScreenInput(input: PlayerInput): Modifier
 @Composable
 expect fun Modifier.videoGestures(input: PlayerInput): Modifier
 
-enum class RoomPanelTab { ROOM, PLAYLIST, CHAT }
+enum class RoomPanelTab(val label: String) { ROOM("Room"), PLAYLIST("Playlist"), CHAT("Chat"), MAL("MAL") }
 
 /**
  * Desktop shows room, playlist and chat in a side panel next to the video: opens it on [tab] (or closes it

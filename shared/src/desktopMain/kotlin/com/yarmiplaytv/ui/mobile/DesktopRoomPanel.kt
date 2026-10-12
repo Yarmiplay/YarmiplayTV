@@ -73,10 +73,10 @@ import androidx.compose.ui.draganddrop.DragData
 import androidx.compose.ui.draganddrop.dragData
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -118,7 +118,6 @@ import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.player.sizeWarning
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
 import com.yarmiplaytv.ui.theme.AppColors
-import kotlinx.coroutines.launch
 import java.awt.dnd.DropTargetDragEvent
 import java.awt.dnd.DropTargetDropEvent
 import java.net.URI
@@ -128,6 +127,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /** The desktop side panel's state; the window's Enter shortcut calls [focusChat]. */
 object DesktopRoomPanel {
@@ -187,7 +187,7 @@ actual fun RoomSidePanel(container: AppContainer) {
                 TabRow(selectedTabIndex = panel.tab.ordinal, containerColor = AppColors.Surface, modifier = Modifier.weight(1f)) {
                     RoomPanelTab.entries.forEach { tab ->
                         Tab(selected = panel.tab == tab, onClick = { panel.tab = tab }, modifier = Modifier.testTag("panel_tab_${tab.name}"), text = {
-                            val label = tab.name.lowercase().replaceFirstChar { it.uppercase() }
+                            val label = tab.label
                             if (tab == RoomPanelTab.CHAT && panel.unread > 0) {
                                 BadgedBox(badge = { Badge { Text(if (panel.unread > 99) "99+" else "${panel.unread}") } }) { Text(label) }
                             } else {
@@ -204,6 +204,10 @@ actual fun RoomSidePanel(container: AppContainer) {
                 }
                 RoomPanelTab.PLAYLIST -> DesktopPlaylist(container, Modifier.weight(1f))
                 RoomPanelTab.CHAT -> DesktopChat(container, Modifier.weight(1f))
+                RoomPanelTab.MAL -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
+                    val mal by container.mal.state.collectAsState()
+                    MalContent(container, mal)
+                }
             }
         }
     }

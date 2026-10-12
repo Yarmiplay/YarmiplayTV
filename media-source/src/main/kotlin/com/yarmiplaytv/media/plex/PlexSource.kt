@@ -1,5 +1,6 @@
 package com.yarmiplaytv.media.plex
 
+import com.yarmiplaytv.media.EpisodeInfo
 import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.media.FilenameIndex
 import com.yarmiplaytv.media.MatchKind
@@ -102,6 +103,9 @@ class PlexSource(
             durationSeconds = millis / 1000.0,
             title = item.seriesName?.let { "$it · ${item.displayTitle}" } ?: item.displayTitle,
             sourceKey = key,
+            episode = item.seriesName?.takeIf { meta.type == "episode" && it.isNotBlank() }?.let { series ->
+                EpisodeInfo(series, item.parentIndexNumber, item.indexNumber, meta.year, seriesKey = "$key/${meta.grandparentRatingKey ?: series}")
+            },
         )
     }
 

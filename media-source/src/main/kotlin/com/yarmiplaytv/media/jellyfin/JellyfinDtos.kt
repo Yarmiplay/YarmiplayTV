@@ -56,6 +56,8 @@ data class BaseItemDto(
     @SerialName("MediaSources") val mediaSources: List<MediaSourceInfo>? = null,
     @SerialName("ImageTags") val imageTags: Map<String, String>? = null,
     @SerialName("UserData") val userData: UserItemData? = null,
+    /** External ids by provider ("Tvdb", "Imdb", and with anime plugins "MyAnimeList", "AniList", "AniDB"). */
+    @SerialName("ProviderIds") val providerIds: Map<String, String>? = null,
 )
 
 @Serializable

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Forum
@@ -82,7 +83,7 @@ import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private enum class PlayerSheet { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES }
+private enum class PlayerSheet { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES, MAL }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -153,6 +154,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
             PlayerSheet.PLAYLIST -> RoomPanelTab.PLAYLIST
             PlayerSheet.ROOM -> RoomPanelTab.ROOM
             PlayerSheet.CHAT -> RoomPanelTab.CHAT
+            PlayerSheet.MAL -> RoomPanelTab.MAL
             else -> null
         }
         if (tab == null || !toggleRoomSidePanel(tab)) sheet = kind
@@ -174,6 +176,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
             }
             seekFlash?.let { Chip(it, AppColors.Accent, Modifier.align(Alignment.Center)) }
             PlayerToasts(container, Modifier.align(Alignment.TopStart).padding(16.dp))
+            MalNoticeCard(container, onPick = { openSheet(PlayerSheet.MAL) }, Modifier.align(Alignment.TopCenter).padding(top = 72.dp, start = 16.dp, end = 16.dp))
 
             androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize().testTag("player_controls")) {
@@ -244,6 +247,10 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                     PlayerSheet.CHAT -> ChatContent(container, maxHeight = 220.dp)
                     PlayerSheet.AUDIO -> TracksContent(container, TrackType.AUDIO, onPicked = { sheet = null })
                     PlayerSheet.SUBTITLES -> TracksContent(container, TrackType.SUBTITLE, onPicked = { sheet = null })
+                    PlayerSheet.MAL -> {
+                        val mal by container.mal.state.collectAsStateWithLifecycle()
+                        MalContent(container, mal, onSignIn = { sheet = null; nav.push(Screen.MalLogin) })
+                    }
                 }
             }
         }
@@ -289,6 +296,7 @@ private fun BottomControls(
             SheetButton(Icons.Filled.Forum, "Chat") { onSheet(PlayerSheet.CHAT) }
             SheetButton(Icons.Filled.Audiotrack, "Audio") { onSheet(PlayerSheet.AUDIO) }
             SheetButton(Icons.Filled.Subtitles, "Subtitles") { onSheet(PlayerSheet.SUBTITLES) }
+            if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList") { onSheet(PlayerSheet.MAL) }
         }
     }
 }

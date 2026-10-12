@@ -29,6 +29,8 @@ import com.yarmiplaytv.ui.connect.PlexLoginScreen
 import com.yarmiplaytv.ui.connect.ServersScreen
 import com.yarmiplaytv.ui.connect.SyncplayConnectScreen
 import com.yarmiplaytv.ui.home.HomeScreen
+import com.yarmiplaytv.ui.mal.MalEntryScreen
+import com.yarmiplaytv.ui.mal.MalLoginScreen
 import com.yarmiplaytv.ui.mobile.PlayerPictureInPicture
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
@@ -70,6 +72,8 @@ fun TvRoot(container: AppContainer, stack: SnapshotStateList<Screen> = remember 
                     Screen.Player -> PlayerScreen(container, nav)
                     Screen.Settings, Screen.LocalFiles -> SettingsScreen(container, nav)
                     Screen.Licenses -> LicensesScreen()
+                    Screen.MalLogin -> MalLoginScreen(container, nav)
+                    is Screen.MalEntry -> MalEntryScreen(container, nav, screen.item)
                     is Screen.Browse -> BrowseScreen(container, nav, screen.item)
                     is Screen.Search -> SearchScreen(container, nav, screen.initialQuery, screen.pickFor)
                 }
@@ -80,7 +84,7 @@ fun TvRoot(container: AppContainer, stack: SnapshotStateList<Screen> = remember 
             // A dialog would fill the small picture-in-picture window.
             if (!PlayerPictureInPicture.active) {
                 nav.actionItem?.let { item ->
-                    ItemActionsDialog(container, item, onDismiss = { nav.actionItem = null })
+                    ItemActionsDialog(container, item, onDismiss = { nav.actionItem = null }, onMal = { nav.push(Screen.MalEntry(item)) })
                 }
                 DeviceAccessDialog(container)
             }

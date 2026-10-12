@@ -55,6 +55,9 @@ android {
         versionName = appVersion
         testInstrumentationRunner = "com.yarmiplaytv.YarmiplayTestRunner"
         buildConfigField("boolean", "UPDATE_CHECK", "true")
+        // MyAnimeList's Client ID: from ~/.gradle/gradle.properties or the CI secret, never the repository.
+        val malClientId = (findProperty("MAL_CLIENT_ID") as String?) ?: System.getenv("MAL_CLIENT_ID") ?: ""
+        buildConfigField("String", "MAL_CLIENT_ID", "\"${malClientId.filter { it.isLetterOrDigit() }}\"")
     }
 
     signingConfigs {

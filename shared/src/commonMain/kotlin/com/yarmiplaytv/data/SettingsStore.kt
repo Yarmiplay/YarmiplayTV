@@ -6,8 +6,12 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
 import com.yarmiplaytv.media.jellyfin.JellyfinSource
+import com.yarmiplaytv.media.mal.MalAccount
+import com.yarmiplaytv.media.mal.MalMapping
+import com.yarmiplaytv.media.mal.MalQueued
 import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.sync.TrustedDomains
@@ -15,13 +19,15 @@ import com.yarmiplaytv.syncplay.Constants
 import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.SyncplayConfig
 import com.yarmiplaytv.syncplay.UnpauseMode
+import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
-import java.util.UUID
 
 data class SyncplayProfile(
     val host: String = "syncplay.pl",
@@ -99,7 +105,20 @@ data class AppSettings(
     val screenshotDirectory: String = "",
     /** What each Syncplay server ("host:port") turned out to be when last joined. */
     val knownServers: Map<String, KnownServer> = emptyMap(),
+    /** The signed-in MyAnimeList account; null when signed out. */
+    val mal: MalAccount? = null,
+    /** Update the MyAnimeList list when an episode has been watched. */
+    val malAutoUpdate: Boolean = true,
+    /** Ask before each MyAnimeList update instead of updating and offering Undo. */
+    val malAskFirst: Boolean = false,
+    /** Shows matched to a MyAnimeList entry by hand (or surely), by [MalTracking.mappingKey]. */
+    val malMappings: Map<String, MalMapping> = emptyMap(),
+    /** Shows ([com.yarmiplaytv.media.EpisodeInfo.seriesKey]) never tracked on MyAnimeList. */
+    val malIgnored: Set<String> = emptySet(),
+    /** MyAnimeList updates that couldn't be sent yet (offline, or MyAnimeList busy). */
+    val malQueue: List<MalQueued> = emptyList(),
 )
+
 
 /** What a Syncplay server was last time: a YarmiplayServerTV (with its id and access mode) or a stock one. */
 data class KnownServer(
@@ -136,6 +155,9 @@ internal object KnownServers {
             .joinToString("\t") { it.replace('\t', ' ').replace('\n', ' ') }
     }
 }
+
+private val malMappingsSerializer = MapSerializer(String.serializer(), MalMapping.serializer())
+private val malQueueSerializer = ListSerializer(MalQueued.serializer())
 
 class SettingsStore(private val dataStore: DataStore<Preferences>) {
     private object Keys {
@@ -209,6 +231,13 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val screenshotDirectory = stringPreferencesKey("screenshot_directory")
         /** One [KnownServer] per line: "host:port", "yarmiplay" or "syncplay", server id and access, tab-separated. */
         val knownServers = stringPreferencesKey("sp_known_servers")
+        val malAccount = stringPreferencesKey("mal_account")
+        val malAuto = booleanPreferencesKey("mal_auto")
+        val malAsk = booleanPreferencesKey("mal_ask")
+        val malMappings = stringPreferencesKey("mal_mappings")
+        val malIgnored = stringSetPreferencesKey("mal_ignored")
+        val malQueue = stringPreferencesKey("mal_queue")
+        val malKeys = listOf(malAccount, malAuto, malAsk, malMappings, malIgnored, malQueue)
     }
 
     val settings: Flow<AppSettings> = dataStore.data.map(::read)
@@ -272,8 +301,43 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             downloadDirectory = p[Keys.downloadDirectory] ?: "",
             screenshotDirectory = p[Keys.screenshotDirectory] ?: "",
             knownServers = p[Keys.knownServers]?.let(KnownServers::decode) ?: emptyMap(),
+            mal = p[Keys.malAccount]?.let { runCatching { json.decodeFromString(MalAccount.serializer(), it) }.getOrNull() },
+            malAutoUpdate = p[Keys.malAuto] ?: defaults.malAutoUpdate,
+            malAskFirst = p[Keys.malAsk] ?: defaults.malAskFirst,
+            malMappings = p[Keys.malMappings]?.let { runCatching { json.decodeFromString(malMappingsSerializer, it) }.getOrNull() } ?: emptyMap(),
+            malIgnored = p[Keys.malIgnored] ?: emptySet(),
+            malQueue = p[Keys.malQueue]?.let { runCatching { json.decodeFromString(malQueueSerializer, it) }.getOrNull() } ?: emptyList(),
         )
     }
+
+    // --- MyAnimeList: everything under mal_*, on this device only -------------------------------
+
+    suspend fun saveMalAccount(account: MalAccount?) = dataStore.edit {
+        if (account == null) it.remove(Keys.malAccount) else it[Keys.malAccount] = json.encodeToString(MalAccount.serializer(), account)
+    }
+
+    suspend fun saveMalPrefs(autoUpdate: Boolean, askFirst: Boolean) = dataStore.edit {
+        it[Keys.malAuto] = autoUpdate
+        it[Keys.malAsk] = askFirst
+    }
+
+    /** Remembers (or with null forgets) which entry the show [key] is. */
+    suspend fun saveMalMapping(key: String, mapping: MalMapping?) = dataStore.edit {
+        val map = read(it).malMappings.toMutableMap()
+        if (mapping == null) map.remove(key) else map[key] = mapping
+        it[Keys.malMappings] = json.encodeToString(malMappingsSerializer, map)
+    }
+
+    suspend fun clearMalMappings() = dataStore.edit { it.remove(Keys.malMappings) }
+
+    suspend fun saveMalIgnored(seriesKeys: Set<String>) = dataStore.edit { it[Keys.malIgnored] = seriesKeys }
+
+    suspend fun saveMalQueue(queue: List<MalQueued>) = dataStore.edit {
+        if (queue.isEmpty()) it.remove(Keys.malQueue) else it[Keys.malQueue] = json.encodeToString(malQueueSerializer, queue)
+    }
+
+    /** Signing out of MyAnimeList: deletes every MyAnimeList key (account, choices, matches and queue). */
+    suspend fun clearMal() = dataStore.edit { p -> Keys.malKeys.forEach { p.remove(it) } }
 
 
     suspend fun saveDeviceName(name: String) = dataStore.edit { it[Keys.deviceName] = name.take(60) }

@@ -1,14 +1,14 @@
 # YarmiplayTV privacy policy
 
-Effective 10 October 2026. This policy covers the YarmiplayTV app for Android TV, Android phones and tablets,
+Effective 12 October 2026. This policy covers the YarmiplayTV app for Android TV, Android phones and tablets,
 and desktop.
 
 ## Summary
 
 YarmiplayTV doesn't collect any data. It has no accounts, no analytics, no advertising and no crash reporting,
 and the developer runs no servers that the app talks to. The app connects to the Syncplay, Jellyfin and Plex
-servers you enter or pick, to plex.tv when you sign in to Plex and, unless you turn it off, to GitHub to check
-for a new version.
+servers you enter or pick, to plex.tv when you sign in to Plex, to MyAnimeList when you sign in to it and,
+unless you turn it off, to GitHub to check for a new version.
 
 ## What the app sends, and to whom
 
@@ -50,9 +50,18 @@ for a new version.
   it is and whether it's paused, and marks it watched once 90% is played. This goes only to the servers you
   signed in to, so they can show "continue watching" and watched marks. When several of your servers have the
   same file, each of them is told. Turn it off with **Report progress to your media servers** in Settings.
+- **MyAnimeList, only when you sign in to it:** you sign in on MyAnimeList's own page (in your browser, or on
+  a TV in a web view showing that page); the app never sees or stores your MyAnimeList password, only the sign-in
+  tokens MyAnimeList gives it (OAuth). With them the app asks MyAnimeList for your user name and picture, looks up
+  the shows you watch (their titles, episode counts and related seasons) and your list entries for them, and,
+  when you've watched an episode or change something in the MyAnimeList panel, updates your list: the episodes
+  watched, status, score, rewatching and start and finish dates. MyAnimeList handles this under its
+  [privacy policy](https://myanimelist.net/about/privacy_policy). Nothing about MyAnimeList goes anywhere else.
 - **Your local network:** when you look for Jellyfin servers, the app sends a discovery message on the local
   network that Jellyfin servers answer. To connect to a Plex server, the app tries the addresses plex.tv lists
-  for it, local ones first.
+  for it, local ones first. The Syncplay connect screen also sends a discovery message, on Wi-Fi or Ethernet
+  only, that YarmiplayServerTV servers answer. Signing in to MyAnimeList on a phone or computer listens on this
+  device only (`localhost`) for MyAnimeList's page to hand back the sign-in.
 - **GitHub, to check for updates:** when it starts, the app from the download page (the APK and the desktop
   apps) reads the latest version number from the download page (tv.yarmiplay.com, hosted on GitHub Pages). The
   request contains nothing about you, your settings or your device; like any web request it reaches GitHub
@@ -70,7 +79,11 @@ allows that.
 ## What stays on your device
 
 Your settings (servers, name, room and its password, playback preferences), the sign-in tokens of each Jellyfin and Plex server, saved playlists and the
-folders you add to your local library are stored only on your device. Names you block in a room are kept only
+folders you add to your local library are stored only on your device. For MyAnimeList, the app keeps on your
+device only: its sign-in tokens, your user name and picture address, the shows you matched to a MyAnimeList entry
+or chose not to track, and list updates that couldn't be sent yet. Details it reads from MyAnimeList (titles,
+episode counts, related seasons) are kept only in memory, for at most 24 hours. **Sign out** of MyAnimeList in
+Settings deletes all of it. Names you block in a room are kept only
 in memory and forgotten when you leave the room. Video files you play from the device are
 read from the device and are only uploaded through a YarmiplayServerTV file relay, as described above. Parts of
 a file you watch through the relay are kept in the app's cache folder, up to 4 GB, and deleted when you
@@ -82,8 +95,9 @@ next to `YarmiplayTV.exe`), `~/Library/Application Support/YarmiplayTV` (macOS) 
 
 ## Permissions (Android)
 
-- **Internet and network state:** to connect to Syncplay, Jellyfin and Plex servers and plex.tv.
-- **Wi-Fi multicast:** to find Jellyfin servers on the local network.
+- **Internet and network state:** to connect to Syncplay, Jellyfin and Plex servers, plex.tv and MyAnimeList,
+  and to look for servers on the local network only over Wi-Fi or Ethernet.
+- **Wi-Fi multicast:** to find Jellyfin and YarmiplayServerTV servers on the local network.
 - **Wake lock:** to keep the screen on during playback.
 - **Files:** only the videos and folders you pick in the system file picker.
 

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -16,6 +17,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Movie
@@ -49,12 +51,13 @@ import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.MediaItemType
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.ManagedRooms
-import com.yarmiplaytv.ui.nav.Navigator
-import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.components.ActionButton
 import com.yarmiplaytv.ui.components.EmptyState
 import com.yarmiplaytv.ui.components.PosterCard
 import com.yarmiplaytv.ui.components.TvTextField
+import com.yarmiplaytv.ui.nav.Navigator
+import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.shared.malInfo
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.delay
 
@@ -122,6 +125,10 @@ fun BrowseScreen(container: AppContainer, nav: Navigator, parent: MediaItem) {
                 }
                 Text(parent.name, style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            if (container.mal.client.configured && parent.malInfo() != null) {
+                ActionButton("MyAnimeList", { nav.push(Screen.MalEntry(parent)) }, icon = Icons.Filled.Bookmarks)
+                Spacer(Modifier.width(12.dp))
+            }
             ActionButton("Search", { nav.push(Screen.Search()) }, icon = Icons.Filled.Search)
         }
         parent.overview?.takeIf { parent.type == MediaItemType.SERIES && it.isNotBlank() }?.let {
@@ -182,7 +189,7 @@ fun SearchScreen(container: AppContainer, nav: Navigator, initialQuery: String, 
 }
 
 @Composable
-fun ItemActionsDialog(container: AppContainer, item: MediaItem, onDismiss: () -> Unit) {
+fun ItemActionsDialog(container: AppContainer, item: MediaItem, onDismiss: () -> Unit, onMal: (() -> Unit)? = null) {
     val room by container.sync.room.collectAsStateWithLifecycle()
     val inRoom = room.status == ConnectionStatus.CONNECTED
     val firstFocus = remember { FocusRequester() }
@@ -219,6 +226,9 @@ fun ItemActionsDialog(container: AppContainer, item: MediaItem, onDismiss: () ->
                             container.playlist.playHere(item); onDismiss()
                         }, Modifier.fillMaxWidth().focusRequester(firstFocus), icon = Icons.Filled.PlayArrow, primary = true)
                         Text("Join a Syncplay room to watch together.", color = AppColors.TextDim)
+                    }
+                    if (onMal != null && container.mal.client.configured && item.malInfo() != null) {
+                        ActionButton("MyAnimeList…", { onDismiss(); onMal() }, Modifier.fillMaxWidth(), icon = Icons.Filled.Bookmarks)
                     }
                 }
             }

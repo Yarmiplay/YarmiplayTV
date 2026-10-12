@@ -108,6 +108,8 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                             Screen.Settings -> MobileSettingsScreen(container, nav)
                             Screen.LocalFiles -> MobileLocalFilesScreen(container, nav)
                             Screen.Licenses -> MobileLicensesScreen(nav)
+                            Screen.MalLogin -> MobileMalLoginScreen(container, nav)
+                            is Screen.MalEntry -> MobileMalEntryScreen(container, nav, screen.item)
                             is Screen.Browse -> MobileBrowseScreen(container, nav, screen.item, kind)
                             is Screen.Search -> MobileSearchScreen(container, nav, screen.initialQuery, screen.pickFor, kind)
                             Screen.Player -> Unit
@@ -118,7 +120,7 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
             // A dialog would fill the small picture-in-picture window.
             if (!PlayerPictureInPicture.active) {
                 nav.actionItem?.let { item ->
-                    MobileItemActionsSheet(container, item, onDismiss = { nav.actionItem = null })
+                    MobileItemActionsSheet(container, item, onDismiss = { nav.actionItem = null }, onMal = { nav.push(Screen.MalEntry(item)) })
                 }
                 MobileDeviceAccessDialog(container)
             }

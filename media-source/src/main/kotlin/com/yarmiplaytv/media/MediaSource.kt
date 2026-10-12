@@ -101,6 +101,23 @@ data class PlayableMedia(
     val title: String,
     /** The [MediaSource.key] this comes from; empty for local files. */
     val sourceKey: String = "",
+    /** Which episode of which show this is, when known (for list tracking such as MyAnimeList). */
+    val episode: EpisodeInfo? = null,
+)
+
+/**
+ * An episode as the library (or its file name) describes it. [episode] may be counted from the start of the show
+ * ("absolute") or from the start of [season]; matching decides which.
+ */
+data class EpisodeInfo(
+    val seriesName: String,
+    val season: Int?,
+    val episode: Int?,
+    val year: Int? = null,
+    /** Identifies the show across its episodes: the server's series id, or the normalized title for files. */
+    val seriesKey: String,
+    /** The MyAnimeList id when the media server knows it (anime metadata plugins). */
+    val malId: Int? = null,
 )
 
 sealed interface ResolveResult {
