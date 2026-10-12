@@ -146,4 +146,17 @@ class MalClientTest {
         val patch = requests.last { it.first.method == "PATCH" }.second
         assertEquals("status=watching&num_watched_episodes=4&start_date=2026-10-01", patch)
     }
+
+    @Test
+    fun `long searches are cut at a word boundary, never mid-word`() = runBlocking {
+        val long = "As a Reincarnated Aristocrat, I'll Use My Appraisal Skill to Rise in the World"
+        assertEquals("As a Reincarnated Aristocrat, I'll Use My Appraisal Skill to", MalClient.searchQuery(long))
+        assertTrue(MalClient.searchQuery(long).length <= 64)
+        assertEquals("Frieren", MalClient.searchQuery("  Frieren  "))
+        val c = client()
+        c.exchange("code", "verifier")
+        c.search(long)
+        val q = requests.last { it.first.requestUrl!!.encodedPath == "/v2/anime" }.first.requestUrl!!.queryParameter("q")
+        assertEquals("As a Reincarnated Aristocrat, I'll Use My Appraisal Skill to", q)
+    }
 }

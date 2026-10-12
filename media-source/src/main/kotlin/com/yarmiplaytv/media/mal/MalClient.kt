@@ -93,7 +93,7 @@ class MalClient(
 
     /** Up to [limit] anime whose titles match [query] (MyAnimeList needs at least 3 characters). */
     suspend fun search(query: String, limit: Int = 10): List<MalAnime> {
-        val q = query.trim().take(64)
+        val q = searchQuery(query)
         if (q.length < 3) return emptyList()
         return json.decodeFromString(MalPage.serializer(), call {
             api("anime") {
@@ -177,6 +177,16 @@ class MalClient(
         private const val LIST_FIELDS = "id,title,alternative_titles,main_picture,start_date,media_type,num_episodes,status"
         private const val DETAIL_FIELDS = "$LIST_FIELDS,mean,related_anime,my_list_status"
         private const val VERIFIER_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+
+        /** [query] as MyAnimeList takes it: at most 64 characters, cut at a word boundary rather than mid-word. */
+        fun searchQuery(query: String): String {
+            val q = query.trim().replace(Regex("\\s+"), " ")
+            if (q.length <= MAX_QUERY) return q
+            val cut = q.take(MAX_QUERY + 1).lastIndexOf(' ').takeIf { it >= 3 } ?: MAX_QUERY
+            return q.take(cut).trim().trimEnd(',', ':', '-', ' ')
+        }
+
+        private const val MAX_QUERY = 64
 
         /** A PKCE code verifier (also the challenge, with the "plain" method): 64 unreserved characters. */
         fun newVerifier(random: SecureRandom = SecureRandom()): String = String(CharArray(64) { VERIFIER_CHARS[random.nextInt(VERIFIER_CHARS.length)] })
