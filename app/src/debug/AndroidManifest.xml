@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The download page's APK only: it installs its own updates through the system's installer. The Play build
+  (release) has none of this; Play updates it.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application>
+        <receiver
+            android:name="com.yarmiplaytv.update.ApkInstallReceiver"
+            android:exported="false" />
+    </application>
+</manifest>

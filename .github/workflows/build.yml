@@ -63,6 +63,23 @@ jobs:
           chmod +x gradlew
           ./gradlew --stacktrace :syncplay-protocol:test :media-source:test :shared:desktopTest :app:testDebugUnitTest :app:assembleDebug
 
+      # Play's Device and Network Abuse policy: the Play build (release) updates only through Google Play. It mustn't
+      # ask to install apps or look at the download page, and the download page's APK (debug) doesn't carry Play's library.
+      - name: Play build rules
+        run: |
+          ./gradlew --stacktrace :app:compileReleaseKotlin :app:processReleaseMainManifest :app:generateReleaseBuildConfig
+          release=app/build/intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml
+          debug=app/build/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml
+          config=app/build/generated/source/buildConfig/release/com/yarmiplaytv/BuildConfig.java
+          fail() { echo "::error::$1"; exit 1; }
+          [ -f "$release" ] && [ -f "$debug" ] && [ -f "$config" ] || fail "The merged manifests or BuildConfig moved; update this step"
+          ! grep -q REQUEST_INSTALL_PACKAGES "$release" || fail "The Play build asks to install apps (REQUEST_INSTALL_PACKAGES)"
+          ! grep -q ApkInstallReceiver "$release" || fail "The Play build carries the APK installer"
+          grep -q "UPDATE_CHECK = false" "$config" || fail "The Play build checks the download page for updates"
+          grep -q REQUEST_INSTALL_PACKAGES "$debug" || fail "The download page's APK can't install its updates"
+          ./gradlew -q :app:dependencies --configuration debugRuntimeClasspath > "$RUNNER_TEMP/debug-deps.txt"
+          ! grep -q "com.google.android.play:app-update" "$RUNNER_TEMP/debug-deps.txt" || fail "The download page's APK carries Play's update library"
+
       - uses: actions/upload-artifact@v7
         with:
           name: yarmiplaytv-debug-apk

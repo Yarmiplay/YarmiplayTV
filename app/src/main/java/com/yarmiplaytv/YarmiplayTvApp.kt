@@ -14,6 +14,7 @@ import com.yarmiplaytv.player.MpvOptions
 import com.yarmiplaytv.player.MpvPlayer
 import com.yarmiplaytv.screenshot.AndroidScreenshotStore
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.update.UpdateSetup
 
 private val Context.dataStore by preferencesDataStore("settings")
 
@@ -51,10 +52,7 @@ class YarmiplayTvApp : Application() {
             frameGrabber = AndroidFrameGrabber(this),
             malClientId = BuildConfig.MAL_CLIENT_ID,
         )
-        if (BuildConfig.UPDATE_CHECK) {
-            container.updates.platform = "android"
-            // Set by the instrumented tests' runner, so tests don't depend on what the live download page offers.
-            if (System.getProperty("yarmiplaytv.noUpdateCheck") == null) container.updates.checkOnLaunch()
-        }
+        // The download page's APK (debug) installs its own updates; the Play build (release) leaves them to Play.
+        UpdateSetup.install(this, container)
     }
 }

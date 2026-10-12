@@ -141,6 +141,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     debugImplementation(libs.compose.ui.tooling)
+    // Google Play's in-app update, only in the Play build; the download page's APK (debug) never has it.
+    releaseImplementation(libs.play.app.update)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
