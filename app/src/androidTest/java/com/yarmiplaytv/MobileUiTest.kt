@@ -152,14 +152,14 @@ class MobileUiTest {
         compose.waitUntilExactlyOneExists(hasTestTag("field_room"), 5_000)
 
         compose.onNodeWithTag("field_room").performTextReplacement("")
-        compose.onNodeWithTag("connect").performClick()
+        compose.onNodeWithTag("connect").performScrollTo().performClick()
         compose.onNodeWithText("Enter a room name").performScrollTo().assertIsDisplayed()
 
         compose.onNodeWithTag("field_host").performTextReplacement("127.0.0.1")
         compose.onNodeWithTag("field_port").performTextReplacement("9")
         compose.onNodeWithTag("field_name").performTextReplacement("Instrumented")
         compose.onNodeWithTag("field_room").performTextReplacement("instrumented-room")
-        compose.onNodeWithTag("connect").performClick()
+        compose.onNodeWithTag("connect").performScrollTo().performClick()
         // The first join asks for the community rules; nothing is saved or joined until they're agreed to.
         compose.waitUntilExactlyOneExists(hasTestTag("agree_rules"), 5_000)
         compose.onNodeWithTag("agree_rules").performClick()
@@ -183,7 +183,7 @@ class MobileUiTest {
         compose.onNodeWithTag("field_port").performTextReplacement("9")
         compose.onNodeWithTag("field_name").performTextReplacement("Instrumented")
         compose.onNodeWithTag("field_room").performTextReplacement("instrumented-room")
-        compose.onNodeWithTag("connect").performClick()
+        compose.onNodeWithTag("connect").performScrollTo().performClick()
 
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasTestTag("connection_status") and hasText("Reconnecting: ", substring = true)).fetchSemanticsNodes().isNotEmpty()
