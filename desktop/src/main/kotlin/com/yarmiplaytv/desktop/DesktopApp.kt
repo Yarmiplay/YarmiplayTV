@@ -78,7 +78,7 @@ internal fun runApp(args: List<String>) {
     val failedInstall = System.getenv(WindowsUpdater.FAILED_INSTALL)?.ifEmpty { null }
     // Before the container, so libmpv isn't loaded yet and the installer can replace it.
     val launchUpdate = runBlocking {
-        updateBeforeLaunch(store.current(), installer, failedInstall, LaunchUpdateWindow(WindowsUpdater.installedLauncher)) {
+        updateBeforeLaunch(store.current(), installer, failedInstall, LaunchUpdateWindow()) {
             UpdateChecker(http = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).build()).check("windows", APP_VERSION)
         }
     }
