@@ -70,6 +70,8 @@ class MalService(
 ) {
     private val catalog = MalCache(client, now)
     private val matcher = MalMatcher(catalog)
+    /** Public data only (no list), for knowing what's playing without an account: see [identify]. */
+    private val publicMatcher = MalMatcher(MalCache(client, now))
 
     private val _state = MutableStateFlow<MalState>(if (client.configured) MalState.Idle else MalState.NotConfigured)
     val state: StateFlow<MalState> = _state.asStateFlow()
@@ -179,6 +181,19 @@ class MalService(
         throw e
     } catch (e: Exception) {
         MalState.Failed(info, e.message ?: "MyAnimeList lookup failed")
+    }
+
+    /**
+     * Which MyAnimeList anime and episode [info] surely is, signed in or not (e.g. for skipping its opening); null
+     * when unsure, unknown, a show the user doesn't track, or a build without a Client ID. Uses the playing
+     * episode's match when there is one rather than looking it up again.
+     */
+    suspend fun identify(info: EpisodeInfo): MalMatch? {
+        if (!client.configured || info.seriesKey in settings.value.malIgnored) return null
+        if ((_state.value as? MalState.Matching)?.info == info) matchJob?.join()
+        (_state.value as? MalState.Matched)?.takeIf { it.info == info }?.let { return it.match }
+        val match = (if (signedIn) matcher else publicMatcher).match(info, settings.value.malMappings[mappingKey(info)])
+        return match?.takeIf { it.sure }
     }
 
     /** The playing episode has been watched (90% through). */

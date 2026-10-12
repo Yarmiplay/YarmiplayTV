@@ -91,11 +91,14 @@ class MalClient(
 
     suspend fun me(): MalUser = json.decodeFromString(MalUser.serializer(), call { api("users/@me") { addQueryParameter("fields", "picture") } })
 
-    /** Up to [limit] anime whose titles match [query] (MyAnimeList needs at least 3 characters). */
+    /**
+     * Up to [limit] anime whose titles match [query] (MyAnimeList needs at least 3 characters). Works signed out
+     * too, as public data.
+     */
     suspend fun search(query: String, limit: Int = 10): List<MalAnime> {
         val q = searchQuery(query)
         if (q.length < 3) return emptyList()
-        return json.decodeFromString(MalPage.serializer(), call {
+        return json.decodeFromString(MalPage.serializer(), publicCall {
             api("anime") {
                 addQueryParameter("q", q)
                 addQueryParameter("limit", limit.coerceIn(1, 100).toString())
@@ -104,8 +107,9 @@ class MalClient(
         }).data.map { it.node }
     }
 
+    /** Anime [id]'s details; signed in, with your list entry. Works signed out too, as public data. */
     suspend fun anime(id: Int): MalAnime =
-        json.decodeFromString(MalAnime.serializer(), call { api("anime/$id") { addQueryParameter("fields", DETAIL_FIELDS) } })
+        json.decodeFromString(MalAnime.serializer(), publicCall { api("anime/$id") { addQueryParameter("fields", DETAIL_FIELDS) } })
 
     /** Changes your list entry for anime [id]; returns the entry as it is now. */
     suspend fun updateStatus(id: Int, update: MalListUpdate): MalListStatus {
@@ -132,6 +136,16 @@ class MalClient(
         "$apiUrl/$path".toHttpUrl().newBuilder().apply(query).build()
 
     private suspend fun call(url: () -> HttpUrl): String = call(Request.Builder().url(url()))
+
+    /**
+     * Public data (titles, episodes, related anime): as the signed-in user when there is one, else with the app's
+     * Client ID alone, which MyAnimeList allows for public data.
+     */
+    private suspend fun publicCall(url: () -> HttpUrl): String {
+        if (tokens != null) return call(url)
+        if (!configured) throw signedOut()
+        return execute(Request.Builder().url(url()).header("X-MAL-CLIENT-ID", clientId))
+    }
 
     /** Runs an API request as the signed-in user, refreshing the access token first when it ran out, or once on a 401. */
     private suspend fun call(request: Request.Builder): String {

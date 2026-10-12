@@ -40,6 +40,11 @@ class MalClientTest {
                         accessToken = "access-${refreshes + 1}"
                         json("""{"token_type":"Bearer","expires_in":3600,"access_token":"$accessToken","refresh_token":"refresh-${refreshes + 1}"}""")
                     }
+                    // Public data with the Client ID alone (no account), as MyAnimeList allows.
+                    request.getHeader("Authorization") == null && request.getHeader("X-MAL-CLIENT-ID") == "client-id" &&
+                        (path == "/v2/anime" || path == "/v2/anime/52991") && request.method == "GET" ->
+                        if (path == "/v2/anime") json("""{"data":[{"node":{"id":52991,"title":"Sousou no Frieren","num_episodes":28}}]}""")
+                        else json("""{"id":52991,"title":"Sousou no Frieren","num_episodes":28}""")
                     request.getHeader("Authorization") != "Bearer $accessToken" -> MockResponse().setResponseCode(401)
                     path == "/v2/users/@me" -> json("""{"id":7,"name":"ana","picture":"https://cdn.example/ana.jpg"}""")
                     path == "/v2/anime" -> json("""{"data":[{"node":{"id":52991,"title":"Sousou no Frieren","num_episodes":28,"media_type":"tv","start_date":"2023-09-29"}}]}""")
@@ -145,6 +150,39 @@ class MalClientTest {
         assertEquals(4, now.watchedEpisodes)
         val patch = requests.last { it.first.method == "PATCH" }.second
         assertEquals("status=watching&num_watched_episodes=4&start_date=2026-10-01", patch)
+    }
+
+    @Test
+    fun `signed out, search and details use the Client ID alone, and the list still needs an account`() = runBlocking {
+        val c = client()
+        assertEquals(52991, c.search("Frieren").single().id)
+        val anime = c.anime(52991)
+        assertEquals(28, anime.numEpisodes)
+        assertNull(anime.myListStatus)
+        val public = requests.filter { it.first.requestUrl!!.encodedPath.startsWith("/v2/anime") }
+        assertTrue(public.all { it.first.getHeader("X-MAL-CLIENT-ID") == "client-id" && it.first.getHeader("Authorization") == null })
+        try {
+            c.myList(MalStatus.WATCHING)
+            fail()
+        } catch (e: MediaSourceException) {
+            assertEquals(401, e.httpCode)
+        }
+
+        c.exchange("code", "verifier")
+        c.anime(52991)
+        assertEquals("signed in, as the user", "Bearer access-1", requests.last().first.getHeader("Authorization"))
+    }
+
+    @Test
+    fun `without a Client ID nothing is asked signed out`() = runBlocking {
+        val c = MalClient("", apiUrl = server.url("/v2").toString())
+        try {
+            c.search("Frieren")
+            fail()
+        } catch (e: MediaSourceException) {
+            assertEquals(401, e.httpCode)
+        }
+        assertTrue(requests.isEmpty())
     }
 
     @Test
