@@ -129,10 +129,11 @@ EXTENSIONS = {
 }
 
 # version.json: the package each platform's update check offers, by preference. Windows installs the .msi
-# itself (msiexec), so only that counts there.
+# itself (msiexec), so only that counts there; the portable app replaces its files from the portable zip.
 UPDATE_PACKAGES = {
     "android": (".apk",),
     "windows": (".msi",),
+    "windows-portable": (".zip",),
     "macos": (".dmg", ".pkg"),
     "linux": (".deb", ".rpm", ".appimage"),
 }

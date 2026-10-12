@@ -74,12 +74,14 @@ internal fun runApp(args: List<String>) {
     val configDir = DesktopPaths.portableDir() ?: DesktopPaths.migrateLegacyConfig()
     val boundsFile = File(configDir, "window.properties")
     val store = desktopSettingsStore(configDir)
-    val installer = WindowsUpdater.createOrNull(args)
-    val failedInstall = System.getenv(WindowsUpdater.FAILED_INSTALL)?.ifEmpty { null }
+    val updateSource = updateSource(args = args)
+    val installer = (updateSource as? UpdateSource.DownloadPage)?.installer
+    val failedInstall = System.getenv(FAILED_INSTALL)?.ifEmpty { null }
     // Before the container, so libmpv isn't loaded yet and the installer can replace it.
     val launchUpdate = runBlocking {
         updateBeforeLaunch(store.current(), installer, failedInstall, LaunchUpdateWindow()) {
-            UpdateChecker(http = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).build()).check("windows", APP_VERSION)
+            val platform = (updateSource as UpdateSource.DownloadPage).platform
+            UpdateChecker(http = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).build()).check(platform, APP_VERSION)
         }
     }
     if (launchUpdate is LaunchUpdate.Install) {
@@ -120,8 +122,13 @@ internal fun runApp(args: List<String>) {
     SwingUtilities.invokeLater {
         launch.profile(app.settings.value.syncplay, defaultSyncplayName(DeviceKind.DESKTOP))?.let { app.sync.connect(it.toConfig()) }
         openFiles(app, launch.files)
-        app.updates.platform = updatePlatform()
-        app.updates.installer = installer
+        when (updateSource) {
+            is UpdateSource.DownloadPage -> {
+                app.updates.platform = updateSource.platform
+                app.updates.installer = installer
+            }
+            is UpdateSource.Store -> app.updates.store = updateSource.store
+        }
         val postponed = launchUpdate as? LaunchUpdate.Postponed
         when {
             postponed == null -> app.updates.checkOnLaunch(failedInstall)
