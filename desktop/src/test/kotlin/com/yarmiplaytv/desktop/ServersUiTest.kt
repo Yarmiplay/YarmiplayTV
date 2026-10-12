@@ -119,7 +119,8 @@ class ServersUiTest {
         val saved = runBlocking {
             withTimeout(5_000) {
                 var s = app.settingsStore.current()
-                while (s.jellyfinServers.size != 1) { delay(20); s = app.settingsStore.current() }
+                // The servers are saved one by one: wait for the Plex one too, not just the sign-out.
+                while (s.jellyfinServers.size != 1 || s.plexServers.isEmpty()) { delay(20); s = app.settingsStore.current() }
                 s
             }
         }
