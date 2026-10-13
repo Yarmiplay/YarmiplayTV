@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.9.3" date="2026-10-13">
+      <description>
+        <p>Play the next episode, or add it to the room's playlist, straight from your MyAnimeList list, with every episode you have one press away; Settings in categories on phones and TV too; and F6 for a screenshot without the subtitles on desktop.</p>
+      </description>
+    </release>
     <release version="1.9.2" date="2026-10-13">
       <description>
         <p>Openings and endings found also from the file's chapters and your Jellyfin or Plex server's markers, and marked on the seek bar; the Android home screen says when there's a new version (also from Google Play); and a What's new card that highlights within its rounded corners.</p>
