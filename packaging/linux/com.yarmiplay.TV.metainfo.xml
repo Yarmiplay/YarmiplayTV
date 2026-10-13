@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.0.1" date="2026-10-13">
+      <description>
+        <p>Noire is now dark purple, matching NoireServerTV. The black and white theme is still there, renamed Monochrome.</p>
+      </description>
+    </release>
     <release version="2.0.0" date="2026-10-13">
       <description>
         <p>Themes: choose Dark, Noire (true black and white, darkest on OLED screens), Light, or Match the system in Settings &gt; Appearance, on phones, tablets, TV and computers. The whole app takes the new colours at once, title bar and system bars included, while the player stays dark over the video.</p>
