@@ -44,6 +44,10 @@ class SyncEngine(
 
     private var speedChanged = false
     private var lastRewindTime: Double? = null
+    /** When the last file finished loading; after it, a rewind's guard is short (Syncplay's lastUpdatedFileTime). */
+    private var lastFileLoadTime: Double? = null
+    /** Play was pressed while the file was opening: it's pressed for the user once the new file has settled. */
+    private var unpauseAt: Double? = null
     private var lastAdvanceTime: Double? = null
     private var lastBlockedNotice: Double? = null
     /** After a reset-to-start file switch the player reports position 0 until this time, like Syncplay's mpv wrapper. */
@@ -58,6 +62,7 @@ class SyncEngine(
     val hasGlobalState: Boolean get() = lastGlobalUpdate != null
 
     fun onDisconnected() {
+        unpauseAt = null
         lastGlobalUpdate = null
         lastPlayerUpdate = null
         if (speedChanged) {
@@ -79,6 +84,13 @@ class SyncEngine(
 
     /** Call every [Constants.PLAYER_ASK_DELAY_MS] while connected. */
     fun poll() {
+        unpauseAt?.let { at ->
+            if (clock.now() >= at) {
+                unpauseAt = null
+                // As if pressed now: the next lines see a local unpause, which plays or marks us ready as usual.
+                if (playerReady && player.isPaused) player.setPaused(false)
+            }
+        }
         updatePlayerStatus(readPlayerPaused(), readPlayerPosition())
     }
 
@@ -260,6 +272,9 @@ class SyncEngine(
     fun onFileLoaded(resetPosition: Boolean) {
         fileReady = true
         val now = clock.now()
+        // The file opens paused, so playing now means play was pressed while it opened (a slow stream).
+        val playPressed = player.isFileLoaded && !player.isPaused
+        lastFileLoadTime = now
         if (resetPosition) {
             resetIgnoreUntil = now + Constants.NEWFILE_IGNORE_TIME
             player.seek(0.0)
@@ -271,11 +286,14 @@ class SyncEngine(
             setPlayerPaused(getGlobalPaused())
         }
         if (lastPlayerUpdate != null) lastPlayerUpdate = now
+        // The room's pause wins for now; the press counts once the switch can no longer be mistaken for it.
+        unpauseAt = if (playPressed && lastGlobalUpdate != null && getGlobalPaused()) now + REWIND_GUARD_AFTER_LOAD + 0.1 else null
     }
 
     /** Call when the player starts opening a new file; it's ignored until [onFileLoaded]. */
     fun onFileLoading() {
         fileReady = false
+        unpauseAt = null
     }
 
     fun markAdvanced() {
@@ -302,8 +320,15 @@ class SyncEngine(
         player.setPaused(paused)
     }
 
+    /**
+     * Just after a rewind, a local pause or play is taken for the player settling, not the user. As in Syncplay, once
+     * the file has loaded after the rewind this lasts only [REWIND_GUARD_AFTER_LOAD], else a play pressed as soon as a
+     * switched file appears would be undone.
+     */
     private fun recentlyRewound(): Boolean {
-        val t = lastRewindTime ?: return false
+        val rewound = lastRewindTime ?: return false
+        val loaded = lastFileLoadTime
+        val t = if (loaded != null && loaded >= rewound) rewound - (Constants.RECENT_REWIND_THRESHOLD - REWIND_GUARD_AFTER_LOAD) else rewound
         return abs(clock.now() - t) < Constants.RECENT_REWIND_THRESHOLD
     }
 
@@ -336,6 +361,8 @@ class SyncEngine(
     private companion object {
         /** Seconds between "Only room operators can control playback" notices. */
         const val BLOCKED_NOTICE_INTERVAL = 10.0
+        /** Seconds a rewind's guard lasts once the file has loaded after it (Syncplay's 5 s less 4.5). */
+        const val REWIND_GUARD_AFTER_LOAD = 0.5
     }
 }
 

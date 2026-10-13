@@ -202,6 +202,59 @@ class SyncEngineTest {
         assertTrue(player.position < 5.0)
     }
 
+    /** The room switches to a new file, paused: it opens for [opening] seconds, then loads at the start. */
+    private fun switchToNewFile(opening: Double, whileOpening: () -> Unit = {}) {
+        serverState(900.0, paused = true)
+        step(1.0)
+        player.isFileLoaded = false
+        engine.onFileLoading()
+        whileOpening()
+        step(opening)
+        player.isFileLoaded = true
+        engine.onFileLoaded(resetPosition = true)
+    }
+
+    @Test
+    fun `play pressed a moment after a switched file appears plays it`() {
+        host.othersReady = true
+        switchToNewFile(opening = 3.0)
+        step(1.0)
+        player.setPaused(false)
+        step(1.0)
+        assertFalse("the first press isn't undone", player.isPaused)
+        assertTrue(host.sent.any { it.paused == false && it.stateChange })
+    }
+
+    @Test
+    fun `play pressed while a streamed file is still opening plays it once it has loaded`() {
+        host.othersReady = true
+        switchToNewFile(opening = 3.0) { player.setPaused(false) }
+        step(1.5)
+        assertFalse(player.isPaused)
+        assertTrue(player.position < 2.0)
+        assertTrue(host.sent.any { it.paused == false && it.stateChange })
+    }
+
+    @Test
+    fun `play pressed while opening, with others not ready, marks us ready`() {
+        host.othersReady = false
+        host.isReady = false
+        switchToNewFile(opening = 3.0) { player.setPaused(false) }
+        step(1.5)
+        assertTrue(player.isPaused)
+        assertEquals(true to true, host.readyChanges.last())
+        assertTrue(host.sent.none { it.paused == false && it.stateChange })
+    }
+
+    @Test
+    fun `a switched file that wasn't played while opening stays paused`() {
+        host.othersReady = true
+        switchToNewFile(opening = 3.0)
+        step(3.0)
+        assertTrue(player.isPaused)
+        assertTrue(host.sent.none { it.paused == false && it.stateChange })
+    }
+
     @Test
     fun `non-reset file load jumps to the room position`() {
         player.isFileLoaded = false
