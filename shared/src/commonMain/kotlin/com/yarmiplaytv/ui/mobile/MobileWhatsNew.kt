@@ -1,6 +1,5 @@
 package com.yarmiplaytv.ui.mobile
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -91,8 +90,10 @@ fun WhatsNewCard(container: AppContainer, nav: Navigator, modifier: Modifier = M
     val version = WhatsNew.cardVersion(settings.lastSeenVersion, container.appVersion) ?: return
     val note = ReleaseNotes.of(version) ?: return
     fun seen() = container.scope.launch { container.settingsStore.saveLastSeenVersion(version) }
+    // The card's own click, so hovering and pressing highlight it within its rounded corners.
     Card(
-        modifier.clickable { seen(); nav.push(Screen.WhatsNew) }.testTag("whats_new_card"),
+        onClick = { seen(); nav.push(Screen.WhatsNew) },
+        modifier = modifier.testTag("whats_new_card"),
         colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
         shape = RoundedCornerShape(16.dp),
     ) {
