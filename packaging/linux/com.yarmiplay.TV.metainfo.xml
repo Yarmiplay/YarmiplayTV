@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.0.3" date="2026-10-14">
+      <description>
+        <p>The player follows your theme: its panels, sheets and buttons take the theme's colours, and what's written on the video (the title, the times, hints) is now white on see-through black, so it reads on any picture. The shared playlist shows each file's whole name instead of cutting it short.</p>
+      </description>
+    </release>
     <release version="2.0.1" date="2026-10-13">
       <description>
         <p>Noire is now dark purple, matching NoireServerTV. The black and white theme is still there, renamed Monochrome.</p>
