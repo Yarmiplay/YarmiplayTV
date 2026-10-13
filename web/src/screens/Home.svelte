@@ -34,13 +34,6 @@
   const ready = $derived(room?.users.filter((u) => u.isReady).length ?? 0);
   const whatsNew = $derived($settings.lastSeenVersion !== version ? buildInfo.releases.find((r) => r.version === version) : null);
 
-  function openVideo(event: Event) {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    (event.target as HTMLInputElement).value = "";
-    if (!file || !session) return;
-    void session.playLocal(file, inRoom);
-    go("#/player");
-  }
 </script>
 
 <main class="home">
@@ -96,13 +89,12 @@
       </button>
     {/if}
 
-    <label class="card tile">
+    <button class="card tile" onclick={() => go("#/files")}>
       <span class="label">Files on this device</span>
       <span class="dim">
-        Open a video{folderCount ? ` · ${folderCount} media folder${folderCount === 1 ? "" : "s"}, ${fileCount} videos` : ""}
+        {folderCount ? `${folderCount} media folder${folderCount === 1 ? "" : "s"}, ${fileCount} videos` : "Open a video or add media folders"}
       </span>
-      <input type="file" accept="video/*,.mkv,.avi,.ts,.m2ts,.webm" onchange={openVideo} hidden />
-    </label>
+    </button>
 
     <button class="card tile" onclick={() => go("#/settings/media")}>
       <span class="label">Media folders</span>

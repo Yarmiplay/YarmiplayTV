@@ -6,6 +6,7 @@
   import PlayerView from "./components/PlayerView.svelte";
   import { applyTheme, followSystem } from "./lib/ui/theme";
   import { newVersion, watchForUpdates } from "./lib/ui/updates";
+  import Files from "./screens/Files.svelte";
   import Home from "./screens/Home.svelte";
   import Join from "./screens/Join.svelte";
   import PlayerLab from "./screens/PlayerLab.svelte";
@@ -64,6 +65,8 @@
         <Room />
       {:else if section === "settings"}
         <Settings />
+      {:else if section === "files"}
+        <Files />
       {:else if section !== "player"}
         <main class="missing">
           <p>There's nothing here.</p>
