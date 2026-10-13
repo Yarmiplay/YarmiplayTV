@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.9.1" date="2026-10-13">
+      <description>
+        <p>Dark window title bars on Windows and macOS, matching the app's dark theme whatever the system's mode.</p>
+      </description>
+    </release>
     <release version="1.9.0" date="2026-10-13">
       <description>
         <p>Skip anime openings and endings: times from AniSkip for the episode MyAnimeList recognises (no account needed), a Skip button for 3 seconds as one starts, or automatic skipping as a room setting shared by everyone in the room on YarmiplayServerTV 1.7.3, remembered by saved rooms; watching alone, Settings decides.</p>

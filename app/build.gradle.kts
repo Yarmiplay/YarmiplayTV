@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val appVersion = "1.9.0"
+val appVersion = "1.9.1"
 
 /** Play needs an ever-increasing versionCode: major * 10000 + minor * 100 + patch. */
 fun versionCodeOf(name: String): Int {
