@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -107,7 +108,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -127,7 +127,6 @@ import java.nio.file.Paths
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 /** The desktop side panel's state; the window's Enter shortcut calls [focusChat]. */
@@ -348,7 +347,6 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
                 color = AppColors.TextDim, modifier = Modifier.padding(16.dp),
             )
         }
-        val rowPx = with(LocalDensity.current) { ROW_HEIGHT.toPx() }
         var dragFrom by remember { mutableStateOf<Int?>(null) }
         var dragOffset by remember { mutableFloatStateOf(0f) }
         val dropLine = AppColors.Accent
@@ -427,7 +425,7 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
                             detectDragGestures(
                                 onDragStart = { dragFrom = index; dragOffset = 0f },
                                 onDragEnd = {
-                                    val to = (index + (dragOffset / rowPx).roundToInt()).coerceIn(0, playlist.lastIndex)
+                                    val to = playlistDragTarget(index, dragOffset, listState.layoutInfo.visibleItemsInfo, playlist.lastIndex)
                                     if (to != index) {
                                         shared.move(index, to)
                                         selected = setOf(to)
@@ -462,6 +460,17 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
 private fun rangeOf(a: Int, b: Int): Set<Int> = (minOf(a, b)..maxOf(a, b)).toSet()
 
 /**
+ * Where the row at [from], dragged [offset] pixels, lands among [rows] (rows differ in height, as long names wrap): the
+ * row its middle is over, or the first or last row when it's past them.
+ */
+internal fun playlistDragTarget(from: Int, offset: Float, rows: List<LazyListItemInfo>, lastIndex: Int): Int {
+    val dragged = rows.firstOrNull { it.index == from } ?: return from
+    val middle = dragged.offset + dragged.size / 2f + offset
+    val over = rows.firstOrNull { middle < it.offset + it.size } ?: rows.last()
+    return over.index.coerceIn(0, lastIndex)
+}
+
+/**
  * The index files dropped at [y] (from the top of a list [height] tall showing [rows]) are inserted at: before the
  * row whose upper half is under the pointer. Outside the list they go at the end.
  */
@@ -480,16 +489,15 @@ private fun PlaylistRow(index: Int, file: String, current: Boolean, selected: Bo
         else -> Color.Transparent
     }
     Row(
-        modifier.fillMaxWidth().height(ROW_HEIGHT).padding(horizontal = 8.dp).clip(RoundedCornerShape(8.dp)).background(background)
-            .padding(horizontal = 8.dp).testTag("playlist_row_$index"),
+        modifier.fillMaxWidth().heightIn(min = ROW_HEIGHT).padding(horizontal = 8.dp).clip(RoundedCornerShape(8.dp)).background(background)
+            .padding(horizontal = 8.dp, vertical = 8.dp).testTag("playlist_row_$index"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (current) Icon(Icons.Filled.PlayArrow, "Playing", tint = AppColors.Accent, modifier = Modifier.width(28.dp))
         else Text("${index + 1}.", color = AppColors.TextDim, modifier = Modifier.width(28.dp))
+        // The whole name, on as many lines as it takes.
         Text(
             file,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
             fontStyle = if (available) FontStyle.Normal else FontStyle.Italic,
             color = if (available) AppColors.Text else AppColors.TextDim,

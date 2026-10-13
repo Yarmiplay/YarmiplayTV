@@ -146,7 +146,7 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
                                 Text("${index + 1}.", color = AppColors.TextDim, modifier = Modifier.width(32.dp))
                             }
                             Column {
-                                Text(file, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = if (current) FontWeight.Bold else FontWeight.Normal)
+                                Text(file, fontWeight = if (current) FontWeight.Bold else FontWeight.Normal)
                                 room.sizeWarning(file)?.let { SizeWarning(it) }
                             }
                         }

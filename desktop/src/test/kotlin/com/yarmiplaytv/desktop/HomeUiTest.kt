@@ -139,7 +139,7 @@ class HomeUiTest {
         waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "monochrome" }
         waitForIdle()
         screenshot("home_monochrome")
-        // The player stays dark in the light theme.
+        // The player takes the light theme; what's written on the video stays white on see-through black.
         runBlocking { app.settingsStore.saveTheme("light") }
         waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "light" }
         onNodeWithText("Player").performClick()

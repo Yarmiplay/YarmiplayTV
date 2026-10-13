@@ -43,6 +43,8 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -54,6 +56,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -82,6 +85,8 @@ import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.OnVideo
+import com.yarmiplaytv.ui.theme.onVideoLabel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -168,7 +173,9 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
         return
     }
     Row(Modifier.fillMaxSize()) {
+        // On the video, text and icons are white whatever the theme; panels and sheets over it take the theme.
         Box(Modifier.weight(1f).fillMaxHeight().background(Color.Black).testTag("player").playerScreenInput(input)) {
+          CompositionLocalProvider(LocalContentColor provides OnVideo.Text) {
             VideoSurface(player, Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().testTag("player_gestures").videoGestures(input))
 
@@ -196,7 +203,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(nav::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
-                        Text(nowPlaying?.title ?: "Nothing playing", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text(nowPlaying?.title ?: "Nothing playing", color = OnVideo.Text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         RoomStatusChip(room, playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls })
                         if (pip.supported && state.fileLoaded) {
                             IconButton(pip.toggle, Modifier.testTag("pip")) {
@@ -204,9 +211,13 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                             }
                         }
                         if (hideControlsButton) {
-                            TextButton({ controls = false }, Modifier.testTag("hide_controls")) {
-                                Icon(Icons.Filled.KeyboardArrowDown, null, tint = AppColors.TextDim)
-                                Text("Hide (H)", color = AppColors.TextDim)
+                            TextButton(
+                                { controls = false },
+                                Modifier.testTag("hide_controls"),
+                                colors = ButtonDefaults.textButtonColors(containerColor = OnVideo.Background, contentColor = OnVideo.Text),
+                            ) {
+                                Icon(Icons.Filled.KeyboardArrowDown, null, tint = OnVideo.Text)
+                                Text("Hide (H)", color = OnVideo.Text)
                             }
                         }
                     }
@@ -239,6 +250,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                     )
                 }
             }
+          }
         }
         RoomSidePanel(container)
     }
@@ -330,7 +342,7 @@ private fun PictureInPictureView(container: AppContainer) {
 private fun PictureInPictureElsewhere(pip: PictureInPicture) {
     Box(Modifier.fillMaxSize().background(Color.Black).testTag("player_pip_elsewhere"), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(Icons.Filled.PictureInPictureAlt, contentDescription = null, tint = AppColors.TextDim, modifier = Modifier.size(48.dp))
+            Icon(Icons.Filled.PictureInPictureAlt, contentDescription = null, tint = OnVideo.Text, modifier = Modifier.size(48.dp))
             Text("Playing in picture-in-picture", style = MaterialTheme.typography.titleMedium, color = Color.White)
             Button(pip.toggle, Modifier.testTag("pip_back_here")) { Text("Show the video here") }
         }
@@ -382,7 +394,7 @@ private fun RoomStatusChip(room: RoomState, streaming: String? = null) {
             )
         }
         ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> Chip("Connecting…", AppColors.NotReady)
-        ConnectionStatus.DISCONNECTED -> Chip("Not in a room", AppColors.TextDim)
+        ConnectionStatus.DISCONNECTED -> Chip("Not in a room", OnVideo.Text.copy(alpha = 0.6f))
     }
 }
 
@@ -440,6 +452,7 @@ private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean,
         )
         status.playbackHint(fileLoaded) == RelayHint.Downloading -> Surface(
             color = AppColors.Surface.copy(alpha = 0.9f),
+            contentColor = AppColors.Text,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.align(Alignment.Center).widthIn(max = 560.dp).testTag("relay_download"),
         ) {
@@ -469,7 +482,7 @@ private fun CenterStatus(container: AppContainer, nav: Navigator, status: Playli
                     is PlaylistStatus.Failed -> status.fileName to status.reason
                     else -> "" to ""
                 }
-                Surface(color = AppColors.Surface.copy(alpha = 0.95f), shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp).testTag("not_found")) {
+                Surface(color = AppColors.Surface.copy(alpha = 0.95f), contentColor = AppColors.Text, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp).testTag("not_found")) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(if (status is PlaylistStatus.NotFound) "Couldn't find this file" else "Couldn't play this file", style = MaterialTheme.typography.titleLarge)
                         Text(file, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -487,7 +500,7 @@ private fun CenterStatus(container: AppContainer, nav: Navigator, status: Playli
                 }
             }
             is PlaylistStatus.Untrusted -> {
-                Surface(color = AppColors.Surface.copy(alpha = 0.95f), shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp).testTag("untrusted_url")) {
+                Surface(color = AppColors.Surface.copy(alpha = 0.95f), contentColor = AppColors.Text, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp).testTag("untrusted_url")) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Open this link?", style = MaterialTheme.typography.titleLarge)
                         Text(status.url, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -508,10 +521,11 @@ private fun CenterStatus(container: AppContainer, nav: Navigator, status: Playli
             }
             PlaylistStatus.Idle -> if (nothingLoaded) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Nothing playing", style = MaterialTheme.typography.titleLarge)
+                    Text("Nothing playing", color = OnVideo.Text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.onVideoLabel())
                     Text(
                         if (inRoom) "Pick something, or wait for someone in the room to choose a file." else "Pick a video to watch.",
-                        color = AppColors.TextDim,
+                        color = OnVideo.Text,
+                        modifier = Modifier.onVideoLabel(),
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(playFile) { Text("Open a video") }
@@ -525,7 +539,7 @@ private fun CenterStatus(container: AppContainer, nav: Navigator, status: Playli
 
 @Composable
 private fun StatusBox(title: String, detail: String) {
-    Surface(color = AppColors.Surface.copy(alpha = 0.9f), shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp)) {
+    Surface(color = AppColors.Surface.copy(alpha = 0.9f), contentColor = AppColors.Text, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             Text(detail, color = AppColors.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis)

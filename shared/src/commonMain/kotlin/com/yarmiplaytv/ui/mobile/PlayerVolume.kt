@@ -20,7 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.OnVideo
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.roundToInt
 
@@ -64,7 +64,7 @@ internal fun PlayerVolumeBar(control: PlayerVolume, onInteract: () -> Unit, modi
         )
         Text(
             if (muted) "Muted" else "${volume.roundToInt()}%",
-            color = AppColors.Text,
+            color = OnVideo.Text,
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.widthIn(min = 48.dp).padding(start = 8.dp).testTag("volume_label"),
         )

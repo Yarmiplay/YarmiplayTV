@@ -84,7 +84,6 @@ import com.yarmiplaytv.ui.components.ActionButton
 import com.yarmiplaytv.ui.components.Dot
 import com.yarmiplaytv.ui.components.IconAction
 import com.yarmiplaytv.ui.components.Panel
-import com.yarmiplaytv.ui.components.Pill
 import com.yarmiplaytv.ui.components.ToastHost
 import com.yarmiplaytv.ui.mal.MalPanel
 import com.yarmiplaytv.ui.mobile.PictureInPicture
@@ -97,6 +96,8 @@ import com.yarmiplaytv.ui.mobile.rememberRelaySave
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.OnVideo
+import com.yarmiplaytv.ui.theme.onVideoLabel
 import kotlinx.coroutines.delay
 
 internal enum class PanelKind { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES, MAL }
@@ -249,7 +250,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
         RelayOnPlayer(container, state.fileLoaded, overlay != Overlay.Hidden)
 
         if (state.buffering && state.fileLoaded) {
-            Pill("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(24.dp))
+            VideoChip("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(24.dp))
         }
 
         ToastHost(container.sync.toasts, Modifier.align(Alignment.TopStart).padding(32.dp))
@@ -273,7 +274,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
         if (overlay == Overlay.Hidden && flashVisible.value && state.duration > 0) {
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 64.dp, vertical = 40.dp)) {
                 ProgressBar(player.currentPosition(), state.duration, state.cacheSeconds, segments = skipSegments)
-                Text("${formatClock(player.currentPosition())} / ${formatClock(state.duration)}", modifier = Modifier.padding(top = 8.dp))
+                Text("${formatClock(player.currentPosition())} / ${formatClock(state.duration)}", color = OnVideo.Text, modifier = Modifier.padding(top = 8.dp).onVideoLabel())
             }
         }
 
@@ -335,14 +336,18 @@ private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean,
 
 /** Green dot plus the short streaming line, the same chip as the room ping. */
 @Composable
-private fun StreamingChip(text: String, modifier: Modifier = Modifier) {
+private fun StreamingChip(text: String, modifier: Modifier = Modifier) = VideoChip(text, AppColors.Ready, modifier)
+
+/** A status on the video: a [dot] of colour and white text on see-through black, readable on any picture and theme. */
+@Composable
+private fun VideoChip(text: String, dot: Color, modifier: Modifier = Modifier) {
     Row(
-        modifier.clip(RoundedCornerShape(50)).background(AppColors.Ready.copy(alpha = 0.18f)).padding(horizontal = 12.dp, vertical = 4.dp),
+        modifier.clip(RoundedCornerShape(50)).background(OnVideo.Background).padding(horizontal = 12.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Dot(AppColors.Ready)
-        Text(text, color = AppColors.Ready, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Dot(dot)
+        Text(text, color = OnVideo.Text, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -417,10 +422,11 @@ private fun CenterStatus(
             PlaylistStatus.Idle -> if (nothingLoaded) {
                 LaunchedEffect(canFocus) { if (canFocus) runCatching { delay(50); focus.requestFocus() } }
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("Nothing playing", style = MaterialTheme.typography.headlineSmall)
+                    Text("Nothing playing", color = OnVideo.Text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.onVideoLabel())
                     Text(
                         if (inRoom) "Pick something to watch, or wait for someone in the room to choose a file." else "Pick something to watch.",
-                        color = AppColors.TextDim,
+                        color = OnVideo.Text,
+                        modifier = Modifier.onVideoLabel(),
                     )
                     ActionButton("Browse", { nav.popTo(Screen.Home) }, Modifier.focusRequester(focus), icon = Icons.Filled.Home, primary = true)
                 }
@@ -482,32 +488,32 @@ private fun ControlsBar(
             .padding(horizontal = 56.dp, vertical = 32.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, Modifier.weight(1f), color = OnVideo.Text, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (showHideHint) {
                 Spacer(Modifier.width(24.dp))
-                Text("▼ Hide", style = MaterialTheme.typography.bodyMedium, color = AppColors.TextDim)
+                Text("▼ Hide", style = MaterialTheme.typography.bodyMedium, color = OnVideo.Text, modifier = Modifier.onVideoLabel())
             }
         }
         Spacer(Modifier.height(12.dp))
         val segments by container.skips.segments.collectAsStateWithLifecycle()
         ProgressBar(position, state.duration, state.cacheSeconds, segments = segments)
         Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-            Text(formatClock(position), color = AppColors.TextDim)
+            Text(formatClock(position), color = OnVideo.Text, modifier = Modifier.onVideoLabel())
             Spacer(Modifier.weight(1f))
-            Text(playbackInfo(state), color = AppColors.TextDim)
+            playbackInfo(state).takeIf { it.isNotEmpty() }?.let { Text(it, color = OnVideo.Text, modifier = Modifier.onVideoLabel()) }
             Spacer(Modifier.width(24.dp))
-            Text(formatClock(state.duration), color = AppColors.TextDim)
+            Text(formatClock(state.duration), color = OnVideo.Text, modifier = Modifier.onVideoLabel())
         }
         Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconAction(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, "Play/pause", onTogglePause, Modifier.focusRequester(controlsFocus))
-            IconAction(Icons.Filled.Replay10, "Back", { onSeek(-10.0) })
-            IconAction(Icons.Filled.Forward10, "Forward", { onSeek(10.0) })
+            IconAction(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, "Play/pause", onTogglePause, Modifier.focusRequester(controlsFocus), tint = OnVideo.Text)
+            IconAction(Icons.Filled.Replay10, "Back", { onSeek(-10.0) }, tint = OnVideo.Text)
+            IconAction(Icons.Filled.Forward10, "Forward", { onSeek(10.0) }, tint = OnVideo.Text)
             // The room playlist's previous and next entry, when there is one to go to.
             if (inRoom && room.playlist.isNotEmpty()) {
                 val previous = container.playlist.skipTarget(room, forward = false)
                 val next = container.playlist.skipTarget(room, forward = true)
-                IconAction(Icons.Filled.SkipPrevious, "Previous in the playlist", { container.playlist.skip(false) }, Modifier.testTag("skip_previous"), enabled = previous != null)
-                IconAction(Icons.Filled.SkipNext, "Next in the playlist", { container.playlist.skip(true) }, Modifier.testTag("skip_next"), enabled = next != null)
+                IconAction(Icons.Filled.SkipPrevious, "Previous in the playlist", { container.playlist.skip(false) }, Modifier.testTag("skip_previous"), enabled = previous != null, tint = OnVideo.Text)
+                IconAction(Icons.Filled.SkipNext, "Next in the playlist", { container.playlist.skip(true) }, Modifier.testTag("skip_next"), enabled = next != null, tint = OnVideo.Text)
             }
             if (inRoom) {
                 val ready = room.isReady == true
@@ -525,14 +531,14 @@ private fun ControlsBar(
                     if (save.saving) "${save.label} (${(save.fraction * 100).toInt()}%)" else save.label,
                     save.onClick,
                     Modifier.testTag("relay_save"),
-                    tint = if (save.saving) AppColors.Accent else AppColors.Text,
+                    tint = if (save.saving) AppColors.Accent else OnVideo.Text,
                 )
             }
             container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
-                IconAction(Icons.Filled.PhotoCamera, "Screenshot", screenshots::take, Modifier.testTag("screenshot"))
+                IconAction(Icons.Filled.PhotoCamera, "Screenshot", screenshots::take, Modifier.testTag("screenshot"), tint = OnVideo.Text)
             }
             if (pip.supported && state.fileLoaded) {
-                IconAction(Icons.Filled.PictureInPictureAlt, pictureInPictureLabel, pip.toggle, Modifier.testTag("pip"))
+                IconAction(Icons.Filled.PictureInPictureAlt, pictureInPictureLabel, pip.toggle, Modifier.testTag("pip"), tint = OnVideo.Text)
             }
             listOf(
                 Triple(PanelKind.PLAYLIST, Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist"),
@@ -542,9 +548,9 @@ private fun ControlsBar(
                 Triple(PanelKind.SUBTITLES, Icons.Filled.Subtitles, "Subtitles"),
                 Triple(PanelKind.MAL, Icons.Filled.Bookmarks, "MyAnimeList").takeIf { container.mal.client.configured },
             ).filterNotNull().forEach { (kind, icon, label) ->
-                IconAction(icon, label, { onOpenPanel(kind) }, Modifier.focusRequester(panelButtons.getValue(kind)))
+                IconAction(icon, label, { onOpenPanel(kind) }, Modifier.focusRequester(panelButtons.getValue(kind)), tint = OnVideo.Text)
             }
-            IconAction(Icons.Filled.Home, "Browse", onHome)
+            IconAction(Icons.Filled.Home, "Browse", onHome, tint = OnVideo.Text)
         }
     }
 }
@@ -561,12 +567,12 @@ private fun RoomChip(room: com.yarmiplaytv.syncplay.RoomState, streaming: String
             color = AppColors.Ready
         }
         ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> { text = "Connecting to Syncplay…"; color = AppColors.NotReady }
-        ConnectionStatus.DISCONNECTED -> { text = "Not in a room"; color = AppColors.TextDim }
+        ConnectionStatus.DISCONNECTED -> { text = "Not in a room"; color = OnVideo.Text.copy(alpha = 0.6f) }
     }
     if (streaming != null && room.status == ConnectionStatus.CONNECTED) {
         StreamingChip(text, modifier.testTag("relay_streaming"))
     } else {
-        Pill(text, color, modifier)
+        VideoChip(text, color, modifier)
     }
 }
 

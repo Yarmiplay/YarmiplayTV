@@ -7,12 +7,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -27,6 +29,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.test.withKeyDown
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -138,6 +141,34 @@ class RoomPanelUiTest {
         val file = File(dir, "${System.getProperty("os.name").substringBefore(' ').lowercase()}/$name.png")
         file.parentFile.mkdirs()
         ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", file)
+    }
+
+    @Test
+    fun `the playlist shows the whole of a long name`() = runComposeUiTest {
+        val alice = join("alice")
+        val long = "[SubsPlease] Sousou no Frieren - 28 (1080p) [Batch Release, Dual Audio, Extended Edition] [ABCDEF12].mkv"
+        onMain { alice.playlist.shared.add(listOf(long, "two.mkv")) }
+        awaitTrue("the playlist to arrive") { alice.sync.room.value.playlist.size == 2 }
+
+        val lifecycle = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
+        }
+        setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
+                MobileTheme {
+                    Box(Modifier.size(380.dp, 640.dp).background(AppColors.Background)) { RoomSidePanel(alice) }
+                }
+            }
+        }
+        waitUntil { onAllNodesWithTag("playlist_row_1").fetchSemanticsNodes().isNotEmpty() }
+        screenshot("panel_playlist_long_name")
+        // It wraps onto more lines instead of being cut short, and the short one stays one line.
+        val tall = onNodeWithTag("playlist_row_0").getBoundsInRoot().let { it.bottom - it.top }
+        val short = onNodeWithTag("playlist_row_1").getBoundsInRoot().let { it.bottom - it.top }
+        assertTrue("the long row is $tall tall, the short one $short", tall > short * 2)
+        val layout = mutableListOf<TextLayoutResult>()
+        onNodeWithText(long).fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
+        assertTrue("the name is cut short", layout.single().let { !it.hasVisualOverflow && !it.isLineEllipsized(it.lineCount - 1) })
     }
 
     @Test

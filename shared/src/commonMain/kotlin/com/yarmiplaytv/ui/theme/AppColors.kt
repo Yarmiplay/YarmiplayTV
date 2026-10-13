@@ -112,9 +112,9 @@ enum class AppTheme(val key: String, val label: String, val description: String)
 }
 
 /** Under the theme choices: what no theme changes. */
-const val THEME_NOTE = "The player stays dark in every theme, as it sits over the video."
+const val THEME_NOTE = "The player takes the theme too; what's written on the video stays white, on see-through black."
 
-/** The palette for what's below it; the player keeps [Palettes.Dark] whatever the theme, as it sits over the video. */
+/** The palette for what's below it. What the player draws straight on the video is [OnVideo]'s instead. */
 val LocalPalette = staticCompositionLocalOf { Palettes.Dark }
 
 /** The colours of the palette in use (see [LocalPalette]). */

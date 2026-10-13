@@ -145,7 +145,7 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
                     if (current) Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.width(28.dp))
                     else Text("${index + 1}.", color = AppColors.TextDim, modifier = Modifier.width(28.dp))
                     Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
-                        Text(file, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = if (current) FontWeight.Bold else FontWeight.Normal)
+                        Text(file, fontWeight = if (current) FontWeight.Bold else FontWeight.Normal)
                         room.sizeWarning(file)?.let { warning ->
                             Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Filled.Warning, contentDescription = null, tint = AppColors.NotReady, modifier = Modifier.size(14.dp))

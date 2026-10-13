@@ -94,6 +94,7 @@ import com.yarmiplaytv.ui.shared.playEpisode
 import com.yarmiplaytv.ui.shared.rememberMalLoginModel
 import com.yarmiplaytv.ui.shared.rememberMalSearchModel
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.OnVideo
 import kotlinx.coroutines.launch
 
 /** Signing in to MyAnimeList: what's shared and kept first, then MyAnimeList's own page in the browser. */
@@ -467,7 +468,7 @@ fun MalNoticeCard(container: AppContainer, onPick: () -> Unit, modifier: Modifie
             n.undo?.let { undo -> TextButton({ undo(); container.mal.dismissNotice() }, Modifier.testTag("mal_notice_undo")) { Text("Undo") } }
             n.confirm?.let { yes -> TextButton({ yes(); container.mal.dismissNotice() }, Modifier.testTag("mal_notice_yes")) { Text("Yes") } }
             if (n.pick) TextButton({ onPick(); container.mal.dismissNotice() }, Modifier.testTag("mal_notice_pick")) { Text("Pick") }
-            if (n.question) TextButton(container.mal::dismissNotice) { Text("✕", color = AppColors.TextDim) }
+            if (n.question) TextButton(container.mal::dismissNotice) { Text("✕", color = OnVideo.Text) }
         }
     }
 }

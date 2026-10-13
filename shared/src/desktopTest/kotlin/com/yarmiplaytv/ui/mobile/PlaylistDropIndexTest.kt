@@ -38,4 +38,17 @@ class PlaylistDropIndexTest {
         assertEquals(2, playlistDropIndex(401f, 400, rows, 2))
         assertEquals(0, playlistDropIndex(50f, 400, emptyList(), 0))
     }
+
+    @Test
+    fun `a dragged row lands on the row its middle is over, however tall the rows are`() {
+        // Row 1's long name takes three lines.
+        val rows = listOf(row(0, 0), row(1, 40, size = 100), row(2, 140), row(3, 180))
+        assertEquals(0, playlistDragTarget(0, 15f, rows, 3))
+        assertEquals(1, playlistDragTarget(0, 30f, rows, 3))
+        assertEquals(1, playlistDragTarget(0, 110f, rows, 3))
+        assertEquals(2, playlistDragTarget(0, 130f, rows, 3))
+        assertEquals(0, playlistDragTarget(3, -190f, rows, 3))
+        assertEquals(3, playlistDragTarget(0, 900f, rows, 3))
+        assertEquals(2, playlistDragTarget(2, 0f, rows, 3))
+    }
 }

@@ -109,8 +109,8 @@ entry has loaded; Settings > Syncing changes when you're ready and what happens 
 
 ## The shared playlist
 
-Add videos from your library, your files or a link. When someone selects an entry, every viewer's app finds
-that file by its name, in this order:
+Add videos from your library, your files or a link. Each entry shows its whole file name, on as many lines as it
+takes. When someone selects an entry, every viewer's app finds that file by its name, in this order:
 
 1. Your media folders.
 2. A media server with exactly that file name (Settings > Preferred server decides when several have it).
@@ -326,9 +326,11 @@ a computer, a wide tablet or a TV, the categories are on the left and the chosen
 - **Playback:** hardware decoding, picture-in-picture, skipping openings and endings when watching alone, the
   Skip button and finding them by listening, the seek step and the audio and subtitle languages.
 - **Appearance:** the theme: **Dark** (night blue, the app's own look), **Noire** (dark purple, as NoireServerTV),
-  **Monochrome** (true black and white, darkest on OLED screens), **Light**, or **Match the system** (light or dark as your device is set, changing with it).
-  Everything takes the new colours at once, except the player, which stays dark over the video. On Windows the
-  window's title bar follows too; on a Mac it does after restarting the app.
+  **Monochrome** (true black and white, darkest on OLED screens), **Light**, or **Match the system** (light or dark
+  as your device is set, changing with it). Everything takes the new colours at once, the player's panels and
+  sheets included; what's written straight on the video (its title, the times, hints) stays white on see-through
+  black, so it reads on a bright picture too. On Windows the window's title bar follows; on a Mac it does after
+  restarting the app.
 - **Updates:** checking for and installing new versions.
 - **About:** the version, what's new, this manual, the website, privacy, the community rules, the source code,
   reporting a problem, and open-source licenses. On a TV, these links show a QR code to open on your phone.

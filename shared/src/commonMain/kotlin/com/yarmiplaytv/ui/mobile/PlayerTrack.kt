@@ -63,6 +63,8 @@ import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.player.playbackInfo
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.OnVideo
+import com.yarmiplaytv.ui.theme.onVideoLabel
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import kotlinx.coroutines.Dispatchers
@@ -115,11 +117,13 @@ internal fun TvSeekBar(
             pointing?.let { at -> SeekBubble(formatClock(at), frame, (at / duration).toFloat(), width) }
         }
         Row(Modifier.fillMaxWidth()) {
-            Text(formatClock(shown), color = AppColors.TextDim, style = MaterialTheme.typography.bodyMedium)
+            Text(formatClock(shown), color = OnVideo.Text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.onVideoLabel())
             Spacer(Modifier.weight(1f))
-            Text(playbackInfo(state), color = AppColors.TextDim, style = MaterialTheme.typography.bodyMedium)
+            playbackInfo(state).takeIf { it.isNotEmpty() }?.let {
+                Text(it, color = OnVideo.Text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.onVideoLabel())
+            }
             Spacer(Modifier.width(24.dp))
-            Text(formatClock(duration), color = AppColors.TextDim, style = MaterialTheme.typography.bodyMedium)
+            Text(formatClock(duration), color = OnVideo.Text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.onVideoLabel())
         }
     }
 }
