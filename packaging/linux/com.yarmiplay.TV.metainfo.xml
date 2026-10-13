@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.9.4" date="2026-10-13">
+      <description>
+        <p>A roomier join screen on phones: the server gets the whole width with the port and TLS under it, the public servers wrap, and saved rooms show their whole address.</p>
+      </description>
+    </release>
     <release version="1.9.3" date="2026-10-13">
       <description>
         <p>Play the next episode, or add it to the room's playlist, straight from your MyAnimeList list, with every episode you have one press away; Settings in categories on phones and TV too; and F6 for a screenshot without the subtitles on desktop.</p>
