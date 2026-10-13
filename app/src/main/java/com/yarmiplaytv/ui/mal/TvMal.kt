@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -62,12 +63,16 @@ import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
 import com.yarmiplaytv.ui.shared.MAL_PRIVACY_NOTE
+import com.yarmiplaytv.ui.shared.MalSearchModel
 import com.yarmiplaytv.ui.shared.PRIVACY_POLICY_URL
 import com.yarmiplaytv.ui.shared.addEpisodeToPlaylist
+import com.yarmiplaytv.ui.shared.details
+import com.yarmiplaytv.ui.shared.listSummary
 import com.yarmiplaytv.ui.shared.malInfo
 import com.yarmiplaytv.ui.shared.nextEpisode
 import com.yarmiplaytv.ui.shared.playEpisode
 import com.yarmiplaytv.ui.shared.rememberMalLoginModel
+import com.yarmiplaytv.ui.shared.rememberMalSearchModel
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
@@ -192,6 +197,14 @@ fun MalPanel(container: AppContainer, focus: FocusRequester) {
     val state by container.mal.state.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
         TvMalContent(container, state, focus)
+        val settings by container.settings.collectAsStateWithLifecycle()
+        // Signed in only: it's for your list.
+        if (container.mal.client.configured && settings.mal != null) {
+            Spacer(Modifier.height(24.dp))
+            SectionTitle("Find a show")
+            Spacer(Modifier.height(8.dp))
+            TvMalSearch(rememberMalSearchModel(container))
+        }
     }
 }
 
@@ -333,6 +346,67 @@ private fun TvPicker(container: AppContainer, info: EpisodeInfo, candidates: Lis
     }
 }
 
+/**
+ * A search for any show on MyAnimeList (TV): each one found shows where it is on your list, and (signed in) can be
+ * added to it, or have its status, score and episodes watched changed with buttons that step through the values.
+ */
+@Composable
+private fun TvMalSearch(model: MalSearchModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.testTag("mal_find_section")) {
+        Row(Modifier.widthIn(max = 640.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            TvTextField(model.query, { model.query = it.take(64) }, "Search MyAnimeList", Modifier.weight(1f).testTag("mal_find"), onSubmit = model::search)
+            ActionButton("Search", model::search, Modifier.testTag("mal_find_go"), icon = Icons.Filled.Search)
+        }
+        when {
+            model.busy -> Text("Searching…", color = AppColors.TextDim)
+            model.error != null -> Text(model.error!!, color = AppColors.Error)
+            model.results?.isEmpty() == true -> Text("No shows found.", color = AppColors.TextDim)
+            else -> model.results?.forEach { anime -> TvMalFoundRow(model, anime) }
+        }
+    }
+}
+
+@Composable
+private fun TvMalFoundRow(model: MalSearchModel, anime: MalAnime) {
+    val list = anime.myListStatus
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("mal_found_${anime.id}")) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Cover(anime, Modifier.width(44.dp).height(62.dp))
+            Column(Modifier.weight(1f)) {
+                Text(anime.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(anime.details(), color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                if (model.canChange) {
+                    Text(anime.listSummary(), color = if (list != null) AppColors.Accent else AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        if (!model.canChange) return@Column
+        if (list == null) {
+            Row(Modifier.padding(start = 56.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ActionButton("Add to Watching", { model.update(anime, MalListUpdate(status = MalStatus.WATCHING)) }, Modifier.testTag("mal_found_add_${anime.id}"), icon = Icons.Filled.Add)
+                ActionButton("Add to Plan to watch", { model.update(anime, MalListUpdate(status = MalStatus.PLAN_TO_WATCH)) })
+            }
+            return@Column
+        }
+        // Status and score step through their values: easier with a remote than a menu.
+        Row(Modifier.padding(start = 56.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            val status = list.statusValue
+            ActionButton("Status: ${status?.label ?: "Not set"}", {
+                model.update(anime, MalListUpdate(status = MalStatus.entries[((status?.ordinal ?: -1) + 1) % MalStatus.entries.size]))
+            }, Modifier.testTag("mal_found_status_${anime.id}"))
+            ActionButton("Score −", { model.update(anime, MalListUpdate(score = (list.score - 1).coerceAtLeast(0))) }, enabled = list.score > 0)
+            Text(if (list.score > 0) "${list.score}/10" else "Not rated")
+            ActionButton("Score +", { model.update(anime, MalListUpdate(score = (list.score + 1).coerceAtMost(10))) }, Modifier.testTag("mal_found_score_${anime.id}"), enabled = list.score < 10)
+        }
+        Row(Modifier.padding(start = 56.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            ActionButton("−1", { model.update(anime, MalListUpdate(watchedEpisodes = (list.watchedEpisodes - 1).coerceAtLeast(0))) }, enabled = list.watchedEpisodes > 0)
+            Text("${list.watchedEpisodes} watched")
+            ActionButton("+1", { model.watchedOneMore(anime) }, Modifier.testTag("mal_found_plus_${anime.id}"), enabled = anime.numEpisodes == 0 || list.watchedEpisodes < anime.numEpisodes)
+            ActionButton("Remove from list", { model.remove(anime) }, Modifier.testTag("mal_found_remove_${anime.id}"))
+        }
+    }
+}
+
 @Composable
 private fun Cover(anime: MalAnime, modifier: Modifier) {
     Box(modifier.clip(RoundedCornerShape(6.dp)).background(AppColors.SurfaceHigh)) {
@@ -369,6 +443,10 @@ fun MalHubScreen(container: AppContainer, nav: Navigator) {
                 ActionButton("Sign out", { confirmSignOut = true }, Modifier.focusRequester(focus).testTag("mal_hub_sign_out"))
             }
         }
+        SectionTitle("Find a show")
+        val search = rememberMalSearchModel(container)
+        TvMalSearch(search)
+
         if (state != MalState.Idle) {
             SectionTitle("Now playing")
             TvMalContent(container, state, remember { FocusRequester() })
@@ -379,8 +457,9 @@ fun MalHubScreen(container: AppContainer, nav: Navigator) {
         var entries by remember { mutableStateOf<List<Pair<MalAnime, com.yarmiplaytv.media.mal.MalListStatus>>?>(null) }
         var reload by remember { mutableStateOf(0) }
         val scope = rememberCoroutineScope()
-        LaunchedEffect(status, reload) {
-            entries = runCatching { container.mal.myList(status, fresh = reload > 0) }.getOrDefault(emptyList())
+        // Read again after a change made by the search above.
+        LaunchedEffect(status, reload, search.changes) {
+            entries = runCatching { container.mal.myList(status, fresh = reload > 0 || search.changes > 0) }.getOrDefault(emptyList())
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MalStatus.entries.forEach { s -> ActionButton(s.label, { status = s }, primary = s == status) }

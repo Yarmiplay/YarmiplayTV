@@ -11,7 +11,10 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.media.EpisodeInfo
 import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.MediaItemType
+import com.yarmiplaytv.media.mal.MalAnime
 import com.yarmiplaytv.media.mal.MalClient
+import com.yarmiplaytv.media.mal.MalListUpdate
+import com.yarmiplaytv.tracking.MalService
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.tracking.AvailableEpisode
 import com.yarmiplaytv.tracking.MalCallbackServer
@@ -153,3 +156,96 @@ fun addEpisodeToPlaylist(container: AppContainer, episode: AvailableEpisode) {
 
 /** The episode to watch next: the one after those watched (the first when rewatching from the start), if it's here. */
 fun nextEpisode(episodes: List<AvailableEpisode>, watched: Int): AvailableEpisode? = episodes.firstOrNull { it.number == watched + 1 }
+
+/**
+ * Searching MyAnimeList for any show from its screens, to add it to your list or change its status, score and
+ * episodes watched right there. [changes] counts the changes made, for lists shown beside it to read again.
+ */
+class MalSearchModel(private val mal: MalService, private val signedIn: () -> Boolean, private val scope: CoroutineScope) {
+    var query by mutableStateOf("")
+    /** The shows found, each with your list entry; null before the first search. */
+    var results by mutableStateOf<List<MalAnime>?>(null)
+        private set
+    var busy by mutableStateOf(false)
+        private set
+    var error by mutableStateOf<String?>(null)
+        private set
+    var changes by mutableStateOf(0)
+        private set
+    private var job: Job? = null
+
+    /** Changing the list needs an account; searching doesn't. */
+    val canChange: Boolean get() = signedIn()
+
+    fun search() {
+        val q = query.trim()
+        if (q.length < MIN_QUERY) {
+            error = "Type at least $MIN_QUERY letters"
+            return
+        }
+        job?.cancel()
+        error = null
+        busy = true
+        val mine = scope.launch {
+            try {
+                results = mal.findShows(q)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = e.message ?: "Couldn't search MyAnimeList"
+            }
+        }
+        job = mine
+        mine.invokeOnCompletion { if (job === mine) busy = false }
+    }
+
+    /** Changes [anime]'s list entry (adding it when it isn't on the list) and shows it as it is after. */
+    fun update(anime: MalAnime, update: MalListUpdate) {
+        scope.launch {
+            val after = mal.update(anime, update) ?: return@launch
+            replace(anime.id) { it.copy(myListStatus = after) }
+            changes++
+        }
+    }
+
+    /** One more episode watched, with the start and finish dates and status that go with it. */
+    fun watchedOneMore(anime: MalAnime) {
+        val list = anime.myListStatus
+        val next = (list?.watchedEpisodes ?: 0) + 1
+        update(anime, MalService.progressUpdate(list, next, anime.numEpisodes, java.time.LocalDate.now().toString()) ?: MalListUpdate(watchedEpisodes = next))
+    }
+
+    fun remove(anime: MalAnime) {
+        scope.launch {
+            if (!mal.remove(anime)) return@launch
+            replace(anime.id) { it.copy(myListStatus = null) }
+            changes++
+        }
+    }
+
+    private fun replace(id: Int, change: (MalAnime) -> MalAnime) {
+        results = results?.map { if (it.id == id) change(it) else it }
+    }
+
+    companion object {
+        /** MyAnimeList searches need at least this many characters. */
+        const val MIN_QUERY = 3
+    }
+}
+
+@Composable
+fun rememberMalSearchModel(container: AppContainer): MalSearchModel {
+    val scope = rememberCoroutineScope()
+    return remember { MalSearchModel(container.mal, { container.settings.value.mal != null }, scope) }
+}
+
+/** "Watching · 3 of 12 watched · 8/10", or that it isn't on the list. */
+fun MalAnime.listSummary(): String {
+    val list = myListStatus ?: return "Not on your list"
+    val of = if (numEpisodes > 0) " of $numEpisodes" else ""
+    return listOfNotNull(list.statusValue?.label, "${list.watchedEpisodes}$of watched", list.score.takeIf { it > 0 }?.let { "$it/10" }).joinToString(" · ")
+}
+
+/** "TV · 2023 · 28 episodes". */
+fun MalAnime.details(): String =
+    listOfNotNull(mediaType?.uppercase(), year?.toString(), numEpisodes.takeIf { it > 0 }?.let { "$it episodes" }).joinToString(" · ")

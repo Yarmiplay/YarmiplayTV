@@ -228,6 +228,11 @@ you're signed in, the same card opens the **MyAnimeList screen**: your account, 
 (watching, plan to watch, completed), the shows you matched by hand, the shows you don't track, and updates
 waiting to be sent.
 
+**Find a show** searches MyAnimeList for any show, in your library or not. Each one found says where it is on your
+list: add it (as watching, plan to watch, and so on), or change its status, score and episodes watched, or take it
+off your list (**⋮** > **Remove from your list**; on TV, **Remove from list**). The same search is in the player's
+MyAnimeList panel, under the episode you're watching.
+
 When your media servers or media folders have the next episode of a show on your list, its entry has **Play**
 (for everyone, in a room) and **Add to playlist** for it. **Episodes** lists every episode of the show you have,
 watched ones too, to play or add any of them. The app finds them by the show's titles and counts an episode only
@@ -262,7 +267,8 @@ entry?** in the player's MyAnimeList panel fixes a match, and **Don't track this
 
 The player's MyAnimeList button shows the entry for the episode you're watching: its episode, your status and
 score. Change the episodes watched, the status or the score there, mark the episode watched, or undo the last
-update. Shows in your library have the same options under **MyAnimeList…**.
+update. Under it, **Find a show** searches MyAnimeList for any other show to add or change. Shows in your library
+have the same options under **MyAnimeList…**.
 
 Everything YarmiplayTV keeps for MyAnimeList stays on your device, and **Sign out** deletes it all. See the
 [privacy policy](../privacy/).

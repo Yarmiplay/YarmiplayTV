@@ -83,12 +83,16 @@ import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
 import com.yarmiplaytv.ui.shared.MAL_PRIVACY_NOTE
+import com.yarmiplaytv.ui.shared.MalSearchModel
 import com.yarmiplaytv.ui.shared.PRIVACY_POLICY_URL
 import com.yarmiplaytv.ui.shared.addEpisodeToPlaylist
+import com.yarmiplaytv.ui.shared.details
+import com.yarmiplaytv.ui.shared.listSummary
 import com.yarmiplaytv.ui.shared.malInfo
 import com.yarmiplaytv.ui.shared.nextEpisode
 import com.yarmiplaytv.ui.shared.playEpisode
 import com.yarmiplaytv.ui.shared.rememberMalLoginModel
+import com.yarmiplaytv.ui.shared.rememberMalSearchModel
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
@@ -334,9 +338,109 @@ private fun Cover(anime: MalAnime, modifier: Modifier) {
 private fun Choice(label: String, value: String, options: List<String>, modifier: Modifier, onPick: (Int) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
-        OutlinedButton({ open = true }, Modifier.fillMaxWidth()) { Text("$label: $value", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        OutlinedButton({ open = true }, Modifier.fillMaxWidth()) { Text(if (value.isEmpty()) label else "$label: $value", maxLines = 1, overflow = TextOverflow.Ellipsis) }
         DropdownMenu(open, { open = false }) {
             options.forEachIndexed { i, option -> DropdownMenuItem({ Text(option) }, { open = false; onPick(i) }) }
+        }
+    }
+}
+
+/**
+ * A search for any show on MyAnimeList: each one found shows where it is on your list, and (signed in) can be added
+ * to it, or have its status, score and episodes watched changed right there.
+ */
+@Composable
+fun MalShowSearch(model: MalSearchModel, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedTextField(
+            model.query, { model.query = it.take(64) },
+            label = { Text("Search MyAnimeList") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { model.search() }),
+            trailingIcon = { IconButton(model::search, Modifier.testTag("mal_find_go")) { Icon(Icons.Filled.Search, "Search") } },
+            modifier = Modifier.fillMaxWidth().testTag("mal_find"),
+        )
+        when {
+            model.busy -> CircularProgressIndicator(Modifier.size(28.dp))
+            model.error != null -> Text(model.error!!, color = AppColors.Error)
+            model.results?.isEmpty() == true -> Text("No shows found.", color = AppColors.TextDim)
+            else -> model.results?.forEach { anime -> MalFoundRow(model, anime) }
+        }
+    }
+}
+
+/** The player's MyAnimeList tab, under the playing show: a search for any other (signed in: it's for your list). */
+@Composable
+fun MalFindSection(container: AppContainer, modifier: Modifier = Modifier) {
+    val settings by container.settings.collectAsStateWithLifecycle()
+    if (!container.mal.client.configured || settings.mal == null) return
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("mal_find_section"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Find a show", style = MaterialTheme.typography.titleMedium)
+        MalShowSearch(rememberMalSearchModel(container))
+    }
+}
+
+/** One show found: what it is and where it is on your list, with its status, score and episodes to change. */
+@Composable
+private fun MalFoundRow(model: MalSearchModel, anime: MalAnime) {
+    val uriHandler = LocalUriHandler.current
+    val list = anime.myListStatus
+    var menu by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().testTag("mal_found_${anime.id}"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Cover(anime, Modifier.width(40.dp).height(56.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(anime.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(anime.details(), color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                if (model.canChange) {
+                    Text(
+                        anime.listSummary(),
+                        color = if (list != null) AppColors.Accent else AppColors.TextDim,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("mal_found_list_${anime.id}"),
+                    )
+                }
+            }
+            Box {
+                IconButton({ menu = true }, Modifier.testTag("mal_found_more_${anime.id}")) { Icon(Icons.Filled.MoreVert, "More") }
+                DropdownMenu(menu, { menu = false }) {
+                    if (list != null && model.canChange) {
+                        DropdownMenuItem({ Text("Remove from your list") }, { menu = false; model.remove(anime) }, modifier = Modifier.testTag("mal_found_remove_${anime.id}"))
+                    }
+                    DropdownMenuItem({ Text("Open on MyAnimeList") }, { menu = false; uriHandler.openUri(anime.url) })
+                }
+            }
+        }
+        if (!model.canChange) return@Column
+        val statuses = MalStatus.entries
+        if (list == null) {
+            Choice("Add to your list", "", statuses.map { it.label }, Modifier.padding(start = 50.dp).testTag("mal_found_add_${anime.id}")) { i ->
+                model.update(anime, MalListUpdate(status = statuses[i]))
+            }
+            return@Column
+        }
+        Row(Modifier.padding(start = 50.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Choice("Status", list.statusValue?.label ?: "Not set", statuses.map { it.label }, Modifier.weight(1f).testTag("mal_found_status_${anime.id}")) { i ->
+                model.update(anime, MalListUpdate(status = statuses[i]))
+            }
+            Choice(
+                "Score", list.score.takeIf { it > 0 }?.let { "$it/10" } ?: "Not rated", (10 downTo 1).map { "$it" } + "No score",
+                Modifier.weight(1f).testTag("mal_found_score_${anime.id}"),
+            ) { i -> model.update(anime, MalListUpdate(score = if (i == 10) 0 else 10 - i)) }
+        }
+        Row(Modifier.padding(start = 50.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Episodes watched", Modifier.weight(1f), color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+            IconButton({ model.update(anime, MalListUpdate(watchedEpisodes = (list.watchedEpisodes - 1).coerceAtLeast(0))) }, enabled = list.watchedEpisodes > 0) {
+                Icon(Icons.Filled.Remove, "One episode fewer")
+            }
+            Text("${list.watchedEpisodes}", style = MaterialTheme.typography.titleMedium)
+            IconButton(
+                { model.watchedOneMore(anime) },
+                enabled = anime.numEpisodes == 0 || list.watchedEpisodes < anime.numEpisodes,
+                modifier = Modifier.testTag("mal_found_plus_${anime.id}"),
+            ) { Icon(Icons.Filled.Add, "One episode more") }
         }
     }
 }
@@ -387,6 +491,7 @@ fun MobileMalScreen(container: AppContainer, nav: Navigator) {
             }
             return@Column
         }
+        val search = rememberMalSearchModel(container)
         BoxWithConstraints(Modifier.fillMaxSize()) {
             if (maxWidth >= 900.dp) {
                 Row(Modifier.fillMaxSize().testTag("mal_hub_wide")) {
@@ -396,14 +501,16 @@ fun MobileMalScreen(container: AppContainer, nav: Navigator) {
                         MalHubSettings(container)
                     }
                     Column(Modifier.weight(1.2f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        MalYourList(container)
+                        MalSection("Find a show") { MalShowSearch(search) }
+                        MalYourList(container, search.changes)
                     }
                 }
             } else {
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     MalAccountCard(container, account.userName, account.picture)
+                    MalSection("Find a show") { MalShowSearch(search) }
                     MalNowPlaying(container, state, nav)
-                    MalYourList(container)
+                    MalYourList(container, search.changes)
                     MalHubSettings(container)
                 }
             }
@@ -459,19 +566,22 @@ private fun MalNowPlaying(container: AppContainer, state: MalState, nav: Navigat
     }
 }
 
-/** Your list by status, newest change first; each entry's episodes and score can be changed right here. */
+/**
+ * Your list by status, newest change first; each entry's episodes and score can be changed right here. It's read
+ * again when [changes] (made by the search beside it) goes up.
+ */
 @Composable
-private fun MalYourList(container: AppContainer) {
+private fun MalYourList(container: AppContainer, changes: Int = 0) {
     val statuses = listOf(MalStatus.WATCHING, MalStatus.PLAN_TO_WATCH, MalStatus.COMPLETED, MalStatus.ON_HOLD, MalStatus.DROPPED)
     var status by remember { mutableStateOf(MalStatus.WATCHING) }
     var entries by remember { mutableStateOf<List<Pair<MalAnime, MalListStatus>>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(status, reload) {
+    LaunchedEffect(status, reload, changes) {
         entries = null
         error = null
-        runCatching { container.mal.myList(status, fresh = reload > 0) }
+        runCatching { container.mal.myList(status, fresh = reload > 0 || changes > 0) }
             .onSuccess { entries = it }
             .onFailure { error = it.message ?: "Couldn't load your list" }
     }

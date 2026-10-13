@@ -93,16 +93,16 @@ class MalClient(
 
     /**
      * Up to [limit] anime whose titles match [query] (MyAnimeList needs at least 3 characters). Works signed out
-     * too, as public data.
+     * too, as public data; signed in, [withListStatus] also brings your list entry for each.
      */
-    suspend fun search(query: String, limit: Int = 10): List<MalAnime> {
+    suspend fun search(query: String, limit: Int = 10, withListStatus: Boolean = false): List<MalAnime> {
         val q = searchQuery(query)
         if (q.length < 3) return emptyList()
         return json.decodeFromString(MalPage.serializer(), publicCall {
             api("anime") {
                 addQueryParameter("q", q)
                 addQueryParameter("limit", limit.coerceIn(1, 100).toString())
-                addQueryParameter("fields", LIST_FIELDS)
+                addQueryParameter("fields", if (withListStatus && tokens != null) "$LIST_FIELDS,my_list_status" else LIST_FIELDS)
             }
         }).data.map { it.node }
     }

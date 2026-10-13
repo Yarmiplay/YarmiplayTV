@@ -7,10 +7,13 @@ import com.yarmiplaytv.media.EpisodeInfo
 import com.yarmiplaytv.media.mal.MalAccount
 import com.yarmiplaytv.media.mal.MalClient
 import com.yarmiplaytv.media.mal.MalListStatus
+import com.yarmiplaytv.media.mal.MalListUpdate
 import com.yarmiplaytv.media.mal.MalStatus
 import com.yarmiplaytv.media.mal.MalTokens
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.sync.NowPlaying
+import com.yarmiplaytv.ui.shared.MalSearchModel
+import com.yarmiplaytv.ui.shared.listSummary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -73,7 +76,10 @@ class MalServiceTest {
                         json(listStatus!!)
                     }
                     request.method == "DELETE" -> { writes += "DELETE"; listStatus = null; MockResponse().setResponseCode(200) }
-                    path == "/v2/anime" -> json("""{"data":[{"node":{"id":100,"title":"Hero Academy","num_episodes":12,"media_type":"tv"}}]}""")
+                    path == "/v2/anime" -> {
+                        val list = listStatus?.takeIf { "my_list_status" in request.requestUrl!!.queryParameter("fields").orEmpty() }?.let { ""","my_list_status":$it""" }.orEmpty()
+                        json("""{"data":[{"node":{"id":100,"title":"Hero Academy","num_episodes":12,"media_type":"tv"$list}}]}""")
+                    }
                     path == "/v2/anime/100" -> {
                         detailFetches += 100
                         val list = listStatus?.let { ""","my_list_status":$it""" }.orEmpty()
@@ -265,5 +271,39 @@ class MalServiceTest {
         assertEquals(400, get("code=x&state=bad-state"))
         assertEquals(200, get("code=the%20code&state=good-state"))
         assertEquals("the code", code.await())
+    }
+
+    @Test
+    fun `the search finds shows with your entry, and adds, changes and removes them`() {
+        val mal = service()
+        val model = MalSearchModel(mal, { true }, scope)
+        model.query = "He"
+        model.search()
+        assertEquals("Type at least 3 letters", model.error)
+
+        model.query = "Hero Academy"
+        model.search()
+        eventually("the results") { model.results != null && !model.busy }
+        val found = model.results!!.single()
+        assertNull("not on the list yet", found.myListStatus)
+        assertEquals("Not on your list", found.listSummary())
+
+        model.update(found, MalListUpdate(status = MalStatus.PLAN_TO_WATCH))
+        eventually("added") { model.results!!.single().myListStatus?.statusValue == MalStatus.PLAN_TO_WATCH }
+        assertEquals(1, model.changes)
+        assertEquals("status=plan_to_watch", writes.last())
+
+        model.watchedOneMore(model.results!!.single())
+        eventually("one watched") { model.results!!.single().myListStatus?.watchedEpisodes == 1 }
+        assertEquals("status=watching&num_watched_episodes=1&start_date=2026-10-12", writes.last().replace(Regex("start_date=[0-9-]+"), "start_date=2026-10-12"))
+
+        // Searching again shows the entry as MyAnimeList has it.
+        model.search()
+        eventually("searched again") { !model.busy && model.results!!.single().myListStatus?.watchedEpisodes == 1 }
+
+        model.remove(model.results!!.single())
+        eventually("removed") { model.results!!.single().myListStatus == null }
+        assertEquals("DELETE", writes.last())
+        assertEquals(3, model.changes)
     }
 }

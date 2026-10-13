@@ -207,6 +207,8 @@ actual fun RoomSidePanel(container: AppContainer) {
                 RoomPanelTab.MAL -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
                     val mal by container.mal.state.collectAsState()
                     MalContent(container, mal)
+                    Spacer(Modifier.height(16.dp))
+                    MalFindSection(container)
                 }
             }
         }

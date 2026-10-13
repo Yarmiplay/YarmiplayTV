@@ -240,6 +240,25 @@ class MalService(
 
     suspend fun search(query: String): List<MalAnime> = runCatching { client.search(query, limit = 15) }.getOrDefault(emptyList())
 
+    /**
+     * Shows whose titles match [query], for the search on the MyAnimeList screens: each with your list entry when
+     * signed in. Failures throw, so the search can say why.
+     */
+    suspend fun findShows(query: String): List<MalAnime> = client.search(query, limit = 20, withListStatus = true)
+
+    /** Takes [anime] off your list; false (with a notice) when MyAnimeList didn't. */
+    suspend fun remove(anime: MalAnime): Boolean = try {
+        client.deleteStatus(anime.id)
+        catalog.forget(anime.id)
+        refreshState(anime.copy(myListStatus = null))
+        true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        _notice.value = MalNotice("MyAnimeList didn't remove ${anime.title}: ${e.message}")
+        false
+    }
+
     /** Your MyAnimeList entries with [status] (for the MyAnimeList screen); [fresh] reads them again. */
     suspend fun myList(status: MalStatus, fresh: Boolean = false): List<Pair<MalAnime, MalListStatus>> = catalog.list(status, fresh)
 

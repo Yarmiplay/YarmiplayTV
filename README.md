@@ -41,8 +41,9 @@ New to it? The [user manual](https://tv.yarmiplay.com/manual/) explains everythi
   are on the join form, with **Rejoin** to connect in one click, and the room panel has the other rooms on the
   same server to switch to. The home screen's room card says which room it would rejoin.
 - MyAnimeList: sign in from the MyAnimeList card on the home screen (or Settings > MyAnimeList) and your list
-  follows what you watch. Once you're signed in, the card opens the MyAnimeList screen: your list (watching, plan
-  to watch, completed) with episode and score changes, the update switches, the shows you matched or stopped
+  follows what you watch. Once you're signed in, the card opens the MyAnimeList screen: a search for any show (to
+  add it to your list, change its status, score and episodes, or remove it; also in the player's MyAnimeList
+  panel), your list (watching, plan to watch, completed) with episode and score changes, the update switches, the shows you matched or stopped
   tracking, and updates waiting to be sent. When an episode is 90%
   watched, its progress is updated (and the show's status: watching, or completed with a finish date at the last
   episode; a completed show you watch again counts as a rewatch), with Undo, or after asking if you prefer. The

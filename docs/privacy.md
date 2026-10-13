@@ -53,7 +53,8 @@ unless you turn it off, to GitHub to check for a new version.
 - **MyAnimeList, only when you sign in to it:** you sign in on MyAnimeList's own page (in your browser on a
   computer, or on Android in a web view showing that page); the app never sees or stores your MyAnimeList password, only the sign-in
   tokens MyAnimeList gives it (OAuth). With them the app asks MyAnimeList for your user name and picture, looks up
-  the shows you watch (their titles, episode counts and related seasons) and your list entries for them, and,
+  the shows you watch (their titles, episode counts and related seasons) and your list entries for them, sends
+  what you type in **Find a show** to search for shows, and,
   when you've watched an episode or change something in the MyAnimeList panel, updates your list: the episodes
   watched, status, score, rewatching and start and finish dates. MyAnimeList handles this under its
   [privacy policy](https://myanimelist.net/about/privacy_policy). Nothing about MyAnimeList goes anywhere else.

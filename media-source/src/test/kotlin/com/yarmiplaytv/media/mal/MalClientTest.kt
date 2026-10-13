@@ -9,6 +9,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -150,6 +151,19 @@ class MalClientTest {
         assertEquals(4, now.watchedEpisodes)
         val patch = requests.last { it.first.method == "PATCH" }.second
         assertEquals("status=watching&num_watched_episodes=4&start_date=2026-10-01", patch)
+    }
+
+    @Test
+    fun `a search with list status asks for your entry only when signed in`() = runBlocking {
+        val c = client()
+        fun lastFields() = requests.last { it.first.requestUrl!!.encodedPath == "/v2/anime" }.first.requestUrl!!.queryParameter("fields")!!
+        c.search("Frieren", withListStatus = true)
+        assertFalse("signed out: public data only", "my_list_status" in lastFields())
+        c.exchange("code", "verifier")
+        c.search("Frieren")
+        assertFalse("not asked for", "my_list_status" in lastFields())
+        c.search("Frieren", withListStatus = true)
+        assertTrue("my_list_status" in lastFields())
     }
 
     @Test
