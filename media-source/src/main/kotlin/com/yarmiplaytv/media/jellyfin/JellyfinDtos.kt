@@ -65,6 +65,7 @@ data class BaseItemDto(
     @SerialName("ParentIndexNumber") val parentIndexNumber: Int? = null,
     @SerialName("SeriesName") val seriesName: String? = null,
     @SerialName("SeriesId") val seriesId: String? = null,
+    @SerialName("SeasonId") val seasonId: String? = null,
     @SerialName("RunTimeTicks") val runTimeTicks: Long? = null,
     @SerialName("Path") val path: String? = null,
     @SerialName("MediaSources") val mediaSources: List<MediaSourceInfo>? = null,

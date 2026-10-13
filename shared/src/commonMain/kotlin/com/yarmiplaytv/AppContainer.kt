@@ -43,6 +43,10 @@ import com.yarmiplaytv.tracking.MalEpisodes
 import com.yarmiplaytv.tracking.MalService
 import com.yarmiplaytv.tracking.MalTracker
 import com.yarmiplaytv.tracking.SkipService
+import com.yarmiplaytv.tracking.detect.AudioDecoder
+import com.yarmiplaytv.tracking.detect.EpisodeSiblings
+import com.yarmiplaytv.tracking.detect.FingerprintCache
+import com.yarmiplaytv.tracking.detect.SkipDetector
 import com.yarmiplaytv.update.Updates
 import com.yarmiplaytv.update.WhatsNew
 import java.io.File
@@ -83,6 +87,8 @@ class AppContainer(
     val seekFrames: SeekFrames? = null,
     /** This build's MyAnimeList Client ID (from the build, never the repository); empty leaves MyAnimeList off. */
     malClientId: String = "",
+    /** Reads videos' sound, for finding openings and endings by listening (kept under [cacheDir]); without it, no listening. */
+    audioDecoder: AudioDecoder? = null,
 ) {
     val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.Main.immediate +
@@ -158,10 +164,14 @@ class AppContainer(
     val roomAutoSkip = RoomAutoSkip(scope, sync, roomHistory, settingsStore, settings)
     /** The episodes of a MyAnimeList entry that the library has, for the MyAnimeList screen's Play buttons. */
     val malEpisodes = MalEpisodes(mal, mediaSource, local.files)
-    /** Skips anime openings and endings (times from AniSkip), or offers a Skip button. */
+    private val skipDetector: SkipDetector? = audioDecoder?.let { decoder ->
+        cacheDir?.let { SkipDetector(decoder, FingerprintCache(File(it, "skip-detect")), EpisodeSiblings(local, servers), settings) }
+    }
+    /** Skips openings and endings (from chapters, the servers' markers, AniSkip or listening), or offers a Skip button. */
     val skips = SkipService(
         scope, player, playlist.nowPlaying, mal, AniSkipClient(), servers, sync.room, roomAutoSkip.state, settings,
         notify = { sync.postLocal(it) },
+        detector = skipDetector,
     )
     private val jellyfinSharing = HostJellyfinSharing(
         scope, sync, jellyfinClient,

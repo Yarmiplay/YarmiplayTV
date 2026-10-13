@@ -109,6 +109,12 @@ abstract class LocalLibrary(
     /** Videos inside [folder] and its subfolders (at most [MAX_FILES]); runs on the IO dispatcher. */
     protected abstract fun scan(folder: LocalFolder): List<LocalFile>
 
+    /**
+     * The other videos in the folder [uri] is in, for a file opened outside the media folders; empty where the
+     * platform can't list it (Android's picked files). Blocking, call on IO.
+     */
+    open fun neighbours(uri: String): List<LocalFile> = emptyList()
+
     /** The folder entry (with display name) for a folder URI. */
     abstract fun folderOf(uri: String): LocalFolder
 

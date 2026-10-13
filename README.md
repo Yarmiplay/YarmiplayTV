@@ -60,8 +60,12 @@ New to it? The [user manual](https://tv.yarmiplay.com/manual/) explains everythi
   MyAnimeList Client ID (`MAL_CLIENT_ID` in `~/.gradle/gradle.properties` or the CI secret; never in the
   repository), registered with the redirect URL `http://localhost:47821/mal-callback`.
 - Skips openings and endings, found from the file's chapters ("Opening", "ED", "Credits"…), the media server's
-  markers (Jellyfin 10.10 media segments, Plex intro and credits markers) or, for anime, AniSkip's times for the
-  episode MyAnimeList says is playing (no account needed); they're marked on the seek bar. A Skip button shows for
+  markers (Jellyfin 10.10 media segments, Plex intro and credits markers), for anime AniSkip's times for the
+  episode MyAnimeList says is playing (no account needed), or else by listening: the start and end of the episode
+  are fingerprinted (Chromaprint's method, our own Kotlin code) and compared with the episodes before and after it,
+  and the stretch they share is the opening or ending song. Fingerprints stay in the app's cache, so the next episode
+  is usually instant; server episodes are only read on Wi-Fi or Ethernet unless allowed on mobile data. They're
+  marked on the seek bar. A Skip button shows for
   3 seconds as one starts (S on desktop, OK on a TV remote), or they're skipped by themselves.
   Automatic skipping is a room setting: on YarmiplayServerTV (1.7.3 or later) it's the room's, the same for
   everyone and changed only by operators in a managed room; on other servers each device decides, and a skip

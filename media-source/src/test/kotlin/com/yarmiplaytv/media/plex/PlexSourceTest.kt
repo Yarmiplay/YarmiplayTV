@@ -64,6 +64,10 @@ class PlexSourceTest {
                             {"type":"commercial","startTimeOffset":600000,"endTimeOffset":660000},
                             {"type":"credits","startTimeOffset":1350000,"endTimeOffset":1440000}]}]}}"""
                         else """{"MediaContainer":{"Metadata":[${episodeJson()}]}}"""
+                    "/library/metadata/season1/children" -> """{"MediaContainer":{"Metadata":[${episodeJson()},
+                        {"ratingKey":"ep2","type":"episode","title":"Two","index":2,"parentIndex":1,"grandparentTitle":"Hyperdimension Neptunia",
+                         "Media":[{"duration":1430000,"Part":[{"key":"/library/parts/8/1/file.mkv","file":"/media/Neptunia/Season 1/E02.mkv","size":5}]}]},
+                        {"ratingKey":"ep3","type":"episode","title":"No file","index":3}]}}"""
                     "/library/metadata/show1/allLeaves" -> """{"MediaContainer":{"Metadata":[${episodeJson()}]}}"""
                     "/hubs/search" -> """{"MediaContainer":{"Hub":[{"type":"show","Metadata":[{"ratingKey":"show1","type":"show","title":"Hyperdimension Neptunia"}]}]}}"""
                     "/library/onDeck" -> """{"MediaContainer":{"Metadata":[${episodeJson()}]}}"""
@@ -78,7 +82,7 @@ class PlexSourceTest {
         client = PlexClient(ClientInfo(deviceName = "Test TV", deviceId = "dev1", version = "0.1"), plexTvUrl = baseUrl())
     }
 
-    private fun episodeJson() = """{"ratingKey":"ep1","type":"episode","title":"The Goddess (Neptune) Of Planeptune","index":1,"parentIndex":1,
+    private fun episodeJson() = """{"ratingKey":"ep1","type":"episode","title":"The Goddess (Neptune) Of Planeptune","index":1,"parentIndex":1,"parentRatingKey":"season1",
         "grandparentTitle":"Hyperdimension Neptunia","grandparentRatingKey":"show1","duration":1420000,"viewOffset":60000,
         "Media":[{"duration":1420000,"Part":[{"key":"/library/parts/7/1700000000/file.mkv","file":"$path","size":587443083}]}]}"""
 
@@ -97,6 +101,15 @@ class PlexSourceTest {
             listOf(SkipSegment(SkipSegment.Kind.OPENING, 5.0, 95.0), SkipSegment(SkipSegment.Kind.ENDING, 1350.0, 1440.0)),
             PlexSource(client, session()).skipSegments("ep1"),
         )
+    }
+
+    @Test
+    fun seasonEpisodesAreTheSeasonsPlayableEpisodes() = runBlocking {
+        val episodes = PlexSource(client, session()).seasonEpisodes("ep1")
+        assertEquals(listOf("ep1", "ep2"), episodes.map { it.itemId })
+        assertEquals(1430.0, episodes[1].durationSeconds, 0.001)
+        assertTrue(episodes[1].url.contains("/library/parts/8/1/file.mkv") && episodes[1].url.contains("X-Plex-Token=srvtok"))
+        assertTrue(runCatching { PlexSource(client, session()).seasonEpisodes("missing") }.isFailure)
     }
 
     @Test

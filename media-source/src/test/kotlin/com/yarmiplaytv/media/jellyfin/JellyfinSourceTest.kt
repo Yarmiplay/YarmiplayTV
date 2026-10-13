@@ -46,6 +46,13 @@ class JellyfinSourceTest {
                         url.queryParameter("includeItemTypes") == "Episode" -> """{"Items":[${episodeJson(withSources = true)}],"TotalRecordCount":1}"""
                         else -> """{"Items":[],"TotalRecordCount":0}"""
                     }
+                    "/Shows/series1/Episodes" -> if (url.queryParameter("seasonId") != "season1") """{"Items":[]}""" else {
+                        val second = path.replace("\\", "\\\\").replace("E01", "E02")
+                        """{"Items":[${episodeJson(withSources = true)},
+                            {"Id":"ep2","Name":"Two","Type":"Episode","IndexNumber":2,"ParentIndexNumber":1,"SeriesName":"Hyperdimension Neptunia","SeriesId":"series1",
+                             "MediaSources":[{"Id":"ms2","Path":"$second","Size":5,"RunTimeTicks":14300000000,"Protocol":"File"}]},
+                            {"Id":"ep3","Name":"No file","Type":"Episode","IndexNumber":3}]}"""
+                    }
                     "/MediaSegments/ep1" -> """{"Items":[
                         {"Id":"s1","ItemId":"ep1","Type":"Recap","StartTicks":0,"EndTicks":300000000},
                         {"Id":"s2","ItemId":"ep1","Type":"Intro","StartTicks":300000000,"EndTicks":1200000000},
@@ -63,7 +70,7 @@ class JellyfinSourceTest {
     private fun episodeJson(withSources: Boolean): String {
         val escapedPath = path.replace("\\", "\\\\")
         val sources = if (withSources) ""","MediaSources":[{"Id":"ms1","Path":"$escapedPath","Size":587443083,"RunTimeTicks":14200000000,"Protocol":"File"}]""" else ""
-        return """{"Id":"ep1","Name":"The Goddess (Neptune) Of Planeptune","Type":"Episode","IndexNumber":1,"ParentIndexNumber":1,"SeriesName":"Hyperdimension Neptunia","SeriesId":"series1","Path":"$escapedPath","RunTimeTicks":14200000000$sources}"""
+        return """{"Id":"ep1","Name":"The Goddess (Neptune) Of Planeptune","Type":"Episode","IndexNumber":1,"ParentIndexNumber":1,"SeriesName":"Hyperdimension Neptunia","SeriesId":"series1","SeasonId":"season1","Path":"$escapedPath","RunTimeTicks":14200000000$sources}"""
     }
 
     @After
@@ -84,6 +91,16 @@ class JellyfinSourceTest {
         assertEquals(listOf("Intro", "Outro"), asked.requestUrl!!.queryParameterValues("includeSegmentTypes"))
         // Servers before 10.10 have no media segments.
         assertEquals(emptyList<SkipSegment>(), source.skipSegments("old"))
+    }
+
+    @Test
+    fun seasonEpisodesAreTheSeasonsPlayableEpisodes() = runBlocking {
+        val episodes = JellyfinSource(client, session()).seasonEpisodes("ep1")
+        assertEquals(listOf("ep1", "ep2"), episodes.map { it.itemId })
+        assertEquals(listOf(1, 2), episodes.map { it.episode?.episode })
+        assertEquals(1430.0, episodes[1].durationSeconds, 0.001)
+        assertTrue(episodes[1].url.contains("Videos/ep2/stream") && episodes[1].url.contains("api_key=tok"))
+        assertEquals(emptyList<Any>(), JellyfinSource(client, session()).seasonEpisodes("missing"))
     }
 
     @Test

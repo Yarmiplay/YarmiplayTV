@@ -134,6 +134,10 @@ data class PlaybackPrefs(
     val autoSkipAlone: Boolean = false,
     /** Offer a Skip button for a few seconds as an opening or ending starts, when it isn't skipped automatically. */
     val showSkipButton: Boolean = true,
+    /** When nothing else says where they are, find openings and endings by comparing the episodes' sound. */
+    val detectSkips: Boolean = true,
+    /** Also read Jellyfin and Plex episodes for that on mobile data (a metered network), not only on Wi-Fi or Ethernet. */
+    val detectOnAnyNetwork: Boolean = false,
 )
 
 data class AppSettings(
@@ -285,6 +289,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val controlsHide = intPreferencesKey("pb_controls_hide")
         val autoSkipAlone = booleanPreferencesKey("pb_auto_skip")
         val skipButton = booleanPreferencesKey("pb_skip_button")
+        val detectSkips = booleanPreferencesKey("pb_detect_skips")
+        val detectAnyNetwork = booleanPreferencesKey("pb_detect_any_network")
 
         /** JSON lists of [JellyfinSession] and [PlexSession]. */
         val jfServers = stringPreferencesKey("jf_servers")
@@ -372,6 +378,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
                 controlsHideSeconds = p[Keys.controlsHide] ?: defaults.playback.controlsHideSeconds,
                 autoSkipAlone = p[Keys.autoSkipAlone] ?: defaults.playback.autoSkipAlone,
                 showSkipButton = p[Keys.skipButton] ?: defaults.playback.showSkipButton,
+                detectSkips = p[Keys.detectSkips] ?: defaults.playback.detectSkips,
+                detectOnAnyNetwork = p[Keys.detectAnyNetwork] ?: defaults.playback.detectOnAnyNetwork,
             ),
             jellyfinServers = jellyfinServers,
             lastJellyfinUrl = p[Keys.jfLastUrl] ?: "",
@@ -584,6 +592,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             it[Keys.controlsHide] = prefs.controlsHideSeconds
             it[Keys.autoSkipAlone] = prefs.autoSkipAlone
             it[Keys.skipButton] = prefs.showSkipButton
+            it[Keys.detectSkips] = prefs.detectSkips
+            it[Keys.detectAnyNetwork] = prefs.detectOnAnyNetwork
         }
     }
 

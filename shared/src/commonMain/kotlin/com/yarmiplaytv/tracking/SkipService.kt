@@ -11,6 +11,7 @@ import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.sync.NowPlaying
 import com.yarmiplaytv.sync.RoomSkip
 import com.yarmiplaytv.syncplay.RoomState
+import com.yarmiplaytv.tracking.detect.SkipDetector
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -18,7 +19,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
@@ -32,8 +35,10 @@ data class SkipPrompt(val segment: SkipSegment) {
  * Skips anime openings and endings: by itself when the room (or, alone, the Playback setting) says so, else with a
  * Skip button shown for [PROMPT_MILLIS] as the part starts. Where they are comes, for each part, from the first of:
  * the file's own chapters ("Opening", "ED"…), the media server's markers (Jellyfin's media segments, Plex's intro and
- * credits markers), and AniSkip's times for the episode MyAnimeList says is playing. Only a device that may seek does either (in a managed room, the operators); in a room the skip moves
- * everyone, like any seek. Each part is handled once per file, so seeking back into it plays it.
+ * credits markers), AniSkip's times for the episode MyAnimeList says is playing, and, when none of those knows a part
+ * and the Playback setting allows it, listening for it ([SkipDetector]: the sound the episodes of a season share).
+ * Only a device that may seek does either (in a managed room, the operators); in a room the skip moves everyone,
+ * like any seek. Each part is handled once per file, so seeking back into it plays it.
  */
 class SkipService(
     private val scope: CoroutineScope,
@@ -47,6 +52,8 @@ class SkipService(
     private val settings: StateFlow<AppSettings>,
     private val notify: (String) -> Unit,
     private val now: () -> Long = System::currentTimeMillis,
+    /** Listens for the parts no other source knows; null leaves that out. */
+    private val detector: SkipDetector? = null,
 ) {
     private val _segments = MutableStateFlow<List<SkipSegment>>(emptyList())
     /** The playing file's opening and ending, when known (also for the seek bar's marks). */
@@ -65,6 +72,8 @@ class SkipService(
     private var chaptersOf: List<Chapter>? = null
     private var fromServer: List<SkipSegment> = emptyList()
     private var fromAniSkip: List<SkipSegment> = emptyList()
+    private var fromDetected: List<SkipSegment> = emptyList()
+    private var detectJob: Job? = null
     private var promptJob: Job? = null
     /** Parts handled in this file (skipped, offered or passed), by start time. */
     private val handled = mutableSetOf<Double>()
@@ -77,6 +86,15 @@ class SkipService(
         }
         scope.launch {
             player.state.collect(::onState)
+        }
+        if (detector != null) scope.launch {
+            // Turned off, listening stops at once; turned on, it starts for the playing file.
+            settings.map { it.playback.detectSkips }.distinctUntilChanged().collect { on ->
+                if (on) url?.let(::detect) else {
+                    detectJob?.cancel()
+                    detectJob = null
+                }
+            }
         }
     }
 
@@ -96,6 +114,7 @@ class SkipService(
         url = np?.url
         lookup?.cancel()
         serverLookup?.cancel()
+        detectJob?.cancel()
         dismiss()
         handled.clear()
         tries.clear()
@@ -103,6 +122,7 @@ class SkipService(
         chaptersOf = null
         fromServer = emptyList()
         fromAniSkip = emptyList()
+        fromDetected = emptyList()
         _segments.value = emptyList()
         val fileUrl = np?.url ?: return
         // The player may have told of the file (and its chapters) before the playlist did.
@@ -128,6 +148,7 @@ class SkipService(
                 }
             }
         }
+        // Without the episode's number, neither AniSkip nor listening can tell which episode this is.
         val info = np.episode ?: return
         lookup = scope.launch {
             try {
@@ -145,12 +166,48 @@ class SkipService(
                 Logger.w(TAG, "No skip times for ${info.seriesName} ${info.episode}: ${e.message}")
             }
         }
+        detect(fileUrl)
     }
 
-    /** For each part, the first source that knows it: the file's chapters, the server's markers, AniSkip. */
+    /**
+     * Listens for the parts of [fileUrl] no other source knows, once those have answered and the file is loaded; only
+     * on a device that may seek, and only while the Playback setting is on.
+     */
+    private fun detect(fileUrl: String) {
+        val detector = detector ?: return
+        if (!settings.value.playback.detectSkips || nowPlaying.value?.episode?.episode == null) return
+        detectJob?.cancel()
+        val waitFor = listOfNotNull(serverLookup, lookup)
+        detectJob = scope.launch {
+            try {
+                waitFor.forEach { it.join() }
+                val loaded = player.state.first { it.url == fileUrl && it.fileLoaded && it.duration > 0 }
+                // The file's chapters come a moment after it loads.
+                delay(CHAPTERS_SETTLE_MILLIS)
+                if (room.value.followsOperators) return@launch
+                val missing = SkipSegment.Kind.entries.filter { kind ->
+                    listOf(fromChapters, fromServer, fromAniSkip).none { source -> source.any { it.kind == kind } }
+                }.toSet()
+                if (missing.isEmpty()) return@launch
+                // Read now: the server copies of a file on this device can be found after it starts.
+                val np = nowPlaying.value?.takeIf { it.url == fileUrl } ?: return@launch
+                val found = detector.detect(np, loaded.duration, missing)
+                if (url == fileUrl) {
+                    fromDetected = found.filter { it.kind in missing }
+                    merge()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.w(TAG, "Couldn't listen for the opening and ending: ${e.message}")
+            }
+        }
+    }
+
+    /** For each part, the first source that knows it: the file's chapters, the server's markers, AniSkip, listening. */
     private fun merge() {
         _segments.value = SkipSegment.Kind.entries.mapNotNull { kind ->
-            listOf(fromChapters, fromServer, fromAniSkip).firstNotNullOfOrNull { source -> source.firstOrNull { it.kind == kind } }
+            listOf(fromChapters, fromServer, fromAniSkip, fromDetected).firstNotNullOfOrNull { source -> source.firstOrNull { it.kind == kind } }
         }.sortedBy { it.start }
     }
 
@@ -228,5 +285,6 @@ class SkipService(
         private const val RETRY_MILLIS = 1_500L
         private const val MAX_TRIES = 4
         private const val END_SLACK_SECONDS = 2.0
+        private const val CHAPTERS_SETTLE_MILLIS = 2_000L
     }
 }

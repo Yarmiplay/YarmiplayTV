@@ -32,6 +32,12 @@ actual object DevicePlatform {
                 (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
         }
 
+    actual val onUnmeteredNetwork: Boolean
+        get() {
+            val connectivity = appContext?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+            return connectivity.activeNetwork != null && !connectivity.isActiveNetworkMetered
+        }
+
     actual suspend fun <T> withMulticastLock(tag: String, block: suspend () -> T): T {
         val wifi = appContext?.getSystemService(Context.WIFI_SERVICE) as? WifiManager
         val lock = wifi?.createMulticastLock(tag)?.apply { setReferenceCounted(false); runCatching { acquire() } }

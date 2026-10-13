@@ -22,6 +22,9 @@ import com.yarmiplaytv.sync.ServerCopy
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.syncplay.RoomUser
+import com.yarmiplaytv.tracking.detect.FakeSeason
+import com.yarmiplaytv.tracking.detect.FingerprintCache
+import com.yarmiplaytv.tracking.detect.SkipDetector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -61,6 +64,7 @@ class SkipServiceTest {
     private val notes = CopyOnWriteArrayList<String>()
     private val servers = MutableStateFlow<List<MediaSource>>(emptyList())
     private val aniSkipAsks = CopyOnWriteArrayList<String>()
+    private var detector: SkipDetector? = null
 
     /** Hero Academy (MyAnimeList 100), episode 3 of a 1440 s file: opening 28.7–118.7, ending 1350–1440. */
     @Before
@@ -102,7 +106,7 @@ class SkipServiceTest {
         val mal = MalService(scope, store, stored, MalClient("client-id", apiUrl = server.url("/v2").toString()))
         return SkipService(
             scope, player, nowPlaying, mal, AniSkipClient(apiUrl = server.url("/skip").toString()), servers, room, roomSkip, settings,
-            notify = { notes += it },
+            notify = { notes += it }, detector = detector,
         )
     }
 
@@ -119,8 +123,8 @@ class SkipServiceTest {
         player.state.value = player.state.value.copy(position = position)
     }
 
-    private fun eventually(what: String, condition: () -> Boolean) = runBlocking {
-        runCatching { withTimeout(5_000) { while (!condition()) delay(20) } }.onFailure { throw AssertionError("Timed out waiting for $what") }
+    private fun eventually(what: String, millis: Long = 5_000, condition: () -> Boolean) = runBlocking {
+        runCatching { withTimeout(millis) { while (!condition()) delay(20) } }.onFailure { throw AssertionError("Timed out waiting for $what") }
     }
 
     @Test
@@ -230,6 +234,87 @@ class SkipServiceTest {
         runBlocking { delay(300) }
         assertTrue(player.seeks.isEmpty())
         assertNull(s.prompt.value)
+    }
+
+    /** A season whose episodes no other source knows the parts of, with a detector listening to it. */
+    private fun listening(season: FakeSeason = FakeSeason()): FakeSeason {
+        detector = SkipDetector(season.decoder, FingerprintCache(tmp.root.resolve("skip-detect")), season.siblings, settings) { true }
+        return season
+    }
+
+    private fun playEpisode(season: FakeSeason, n: Int, chapters: List<Chapter> = emptyList()): SkipService {
+        val s = service()
+        nowPlaying.value = season.nowPlaying(n)
+        player.state.value = PlaybackState(url = season.url(n), fileLoaded = true, duration = season.duration, paused = false, position = 0.0, chapters = chapters)
+        return s
+    }
+
+    @Test
+    fun `listening finds the opening and ending nothing else knows`() {
+        val season = listening()
+        val s = playEpisode(season, 2)
+        eventually("the opening and ending", millis = 60_000) { s.segments.value.size == 2 }
+        val (opening, ending) = s.segments.value
+        assertEquals(20.0, opening.start, 1.0)
+        assertEquals(110.0, opening.end, 1.0)
+        assertEquals(1390.0, ending.end, 1.0)
+        at(21.5)
+        eventually("the button") { s.prompt.value?.label == "Skip opening" }
+    }
+
+    @Test
+    fun `only what the chapters leave out is listened for`() {
+        val season = listening()
+        val s = playEpisode(season, 2, listOf(Chapter("Cold open", 0.0), Chapter("Opening", 20.0), Chapter("Part A", 110.0)))
+        eventually("the ending", millis = 60_000) { s.segments.value.size == 2 }
+        assertEquals(SkipSegment(SkipSegment.Kind.OPENING, 20.0, 110.0), s.segments.value.first())
+        assertTrue("only the end was read: ${season.reads}", season.reads.isNotEmpty() && season.reads.all { it.second > 1000 })
+    }
+
+    @Test
+    fun `with listening turned off nothing is read`() {
+        settings.value = AppSettings(playback = PlaybackPrefs(detectSkips = false))
+        val season = listening()
+        val s = playEpisode(season, 2)
+        runBlocking { delay(3_500) }
+        assertTrue(season.reads.isEmpty())
+        assertTrue(s.segments.value.isEmpty())
+    }
+
+    @Test
+    fun `turning listening off stops it, and on starts it again`() {
+        val season = listening().apply { hang = true }
+        val s = playEpisode(season, 2)
+        eventually("reading", millis = 10_000) { season.reads.isNotEmpty() }
+        settings.value = AppSettings(playback = PlaybackPrefs(detectSkips = false))
+        eventually("the read to stop") { season.sawCancel }
+        season.hang = false
+        settings.value = AppSettings(playback = PlaybackPrefs(detectSkips = true))
+        eventually("the opening and ending", millis = 60_000) { s.segments.value.size == 2 }
+    }
+
+    @Test
+    fun `a viewer who follows a managed room's operators doesn't listen`() {
+        room.value = RoomState(
+            status = ConnectionStatus.CONNECTED, username = "bob", room = "+anime:ABCDEF123456",
+            users = listOf(RoomUser("bob", "+anime:ABCDEF123456", null, null), RoomUser("ana", "+anime:ABCDEF123456", null, null, isController = true)),
+            serverFeatures = mapOf("managedRooms" to true),
+        )
+        val season = listening()
+        playEpisode(season, 2)
+        runBlocking { delay(3_500) }
+        assertTrue(season.reads.isEmpty())
+    }
+
+    @Test
+    fun `a file that changes while listening drops what was heard`() {
+        val season = listening().apply { hang = true }
+        val s = playEpisode(season, 2)
+        eventually("reading", millis = 10_000) { season.reads.isNotEmpty() }
+        nowPlaying.value = NowPlaying("Other", "other.mkv", 5, 100.0, "file:///other.mkv")
+        player.state.value = PlaybackState(url = "file:///other.mkv", fileLoaded = true, duration = 100.0)
+        eventually("the read to stop") { season.sawCancel }
+        assertTrue(s.segments.value.isEmpty())
     }
 
     private class SeekPlayer : Player {

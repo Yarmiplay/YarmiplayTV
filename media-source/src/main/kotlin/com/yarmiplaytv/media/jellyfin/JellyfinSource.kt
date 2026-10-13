@@ -192,6 +192,17 @@ class JellyfinSource(
         }.sortedBy { it.start }
     }
 
+    override suspend fun seasonEpisodes(itemId: String): List<PlayableMedia> {
+        val episode = items { addQueryParameter("ids", itemId) }.firstOrNull() ?: return emptyList()
+        val series = episode.seriesId ?: return emptyList()
+        val season = episode.seasonId ?: return emptyList()
+        return client.get<ItemsResult>(base, token, "Shows/$series/Episodes") {
+            addQueryParameter("userId", session.userId)
+            addQueryParameter("seasonId", season)
+            addQueryParameter("fields", "Path,MediaSources")
+        }.items.mapNotNull { runCatching { playableFrom(it) }.getOrNull() }
+    }
+
     private suspend fun markPlayed(itemId: String) {
         try {
             client.postRaw(base, token, "UserPlayedItems/$itemId", null) { addQueryParameter("userId", session.userId) }

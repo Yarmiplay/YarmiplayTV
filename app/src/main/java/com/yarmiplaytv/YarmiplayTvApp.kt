@@ -14,6 +14,7 @@ import com.yarmiplaytv.local.SafLocalLibrary
 import com.yarmiplaytv.player.MpvOptions
 import com.yarmiplaytv.player.MpvPlayer
 import com.yarmiplaytv.screenshot.AndroidScreenshotStore
+import com.yarmiplaytv.tracking.detect.AndroidAudioDecoder
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.update.UpdateSetup
 
@@ -53,6 +54,7 @@ class YarmiplayTvApp : Application() {
             frameGrabber = AndroidFrameGrabber(this),
             seekFrames = AndroidSeekFrames(this),
             malClientId = BuildConfig.MAL_CLIENT_ID,
+            audioDecoder = AndroidAudioDecoder(this),
         )
         // The download page's APK (debug) installs its own updates; the Play build (release) leaves them to Play.
         UpdateSetup.install(this, container)

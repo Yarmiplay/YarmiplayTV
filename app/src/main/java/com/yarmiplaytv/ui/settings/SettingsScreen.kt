@@ -60,6 +60,10 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.AboutLink
 import com.yarmiplaytv.ui.shared.CHANGELOG_URL
 import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
+import com.yarmiplaytv.ui.shared.DETECT_ANY_NETWORK_SUBTITLE
+import com.yarmiplaytv.ui.shared.DETECT_ANY_NETWORK_TITLE
+import com.yarmiplaytv.ui.shared.DETECT_SKIPS_SUBTITLE
+import com.yarmiplaytv.ui.shared.DETECT_SKIPS_TITLE
 import com.yarmiplaytv.ui.shared.SKIP_ALONE_SUBTITLE
 import com.yarmiplaytv.ui.shared.SKIP_ALONE_TITLE
 import com.yarmiplaytv.ui.shared.SKIP_BUTTON_SUBTITLE
@@ -243,6 +247,15 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                 }
                 ToggleRow(SKIP_ALONE_TITLE, pb.autoSkipAlone, { savePlayback(pb.copy(autoSkipAlone = !pb.autoSkipAlone)) }, subtitle = SKIP_ALONE_SUBTITLE)
                 ToggleRow(SKIP_BUTTON_TITLE, pb.showSkipButton, { savePlayback(pb.copy(showSkipButton = !pb.showSkipButton)) }, subtitle = SKIP_BUTTON_SUBTITLE)
+                ToggleRow(DETECT_SKIPS_TITLE, pb.detectSkips, { savePlayback(pb.copy(detectSkips = !pb.detectSkips)) }, subtitle = DETECT_SKIPS_SUBTITLE)
+                if (pb.detectSkips) {
+                    ToggleRow(
+                        DETECT_ANY_NETWORK_TITLE,
+                        pb.detectOnAnyNetwork,
+                        { savePlayback(pb.copy(detectOnAnyNetwork = !pb.detectOnAnyNetwork)) },
+                        subtitle = DETECT_ANY_NETWORK_SUBTITLE,
+                    )
+                }
                 ValueRow("Seek step", "${pb.seekStepSeconds} s", {
                     val steps = listOf(5, 10, 15, 30)
                     savePlayback(pb.copy(seekStepSeconds = steps[(steps.indexOf(pb.seekStepSeconds) + 1) % steps.size]))

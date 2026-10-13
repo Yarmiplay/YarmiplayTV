@@ -66,6 +66,16 @@ class FileLocalLibrary(
 
     override fun openChannel(uri: String): FileChannel = FileChannel.open(pathOf(uri), StandardOpenOption.READ)
 
+    override fun neighbours(uri: String): List<LocalFile> {
+        val dir = runCatching { pathOf(uri).parent }.getOrNull() ?: return emptyList()
+        return runCatching {
+            Files.list(dir).use { paths ->
+                paths.filter { Files.isRegularFile(it) && LocalMatcher.isVideo(it.fileName.toString(), null) }.limit(MAX_NEIGHBOURS).toList()
+                    .map { LocalFile(it.fileName.toString(), Files.size(it), uriOf(it), modified = Files.getLastModifiedTime(it).toMillis()) }
+            }
+        }.getOrDefault(emptyList())
+    }
+
     override fun scan(folder: LocalFolder): List<LocalFile> {
         val root = pathOf(folder.uri)
         val out = ArrayList<LocalFile>()
@@ -144,6 +154,7 @@ class FileLocalLibrary(
     companion object {
         private const val TAG = "LocalLibrary"
         private const val SETTLE_MS = 1_500L
+        private const val MAX_NEIGHBOURS = 500L
 
         fun uriOf(path: Path): String = path.toAbsolutePath().normalize().toUri().toString()
 

@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.data.PlaybackPrefs
 import com.yarmiplaytv.syncplay.SyncSettings
@@ -60,6 +61,10 @@ import com.yarmiplaytv.syncplay.UnpauseMode
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
+import com.yarmiplaytv.ui.shared.DETECT_ANY_NETWORK_SUBTITLE
+import com.yarmiplaytv.ui.shared.DETECT_ANY_NETWORK_TITLE
+import com.yarmiplaytv.ui.shared.DETECT_SKIPS_SUBTITLE
+import com.yarmiplaytv.ui.shared.DETECT_SKIPS_TITLE
 import com.yarmiplaytv.ui.shared.SKIP_ALONE_SUBTITLE
 import com.yarmiplaytv.ui.shared.SKIP_ALONE_TITLE
 import com.yarmiplaytv.ui.shared.SKIP_BUTTON_SUBTITLE
@@ -303,6 +308,15 @@ private fun PlaybackSettings(container: AppContainer) {
     }
     SettingsToggle(SKIP_BUTTON_TITLE, SKIP_BUTTON_SUBTITLE, pb.showSkipButton, Modifier.testTag("toggle_skip_button")) { on ->
         savePlayback { it.copy(showSkipButton = on) }
+    }
+    SettingsToggle(DETECT_SKIPS_TITLE, DETECT_SKIPS_SUBTITLE, pb.detectSkips, Modifier.testTag("toggle_detect_skips")) { on ->
+        savePlayback { it.copy(detectSkips = on) }
+    }
+    // A computer can't tell a metered network: there, server episodes are always listened to.
+    if (pb.detectSkips && container.deviceKind != DeviceKind.DESKTOP) {
+        SettingsToggle(
+            DETECT_ANY_NETWORK_TITLE, DETECT_ANY_NETWORK_SUBTITLE, pb.detectOnAnyNetwork, Modifier.testTag("toggle_detect_any_network"),
+        ) { on -> savePlayback { it.copy(detectOnAnyNetwork = on) } }
     }
     ValueSetting("Seek step", "${pb.seekStepSeconds} s · double-tap the left or right side of the video") {
         val steps = listOf(5, 10, 15, 30)

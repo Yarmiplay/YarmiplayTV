@@ -158,8 +158,13 @@ moment too.
 **Openings and endings:** the app finds where an episode's opening and ending are, for each from the first that
 knows: the file's own chapters (named "Opening", "OP", "Ending", "Credits" and the like), your Jellyfin or Plex
 server's markers (Jellyfin 10.10's media segments, from a plugin such as Intro Skipper; Plex's intro and credits
-markers), or AniSkip's times for the anime episode MyAnimeList says it is (no MyAnimeList account needed). The seek
-bar marks them in amber. As one starts, a **Skip opening**
+markers), AniSkip's times for the anime episode MyAnimeList says it is (no MyAnimeList account needed), or, when
+none of those knows, by listening: the app compares the sound of the start and end of the episode with the episodes
+before and after it in the same season, and the song they share is the opening or the ending. The first episode
+of a season takes a little while (often until after its opening); what's learned is kept, so the next ones are
+ready at once. Episodes from Jellyfin or Plex are only listened to on Wi-Fi or Ethernet, as it downloads part of
+each; **Also listen on mobile data** in Settings > Playback allows it there too, and **Find openings and endings
+by listening** turns listening off. The seek bar marks them in amber. As one starts, a **Skip opening**
 or **Skip ending** button shows for 3 seconds: tap or click it, press **S** on a computer, or **OK** on a TV
 remote. In a room the whole room jumps, as when anyone seeks. To skip them by themselves instead, turn on **Skip
 openings and endings** in the room (see [In the room](#in-the-room)), or, watching alone, in Settings > Playback.
@@ -308,8 +313,8 @@ a computer, a wide tablet or a TV, the categories are on the left and the chosen
 - **MyAnimeList:** opens the MyAnimeList screen.
 - **Syncing:** when you unpause, catching up and slowing down, when you're ready, remembering playlists, the
   chat, and your device's name.
-- **Playback:** hardware decoding, picture-in-picture, skipping openings and endings when watching alone and
-  the Skip button, the seek step and the audio and subtitle languages.
+- **Playback:** hardware decoding, picture-in-picture, skipping openings and endings when watching alone, the
+  Skip button and finding them by listening, the seek step and the audio and subtitle languages.
 - **Updates:** checking for and installing new versions.
 - **About:** the version, what's new, this manual, the website, privacy, the community rules, the source code,
   reporting a problem, and open-source licenses. On a TV, these links show a QR code to open on your phone.

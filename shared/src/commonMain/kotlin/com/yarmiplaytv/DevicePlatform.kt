@@ -14,6 +14,9 @@ expect object DevicePlatform {
     /** On Wi-Fi or Ethernet, where LAN broadcasts may go out; never on mobile data. */
     val onLocalNetwork: Boolean
 
+    /** On a network that isn't charged by the amount (not mobile data or a hotspot set as metered). */
+    val onUnmeteredNetwork: Boolean
+
     /** Runs [block] while LAN multicast replies can be received (Android needs a Wi-Fi multicast lock). */
     suspend fun <T> withMulticastLock(tag: String, block: suspend () -> T): T
 }

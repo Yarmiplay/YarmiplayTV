@@ -65,6 +65,12 @@ unless you turn it off, to GitHub to check for a new version.
   from your Jellyfin or Plex server, the app also asks that server for the episode's intro and credits markers.
   The answers are kept in memory only. In a room on a YarmiplayServerTV server, turning automatic skipping on or off goes to the
   server, which tells the room who changed it.
+- **Listening for openings and endings, on your device:** when nothing above knows where an episode's opening
+  and ending are, the app reads the sound of the start and end of the episode and of the episodes before and after
+  it, from your device or from your own Jellyfin or Plex server (from a server only on Wi-Fi or Ethernet unless you
+  allow mobile data), and compares them. Only fingerprints of that sound (numbers that can't be turned back into
+  it) and the times found are kept, in the app's cache folder on this device; nothing is sent anywhere. Turn it
+  off with **Find openings and endings by listening** in Settings; clearing the app's cache deletes what was kept.
 - **Your local network:** when you look for Jellyfin servers, the app sends a discovery message on the local
   network that Jellyfin servers answer. To connect to a Plex server, the app tries the addresses plex.tv lists
   for it, local ones first. The Syncplay connect screen also sends a discovery message, on Wi-Fi or Ethernet

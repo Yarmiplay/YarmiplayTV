@@ -45,6 +45,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -151,6 +152,20 @@ class SettingsUiTest {
         waitForIdle()
         onNodeWithTag("settings_category_updates").performClick()
         onNodeWithTag("check_updates").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `listening for openings has its own switch, and the mobile data one only while it's on`() = runComposeUiTest {
+        show(1280, 800)
+        onNodeWithTag("settings_category_playback").performClick()
+        onNodeWithTag("toggle_detect_skips").performScrollTo().assertIsDisplayed()
+        onNodeWithTag("toggle_detect_any_network").performScrollTo().assertIsDisplayed()
+        onNodeWithTag("toggle_detect_skips").performClick()
+        waitUntil(timeoutMillis = 5_000) { !app.settings.value.playback.detectSkips }
+        waitForIdle()
+        onNodeWithTag("toggle_detect_any_network").assertDoesNotExist()
+        // Saved, as a later start reads it.
+        assertEquals(false, runBlocking { app.settingsStore.current() }.playback.detectSkips)
     }
 
     @Test

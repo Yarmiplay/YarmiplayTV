@@ -46,6 +46,13 @@ interface MediaSource {
      */
     suspend fun skipSegments(itemId: String): List<SkipSegment> = emptyList()
 
+    /**
+     * The episodes of the season episode [itemId] is in, [itemId] too, ready to stream (for comparing their sound to
+     * find the opening and ending); empty when it isn't an episode or the server can't say. Failures throw
+     * [MediaSourceException].
+     */
+    suspend fun seasonEpisodes(itemId: String): List<PlayableMedia> = emptyList()
+
     fun imageUrl(item: MediaItem, maxWidth: Int = 400): String?
 }
 

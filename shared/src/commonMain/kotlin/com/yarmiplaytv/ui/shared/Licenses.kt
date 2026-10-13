@@ -25,6 +25,7 @@ val openSourceComponents = listOf(
     OpenSourceComponent("libunibreak", "zlib", "https://github.com/adah1972/libunibreak"),
     OpenSourceComponent("Mbed TLS", "Apache 2.0", "https://www.trustedfirmware.org/projects/mbed-tls"),
     OpenSourceComponent("Lua", "MIT", "https://www.lua.org"),
+    OpenSourceComponent("Chromaprint (fingerprint classifiers)", "MIT", "https://github.com/acoustid/chromaprint"),
     OpenSourceComponent("Kotlin, kotlinx.coroutines, kotlinx.serialization", "Apache 2.0", "https://kotlinlang.org"),
     OpenSourceComponent("Jetpack Compose, AndroidX", "Apache 2.0", "https://developer.android.com/jetpack"),
     OpenSourceComponent("Compose Multiplatform", "Apache 2.0", "https://www.jetbrains.com/compose-multiplatform"),

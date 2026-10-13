@@ -101,6 +101,13 @@ class PlexSource(
         }.sortedBy { it.start }
     }
 
+    override suspend fun seasonEpisodes(itemId: String): List<PlayableMedia> {
+        val season = metadata(itemId)?.takeIf { it.type == "episode" }?.parentRatingKey ?: return emptyList()
+        return container("library/metadata/$season/children").metadata
+            .filter { it.type == "episode" }
+            .mapNotNull { runCatching { playableFrom(it) }.getOrNull() }
+    }
+
     /** Uses the part named [preferredFile] when the item has several (multi-part or multi-version). */
     private fun playableFrom(meta: PlexMetadata, preferredFile: String? = null): PlayableMedia {
         val parts = meta.media.flatMap { m -> m.parts.map { m to it } }.filter { it.second.key != null && it.second.file != null }
