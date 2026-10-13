@@ -31,6 +31,8 @@ test.skip(!existsSync(clip), "run e2e/make-media.sh first");
 test("two browsers watch together", async ({ browser }) => {
   const room = `web-e2e-${Date.now()}`;
   const ana = await browser.newPage();
+  // Ana doesn't share her files, so Bob has to find his own copy.
+  await ana.addInitScript(() => localStorage.setItem("ytv:share_files", "false"));
   const bob = await browser.newPage();
   await join(ana, "ana", room);
   await join(bob, "bob", room);
@@ -68,4 +70,31 @@ test("two browsers watch together", async ({ browser }) => {
   await bob.getByRole("button", { name: "Send" }).click();
   await ana.goto("#/room");
   await expect(ana.getByRole("region", { name: "Chat" }).getByText("hi from bob", { exact: true })).toBeVisible();
+});
+
+test("a viewer without the file plays another viewer's copy through the relay", async ({ browser }) => {
+  const room = `web-relay-${Date.now()}`;
+  const ana = await browser.newPage();
+  const bob = await browser.newPage();
+  await join(ana, "ana", room);
+  await join(bob, "bob", room);
+  // The relay needs a session on both sides.
+  for (const page of [ana, bob]) {
+    await expect.poll(() => page.evaluate(() => (window as any).ytv?.session?.value?.syncClient?.session != null), { timeout: 10_000 }).toBe(true);
+  }
+
+  await ana.goto("#/player");
+  await ana.locator('.empty input[type="file"]').setInputFiles(clip);
+  await expect.poll(() => ana.evaluate(() => (window as any).playerLab.player.isFileLoaded), { timeout: 20_000 }).toBe(true);
+
+  // Bob has nothing: his browser plays Ana's copy through the server, without asking.
+  await bob.goto("#/player");
+  await expect.poll(() => bob.evaluate(() => (window as any).playerLab.player.isFileLoaded), { timeout: 30_000 }).toBe(true);
+  await expect(bob.getByRole("heading", { name: "Couldn't find this file" })).toHaveCount(0);
+
+  await ana.keyboard.press("k");
+  await expect.poll(() => paused(bob), { timeout: 10_000 }).toBe(false);
+  await bob.waitForTimeout(3000);
+  expect(Math.abs((await position(ana)) - (await position(bob)))).toBeLessThan(1);
+  expect(await position(bob)).toBeGreaterThan(2);
 });

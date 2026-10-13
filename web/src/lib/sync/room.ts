@@ -1,6 +1,7 @@
 import * as Settings from "../data/settings";
 import * as SavedRooms from "../data/savedRooms";
 import type { LocalFile, LocalLibrary } from "../local/library";
+import { findRelayFile, openRelayFile, RelaySharing } from "../relay/relay";
 import { FileSource, HttpSource, type ByteSource } from "../player/bytes";
 import type { MediaPlayer } from "../player/mediaPlayer";
 import { Store } from "../store";
@@ -108,6 +109,7 @@ export class RoomSession {
   private joinedKey: string | null = null;
   private pendingCreate: string | null = null;
   private saveNextAs: string | null = null;
+  private readonly relay: RelaySharing;
 
   constructor(
     private readonly player: MediaPlayer,
@@ -116,7 +118,10 @@ export class RoomSession {
     private readonly deviceAuth: DeviceAuth | null,
     private readonly appVersion: string,
     private readonly onSettingsChanged: (s: Settings.Settings) => void = () => {},
-  ) {}
+  ) {
+    this.relay = new RelaySharing(() => this.client, library, () => this.settings.shareFiles, () => this.reportedFile);
+    library.subscribe(() => this.relay.refresh());
+  }
 
   get isActive(): boolean {
     return this.client !== null && this.room.value.status !== "DISCONNECTED";
@@ -127,8 +132,10 @@ export class RoomSession {
   }
 
   updateSettings(settings: Settings.Settings) {
+    const sharingChanged = settings.shareFiles !== this.settings.shareFiles;
     this.settings = settings;
     if (this.client) this.client.settings = settings.sync;
+    if (sharingChanged) this.relay.refresh();
   }
 
   /** The server's chat message limit (it cuts longer messages off), or Syncplay's default before joining. */
@@ -178,6 +185,7 @@ export class RoomSession {
   }
 
   disconnect() {
+    this.relay.cancelAll();
     this.unsubscribe.forEach((u) => u());
     this.unsubscribe = [];
     this.client?.close();
@@ -207,6 +215,21 @@ export class RoomSession {
       if (state.status !== "CONNECTED" || state.room !== before.room) this.clearHistory();
     }
     this.autosave(state);
+    if (
+      state.playlist !== before.playlist ||
+      state.room !== before.room ||
+      state.yarmiplay.session !== before.yarmiplay.session ||
+      state.yarmiplay.capabilities.fileRelay !== before.yarmiplay.capabilities.fileRelay ||
+      state.users !== before.users
+    ) {
+      this.relay.refresh();
+    }
+    // A viewer who has the room's file joining (or sharing it) makes "not found" playable.
+    const missing = this.status.value;
+    if (missing.kind === "notFound" && state.yarmiplay.relayFiles !== before.yarmiplay.relayFiles) {
+      const current = state.playlistIndex === null ? null : state.playlist[state.playlistIndex];
+      if (current === missing.fileName && findRelayFile(state, current)) void this.loadFromRoom(current, false);
+    }
   }
 
   private onEvent(event: SyncplayEvent) {
@@ -274,6 +297,15 @@ export class RoomSession {
         break;
       case "advancePlaylist":
         void this.loadFromRoom(event.filename, true);
+        break;
+      case "uploadRequested":
+        void this.relay.upload(event.request, this.client?.session ?? null);
+        break;
+      case "uploadCancelled":
+        this.relay.cancel(event.id);
+        break;
+      case "sessionEnded":
+        this.relay.cancelAll();
         break;
     }
   }
@@ -414,7 +446,22 @@ export class RoomSession {
       await this.load(localNowPlaying(match.file), resetPosition, true);
       return;
     }
-    const reason = this.library.hasFolders ? "Not in your media folders" : "Add a media folder, or pick the file, to play the room's entries";
+    // Step 4: another viewer's copy, through the YarmiplayServerTV file relay.
+    const relayed = findRelayFile(this.room.value, filename);
+    const session = this.client?.session;
+    if (relayed && session) {
+      await this.load(
+        { title: relayed.name, fileName: relayed.name, size: relayed.size, open: () => openRelayFile(session, relayed) },
+        resetPosition,
+        true,
+      );
+      return;
+    }
+    const reason = this.room.value.yarmiplay.session && this.room.value.yarmiplay.capabilities.fileRelay
+      ? "Nobody in the room is sharing it yet"
+      : this.library.hasFolders
+        ? "Not in your media folders"
+        : "Add a media folder, or pick the file, to play the room's entries";
     this.status.set({ kind: "notFound", fileName: filename, reason });
     this.postLocal(`'${filename}' not found: ${reason.toLowerCase()}`, true);
   }

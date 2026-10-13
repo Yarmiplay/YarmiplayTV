@@ -53,3 +53,6 @@ export function go(to: string) {
 }
 
 export const version = buildInfo.version;
+
+// For the end-to-end tests and for looking into a room from the browser's console.
+(globalThis as unknown as { ytv: unknown }).ytv = { settings, session, player, library };

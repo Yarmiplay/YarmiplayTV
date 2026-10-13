@@ -10,6 +10,8 @@ import { baseName } from "../syncplay/filenames";
 export interface LocalFile {
   name: string;
   size: number;
+  /** Last modified, in milliseconds since the epoch; 0 when unknown. */
+  modified: number;
   /** Where it is under the media folder, like "Show/Season 1"; empty for files directly in it. */
   directory: string;
   folder: string;
@@ -201,10 +203,10 @@ export class LocalLibrary {
 }
 
 function fileEntry(file: File, directory: string, folder: string): LocalFile {
-  return { name: file.name, size: file.size, directory, folder, open: async () => file };
+  return { name: file.name, size: file.size, modified: file.lastModified, directory, folder, open: async () => file };
 }
 
-/** Every video under [dir], with sizes read lazily (on first open) to keep scanning quick. */
+/** Every video under [dir], with its size and date (the relay offers files by size and a hash of their ends). */
 async function walk(dir: DirectoryHandle, path: string, folder: string, out: LocalFile[], depth = 0): Promise<void> {
   if (depth > 8) return;
   for await (const entry of dir.values()) {
@@ -212,7 +214,8 @@ async function walk(dir: DirectoryHandle, path: string, folder: string, out: Loc
       await walk(entry as DirectoryHandle, path ? `${path}/${entry.name}` : entry.name, folder, out, depth + 1);
     } else if (isVideo(entry.name)) {
       const handle = entry as FileSystemFileHandle;
-      out.push({ name: entry.name, size: 0, directory: path, folder, open: () => handle.getFile() });
+      const file = await handle.getFile();
+      out.push({ name: entry.name, size: file.size, modified: file.lastModified, directory: path, folder, open: () => handle.getFile() });
     }
   }
 }
