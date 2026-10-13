@@ -63,6 +63,41 @@
     return () => stops.forEach((stop) => stop());
   });
 
+  // The system's media controls (keyboard media keys, lock screen, the taskbar's controls): Media Session.
+  $effect(() => {
+    if (!("mediaSession" in navigator) || !s?.loaded) return;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: s.name,
+      artist: room && inRoom ? `YarmiplayTV · ${ManagedRooms.display(room.room)}` : "YarmiplayTV",
+      artwork: [{ src: "./favicon.svg", sizes: "any", type: "image/svg+xml" }],
+    });
+    const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
+      ["play", () => player?.setPaused(false)],
+      ["pause", () => player?.setPaused(true)],
+      ["seekbackward", () => seekBy(-seekStep)],
+      ["seekforward", () => seekBy(seekStep)],
+      ["seekto", (d) => d.seekTime !== undefined && player?.seek(d.seekTime)],
+      ["previoustrack", () => session?.skip(false)],
+      ["nexttrack", () => session?.skip(true)],
+    ];
+    for (const [action, handler] of handlers) {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch {
+        // Not every browser has every action.
+      }
+    }
+  });
+  $effect(() => {
+    if (!("mediaSession" in navigator) || !s?.loaded) return;
+    navigator.mediaSession.playbackState = s.paused ? "paused" : "playing";
+    try {
+      navigator.mediaSession.setPositionState({ duration: s.duration, position: Math.min(s.position, s.duration), playbackRate: s.speed });
+    } catch {
+      // A duration of 0 (still opening) is refused.
+    }
+  });
+
   function poke() {
     controlsShown = true;
     clearTimeout(hideTimer);

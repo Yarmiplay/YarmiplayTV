@@ -1,8 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import buildInfo from "virtual:build-info";
   import { go, route, settings } from "./app/context";
+  import DeviceAccess from "./components/DeviceAccess.svelte";
   import PlayerView from "./components/PlayerView.svelte";
   import { applyTheme, followSystem } from "./lib/ui/theme";
+  import { newVersion, watchForUpdates } from "./lib/ui/updates";
   import Home from "./screens/Home.svelte";
   import Join from "./screens/Join.svelte";
   import PlayerLab from "./screens/PlayerLab.svelte";
@@ -29,7 +32,8 @@
 
   onMount(() => {
     applyTheme($settings.theme);
-    return followSystem(() => $settings.theme);
+    const stops = [followSystem(() => $settings.theme), watchForUpdates(buildInfo)];
+    return () => stops.forEach((stop) => stop());
   });
 </script>
 
@@ -44,6 +48,13 @@
       {/each}
     </nav>
     <div class="content" class:full={section === "player"}>
+      {#if $newVersion}
+        <div class="update" role="status">
+          <span>YarmiplayTV {$newVersion} is out.</span>
+          <button class="button small" onclick={() => location.reload()}>Reload</button>
+          <button class="link" onclick={() => newVersion.set(null)}>Later</button>
+        </div>
+      {/if}
       <PlayerView visible={section === "player"} />
       {#if section === "home"}
         <Home />
@@ -61,9 +72,27 @@
       {/if}
     </div>
   </div>
+  <DeviceAccess />
 {/if}
 
 <style>
+  .update {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--surface-high);
+  }
+  .update .small {
+    padding: 6px 14px;
+  }
+  .update .link {
+    background: none;
+    border: 0;
+    color: var(--accent);
+    cursor: pointer;
+  }
   .frame {
     height: 100dvh;
     display: grid;
