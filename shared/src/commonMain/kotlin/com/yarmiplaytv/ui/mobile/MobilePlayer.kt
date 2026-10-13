@@ -289,7 +289,8 @@ private fun BottomControls(
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        TvSeekBar(state, position, onInteract, container.seekFrames) { container.player.seek(it) }
+        val segments by container.skips.segments.collectAsStateWithLifecycle()
+        TvSeekBar(state, position, onInteract, container.seekFrames, segments) { container.player.seek(it) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             PlayerVolumeControl(onInteract, Modifier.padding(end = 8.dp))
             if (inRoom) ReadyChip(ready, { container.sync.toggleReady(); onInteract() }, Modifier.testTag("player_ready"))

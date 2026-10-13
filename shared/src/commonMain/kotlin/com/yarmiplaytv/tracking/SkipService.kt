@@ -3,7 +3,9 @@ package com.yarmiplaytv.tracking
 import com.yarmiplaytv.Logger
 import com.yarmiplaytv.data.AppSettings
 import com.yarmiplaytv.media.aniskip.AniSkipClient
-import com.yarmiplaytv.media.aniskip.SkipSegment
+import com.yarmiplaytv.media.MediaSource
+import com.yarmiplaytv.media.SkipSegment
+import com.yarmiplaytv.player.Chapter
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.sync.NowPlaying
@@ -27,9 +29,10 @@ data class SkipPrompt(val segment: SkipSegment) {
 }
 
 /**
- * Skips anime openings and endings, with times from AniSkip for the episode MyAnimeList says is playing: by itself
- * when the room (or, alone, the Playback setting) says so, else with a Skip button shown for [PROMPT_MILLIS] as the
- * part starts. Only a device that may seek does either (in a managed room, the operators); in a room the skip moves
+ * Skips anime openings and endings: by itself when the room (or, alone, the Playback setting) says so, else with a
+ * Skip button shown for [PROMPT_MILLIS] as the part starts. Where they are comes, for each part, from the first of:
+ * the file's own chapters ("Opening", "ED"…), the media server's markers (Jellyfin's media segments, Plex's intro and
+ * credits markers), and AniSkip's times for the episode MyAnimeList says is playing. Only a device that may seek does either (in a managed room, the operators); in a room the skip moves
  * everyone, like any seek. Each part is handled once per file, so seeking back into it plays it.
  */
 class SkipService(
@@ -38,6 +41,7 @@ class SkipService(
     private val nowPlaying: StateFlow<NowPlaying?>,
     private val mal: MalService,
     private val aniSkip: AniSkipClient,
+    private val servers: StateFlow<List<MediaSource>>,
     private val room: StateFlow<RoomState>,
     private val roomSkip: StateFlow<RoomSkip>,
     private val settings: StateFlow<AppSettings>,
@@ -45,7 +49,7 @@ class SkipService(
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val _segments = MutableStateFlow<List<SkipSegment>>(emptyList())
-    /** The playing file's opening and ending, when known. */
+    /** The playing file's opening and ending, when known (also for the seek bar's marks). */
     val segments: StateFlow<List<SkipSegment>> = _segments.asStateFlow()
 
     private val _prompt = MutableStateFlow<SkipPrompt?>(null)
@@ -56,6 +60,11 @@ class SkipService(
     private val known = ConcurrentHashMap<String, List<SkipSegment>>()
     private var url: String? = null
     private var lookup: Job? = null
+    private var serverLookup: Job? = null
+    private var fromChapters: List<SkipSegment> = emptyList()
+    private var chaptersOf: List<Chapter>? = null
+    private var fromServer: List<SkipSegment> = emptyList()
+    private var fromAniSkip: List<SkipSegment> = emptyList()
     private var promptJob: Job? = null
     /** Parts handled in this file (skipped, offered or passed), by start time. */
     private val handled = mutableSetOf<Double>()
@@ -86,19 +95,50 @@ class SkipService(
     private fun newFile(np: NowPlaying?) {
         url = np?.url
         lookup?.cancel()
+        serverLookup?.cancel()
         dismiss()
         handled.clear()
         tries.clear()
+        fromChapters = emptyList()
+        chaptersOf = null
+        fromServer = emptyList()
+        fromAniSkip = emptyList()
         _segments.value = emptyList()
-        val info = np?.episode ?: return
-        val fileUrl = np.url
+        val fileUrl = np?.url ?: return
+        // The player may have told of the file (and its chapters) before the playlist did.
+        takeChapters(player.state.value)
+        if (np.copies.isNotEmpty()) {
+            serverLookup = scope.launch {
+                for (copy in np.copies) {
+                    val source = servers.value.firstOrNull { it.key == copy.sourceKey } ?: continue
+                    val marked = try {
+                        source.skipSegments(copy.itemId)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Logger.w(TAG, "No markers from ${source.displayName}: ${e.message}")
+                        continue
+                    }
+                    if (marked.isEmpty()) continue
+                    if (url == fileUrl) {
+                        fromServer = marked
+                        merge()
+                    }
+                    break
+                }
+            }
+        }
+        val info = np.episode ?: return
         lookup = scope.launch {
             try {
                 val loaded = player.state.first { it.url == fileUrl && it.fileLoaded && it.duration > 0 }
                 val match = mal.identify(info) ?: return@launch
                 val key = "${match.anime.id}/${match.episode}/${loaded.duration.roundToInt()}"
                 val segments = known[key] ?: aniSkip.skipTimes(match.anime.id, match.episode, loaded.duration).also { known[key] = it }
-                if (url == fileUrl) _segments.value = segments
+                if (url == fileUrl) {
+                    fromAniSkip = segments
+                    merge()
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -107,7 +147,23 @@ class SkipService(
         }
     }
 
+    /** For each part, the first source that knows it: the file's chapters, the server's markers, AniSkip. */
+    private fun merge() {
+        _segments.value = SkipSegment.Kind.entries.mapNotNull { kind ->
+            listOf(fromChapters, fromServer, fromAniSkip).firstNotNullOfOrNull { source -> source.firstOrNull { it.kind == kind } }
+        }.sortedBy { it.start }
+    }
+
+    /** The file's chapters, when they are this file's and changed (they come after it loads). */
+    private fun takeChapters(state: PlaybackState) {
+        if (state.url != url || !state.fileLoaded || state.chapters == chaptersOf) return
+        chaptersOf = state.chapters
+        fromChapters = ChapterSkips.from(state.chapters, state.duration)
+        merge()
+    }
+
     private fun onState(state: PlaybackState) {
+        takeChapters(state)
         val segments = _segments.value
         if (segments.isEmpty() || state.url != url || !state.fileLoaded || state.paused || state.seeking) return
         val position = state.position

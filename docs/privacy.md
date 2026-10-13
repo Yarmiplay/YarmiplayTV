@@ -61,8 +61,9 @@ unless you turn it off, to GitHub to check for a new version.
   which MyAnimeList entry it is, also without a MyAnimeList account: it asks MyAnimeList, with the app's id
   rather than yours, about the show (its title, or the MyAnimeList id your media server has for it) and its
   seasons. It then asks [AniSkip](https://aniskip.com) (api.aniskip.com) where the episode's opening and ending
-  are, sending the MyAnimeList id, the episode number and the file's length, nothing else. The answers are kept
-  in memory only. In a room on a YarmiplayServerTV server, turning automatic skipping on or off goes to the
+  are, sending the MyAnimeList id, the episode number and the file's length, nothing else. When the video plays
+  from your Jellyfin or Plex server, the app also asks that server for the episode's intro and credits markers.
+  The answers are kept in memory only. In a room on a YarmiplayServerTV server, turning automatic skipping on or off goes to the
   server, which tells the room who changed it.
 - **Your local network:** when you look for Jellyfin servers, the app sends a discovery message on the local
   network that Jellyfin servers answer. To connect to a Plex server, the app tries the addresses plex.tv lists

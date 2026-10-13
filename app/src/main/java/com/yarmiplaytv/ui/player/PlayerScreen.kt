@@ -72,6 +72,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.media.SkipSegment
 import com.yarmiplaytv.player.SurfacePlayer
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.relay.RelayHint
@@ -88,6 +89,7 @@ import com.yarmiplaytv.ui.components.ToastHost
 import com.yarmiplaytv.ui.mal.MalPanel
 import com.yarmiplaytv.ui.mobile.PictureInPicture
 import com.yarmiplaytv.ui.mobile.RelayDownloadBar
+import com.yarmiplaytv.ui.mobile.SkipMarks
 import com.yarmiplaytv.ui.mobile.pictureInPictureLabel
 import com.yarmiplaytv.ui.mobile.rememberPictureInPicture
 import com.yarmiplaytv.ui.mobile.rememberRelaySave
@@ -113,6 +115,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
     val room by container.sync.room.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     val skipPrompt by container.skips.prompt.collectAsStateWithLifecycle()
+    val skipSegments by container.skips.segments.collectAsStateWithLifecycle()
     val status by container.playlist.status.collectAsStateWithLifecycle()
     val settings by container.settings.collectAsStateWithLifecycle()
 
@@ -255,7 +258,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
         LaunchedEffect(seekFlash) { delay(1800); flashVisible.value = false }
         if (overlay == Overlay.Hidden && flashVisible.value && state.duration > 0) {
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 64.dp, vertical = 40.dp)) {
-                ProgressBar(player.currentPosition(), state.duration, state.cacheSeconds)
+                ProgressBar(player.currentPosition(), state.duration, state.cacheSeconds, segments = skipSegments)
                 Text("${formatClock(player.currentPosition())} / ${formatClock(state.duration)}", modifier = Modifier.padding(top = 8.dp))
             }
         }
@@ -423,12 +426,13 @@ private fun StatusCard(title: String, detail: String) {
 }
 
 @Composable
-internal fun ProgressBar(position: Double, duration: Double, cacheSeconds: Double, modifier: Modifier = Modifier) {
+internal fun ProgressBar(position: Double, duration: Double, cacheSeconds: Double, modifier: Modifier = Modifier, segments: List<SkipSegment> = emptyList()) {
     val fraction = if (duration > 0) (position / duration).coerceIn(0.0, 1.0).toFloat() else 0f
     val cached = if (duration > 0) ((position + cacheSeconds) / duration).coerceIn(0.0, 1.0).toFloat() else 0f
     Box(modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.2f))) {
         Box(Modifier.fillMaxWidth(cached).fillMaxHeight().background(Color.White.copy(alpha = 0.25f)))
         Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(AppColors.Accent))
+        SkipMarks(segments, duration, Modifier.matchParentSize())
     }
 }
 
@@ -471,7 +475,8 @@ private fun ControlsBar(
             }
         }
         Spacer(Modifier.height(12.dp))
-        ProgressBar(position, state.duration, state.cacheSeconds)
+        val segments by container.skips.segments.collectAsStateWithLifecycle()
+        ProgressBar(position, state.duration, state.cacheSeconds, segments = segments)
         Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
             Text(formatClock(position), color = AppColors.TextDim)
             Spacer(Modifier.weight(1f))

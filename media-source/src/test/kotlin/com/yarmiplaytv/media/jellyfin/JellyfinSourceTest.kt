@@ -4,6 +4,7 @@ import com.yarmiplaytv.media.MatchKind
 import com.yarmiplaytv.media.PlaybackReport
 import com.yarmiplaytv.media.ReportState
 import com.yarmiplaytv.media.ResolveResult
+import com.yarmiplaytv.media.SkipSegment
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.Dispatcher
@@ -45,6 +46,10 @@ class JellyfinSourceTest {
                         url.queryParameter("includeItemTypes") == "Episode" -> """{"Items":[${episodeJson(withSources = true)}],"TotalRecordCount":1}"""
                         else -> """{"Items":[],"TotalRecordCount":0}"""
                     }
+                    "/MediaSegments/ep1" -> """{"Items":[
+                        {"Id":"s1","ItemId":"ep1","Type":"Recap","StartTicks":0,"EndTicks":300000000},
+                        {"Id":"s2","ItemId":"ep1","Type":"Intro","StartTicks":300000000,"EndTicks":1200000000},
+                        {"Id":"s3","ItemId":"ep1","Type":"Outro","StartTicks":13500000000,"EndTicks":14400000000}]}"""
                     "/Sessions/Playing", "/Sessions/Playing/Progress", "/Sessions/Playing/Stopped", "/Users/u1/PlayedItems/ep1" ->
                         return MockResponse().setResponseCode(204)
                     else -> return MockResponse().setResponseCode(404)
@@ -67,6 +72,19 @@ class JellyfinSourceTest {
     private fun baseUrl() = server.url("/").toString().trimEnd('/')
 
     private fun session() = JellyfinSession(baseUrl(), "Benny", "srv", "u1", "yarmi", "tok")
+
+    @Test
+    fun mediaSegmentsGiveTheIntroAndOutro() = runBlocking {
+        val source = JellyfinSource(client, session())
+        assertEquals(
+            listOf(SkipSegment(SkipSegment.Kind.OPENING, 30.0, 120.0), SkipSegment(SkipSegment.Kind.ENDING, 1350.0, 1440.0)),
+            source.skipSegments("ep1"),
+        )
+        val asked = generateSequence { server.takeRequest(0, java.util.concurrent.TimeUnit.SECONDS) }.first { it.path!!.startsWith("/MediaSegments") }
+        assertEquals(listOf("Intro", "Outro"), asked.requestUrl!!.queryParameterValues("includeSegmentTypes"))
+        // Servers before 10.10 have no media segments.
+        assertEquals(emptyList<SkipSegment>(), source.skipSegments("old"))
+    }
 
     @Test
     fun quickConnectFlowEmitsCodeThenSession() = runBlocking {

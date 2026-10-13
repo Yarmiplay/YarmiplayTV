@@ -59,8 +59,10 @@ New to it? The [user manual](https://tv.yarmiplay.com/manual/) explains everythi
   in a web view); the app keeps only its tokens, on the device, and signing out deletes everything it kept. Builds need a
   MyAnimeList Client ID (`MAL_CLIENT_ID` in `~/.gradle/gradle.properties` or the CI secret; never in the
   repository), registered with the redirect URL `http://localhost:47821/mal-callback`.
-- Skips anime openings and endings: AniSkip's times for the episode MyAnimeList says is playing (no account
-  needed), with a Skip button for 3 seconds as one starts (S on desktop, OK on a TV remote), or by themselves.
+- Skips openings and endings, found from the file's chapters ("Opening", "ED", "Credits"…), the media server's
+  markers (Jellyfin 10.10 media segments, Plex intro and credits markers) or, for anime, AniSkip's times for the
+  episode MyAnimeList says is playing (no account needed); they're marked on the seek bar. A Skip button shows for
+  3 seconds as one starts (S on desktop, OK on a TV remote), or they're skipped by themselves.
   Automatic skipping is a room setting: on YarmiplayServerTV (1.7.3 or later) it's the room's, the same for
   everyone and changed only by operators in a managed room; on other servers each device decides, and a skip
   moves the room like any seek. A saved room remembers it and turns it on again when joined. Watching alone,

@@ -155,8 +155,11 @@ bottom open the shared playlist, the room, the chat, audio tracks, subtitles and
 seek bar, or holding the mouse over it, shows the time there, and for a video on your device a picture of that
 moment too.
 
-**Openings and endings:** for an anime episode, the app looks up where its opening and ending are (AniSkip's
-times, for the episode MyAnimeList says it is; no MyAnimeList account needed). As one starts, a **Skip opening**
+**Openings and endings:** the app finds where an episode's opening and ending are, for each from the first that
+knows: the file's own chapters (named "Opening", "OP", "Ending", "Credits" and the like), your Jellyfin or Plex
+server's markers (Jellyfin 10.10's media segments, from a plugin such as Intro Skipper; Plex's intro and credits
+markers), or AniSkip's times for the anime episode MyAnimeList says it is (no MyAnimeList account needed). The seek
+bar marks them in amber. As one starts, a **Skip opening**
 or **Skip ending** button shows for 3 seconds: tap or click it, press **S** on a computer, or **OK** on a TV
 remote. In a room the whole room jumps, as when anyone seeks. To skip them by themselves instead, turn on **Skip
 openings and endings** in the room (see [In the room](#in-the-room)), or, watching alone, in Settings > Playback.
@@ -282,7 +285,9 @@ your copy was installed:
 - **Microsoft Store:** opens the Store page, where **Update** is.
 - **Flatpak, Snap and the AUR:** shows the command that updates it, to copy, and opens your software center.
 
-Turn off **Check for updates when the app starts** in the same section to only check when you ask. After an
+The home screen also says when there's a new version: the app looks when it starts and every few hours while it
+runs (a Google Play copy asks Google Play). Turn off **Check for updates when the app starts** in the same section
+to only check when you ask. After an
 update, the home screen shows what's new once; **Settings > About > What's new** has it any time, and the
 [patch notes](../changelog/) page has every version's.
 

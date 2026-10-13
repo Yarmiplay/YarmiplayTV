@@ -5,15 +5,20 @@ import com.yarmiplaytv.data.PlaybackPrefs
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.media.EpisodeInfo
 import com.yarmiplaytv.media.aniskip.AniSkipClient
-import com.yarmiplaytv.media.aniskip.SkipSegment
+import com.yarmiplaytv.media.MediaSource
+import com.yarmiplaytv.media.SkipSegment
 import com.yarmiplaytv.media.mal.MalClient
+import com.yarmiplaytv.player.Chapter
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.PlayerEvent
 import com.yarmiplaytv.player.Track
 import com.yarmiplaytv.player.TrackType
+import com.yarmiplaytv.sync.FakeMediaSource
+import com.yarmiplaytv.sync.JF
 import com.yarmiplaytv.sync.NowPlaying
 import com.yarmiplaytv.sync.RoomSkip
+import com.yarmiplaytv.sync.ServerCopy
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.syncplay.RoomUser
@@ -54,6 +59,7 @@ class SkipServiceTest {
     private val roomSkip = MutableStateFlow(RoomSkip())
     private val settings = MutableStateFlow(AppSettings())
     private val notes = CopyOnWriteArrayList<String>()
+    private val servers = MutableStateFlow<List<MediaSource>>(emptyList())
     private val aniSkipAsks = CopyOnWriteArrayList<String>()
 
     /** Hero Academy (MyAnimeList 100), episode 3 of a 1440 s file: opening 28.7–118.7, ending 1350–1440. */
@@ -95,16 +101,16 @@ class SkipServiceTest {
         // Signed out: MyAnimeList is asked with the Client ID alone.
         val mal = MalService(scope, store, stored, MalClient("client-id", apiUrl = server.url("/v2").toString()))
         return SkipService(
-            scope, player, nowPlaying, mal, AniSkipClient(apiUrl = server.url("/skip").toString()), room, roomSkip, settings,
+            scope, player, nowPlaying, mal, AniSkipClient(apiUrl = server.url("/skip").toString()), servers, room, roomSkip, settings,
             notify = { notes += it },
         )
     }
 
-    private fun play(): SkipService {
+    private fun play(chapters: List<Chapter> = emptyList()): SkipService {
         val s = service()
         val url = "file:///anime/Hero Academy - 03.mkv"
         nowPlaying.value = NowPlaying("Hero Academy 3", "Hero Academy - 03.mkv", 0, 1440.0, url, episode = EpisodeInfo("Hero Academy", 1, 3, seriesKey = "file/hero academy", malId = 100))
-        player.state.value = PlaybackState(url = url, fileLoaded = true, duration = 1440.0, paused = false, position = 0.0)
+        player.state.value = PlaybackState(url = url, fileLoaded = true, duration = 1440.0, paused = false, position = 0.0, chapters = chapters)
         eventually("the opening and ending") { s.segments.value.size == 2 }
         return s
     }
@@ -122,6 +128,32 @@ class SkipServiceTest {
         val s = play()
         assertEquals(SkipSegment.Kind.OPENING, s.segments.value.first().kind)
         assertEquals(listOf("1440.000"), aniSkipAsks)
+    }
+
+    @Test
+    fun `the file's own chapters win over AniSkip`() {
+        val s = play(listOf(Chapter("Prologue", 0.0), Chapter("Opening", 60.0), Chapter("Part A", 150.0), Chapter("ED", 1340.0), Chapter("Preview", 1425.0)))
+        eventually("the chapters' opening") { s.segments.value.firstOrNull()?.start == 60.0 }
+        assertEquals(
+            listOf(SkipSegment(SkipSegment.Kind.OPENING, 60.0, 150.0), SkipSegment(SkipSegment.Kind.ENDING, 1340.0, 1425.0)),
+            s.segments.value,
+        )
+    }
+
+    @Test
+    fun `a media server's markers count for a show AniSkip doesn't know`() {
+        servers.value = listOf(
+            FakeMediaSource(JF, markers = mapOf("ep7" to listOf(SkipSegment(SkipSegment.Kind.OPENING, 5.0, 95.0), SkipSegment(SkipSegment.Kind.ENDING, 2500.0, 2590.0)))),
+        )
+        val s = service()
+        val url = "http://jellyfin/ep7.mkv"
+        // Not an episode MyAnimeList can name: only the server knows.
+        nowPlaying.value = NowPlaying("Brand New Show 7", "ep7.mkv", 0, 2600.0, url, copies = listOf(ServerCopy(JF, "ep7")))
+        player.state.value = PlaybackState(url = url, fileLoaded = true, duration = 2600.0, paused = false, position = 0.0)
+        eventually("the server's markers") { s.segments.value.size == 2 }
+        at(6.0)
+        eventually("the button") { s.prompt.value?.label == "Skip opening" }
+        assertTrue("AniSkip wasn't asked", aniSkipAsks.isEmpty())
     }
 
     @Test
@@ -168,7 +200,7 @@ class SkipServiceTest {
         val s = play()
         at(29.0)
         eventually("the skip") { player.seeks == listOf(118.7) }
-        assertEquals(listOf("Skipped the opening"), notes)
+        eventually("the note") { notes == listOf("Skipped the opening") }
         assertNull(s.prompt.value)
         at(30.0)
         runBlocking { delay(300) }

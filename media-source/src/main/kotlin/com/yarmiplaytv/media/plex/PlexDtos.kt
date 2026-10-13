@@ -86,6 +86,17 @@ data class PlexMetadata(
     val leafCount: Int? = null,
     val viewedLeafCount: Int? = null,
     @SerialName("Media") val media: List<PlexMedia> = emptyList(),
+    /** With `includeMarkers=1`: where the intro and credits are (Plex detects them). */
+    @SerialName("Marker") val markers: List<PlexMarker> = emptyList(),
+)
+
+@Serializable
+data class PlexMarker(
+    /** intro, credits or commercial. */
+    val type: String? = null,
+    /** Milliseconds. */
+    val startTimeOffset: Long = 0,
+    val endTimeOffset: Long = 0,
 )
 
 @Serializable

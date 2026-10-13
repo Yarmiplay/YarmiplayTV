@@ -117,6 +117,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             observeProperty("speed", MpvFormat.MPV_FORMAT_DOUBLE)
             observeProperty("demuxer-cache-duration", MpvFormat.MPV_FORMAT_DOUBLE)
             observeProperty("track-list", MpvFormat.MPV_FORMAT_NONE)
+            observeProperty("chapter-list", MpvFormat.MPV_FORMAT_NONE)
             observeProperty("video-codec", MpvFormat.MPV_FORMAT_STRING)
             observeProperty("hwdec-current", MpvFormat.MPV_FORMAT_STRING)
             observeProperty("width", MpvFormat.MPV_FORMAT_INT64)
@@ -298,6 +299,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
     override fun eventProperty(property: String) {
         if (property == "track-list") loadTracks()
+        if (property == "chapter-list") loadChapters()
     }
 
     override fun eventProperty(property: String, value: Long) {
@@ -392,6 +394,14 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         } else if (level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_INFO) {
             Log.i(TAG, "[$prefix] $line")
         }
+    }
+
+    private fun loadChapters() {
+        val count = mpv.getPropertyInt("chapter-list/count") ?: 0
+        val chapters = (0 until count).mapNotNull { i ->
+            Chapter(mpv.getPropertyString("chapter-list/$i/title"), mpv.getPropertyDouble("chapter-list/$i/time") ?: return@mapNotNull null)
+        }
+        _state.update { it.copy(chapters = chapters) }
     }
 
     private fun loadTracks() {

@@ -1,6 +1,7 @@
 package com.yarmiplaytv.media.aniskip
 
 import com.yarmiplaytv.media.MediaSourceException
+import com.yarmiplaytv.media.SkipSegment
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse

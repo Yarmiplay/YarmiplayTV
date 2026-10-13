@@ -17,9 +17,10 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
-import com.yarmiplaytv.media.aniskip.SkipSegment
+import com.yarmiplaytv.media.SkipSegment
 import com.yarmiplaytv.tracking.SkipPrompt
 import com.yarmiplaytv.ui.mobile.MobileTheme
+import com.yarmiplaytv.ui.mobile.SkipMarks
 import com.yarmiplaytv.ui.mobile.SkipSegmentButton
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -51,9 +52,26 @@ class SkipButtonUiTest {
         assertEquals(1, skipped)
     }
 
-    private fun androidx.compose.ui.test.ComposeUiTest.screenshot() {
+    @Test
+    fun `the opening and ending are marked where they are on the bar`() = runComposeUiTest {
+        setContent {
+            Box(Modifier.size(1000.dp, 6.dp).background(Color.DarkGray)) {
+                SkipMarks(
+                    listOf(SkipSegment(SkipSegment.Kind.OPENING, 100.0, 200.0), SkipSegment(SkipSegment.Kind.ENDING, 800.0, 900.0)),
+                    duration = 1000.0,
+                    modifier = Modifier.matchParentSize(),
+                )
+            }
+        }
+        val image = onRoot().captureToImage().toAwtImage() as java.awt.image.BufferedImage
+        fun marked(at: Double) = image.getRGB((image.width * at).toInt(), image.height / 2) != image.getRGB(image.width / 2, image.height / 2)
+        assertEquals(listOf(false, true, false, true, false), listOf(0.05, 0.15, 0.5, 0.85, 0.95).map(::marked))
+        screenshot("skip_marks")
+    }
+
+    private fun androidx.compose.ui.test.ComposeUiTest.screenshot(name: String = "skip_button") {
         val dir = System.getProperty("yarmiplaytv.screenshotDir") ?: return
-        val file = File(dir, "${System.getProperty("os.name").substringBefore(' ').lowercase()}/skip_button.png")
+        val file = File(dir, "${System.getProperty("os.name").substringBefore(' ').lowercase()}/$name.png")
         file.parentFile.mkdirs()
         ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", file)
     }

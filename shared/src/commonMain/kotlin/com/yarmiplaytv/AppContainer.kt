@@ -157,7 +157,7 @@ class AppContainer(
     val roomAutoSkip = RoomAutoSkip(scope, sync, roomHistory, settingsStore, settings)
     /** Skips anime openings and endings (times from AniSkip), or offers a Skip button. */
     val skips = SkipService(
-        scope, player, playlist.nowPlaying, mal, AniSkipClient(), sync.room, roomAutoSkip.state, settings,
+        scope, player, playlist.nowPlaying, mal, AniSkipClient(), servers, sync.room, roomAutoSkip.state, settings,
         notify = { sync.postLocal(it) },
     )
     private val jellyfinSharing = HostJellyfinSharing(

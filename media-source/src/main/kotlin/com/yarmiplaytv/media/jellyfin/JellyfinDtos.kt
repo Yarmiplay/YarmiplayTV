@@ -32,6 +32,20 @@ data class UserDto(
     @SerialName("Name") val name: String? = null,
 )
 
+/** `GET MediaSegments/{itemId}` (Jellyfin 10.10+): the item's intro, outro and other marked parts. */
+@Serializable
+data class MediaSegmentsResult(
+    @SerialName("Items") val items: List<MediaSegmentDto> = emptyList(),
+)
+
+@Serializable
+data class MediaSegmentDto(
+    /** Intro, Outro, Recap, Preview or Commercial. */
+    @SerialName("Type") val type: String? = null,
+    @SerialName("StartTicks") val startTicks: Long = 0,
+    @SerialName("EndTicks") val endTicks: Long = 0,
+)
+
 @Serializable
 data class ItemsResult(
     @SerialName("Items") val items: List<BaseItemDto> = emptyList(),

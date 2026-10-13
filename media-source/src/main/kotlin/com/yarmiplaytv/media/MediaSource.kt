@@ -40,6 +40,12 @@ interface MediaSource {
     /** Tells the server how far playback of one of its items got; failures throw [MediaSourceException]. */
     suspend fun reportPlayback(report: PlaybackReport) {}
 
+    /**
+     * Where item [itemId]'s opening and ending are, as the server marked them (Jellyfin's media segments, Plex's
+     * intro and credits markers); empty when it has none. Failures throw [MediaSourceException].
+     */
+    suspend fun skipSegments(itemId: String): List<SkipSegment> = emptyList()
+
     fun imageUrl(item: MediaItem, maxWidth: Int = 400): String?
 }
 

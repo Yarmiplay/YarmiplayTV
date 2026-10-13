@@ -8,6 +8,7 @@ import com.yarmiplaytv.media.MediaSourceException
 import com.yarmiplaytv.media.PlayableMedia
 import com.yarmiplaytv.media.PlaybackReport
 import com.yarmiplaytv.media.ResolveResult
+import com.yarmiplaytv.media.SkipSegment
 import kotlinx.coroutines.delay
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
@@ -23,6 +24,8 @@ internal class FakeMediaSource(
     private val loose: Map<String, String> = emptyMap(),
     private val lookupDelayMs: Long = 0,
     private val failReports: Boolean = false,
+    /** The opening and ending marked for each item id, for [skipSegments]. */
+    private val markers: Map<String, List<SkipSegment>> = emptyMap(),
 ) : MediaSource {
     override val kind = key.substringBefore(':')
     override val displayName = key.substringAfter(':').replaceFirstChar { it.uppercase() }
@@ -32,6 +35,8 @@ internal class FakeMediaSource(
     val lookedUp: MutableList<String> = Collections.synchronizedList(ArrayList())
     val looseLookups = AtomicInteger()
     val reports: MutableList<PlaybackReport> = Collections.synchronizedList(ArrayList())
+
+    override suspend fun skipSegments(itemId: String): List<SkipSegment> = markers[itemId].orEmpty()
 
     fun playableFor(fileName: String, size: Long = exact[fileName] ?: 0) =
         PlayableMedia(itemId = "$key:$fileName", url = "http://$key/$fileName", fileName = fileName, sizeBytes = size, durationSeconds = 100.0, title = fileName, sourceKey = key)

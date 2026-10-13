@@ -186,11 +186,8 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
             icon = if (ready) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
             tint = if (ready) AppColors.Ready else AppColors.NotReady,
         )
-        // Openings and endings are found through MyAnimeList, which needs the build's Client ID.
-        if (container.mal.client.configured) {
-            val skip by container.roomAutoSkip.state.collectAsStateWithLifecycle()
-            ToggleRow(ROOM_SKIP_TITLE, skip.on, { if (skip.canChange) container.roomAutoSkip.set(!skip.on) }, subtitle = roomSkipSubtitle(skip))
-        }
+        val skip by container.roomAutoSkip.state.collectAsStateWithLifecycle()
+        ToggleRow(ROOM_SKIP_TITLE, skip.on, { if (skip.canChange) container.roomAutoSkip.set(!skip.on) }, subtitle = roomSkipSubtitle(skip))
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(room.users, key = { it.name }) { user ->
                 val isMe = user.name == room.username

@@ -1,5 +1,6 @@
 package com.yarmiplaytv.ui.mobile
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,6 +11,7 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,6 +39,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -54,6 +58,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.yarmiplaytv.local.SeekFrames
+import com.yarmiplaytv.media.SkipSegment
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.player.playbackInfo
@@ -75,7 +80,15 @@ import kotlinx.coroutines.withContext
  * it, the time there shows above it, with the frame from [frames] for a video on this device.
  */
 @Composable
-internal fun TvSeekBar(state: PlaybackState, position: Double, onInteract: () -> Unit, frames: SeekFrames? = null, onSeek: (Double) -> Unit) {
+internal fun TvSeekBar(
+    state: PlaybackState,
+    position: Double,
+    onInteract: () -> Unit,
+    frames: SeekFrames? = null,
+    /** The opening and ending, marked on the track. */
+    segments: List<SkipSegment> = emptyList(),
+    onSeek: (Double) -> Unit,
+) {
     var dragging by remember { mutableStateOf<Float?>(null) }
     var hovering by remember { mutableStateOf<Float?>(null) }
     var width by remember { mutableIntStateOf(0) }
@@ -98,7 +111,7 @@ internal fun TvSeekBar(state: PlaybackState, position: Double, onInteract: () ->
                 enabled = duration > 0,
                 onHover = { hovering = it; if (it != null) onInteract() },
                 modifier = Modifier.fillMaxWidth().testTag("seek_slider"),
-            )
+            ) { SkipMarks(segments, duration, Modifier.matchParentSize()) }
             pointing?.let { at -> SeekBubble(formatClock(at), frame, (at / duration).toFloat(), width) }
         }
         Row(Modifier.fillMaxWidth()) {
@@ -195,6 +208,8 @@ internal fun PlayerTrack(
     buffered: Float? = null,
     enabled: Boolean = true,
     onHover: ((Float?) -> Unit)? = null,
+    /** Drawn on the track, over the played part (e.g. [SkipMarks]). */
+    marks: @Composable BoxScope.() -> Unit = {},
 ) {
     val span = (valueRange.endInclusive - valueRange.start).takeIf { it > 0f } ?: 1f
     fun fractionOf(v: Float) = ((v - valueRange.start) / span).coerceIn(0f, 1f)
@@ -262,6 +277,7 @@ internal fun PlayerTrack(
         Box(Modifier.fillMaxWidth().height(TRACK).clip(RoundedCornerShape(TRACK / 2)).background(Color.White.copy(alpha = 0.2f))) {
             buffered?.let { Box(Modifier.fillMaxWidth(fractionOf(it)).fillMaxHeight().background(Color.White.copy(alpha = 0.25f))) }
             Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(AppColors.Accent))
+            marks()
         }
         if (enabled && (hovered || pressed)) {
             Box(
@@ -274,6 +290,25 @@ internal fun PlayerTrack(
         }
     }
 }
+
+/**
+ * The opening and ending on a seek bar's track, [duration] seconds long: lighter spans, so it's plain where they are
+ * (also over the part already played).
+ */
+@Composable
+fun SkipMarks(segments: List<SkipSegment>, duration: Double, modifier: Modifier = Modifier) {
+    if (segments.isEmpty() || duration <= 0) return
+    Canvas(modifier.testTag("skip_marks")) {
+        for (s in segments) {
+            val from = (s.start / duration).coerceIn(0.0, 1.0).toFloat() * size.width
+            val to = (s.end / duration).coerceIn(0.0, 1.0).toFloat() * size.width
+            drawRect(SKIP_MARK, topLeft = Offset(from, 0f), size = Size((to - from).coerceAtLeast(2f), size.height))
+        }
+    }
+}
+
+/** Amber, unlike anything else on the bar, and see-through enough to show the played part under it. */
+private val SKIP_MARK = Color(0xFFFFC14D).copy(alpha = 0.75f)
 
 private val TRACK = 6.dp
 private val KNOB = 14.dp

@@ -5,7 +5,7 @@ import com.yarmiplaytv.sync.RoomSkip
 /** Skipping anime openings and endings: the wording the phone, desktop and TV settings and room screens share. */
 const val SKIP_ALONE_TITLE = "Skip openings and endings when watching alone"
 const val SKIP_ALONE_SUBTITLE =
-    "Anime episodes MyAnimeList recognises, with times from AniSkip. In a room, the room's setting decides"
+    "Found from the file's chapters, your media server's markers or, for anime, AniSkip. In a room, the room's setting decides"
 const val SKIP_BUTTON_TITLE = "Show a Skip button at openings and endings"
 const val SKIP_BUTTON_SUBTITLE = "For 3 seconds as one starts, when it isn't skipped automatically"
 

@@ -12,6 +12,7 @@ import com.yarmiplaytv.media.PlayableMedia
 import com.yarmiplaytv.media.PlaybackReport
 import com.yarmiplaytv.media.ReportState
 import com.yarmiplaytv.media.ResolveResult
+import com.yarmiplaytv.media.SkipSegment
 import okhttp3.HttpUrl
 
 class PlexSource(
@@ -86,6 +87,19 @@ class PlexSource(
 
     private suspend fun metadata(ratingKey: String): PlexMetadata? =
         container("library/metadata/$ratingKey").metadata.firstOrNull()
+
+    override suspend fun skipSegments(itemId: String): List<SkipSegment> {
+        val meta = container("library/metadata/$itemId") { addQueryParameter("includeMarkers", "1") }.metadata.firstOrNull()
+            ?: return emptyList()
+        return meta.markers.mapNotNull { m ->
+            val kind = when (m.type) {
+                "intro" -> SkipSegment.Kind.OPENING
+                "credits" -> SkipSegment.Kind.ENDING
+                else -> return@mapNotNull null
+            }
+            SkipSegment(kind, m.startTimeOffset / 1000.0, m.endTimeOffset / 1000.0).takeIf { it.end > it.start }
+        }.sortedBy { it.start }
+    }
 
     /** Uses the part named [preferredFile] when the item has several (multi-part or multi-version). */
     private fun playableFrom(meta: PlexMetadata, preferredFile: String? = null): PlayableMedia {

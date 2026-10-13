@@ -5,6 +5,7 @@ import com.yarmiplaytv.media.MediaItemType
 import com.yarmiplaytv.media.PlaybackReport
 import com.yarmiplaytv.media.ReportState
 import com.yarmiplaytv.media.ResolveResult
+import com.yarmiplaytv.media.SkipSegment
 import com.yarmiplaytv.media.jellyfin.ClientInfo
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -57,7 +58,12 @@ class PlexSourceTest {
                         else """{"MediaContainer":{"Metadata":[{"ratingKey":"show1","type":"show","title":"Hyperdimension Neptunia","leafCount":12,"viewedLeafCount":12}]}}"""
                     "/library/sections/2/all" -> """{"MediaContainer":{"totalSize":1,"Metadata":[
                         {"ratingKey":"m1","type":"movie","title":"Other","year":2020,"Media":[{"Part":[{"key":"/library/parts/9/1/file.mkv","file":"/media/Other (2020).mkv","size":5}]}]}]}}"""
-                    "/library/metadata/ep1" -> """{"MediaContainer":{"Metadata":[${episodeJson()}]}}"""
+                    "/library/metadata/ep1" ->
+                        if (url.queryParameter("includeMarkers") == "1") """{"MediaContainer":{"Metadata":[{"ratingKey":"ep1","type":"episode","Marker":[
+                            {"type":"intro","startTimeOffset":5000,"endTimeOffset":95000},
+                            {"type":"commercial","startTimeOffset":600000,"endTimeOffset":660000},
+                            {"type":"credits","startTimeOffset":1350000,"endTimeOffset":1440000}]}]}}"""
+                        else """{"MediaContainer":{"Metadata":[${episodeJson()}]}}"""
                     "/library/metadata/show1/allLeaves" -> """{"MediaContainer":{"Metadata":[${episodeJson()}]}}"""
                     "/hubs/search" -> """{"MediaContainer":{"Hub":[{"type":"show","Metadata":[{"ratingKey":"show1","type":"show","title":"Hyperdimension Neptunia"}]}]}}"""
                     "/library/onDeck" -> """{"MediaContainer":{"Metadata":[${episodeJson()}]}}"""
@@ -84,6 +90,14 @@ class PlexSourceTest {
     private fun session() = PlexSession(baseUrl(), "Benny", "mid", "yarmi", "srvtok", "acct")
 
     private fun requests(): List<RecordedRequest> = generateSequence { server.takeRequest(0, TimeUnit.SECONDS) }.toList()
+
+    @Test
+    fun introAndCreditsMarkersAreTheOpeningAndEnding() = runBlocking {
+        assertEquals(
+            listOf(SkipSegment(SkipSegment.Kind.OPENING, 5.0, 95.0), SkipSegment(SkipSegment.Kind.ENDING, 1350.0, 1440.0)),
+            PlexSource(client, session()).skipSegments("ep1"),
+        )
+    }
 
     @Test
     fun linkFlowEmitsCodeThenAccountToken() = runBlocking {

@@ -1,6 +1,7 @@
 package com.yarmiplaytv.media.aniskip
 
 import com.yarmiplaytv.media.MediaSourceException
+import com.yarmiplaytv.media.SkipSegment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -13,11 +14,6 @@ import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
-
-/** A part of an episode that can be skipped. */
-data class SkipSegment(val kind: Kind, val start: Double, val end: Double) {
-    enum class Kind(val label: String) { OPENING("opening"), ENDING("ending") }
-}
 
 /**
  * Where an anime episode's opening and ending are, from AniSkip (api.aniskip.com: open source, timestamps sent in by

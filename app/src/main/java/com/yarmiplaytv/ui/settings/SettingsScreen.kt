@@ -212,11 +212,8 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                 subtitle = "A playing video keeps going, in sync, in a small window over other apps",
             )
         }
-        // Openings and endings are found through MyAnimeList, which needs the build's Client ID.
-        if (container.mal.client.configured) {
-            ToggleRow(SKIP_ALONE_TITLE, pb.autoSkipAlone, { savePlayback(pb.copy(autoSkipAlone = !pb.autoSkipAlone)) }, subtitle = SKIP_ALONE_SUBTITLE)
-            ToggleRow(SKIP_BUTTON_TITLE, pb.showSkipButton, { savePlayback(pb.copy(showSkipButton = !pb.showSkipButton)) }, subtitle = SKIP_BUTTON_SUBTITLE)
-        }
+        ToggleRow(SKIP_ALONE_TITLE, pb.autoSkipAlone, { savePlayback(pb.copy(autoSkipAlone = !pb.autoSkipAlone)) }, subtitle = SKIP_ALONE_SUBTITLE)
+        ToggleRow(SKIP_BUTTON_TITLE, pb.showSkipButton, { savePlayback(pb.copy(showSkipButton = !pb.showSkipButton)) }, subtitle = SKIP_BUTTON_SUBTITLE)
         ValueRow("Seek step", "${pb.seekStepSeconds} s", {
             val steps = listOf(5, 10, 15, 30)
             savePlayback(pb.copy(seekStepSeconds = steps[(steps.indexOf(pb.seekStepSeconds) + 1) % steps.size]))

@@ -200,11 +200,8 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
             s.error?.let { Text(it, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall) }
         }
         ReadyChip(room.isReady == true, { container.sync.toggleReady() }, Modifier.testTag("ready_toggle"))
-        // Openings and endings are found through MyAnimeList, which needs the build's Client ID.
-        if (container.mal.client.configured) {
-            val skip by container.roomAutoSkip.state.collectAsStateWithLifecycle()
-            RoomSkipToggle(skip) { container.roomAutoSkip.set(it) }
-        }
+        val skip by container.roomAutoSkip.state.collectAsStateWithLifecycle()
+        RoomSkipToggle(skip) { container.roomAutoSkip.set(it) }
         val blocked by container.sync.blocked.collectAsStateWithLifecycle()
         val me = room.users.firstOrNull { it.name == room.username }
         room.users.forEach { user ->

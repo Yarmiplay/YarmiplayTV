@@ -59,7 +59,12 @@ data class PlaybackState(
     val videoHeight: Int = 0,
     /** Width over height as the video is shown (pixel aspect and rotation applied); 0 until known. */
     val displayAspect: Double = 0.0,
+    /** The file's chapters, in order; empty when it has none. */
+    val chapters: List<Chapter> = emptyList(),
 )
+
+/** A chapter of the playing file: its [title] (when it has one) and where it starts, in seconds. */
+data class Chapter(val title: String?, val time: Double)
 
 enum class TrackType(val mpvName: String, val property: String) {
     VIDEO("video", "vid"),

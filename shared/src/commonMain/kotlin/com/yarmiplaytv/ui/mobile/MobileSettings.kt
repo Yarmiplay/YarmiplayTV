@@ -266,14 +266,11 @@ private fun PlaybackSettings(container: AppContainer) {
             Modifier.testTag("toggle_pip"),
         ) { on -> savePlayback { it.copy(pictureInPicture = on) } }
     }
-    // Openings and endings are found through MyAnimeList, which needs the build's Client ID.
-    if (container.mal.client.configured) {
-        SettingsToggle(SKIP_ALONE_TITLE, SKIP_ALONE_SUBTITLE, pb.autoSkipAlone, Modifier.testTag("toggle_auto_skip")) { on ->
-            savePlayback { it.copy(autoSkipAlone = on) }
-        }
-        SettingsToggle(SKIP_BUTTON_TITLE, SKIP_BUTTON_SUBTITLE, pb.showSkipButton, Modifier.testTag("toggle_skip_button")) { on ->
-            savePlayback { it.copy(showSkipButton = on) }
-        }
+    SettingsToggle(SKIP_ALONE_TITLE, SKIP_ALONE_SUBTITLE, pb.autoSkipAlone, Modifier.testTag("toggle_auto_skip")) { on ->
+        savePlayback { it.copy(autoSkipAlone = on) }
+    }
+    SettingsToggle(SKIP_BUTTON_TITLE, SKIP_BUTTON_SUBTITLE, pb.showSkipButton, Modifier.testTag("toggle_skip_button")) { on ->
+        savePlayback { it.copy(showSkipButton = on) }
     }
     ValueSetting("Seek step", "${pb.seekStepSeconds} s · double-tap the left or right side of the video") {
         val steps = listOf(5, 10, 15, 30)

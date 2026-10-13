@@ -12,6 +12,7 @@ import com.yarmiplaytv.media.PlayableMedia
 import com.yarmiplaytv.media.PlaybackReport
 import com.yarmiplaytv.media.ReportState
 import com.yarmiplaytv.media.ResolveResult
+import com.yarmiplaytv.media.SkipSegment
 import okhttp3.HttpUrl
 import java.util.concurrent.ConcurrentHashMap
 
@@ -167,6 +168,28 @@ class JellyfinSource(
         )
         client.postRaw(base, token, path, client.json.encodeToString(PlaybackProgressBody.serializer(), body)) { }
         if (report.markWatched) markPlayed(report.itemId)
+    }
+
+    override suspend fun skipSegments(itemId: String): List<SkipSegment> {
+        val result = try {
+            client.get<MediaSegmentsResult>(base, token, "MediaSegments/$itemId") {
+                addQueryParameter("includeSegmentTypes", "Intro")
+                addQueryParameter("includeSegmentTypes", "Outro")
+            }
+        } catch (e: MediaSourceException) {
+            // Before 10.10 there are no media segments.
+            if (e.httpCode == 404) return emptyList()
+            throw e
+        }
+        return result.items.mapNotNull { s ->
+            val kind = when (s.type) {
+                "Intro" -> SkipSegment.Kind.OPENING
+                "Outro" -> SkipSegment.Kind.ENDING
+                else -> return@mapNotNull null
+            }
+            SkipSegment(kind, s.startTicks.toDouble() / TICKS_PER_SECOND, s.endTicks.toDouble() / TICKS_PER_SECOND)
+                .takeIf { it.end > it.start }
+        }.sortedBy { it.start }
     }
 
     private suspend fun markPlayed(itemId: String) {

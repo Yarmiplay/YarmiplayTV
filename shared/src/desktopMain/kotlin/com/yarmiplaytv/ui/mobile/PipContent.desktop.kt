@@ -104,7 +104,8 @@ fun PipContent(
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))).padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                TvSeekBar(state, position, onInteract = {}) { player.seek(it) }
+                val segments by container.skips.segments.collectAsState()
+                TvSeekBar(state, position, onInteract = {}, segments = segments) { player.seek(it) }
                 PlayerVolumeControl(onInteract = {})
             }
         }

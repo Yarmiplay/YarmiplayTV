@@ -1,5 +1,6 @@
 package com.yarmiplaytv.player.desktop
 
+import com.yarmiplaytv.player.Chapter
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.PlayerEvent
@@ -103,6 +104,7 @@ class DesktopMpvPlayer(
             "mute" to LibMpv.FORMAT_FLAG,
             "demuxer-cache-duration" to LibMpv.FORMAT_DOUBLE,
             "track-list" to LibMpv.FORMAT_NONE,
+            "chapter-list" to LibMpv.FORMAT_NONE,
             "video-codec" to LibMpv.FORMAT_STRING,
             "hwdec-current" to LibMpv.FORMAT_STRING,
             "width" to LibMpv.FORMAT_INT64,
@@ -265,6 +267,7 @@ class DesktopMpvPlayer(
     private fun onProperty(name: String, value: Any?) {
         when (name) {
             "track-list" -> loadTracks()
+            "chapter-list" -> loadChapters()
             "width" -> (value as? Long)?.let { v -> _state.update { it.copy(videoWidth = v.toInt()) } }
             "height" -> (value as? Long)?.let { v -> _state.update { it.copy(videoHeight = v.toInt()) } }
             "time-pos" -> (value as? Double)?.let { v ->
@@ -306,6 +309,14 @@ class DesktopMpvPlayer(
         System.err.println("mpv [${event.prefix}] ${event.level}: ${event.text}")
         _events.tryEmit(PlayerEvent.Log(event.prefix, level, event.text))
         if (event.prefix == "cplayer" && level <= LOG_ERROR) _events.tryEmit(PlayerEvent.EndFile(currentUrl, event.text))
+    }
+
+    private fun loadChapters() {
+        val count = core.getLong("chapter-list/count")?.toInt() ?: 0
+        val chapters = (0 until count).mapNotNull { i ->
+            Chapter(core.getString("chapter-list/$i/title"), core.getDouble("chapter-list/$i/time") ?: return@mapNotNull null)
+        }
+        _state.update { it.copy(chapters = chapters) }
     }
 
     private fun loadTracks() {
