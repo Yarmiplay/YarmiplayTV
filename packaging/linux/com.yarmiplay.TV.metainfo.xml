@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.9.8" date="2026-10-13">
+      <description>
+        <p>Find a show on the MyAnimeList screen and in the player's MyAnimeList panel: search MyAnimeList for any show, then add it to your list, change its status, score and episodes watched, or take it off your list.</p>
+      </description>
+    </release>
     <release version="1.9.7" date="2026-10-13">
       <description>
         <p>In a room, pressing play right after switching to a video plays it: pressed while a stream is still opening, it plays once the video has loaded, and pressed just as the video appears, it's no longer paused again.</p>
