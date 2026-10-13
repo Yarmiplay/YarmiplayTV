@@ -4,7 +4,7 @@ import type { ByteSource } from "./bytes";
 import { Demuxer, type Chapter, type StreamInfo, type TimedPacket } from "./demuxer";
 import { createLibAV, type LibAV } from "./libav";
 import { Renderer } from "./renderer";
-import { SubtitleLayer, TEXT_SUBTITLES } from "./subtitles";
+import { PGS, PgsLayer, SubtitleLayer, TEXT_SUBTITLES } from "./subtitles";
 import { openVideoDecoding, type VideoDecoding } from "./video";
 
 export interface Track {
@@ -101,7 +101,7 @@ export class MediaPlayer implements PlayerAdapter {
   private audioStream: StreamInfo | null = null;
   private audio: AudioDecoding | null = null;
   private output: AudioOutput | null = null;
-  private subtitles: SubtitleLayer | null = null;
+  private subtitles: SubtitleLayer | PgsLayer | null = null;
 
   private readonly frames: VideoFrame[] = [];
   private _source: ByteSource | null = null;
@@ -128,6 +128,8 @@ export class MediaPlayer implements PlayerAdapter {
   constructor(
     canvas: HTMLCanvasElement,
     private readonly subtitleCanvas: HTMLCanvasElement,
+    /** For PGS (picture) subtitles; the text subtitles' canvas belongs to libass's worker. */
+    private readonly pictureSubtitleCanvas: HTMLCanvasElement | null = null,
   ) {
     this.renderer = new Renderer(canvas);
     this.frameRequest = requestAnimationFrame(this.tick);
@@ -215,7 +217,7 @@ export class MediaPlayer implements PlayerAdapter {
       this.videoStream = videos[0] ?? null;
       this.audioStream =
         audios.find((s) => languageMatches(s.language, opts.audioLanguages ?? [])) ?? audios.find((s) => s.isDefault) ?? audios[0] ?? null;
-      const textSubs = subtitles.filter((s) => TEXT_SUBTITLES.has(s.codec));
+      const textSubs = subtitles.filter((s) => this.canDraw(s));
       const subtitle =
         textSubs.find((s) => s.isForced) ??
         textSubs.find((s) => languageMatches(s.language, opts.subtitleLanguages ?? [])) ??
@@ -236,7 +238,7 @@ export class MediaPlayer implements PlayerAdapter {
         language: s.language,
         codec: s.codec,
         isDefault: s.isDefault,
-        playable: kind === "audio" || TEXT_SUBTITLES.has(s.codec),
+        playable: kind === "audio" || this.canDraw(s),
       });
       const width = this.videoStream ? await libav.AVCodecParameters_width(this.videoStream.raw.codecpar) : 0;
       const height = this.videoStream ? await libav.AVCodecParameters_height(this.videoStream.raw.codecpar) : 0;
@@ -283,7 +285,7 @@ export class MediaPlayer implements PlayerAdapter {
     await this.subtitles?.destroy();
     this.subtitles = null;
     const stream = this.demuxer?.streams.find((s) => s.index === id && s.kind === "subtitle") ?? null;
-    if (stream && TEXT_SUBTITLES.has(stream.codec)) await this.openSubtitles(stream);
+    if (stream && this.canDraw(stream)) await this.openSubtitles(stream);
     this.update({ subtitleTrack: this.subtitles ? stream!.index : null });
     // Back a little, so a line that started before now is read again.
     if (this.subtitles) this.seek(this.position);
@@ -300,7 +302,8 @@ export class MediaPlayer implements PlayerAdapter {
     const [x, y, w, h] = this.renderer.fit(image.width, image.height);
     const scaleX = image.width / w;
     const scaleY = image.height / h;
-    ctx.drawImage(this.subtitleCanvas, x, y, w, h, 0, 0, w * scaleX, h * scaleY);
+    const overlay = this.subtitles instanceof PgsLayer ? this.pictureSubtitleCanvas! : this.subtitleCanvas;
+    ctx.drawImage(overlay, x, y, w, h, 0, 0, w * scaleX, h * scaleY);
     return canvas.convertToBlob({ type: "image/png" });
   }
 
@@ -331,7 +334,16 @@ export class MediaPlayer implements PlayerAdapter {
     if (!this.state.paused) await this.output.play();
   }
 
+  /** Whether [stream]'s subtitles can be drawn: text ones always, pictures when there's a canvas for them. */
+  private canDraw(stream: StreamInfo): boolean {
+    return TEXT_SUBTITLES.has(stream.codec) || (stream.codec === PGS && this.pictureSubtitleCanvas !== null);
+  }
+
   private async openSubtitles(stream: StreamInfo) {
+    if (stream.codec === PGS) {
+      this.subtitles = new PgsLayer(this.pictureSubtitleCanvas!, stream);
+      return;
+    }
     const demuxer = this.demuxer!;
     const [header, fonts] = await Promise.all([demuxer.extradata(stream), demuxer.attachments()]);
     this.subtitles = new SubtitleLayer(this.subtitleCanvas, stream, header, fonts);
@@ -474,7 +486,8 @@ export class MediaPlayer implements PlayerAdapter {
       else if (this.renderer.resize()) this.renderer.paint();
     }
     const size = this.renderer.frameSize;
-    if (this.subtitles && size) this.subtitles.render(now, size[0], size[1]);
+    if (this.subtitles instanceof PgsLayer) this.subtitles.render(now);
+    else if (this.subtitles && size) this.subtitles.render(now, size[0], size[1]);
 
     // Without sound to wait for, the clock waits for the video.
     const starved = !this.state.paused && !this.eof && this.seekTarget === null && !!this.video && this.frames.length === 0 && (!this.audioStream || (this.output?.buffered ?? 0) === 0);

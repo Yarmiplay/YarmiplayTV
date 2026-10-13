@@ -1,7 +1,8 @@
 import JASSUB from "jassub";
+import { PgsRenderer } from "libpgs";
 import type { Attachment, StreamInfo, TimedPacket } from "./demuxer";
 
-/** Text subtitle codecs drawn with libass; PGS (bitmap) subtitles come later. */
+/** Text subtitle codecs drawn with libass; PGS (Blu-ray pictures) go to PgsLayer. */
 export const TEXT_SUBTITLES = new Set(["ass", "ssa", "subrip", "srt", "webvtt", "text", "mov_text"]);
 
 /** A plain script for subtitles that bring no styles of their own (SRT, WebVTT): white text with a black outline. */
@@ -83,5 +84,73 @@ export class SubtitleLayer {
 
   async destroy() {
     await this.jassub.destroy().catch(() => {});
+  }
+}
+
+/** PGS (Blu-ray picture) subtitles, drawn with libpgs. */
+export const PGS = "hdmv_pgs_subtitle";
+
+/**
+ * PGS subtitles of one stream. Matroska stores each display set without the `.sup` file's per-segment headers, so the
+ * packets read so far are put back into a `.sup` (a "PG" marker and the time before every segment) and handed to
+ * libpgs again, at most twice a second, as more arrive.
+ */
+export class PgsLayer {
+  private readonly renderer: PgsRenderer;
+  private readonly parts: Uint8Array[] = [];
+  private readonly seen = new Set<number>();
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private size = 0;
+
+  constructor(
+    canvas: HTMLCanvasElement,
+    readonly stream: StreamInfo,
+  ) {
+    // On the main thread: the package's worker needs its own URL, and PGS is light to draw.
+    type Options = ConstructorParameters<typeof PgsRenderer>[0];
+    this.renderer = new PgsRenderer({ canvas, mode: "mainThread" as Options["mode"], aspectRatio: "contain" });
+  }
+
+  add(packet: TimedPacket) {
+    if (packet.time === null || this.seen.has(packet.time)) return;
+    this.seen.add(packet.time);
+    const pts = Math.round(packet.time * 90_000) >>> 0;
+    const data = packet.packet.data;
+    for (let at = 0; at + 3 <= data.length; ) {
+      const length = (data[at + 1] << 8) | data[at + 2];
+      const segment = new Uint8Array(10 + 3 + length);
+      const view = new DataView(segment.buffer);
+      segment[0] = 0x50; // P
+      segment[1] = 0x47; // G
+      view.setUint32(2, pts);
+      view.setUint32(6, 0);
+      segment.set(data.subarray(at, at + 3 + length), 10);
+      this.parts.push(segment);
+      this.size += segment.length;
+      at += 3 + length;
+    }
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.reload(), 500);
+  }
+
+  private reload() {
+    // Display sets in time order, as a .sup file has them.
+    const all = new Uint8Array(this.size);
+    const sorted = [...this.parts].sort((a, b) => new DataView(a.buffer).getUint32(2) - new DataView(b.buffer).getUint32(2));
+    let at = 0;
+    for (const p of sorted) {
+      all.set(p, at);
+      at += p.length;
+    }
+    void this.renderer.loadFromBuffer(all.buffer);
+  }
+
+  render(time: number) {
+    this.renderer.renderAtTimestamp(time);
+  }
+
+  destroy() {
+    clearTimeout(this.timer);
+    this.renderer.dispose();
   }
 }

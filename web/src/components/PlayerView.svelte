@@ -18,6 +18,7 @@
   let stage: HTMLDivElement;
   let videoCanvas: HTMLCanvasElement;
   let subtitleCanvas: HTMLCanvasElement;
+  let pictureSubtitleCanvas: HTMLCanvasElement;
   let chatInput: HTMLInputElement | undefined = $state();
   let player = $state<MediaPlayer | null>(null);
   let s = $state<PlayerState | null>(null);
@@ -43,7 +44,7 @@
   const seekStep = $derived($settings.playback.seekStepSeconds);
 
   onMount(() => {
-    const p = new MediaPlayer(videoCanvas, subtitleCanvas);
+    const p = new MediaPlayer(videoCanvas, subtitleCanvas, pictureSubtitleCanvas);
     player = p;
     attachPlayer(p);
     const stops = [p.subscribe((state) => (s = state))];
@@ -312,6 +313,7 @@
   >
     <canvas bind:this={videoCanvas} class="video"></canvas>
     <canvas bind:this={subtitleCanvas} class="subs"></canvas>
+    <canvas bind:this={pictureSubtitleCanvas} class="subs"></canvas>
 
     {#if !s?.loaded && status.kind === "idle"}
       <div class="empty">
