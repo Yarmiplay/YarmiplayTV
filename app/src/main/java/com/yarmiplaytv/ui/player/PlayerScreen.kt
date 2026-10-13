@@ -3,9 +3,6 @@ package com.yarmiplaytv.ui.player
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -63,9 +60,12 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -89,6 +89,7 @@ import com.yarmiplaytv.ui.components.ToastHost
 import com.yarmiplaytv.ui.mal.MalPanel
 import com.yarmiplaytv.ui.mobile.PictureInPicture
 import com.yarmiplaytv.ui.mobile.RelayDownloadBar
+import com.yarmiplaytv.ui.mobile.SkipChip
 import com.yarmiplaytv.ui.mobile.SkipMarks
 import com.yarmiplaytv.ui.mobile.pictureInPictureLabel
 import com.yarmiplaytv.ui.mobile.rememberPictureInPicture
@@ -115,6 +116,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
     val room by container.sync.room.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     val skipPrompt by container.skips.prompt.collectAsStateWithLifecycle()
+    val density = LocalDensity.current
     val skipSegments by container.skips.segments.collectAsStateWithLifecycle()
     val status by container.playlist.status.collectAsStateWithLifecycle()
     val settings by container.settings.collectAsStateWithLifecycle()
@@ -252,7 +254,19 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
 
         ToastHost(container.sync.toasts, Modifier.align(Alignment.TopStart).padding(32.dp))
         TvMalNotice(container, Modifier.align(Alignment.TopEnd).padding(32.dp))
-        if (overlay == Overlay.Hidden) skipPrompt?.let { TvSkipPrompt(it.label, Modifier.align(Alignment.BottomEnd).padding(end = 64.dp, bottom = 48.dp)) }
+        // One place, controls or not: just above the controls bar, so it never jumps. OK presses it while the
+        // controls are hidden; with them open, OK belongs to the focused control.
+        if (overlay == Overlay.Hidden || overlay == Overlay.Controls) {
+            skipPrompt?.let {
+                SkipChip(
+                    it.label,
+                    key = it,
+                    hint = if (overlay == Overlay.Hidden) "OK" else null,
+                    large = true,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 56.dp, bottom = tvSkipBottom()).testTag("skip_segment"),
+                )
+            }
+        }
 
         val flashVisible = remember(seekFlash) { mutableStateOf(seekFlash != 0L) }
         LaunchedEffect(seekFlash) { delay(1800); flashVisible.value = false }
@@ -275,7 +289,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 onSeek = ::seekBy,
                 onOpenPanel = { overlay = Overlay.Side(it, fromControls = true) },
                 onHome = { nav.popTo(Screen.Home) },
-                modifier = Modifier.align(Alignment.BottomCenter),
+                modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { tvControlsHeight = with(density) { it.height.toDp() } },
             )
             RoomChip(
                 room,
@@ -556,22 +570,21 @@ private fun RoomChip(room: com.yarmiplaytv.syncplay.RoomState, streaming: String
     }
 }
 
+/** The controls bar's height as last laid out, so the Skip button can sit just above it. */
+private var tvControlsHeight by mutableStateOf(0.dp)
+
 /**
- * The Skip button on TV: not focusable (focus stays on the player, so Left and Right still seek); OK presses it while
- * it shows. A line under it runs out over the seconds it stays.
+ * Where the Skip button sits on TV: above the controls bar, whether it shows or not. The bar's height comes from
+ * its rows (one line of title, the seek bar, the times, the buttons), or from its last layout if that's taller.
  */
 @Composable
-private fun TvSkipPrompt(label: String, modifier: Modifier = Modifier) {
-    val left = remember(label) { Animatable(1f) }
-    LaunchedEffect(label) { left.animateTo(0f, tween(SkipService.PROMPT_MILLIS.toInt(), easing = LinearEasing)) }
-    Box(modifier.clip(RoundedCornerShape(10.dp)).background(Color.White.copy(alpha = 0.92f)).testTag("skip_segment")) {
-        Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, color = Color.Black, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.width(12.dp))
-            Text("OK", color = Color.Black.copy(alpha = 0.6f), style = MaterialTheme.typography.labelLarge)
-        }
-        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(left.value).height(3.dp).background(AppColors.Accent))
+private fun tvSkipBottom(): Dp {
+    val t = MaterialTheme.typography
+    val estimate = with(LocalDensity.current) {
+        val line = maxOf(t.bodyLarge.lineHeight.toDp(), t.bodyMedium.lineHeight.toDp())
+        32.dp + t.titleLarge.lineHeight.toDp() + 12.dp + 6.dp + 6.dp + line + 12.dp + 48.dp + 32.dp
     }
+    return maxOf(estimate, tvControlsHeight) + 16.dp
 }
 
 /** MyAnimeList's message on TV: text only (a remote can't reach it); Undo and the picker are in the panel. */

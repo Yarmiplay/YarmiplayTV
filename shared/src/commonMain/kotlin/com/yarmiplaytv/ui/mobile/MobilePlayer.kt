@@ -180,10 +180,10 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
             seekFlash?.let { Chip(it, AppColors.Accent, Modifier.align(Alignment.Center)) }
             PlayerToasts(container, Modifier.align(Alignment.TopStart).padding(16.dp))
             MalNoticeCard(container, onPick = { openSheet(PlayerSheet.MAL) }, Modifier.align(Alignment.TopEnd).padding(top = 72.dp, start = 16.dp, end = 16.dp))
-            // Above the bottom bar while the controls show, near the corner while they don't.
+            // One place, controls or not: just above the bottom bar, so it never moves under the pointer.
             SkipSegmentButton(
                 container,
-                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = if (controls) 136.dp else 32.dp),
+                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = SkipButtonBottom),
                 hint = skipKeyHint,
             )
 
