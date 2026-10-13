@@ -1,6 +1,8 @@
 package com.yarmiplaytv.desktop
 
 fun main(args: Array<String>) {
+    // Dark macOS title bars, like the app (Windows: useDarkTitleBar). Read when AWT starts, so it goes before any window.
+    System.setProperty("apple.awt.application.appearance", "NSAppearanceNameDarkAqua")
     val list = args.toList()
     when {
         "--benchmark" in list -> runBenchmark(BenchmarkOptions(list))
