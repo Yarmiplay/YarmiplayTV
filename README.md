@@ -36,6 +36,9 @@ New to it? The [user manual](https://tv.yarmiplay.com/manual/) explains everythi
   name with a lock instead of the hash. The Room tab lists the shared playlist first, then the chat, the
   people in the room, and last switching rooms. On a computer or a wide tablet the Room tab shows the playlist,
   the chat and the room side by side.
+- Themes, in Settings > Appearance: Dark (the app's night blue), Noire (true black and white, for OLED screens),
+  Light, or Match the system. The whole app recolours at once, title bar and Android system bars included; the
+  player stays dark over the video.
 - Saved and recent rooms: every room you join is kept as a recent room (the 15 latest), and **Save this room**
   (a star, or a checkbox on the join form) keeps one for good, with a name of your own if you like. Both lists
   are on the join form, with **Rejoin** to connect in one click, and the room panel has the other rooms on the

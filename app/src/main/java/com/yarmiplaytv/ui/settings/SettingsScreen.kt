@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -59,11 +60,11 @@ import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.AboutLink
 import com.yarmiplaytv.ui.shared.CHANGELOG_URL
-import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
 import com.yarmiplaytv.ui.shared.DETECT_ANY_NETWORK_SUBTITLE
 import com.yarmiplaytv.ui.shared.DETECT_ANY_NETWORK_TITLE
 import com.yarmiplaytv.ui.shared.DETECT_SKIPS_SUBTITLE
 import com.yarmiplaytv.ui.shared.DETECT_SKIPS_TITLE
+import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
 import com.yarmiplaytv.ui.shared.SKIP_ALONE_SUBTITLE
 import com.yarmiplaytv.ui.shared.SKIP_ALONE_TITLE
 import com.yarmiplaytv.ui.shared.SKIP_BUTTON_SUBTITLE
@@ -79,6 +80,8 @@ import com.yarmiplaytv.ui.shared.shortUrl
 import com.yarmiplaytv.ui.shared.updateSourceLine
 import com.yarmiplaytv.ui.shared.updateStateLine
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.AppTheme
+import com.yarmiplaytv.ui.theme.THEME_NOTE
 import com.yarmiplaytv.update.UpdateCheck
 import com.yarmiplaytv.update.UpdateState
 import kotlinx.coroutines.launch
@@ -270,6 +273,18 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                 }
                 TvTextField(subtitles, { subtitles = it }, "Preferred subtitle languages (restart to apply)", placeholder = "eng,en")
                     }
+                    TvSettingsCategory.APPEARANCE -> {
+                        val chosen = AppTheme.of(settings.theme)
+                        AppTheme.entries.forEach { theme ->
+                            ValueRow(
+                                theme.label, if (theme == chosen) "Chosen" else "",
+                                { container.scope.launch { container.settingsStore.saveTheme(theme.key) } },
+                                Modifier.testTag("theme_${theme.key}"),
+                                subtitle = theme.description,
+                            )
+                        }
+                        Text(THEME_NOTE, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                    }
                     TvSettingsCategory.UPDATES -> UpdatesSection(container) { qr = it }
                     TvSettingsCategory.ABOUT -> {
                 Text("YarmiplayTV ${BuildConfig.VERSION_NAME} · Syncplay protocol 1.7 · mpv (libmpv)", color = AppColors.TextDim)
@@ -292,6 +307,7 @@ private enum class TvSettingsCategory(val title: String, val icon: ImageVector) 
     MAL("MyAnimeList", Icons.Filled.Tv),
     SYNCING("Syncing", Icons.Filled.Sync),
     PLAYBACK("Playback", Icons.Filled.PlayCircle),
+    APPEARANCE("Appearance", Icons.Filled.Palette),
     UPDATES("Updates", Icons.Filled.SystemUpdate),
     ABOUT("About", Icons.Filled.Info),
 }

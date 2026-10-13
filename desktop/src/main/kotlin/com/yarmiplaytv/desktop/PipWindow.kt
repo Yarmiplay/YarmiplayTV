@@ -17,6 +17,7 @@ import androidx.compose.ui.window.rememberWindowState
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.ui.mobile.DesktopPlayerInput
 import com.yarmiplaytv.ui.mobile.MobileTheme
+import com.yarmiplaytv.ui.theme.Palettes
 import com.yarmiplaytv.ui.mobile.PipContent
 import com.yarmiplaytv.ui.mobile.VOLUME_STEP
 import com.yarmiplaytv.ui.mobile.appLogoPainter
@@ -64,7 +65,8 @@ internal fun PipWindow(
             val ratio = PipPlacement.ratio(aspect.displayAspect)
             awt.setSize(awt.width, (awt.width / ratio).roundToInt())
         }
-        MobileTheme {
+        // Dark whatever the theme: it's all video.
+        MobileTheme(Palettes.Dark) {
             PipContent(
                 container,
                 onBack = { keepBounds(); onBack() },

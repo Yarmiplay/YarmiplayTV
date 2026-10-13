@@ -54,6 +54,7 @@ import com.yarmiplaytv.ui.mobile.DesktopRoomPanel
 import com.yarmiplaytv.ui.mobile.DesktopVideo
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
+import com.yarmiplaytv.ui.mobile.appPalette
 import com.yarmiplaytv.ui.mobile.PlayerVolume
 import com.yarmiplaytv.ui.mobile.appLogoPainter
 import com.yarmiplaytv.update.UpdateChecker
@@ -74,6 +75,8 @@ internal fun runApp(args: List<String>) {
     val configDir = DesktopPaths.portableDir() ?: DesktopPaths.migrateLegacyConfig()
     val boundsFile = File(configDir, "window.properties")
     val store = desktopSettingsStore(configDir)
+    // macOS reads the window appearance once, when AWT starts: before the first window, from the saved theme.
+    System.setProperty("apple.awt.application.appearance", macAppearance(runBlocking { store.current() }.theme))
     val updateSource = updateSource(args = args)
     val installer = (updateSource as? UpdateSource.DownloadPage)?.installer
     val failedInstall = System.getenv(FAILED_INSTALL)?.ifEmpty { null }
@@ -267,7 +270,8 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             // Leaving the player leaves full screen. Picture-in-picture stays: browsing meanwhile is what it's for.
             snapshotFlow { DesktopPlayerInput.input != null }.collect { showing -> if (!showing) fullscreen.set(false) }
         }
-        LaunchedEffect(Unit) { useDarkTitleBar(window) }
+        val palette = appPalette(container)
+        LaunchedEffect(palette.isLight) { useTitleBarTheme(window, dark = !palette.isLight) }
         LaunchedEffect(Unit) { showPlaybackOnTaskbar(window, container.player) }
         LaunchedEffect(Unit) {
             // Minimizing while a video plays goes on in picture-in-picture (a setting); restoring comes back.
@@ -286,7 +290,7 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
                 .onPointerEvent(PointerEventType.Press) { if (it.button == PointerButton.Back) DesktopBack.dispatch() }
                 .dragAndDropTarget(shouldStartDragAndDrop = { it.dragData() is DragData.FilesList }, target = drop),
         ) {
-            MobileTheme { MobileRoot(container, DeviceKind.DESKTOP) }
+            MobileTheme(palette) { MobileRoot(container, DeviceKind.DESKTOP) }
         }
     }
     if (DesktopPip.open) {

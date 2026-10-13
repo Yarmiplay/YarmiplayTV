@@ -51,6 +51,7 @@ import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.Palettes
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -110,8 +111,11 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Box(Modifier.fillMaxSize().exposeTestTags()) {
             if (screen == Screen.Player) {
-                // Unlike the other screens, the player isn't inside a Scaffold that sets this.
-                CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
+                // Dark whatever the theme: it sits over the video. Unlike the other screens, it isn't inside a Scaffold that
+                // sets the content colour.
+                MobileTheme(Palettes.Dark) {
+                    CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
+                }
             } else {
                 val style = when {
                     kind == DeviceKind.DESKTOP -> SectionNav.SIDEBAR

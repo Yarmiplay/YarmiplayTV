@@ -1,6 +1,9 @@
 package com.yarmiplaytv.ui.mobile
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -24,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -33,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -46,10 +52,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
@@ -60,11 +68,11 @@ import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.UnpauseMode
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
-import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
 import com.yarmiplaytv.ui.shared.DETECT_ANY_NETWORK_SUBTITLE
 import com.yarmiplaytv.ui.shared.DETECT_ANY_NETWORK_TITLE
 import com.yarmiplaytv.ui.shared.DETECT_SKIPS_SUBTITLE
 import com.yarmiplaytv.ui.shared.DETECT_SKIPS_TITLE
+import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
 import com.yarmiplaytv.ui.shared.SKIP_ALONE_SUBTITLE
 import com.yarmiplaytv.ui.shared.SKIP_ALONE_TITLE
 import com.yarmiplaytv.ui.shared.SKIP_BUTTON_SUBTITLE
@@ -75,6 +83,9 @@ import com.yarmiplaytv.ui.shared.preferredOf
 import com.yarmiplaytv.ui.shared.rememberSavedText
 import com.yarmiplaytv.ui.shared.serverLabel
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.AppTheme
+import com.yarmiplaytv.ui.theme.Palette
+import com.yarmiplaytv.ui.theme.THEME_NOTE
 import kotlinx.coroutines.launch
 
 /**
@@ -86,6 +97,7 @@ private enum class SettingsCategory(val title: String, val icon: ImageVector, va
     MAL("MyAnimeList", Icons.Filled.Tv, "Your account and list updates"),
     SYNCING("Syncing", Icons.Filled.Sync, "Unpausing, catching up, readiness, playlists, chat, your device's name"),
     PLAYBACK("Playback", Icons.Filled.PlayCircle, "Decoding, picture-in-picture, openings and endings, seeking, languages"),
+    APPEARANCE("Appearance", Icons.Filled.Palette, "Theme: dark, noire, light, or as your device is set"),
     UPDATES("Updates", Icons.Filled.SystemUpdate, "Checking for and installing new versions"),
     ABOUT("About", Icons.Filled.Info, "Version, what's new, the manual, privacy, licenses"),
 }
@@ -167,6 +179,7 @@ private fun ColumnScope.CategorySettings(category: SettingsCategory, container: 
         SettingsCategory.MAL -> MalSettings(container, nav)
         SettingsCategory.SYNCING -> SyncingSettings(container)
         SettingsCategory.PLAYBACK -> PlaybackSettings(container)
+        SettingsCategory.APPEARANCE -> AppearanceSettings(container)
         SettingsCategory.UPDATES -> UpdatesSettings(container, nav)
         SettingsCategory.ABOUT -> AboutSettings(container, nav)
     }
@@ -282,6 +295,43 @@ private fun SyncingSettings(container: AppContainer) {
             "Shown to YarmiplayServerTV hosts when you ask for access",
             Modifier.testTag("device_name"),
         )
+    }
+}
+
+/** The theme: each with a little picture of its colours, the chosen one marked. */
+@Composable
+private fun AppearanceSettings(container: AppContainer) {
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val chosen = AppTheme.of(settings.theme)
+    val systemDark = isSystemInDarkTheme()
+    AppTheme.entries.forEach { theme ->
+        Row(
+            Modifier.fillMaxWidth().selectable(theme == chosen, role = Role.RadioButton) {
+                container.scope.launch { container.settingsStore.saveTheme(theme.key) }
+            }.padding(horizontal = 16.dp, vertical = 10.dp).testTag("theme_${theme.key}"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            ThemeSwatch(theme.palette(systemDark))
+            Column(Modifier.weight(1f)) {
+                Text(theme.label, style = MaterialTheme.typography.bodyLarge)
+                Text(theme.description, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+            }
+            RadioButton(theme == chosen, onClick = null)
+        }
+    }
+    Text(THEME_NOTE, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+}
+
+/** A theme in small: its background, a card, a line of text and its accent. */
+@Composable
+private fun ThemeSwatch(palette: Palette) {
+    Box(Modifier.size(56.dp, 40.dp).clip(RoundedCornerShape(8.dp)).background(palette.background).border(1.dp, AppColors.TextDim.copy(alpha = 0.4f), RoundedCornerShape(8.dp))) {
+        Box(Modifier.padding(start = 6.dp, top = 6.dp).size(30.dp, 28.dp).clip(RoundedCornerShape(4.dp)).background(palette.surface)) {
+            Box(Modifier.padding(start = 4.dp, top = 6.dp).size(20.dp, 3.dp).background(palette.text))
+            Box(Modifier.padding(start = 4.dp, top = 13.dp).size(14.dp, 3.dp).background(palette.textDim))
+        }
+        Box(Modifier.align(Alignment.BottomEnd).padding(6.dp).size(12.dp).clip(RoundedCornerShape(6.dp)).background(palette.accent))
     }
 }
 

@@ -20,6 +20,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.runDesktopComposeUiTest
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -33,6 +35,7 @@ import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
+import com.yarmiplaytv.ui.mobile.appPalette
 import java.io.File
 import java.util.concurrent.Executors
 import javax.imageio.ImageIO
@@ -95,7 +98,7 @@ class HomeUiTest {
         }
         setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
-                MobileTheme { Box(Modifier.size(width.dp, height.dp)) { MobileRoot(app, DeviceKind.DESKTOP) } }
+                MobileTheme(appPalette(app)) { Box(Modifier.size(width.dp, height.dp)) { MobileRoot(app, DeviceKind.DESKTOP) } }
             }
         }
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("home").fetchSemanticsNodes().isNotEmpty() }
@@ -119,6 +122,25 @@ class HomeUiTest {
         show(1280, 800)
         screenshot("home_wide")
         assertTrue("cut off: ${cutOff()}", cutOff().isEmpty())
+    }
+
+    @Test
+    fun `the home screen in the light and noire themes`() = runDesktopComposeUiTest(1280, 800) {
+        runBlocking { app.settingsStore.saveTheme("light") }
+        waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "light" }
+        show(1280, 800)
+        screenshot("home_light")
+        assertTrue("cut off: ${cutOff()}", cutOff().isEmpty())
+        runBlocking { app.settingsStore.saveTheme("noire") }
+        waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "noire" }
+        waitForIdle()
+        screenshot("home_noire")
+        // The player stays dark in the light theme.
+        runBlocking { app.settingsStore.saveTheme("light") }
+        waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "light" }
+        onNodeWithText("Player").performClick()
+        waitForIdle()
+        screenshot("player_in_light_theme")
     }
 
     @Test

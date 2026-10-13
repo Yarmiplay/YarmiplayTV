@@ -176,6 +176,8 @@ data class AppSettings(
     val lastSeenVersion: String = "",
     /** Show other people's chat in rooms; off hides all of it, whatever names they use. */
     val showRoomChat: Boolean = true,
+    /** The look: "dark", "noire", "light" or "system" (see com.yarmiplaytv.ui.theme.AppTheme). */
+    val theme: String = "dark",
     /** The user agreed to the community rules, asked once before the first room join. */
     val acceptedRoomRules: Boolean = false,
     /** The name YarmiplayServerTV hosts see when approving this device; empty uses the platform's. */
@@ -274,6 +276,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val dismissedUpdate = stringPreferencesKey("update_dismissed")
         val lastSeenVersion = stringPreferencesKey("last_seen_version")
         val showRoomChat = booleanPreferencesKey("chat_show")
+        val theme = stringPreferencesKey("app_theme")
         val acceptedRoomRules = booleanPreferencesKey("room_rules_accepted")
         /** Followed by "host:port/room"; the value is the playlist, one entry per line. */
         const val ROOM_PLAYLIST_PREFIX = "room_playlist:"
@@ -395,6 +398,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             dismissedUpdate = p[Keys.dismissedUpdate] ?: "",
             lastSeenVersion = p[Keys.lastSeenVersion] ?: if (p.asMap().isEmpty()) "" else USED_BEFORE_WHATS_NEW,
             showRoomChat = p[Keys.showRoomChat] ?: true,
+            theme = p[Keys.theme] ?: defaults.theme,
             acceptedRoomRules = p[Keys.acceptedRoomRules] ?: false,
             deviceName = p[Keys.deviceName] ?: "",
             addSharedServers = p[Keys.addSharedServers] ?: true,
@@ -548,6 +552,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
     suspend fun saveLastSeenVersion(version: String) = dataStore.edit { it[Keys.lastSeenVersion] = version }
 
     suspend fun saveShowRoomChat(on: Boolean) = dataStore.edit { it[Keys.showRoomChat] = on }
+
+    suspend fun saveTheme(key: String) = dataStore.edit { it[Keys.theme] = key }
 
     suspend fun saveAcceptedRoomRules(accepted: Boolean) = dataStore.edit { it[Keys.acceptedRoomRules] = accepted }
 

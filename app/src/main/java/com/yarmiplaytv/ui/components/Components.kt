@@ -77,7 +77,7 @@ fun cardColors(container: Color = AppColors.Surface) = ClickableSurfaceDefaults.
     containerColor = container,
     contentColor = AppColors.Text,
     focusedContainerColor = AppColors.SurfaceHigh,
-    focusedContentColor = Color.White,
+    focusedContentColor = AppColors.Text,
     pressedContainerColor = AppColors.SurfaceHigh,
 )
 
@@ -255,8 +255,11 @@ fun ValueRow(title: String, value: String, onClick: () -> Unit, modifier: Modifi
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
             }
-            Spacer(Modifier.width(16.dp))
-            Pill(value, valueColor)
+            // No value, no pill (e.g. the themes not chosen).
+            if (value.isNotEmpty()) {
+                Spacer(Modifier.width(16.dp))
+                Pill(value, valueColor)
+            }
         }
     }
 }
@@ -333,7 +336,7 @@ fun ToastHost(toasts: Flow<FeedMessage>, modifier: Modifier = Modifier) {
                 Row(
                     Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xE6161A21))
+                        .background(AppColors.Surface.copy(alpha = 0.92f))
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

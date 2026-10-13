@@ -36,6 +36,7 @@ import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.ui.mobile.DesktopBack
 import com.yarmiplaytv.ui.mobile.MobileSettingsScreen
 import com.yarmiplaytv.ui.mobile.MobileTheme
+import com.yarmiplaytv.ui.mobile.appPalette
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import kotlinx.coroutines.CoroutineScope
@@ -115,7 +116,7 @@ class SettingsUiTest {
         val nav = Navigator(mutableStateListOf(Screen.Settings))
         setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
-                MobileTheme { Box(Modifier.size(width.dp, height.dp)) { MobileSettingsScreen(app, nav) } }
+                MobileTheme(appPalette(app)) { Box(Modifier.size(width.dp, height.dp)) { MobileSettingsScreen(app, nav) } }
             }
         }
         waitForIdle()
@@ -166,6 +167,22 @@ class SettingsUiTest {
         onNodeWithTag("toggle_detect_any_network").assertDoesNotExist()
         // Saved, as a later start reads it.
         assertEquals(false, runBlocking { app.settingsStore.current() }.playback.detectSkips)
+    }
+
+    @Test
+    fun `Appearance picks the theme, and the settings take its colours at once`() = runComposeUiTest {
+        show(1280, 800)
+        onNodeWithTag("settings_category_appearance").performClick()
+        onNodeWithTag("theme_dark").assertIsDisplayed()
+        onNodeWithTag("theme_light").performClick()
+        waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "light" }
+        waitForIdle()
+        screenshot("settings_appearance_light")
+        onNodeWithTag("theme_noire").performClick()
+        waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "noire" }
+        waitForIdle()
+        screenshot("settings_appearance_noire")
+        assertEquals("noire", runBlocking { app.settingsStore.current() }.theme)
     }
 
     @Test

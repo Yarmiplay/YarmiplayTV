@@ -7,9 +7,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.toArgb
 import com.yarmiplaytv.ui.TvRoot
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
+import com.yarmiplaytv.ui.mobile.appPalette
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.YarmiplayTvTheme
 
@@ -31,13 +34,21 @@ class MainActivity : ComponentActivity() {
         }
         if (deviceKind == DeviceKind.TV) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            setContent { YarmiplayTvTheme { TvRoot(container, screens) } }
+            setContent { YarmiplayTvTheme(appPalette(container)) { TvRoot(container, screens) } }
         } else {
-            enableEdgeToEdge(
-                statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-                navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-            )
-            setContent { MobileTheme { MobileRoot(container, deviceKind, screens) } }
+            setContent {
+                val palette = appPalette(container)
+                // The player is dark whatever the theme, and so are the bars over it.
+                val lightBars = palette.isLight && screens.lastOrNull() != Screen.Player
+                LaunchedEffect(lightBars, palette) {
+                    val transparent = android.graphics.Color.TRANSPARENT
+                    val style = if (lightBars) SystemBarStyle.light(transparent, transparent) else SystemBarStyle.dark(transparent)
+                    enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                    // What shows before the first frame and around it, e.g. while the keyboard animates.
+                    window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(palette.background.toArgb()))
+                }
+                MobileTheme(palette) { MobileRoot(container, deviceKind, screens) }
+            }
         }
         if (savedInstanceState == null) handleIntent(intent)
     }

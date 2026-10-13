@@ -40,6 +40,8 @@ import com.yarmiplaytv.ui.settings.LicensesScreen
 import com.yarmiplaytv.ui.settings.SettingsScreen
 import com.yarmiplaytv.ui.settings.WhatsNewScreen
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.Palettes
+import com.yarmiplaytv.ui.theme.YarmiplayTvTheme
 /** The D-pad driven UI used on Google TV / Android TV. */
 @Composable
 fun TvRoot(container: AppContainer, stack: SnapshotStateList<Screen> = remember { mutableStateListOf(Screen.Home) }) {
@@ -71,7 +73,10 @@ fun TvRoot(container: AppContainer, stack: SnapshotStateList<Screen> = remember 
                     Screen.JellyfinLogin -> JellyfinLoginScreen(container, nav)
                     Screen.PlexLogin -> PlexLoginScreen(container, nav)
                     Screen.Servers -> ServersScreen(container, nav)
-                    Screen.Player -> PlayerScreen(container, nav)
+                    // Dark whatever the theme: it sits over the video.
+                    Screen.Player -> YarmiplayTvTheme(Palettes.Dark) {
+                        CompositionLocalProvider(LocalContentColor provides AppColors.Text) { PlayerScreen(container, nav) }
+                    }
                     Screen.Settings, Screen.LocalFiles -> SettingsScreen(container, nav)
                     Screen.Licenses -> LicensesScreen()
                     Screen.MalLogin -> MalLoginScreen(container, nav)

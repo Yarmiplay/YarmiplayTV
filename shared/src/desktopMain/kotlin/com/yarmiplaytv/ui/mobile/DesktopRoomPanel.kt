@@ -351,6 +351,7 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
         val rowPx = with(LocalDensity.current) { ROW_HEIGHT.toPx() }
         var dragFrom by remember { mutableStateOf<Int?>(null) }
         var dragOffset by remember { mutableFloatStateOf(0f) }
+        val dropLine = AppColors.Accent
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth().testTag("playlist_list")
@@ -365,7 +366,7 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
                     val thickness = 2.dp.toPx()
                     val inset = 8.dp.toPx()
                     drawRect(
-                        AppColors.Accent,
+                        dropLine,
                         topLeft = Offset(inset, (y - thickness / 2).coerceIn(0f, size.height - thickness)),
                         size = Size(size.width - 2 * inset, thickness),
                     )

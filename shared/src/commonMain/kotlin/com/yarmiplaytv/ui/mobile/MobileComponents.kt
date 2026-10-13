@@ -140,7 +140,7 @@ fun ReadyChip(ready: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier
             )
         },
         colors = FilterChipDefaults.filterChipColors(
-            containerColor = Color.Black.copy(alpha = 0.4f),
+            containerColor = AppColors.SurfaceHigh.copy(alpha = 0.6f),
             selectedContainerColor = AppColors.Ready.copy(alpha = 0.18f),
             labelColor = AppColors.Text,
             selectedLabelColor = AppColors.Text,
