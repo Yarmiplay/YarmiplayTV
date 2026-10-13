@@ -19,6 +19,21 @@
 }
 
 [data-theme="noire"] {
+  --background: #100c16;
+  --surface: #1a1522;
+  --surface-high: #261e33;
+  --accent: #a970ff;
+  --on-accent: #12051f;
+  --text: #e8ecf2;
+  --text-dim: #9aa4b2;
+  --ready: #4cc38a;
+  --not-ready: #ffb74d;
+  --error: #ef5350;
+  --scrim: rgb(0 0 0 / 0.8);
+  color-scheme: dark;
+}
+
+[data-theme="monochrome"] {
   --background: #000000;
   --surface: #0d0d0d;
   --surface-high: #1c1c1c;

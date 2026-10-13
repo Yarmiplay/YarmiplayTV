@@ -55,6 +55,8 @@ export interface DeviceAuth {
 export interface Capabilities {
   fileRelay: boolean;
   jellyfin: boolean;
+  /** The host shares its Plex too (YarmiplayServerTV 1.7). */
+  plex: boolean;
   https: boolean;
   /** The relay takes `mode=prefetch` reads; older servers get `mode=download` for those. */
   prefetch: boolean;
@@ -69,6 +71,7 @@ export interface Capabilities {
 export const noCapabilities = (): Capabilities => ({
   fileRelay: false,
   jellyfin: false,
+  plex: false,
   https: false,
   prefetch: false,
   roomSettings: false,

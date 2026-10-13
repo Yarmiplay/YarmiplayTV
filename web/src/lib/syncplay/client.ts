@@ -1280,6 +1280,7 @@ export function parseCapabilities(element: unknown): Capabilities | null {
     ...noCapabilities(),
     fileRelay: bool(element, "fileRelay"),
     jellyfin: bool(element, "jellyfin"),
+    plex: bool(element, "plex"),
     https: bool(element, "https"),
     prefetch: bool(element, "prefetch"),
     roomSettings: bool(element, "roomSettings"),
