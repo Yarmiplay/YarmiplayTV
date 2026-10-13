@@ -33,6 +33,7 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.device.FileDeviceKeyStore
 import com.yarmiplaytv.local.FileLocalLibrary
+import com.yarmiplaytv.ui.mobile.DesktopBack
 import com.yarmiplaytv.ui.mobile.MobileSettingsScreen
 import com.yarmiplaytv.ui.mobile.MobileTheme
 import com.yarmiplaytv.ui.nav.Navigator
@@ -48,6 +49,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -136,10 +138,18 @@ class SettingsUiTest {
     }
 
     @Test
-    fun `phones keep one list`() = runComposeUiTest {
+    fun `phones list the categories, each opening its own page, and Back returns to the list`() = runComposeUiTest {
         show(420, 900)
         onNodeWithTag("settings_two_panes").assertDoesNotExist()
+        onNodeWithTag("toggle_show_chat").assertDoesNotExist()
+        screenshot("settings_phone")
+        onNodeWithTag("settings_category_syncing").performClick()
         onNodeWithTag("toggle_show_chat").performScrollTo().assertIsDisplayed()
+        onNodeWithTag("settings_category_media").assertDoesNotExist()
+        screenshot("settings_phone_syncing")
+        runOnUiThread { assertTrue(DesktopBack.dispatch()) }
+        waitForIdle()
+        onNodeWithTag("settings_category_updates").performClick()
         onNodeWithTag("check_updates").performScrollTo().assertIsDisplayed()
     }
 

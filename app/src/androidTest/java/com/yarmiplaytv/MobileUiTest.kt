@@ -97,7 +97,7 @@ class MobileUiTest {
 
     @Test
     fun settingsOpensMediaServers() {
-        compose.onNodeWithTag("tab_Settings").performClick()
+        openSettings("media")
         compose.waitUntilExactlyOneExists(hasTestTag("settings_servers"), 5_000)
         compose.onNodeWithTag("settings_servers").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("servers"), 5_000)
@@ -134,8 +134,7 @@ class MobileUiTest {
 
     @Test
     fun reportingToggleIsPersisted() {
-        compose.onNodeWithTag("tab_Settings").performClick()
-        compose.waitUntilExactlyOneExists(hasTestTag("settings"), 5_000)
+        openSettings("media")
         val before = container.settings.value.reportPlayback
         compose.onNodeWithTag("toggle_report_playback").performScrollTo().performClick()
         compose.waitUntil(5_000) { container.settings.value.reportPlayback == !before }
@@ -195,8 +194,7 @@ class MobileUiTest {
 
     @Test
     fun hidingChatIsPersisted() {
-        compose.onNodeWithTag("tab_Settings").performClick()
-        compose.waitUntilExactlyOneExists(hasTestTag("settings"), 5_000)
+        openSettings("syncing")
         val before = container.settings.value.showRoomChat
         compose.onNodeWithTag("toggle_show_chat").performScrollTo().performClick()
         compose.waitUntil(5_000) { container.settings.value.showRoomChat == !before && container.sync.showChat == !before }
@@ -206,8 +204,7 @@ class MobileUiTest {
 
     @Test
     fun licensesOpenFromSettings() {
-        compose.onNodeWithTag("tab_Settings").performClick()
-        compose.waitUntilExactlyOneExists(hasTestTag("settings"), 5_000)
+        openSettings("about")
         compose.onNodeWithText("Open-source licenses").performScrollTo().performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("licenses"), 5_000)
         compose.onNodeWithText("FFmpeg").assertIsDisplayed()
@@ -217,7 +214,7 @@ class MobileUiTest {
 
     @Test
     fun settingsToggleIsPersisted() {
-        compose.onNodeWithTag("tab_Settings").performClick()
+        openSettings("syncing")
         compose.waitUntilExactlyOneExists(hasTestTag("toggle_ready_at_start"), 5_000)
         val before = container.settings.value.sync.readyAtStart
         compose.onNodeWithTag("toggle_ready_at_start").performScrollTo().performClick()
@@ -242,8 +239,7 @@ class MobileUiTest {
 
     @Test
     fun updateCheckCanBeTurnedOff() {
-        compose.onNodeWithTag("tab_Settings").performClick()
-        compose.waitUntilExactlyOneExists(hasTestTag("settings"), 5_000)
+        openSettings("updates")
         val before = container.settings.value.checkForUpdates
         compose.onNodeWithTag("toggle_check_updates").performScrollTo().performClick()
         compose.waitUntil(5_000) { container.settings.value.checkForUpdates == !before }
@@ -253,5 +249,13 @@ class MobileUiTest {
 
     private companion object {
         val TEST_UPDATE = Update("99.0", "https://tv.yarmiplay.com/", "https://tv.yarmiplay.com/YarmiplayTV.apk", null)
+    }
+
+    /** Settings > [category]: a page of its own on phones, beside the list on wide screens. */
+    private fun openSettings(category: String) {
+        compose.onNodeWithTag("tab_Settings").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("settings_category_$category"), 5_000)
+        compose.onNodeWithTag("settings_category_$category").performClick()
+        compose.waitForIdle()
     }
 }

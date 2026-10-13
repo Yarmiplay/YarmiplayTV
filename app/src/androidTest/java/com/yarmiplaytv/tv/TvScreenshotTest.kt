@@ -84,7 +84,7 @@ class TvScreenshotTest {
         tv.click("Connect Plex"); tv.await("Link this TV to your Plex account")
         shot("plex_login")
         tv.back(); tv.await("Join a Syncplay room")
-        tv.click("Settings"); tv.await("When I unpause")
+        tv.click("Settings"); tv.await("Add Jellyfin and Plex servers")
         shot("settings")
         Screenshots.assertAllMatched()
     }
@@ -120,8 +120,8 @@ class TvScreenshotTest {
         launch()
         tv.await("Films"); tv.await("Continue watching · Screenshot Server")
         shot("home_both_servers")
-        tv.click("Settings"); tv.awaitFocus("When I unpause")
-        tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = 9); tv.awaitFocus("Preferred server")
+        tv.click("Settings"); tv.awaitFocus("Media")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT); tv.key(KeyEvent.KEYCODE_DPAD_DOWN); tv.awaitFocus("Preferred server")
         shot("settings_both_servers")
         Screenshots.assertAllMatched()
     }

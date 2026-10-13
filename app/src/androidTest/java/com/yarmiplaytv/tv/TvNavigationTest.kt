@@ -88,6 +88,11 @@ class TvNavigationTest {
         tv.key(KeyEvent.KEYCODE_DPAD_UP)
         tv.awaitFocus("Settings")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        // The categories come first; Syncing's settings show beside them, and Right goes into them.
+        tv.awaitFocus("Media")
+        tv.click("Syncing")
+        tv.await("When I unpause")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
         tv.awaitFocus("When I unpause")
         tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
         tv.awaitFocus("Rewind when I'm ahead")
@@ -107,7 +112,9 @@ class TvNavigationTest {
         tv.key(KeyEvent.KEYCODE_DPAD_UP)
         tv.awaitFocus("Settings")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
-        tv.awaitFocus("When I unpause")
+        tv.awaitFocus("Media")
+        tv.click("Playback")
+        tv.await("Hide player controls after")
         fun hideSeconds() = container.settings.value.playback.controlsHideSeconds
         assertEquals(3, hideSeconds())
         for (expected in listOf(5, 10, 0)) {
@@ -117,8 +124,8 @@ class TvNavigationTest {
         tv.await("Never")
         tv.click("Hide player controls after")
         tv.await("Custom time (seconds)")
-        // The device name field comes first, then the custom field, then the language fields.
-        compose.onAllNodes(hasSetTextAction())[1].performTextReplacement("7")
+        // On the Playback page the custom field comes first, then the language fields.
+        compose.onAllNodes(hasSetTextAction())[0].performTextReplacement("7")
         waitUntil(5_000) { hideSeconds() == 7 }
         tv.await("7 s (custom)")
         tv.click("Hide player controls after")
@@ -151,7 +158,8 @@ class TvNavigationTest {
         tv.key(KeyEvent.KEYCODE_DPAD_UP)
         tv.awaitFocus("Settings")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
-        tv.awaitFocus("When I unpause")
+        tv.awaitFocus("Media")
+        tv.click("About")
         tv.click("Open-source licenses")
         tv.awaitFocus("mpv")
         tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
@@ -159,7 +167,7 @@ class TvNavigationTest {
         tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = 30)
         tv.awaitFocus("LWJGL")
         tv.back()
-        tv.awaitFocus("When I unpause")
+        tv.awaitFocus("Media")
     }
 
     @Test
@@ -169,14 +177,15 @@ class TvNavigationTest {
         tv.key(KeyEvent.KEYCODE_DPAD_UP)
         tv.awaitFocus("Settings")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
-        tv.awaitFocus("When I unpause")
-        tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = 8)
+        // Media is the first category, and its settings show beside it: Right goes to Media servers.
+        tv.awaitFocus("Media")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
         tv.awaitFocus("Add Jellyfin and Plex servers")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
         tv.await("No media servers yet")
         tv.awaitFocus("Add Jellyfin server")
         tv.back()
-        tv.await("When I unpause")
+        tv.await("Add Jellyfin and Plex servers")
     }
 
     @Test

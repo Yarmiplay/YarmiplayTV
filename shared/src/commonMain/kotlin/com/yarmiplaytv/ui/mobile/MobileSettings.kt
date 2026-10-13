@@ -17,8 +17,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
@@ -31,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
@@ -43,6 +46,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -68,14 +72,17 @@ import com.yarmiplaytv.ui.shared.serverLabel
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
-/** The groups of settings: one list on phones, a list of these beside the chosen one's settings on wide windows. */
-private enum class SettingsCategory(val title: String, val icon: ImageVector) {
-    MEDIA("Media", Icons.Filled.VideoLibrary),
-    MAL("MyAnimeList", Icons.Filled.Tv),
-    SYNCING("Syncing", Icons.Filled.Sync),
-    PLAYBACK("Playback", Icons.Filled.PlayCircle),
-    UPDATES("Updates", Icons.Filled.SystemUpdate),
-    ABOUT("About", Icons.Filled.Info),
+/**
+ * The groups of settings: on phones a list of these, each opening its own page; on wide windows the list beside the
+ * chosen one's settings. [summary] says what's in it, on the phone's list.
+ */
+private enum class SettingsCategory(val title: String, val icon: ImageVector, val summary: String) {
+    MEDIA("Media", Icons.Filled.VideoLibrary, "Media servers, media folders, sharing your files, where files are saved"),
+    MAL("MyAnimeList", Icons.Filled.Tv, "Your account and list updates"),
+    SYNCING("Syncing", Icons.Filled.Sync, "Unpausing, catching up, readiness, playlists, chat, your device's name"),
+    PLAYBACK("Playback", Icons.Filled.PlayCircle, "Decoding, picture-in-picture, openings and endings, seeking, languages"),
+    UPDATES("Updates", Icons.Filled.SystemUpdate, "Checking for and installing new versions"),
+    ABOUT("About", Icons.Filled.Info, "Version, what's new, the manual, privacy, licenses"),
 }
 
 /** Windows at least this wide show the categories beside the settings. */
@@ -87,10 +94,16 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
         SettingsCategory.entries.filter { it != SettingsCategory.MAL || container.mal.client.configured }
     }
     var selected by rememberSaveable { mutableStateOf(SettingsCategory.MEDIA.name) }
-    Column(Modifier.fillMaxSize()) {
-        MobileTopBar("Settings", nav, showBack = false)
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            if (maxWidth >= TWO_PANES_WIDTH) {
+    /** Phones: the category whose page is open, or null for the list of categories. */
+    var page by rememberSaveable { mutableStateOf<String?>(null) }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wide = maxWidth >= TWO_PANES_WIDTH
+        val open = categories.firstOrNull { it.name == page }?.takeIf { !wide }
+        PlatformBackHandler(enabled = open != null) { page = null }
+        Column(Modifier.fillMaxSize()) {
+            if (open != null) MobileTopBar(open.title, nav, showBack = true, onBack = { page = null })
+            else MobileTopBar("Settings", nav, showBack = false)
+            if (wide) {
                 val category = categories.firstOrNull { it.name == selected } ?: categories.first()
                 Row(Modifier.fillMaxSize().testTag("settings_two_panes")) {
                     Column(Modifier.width(260.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(12.dp)) {
@@ -111,14 +124,33 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                         }
                     }
                 }
-            } else {
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(bottom = 24.dp).testTag("settings")) {
-                    categories.forEach { c ->
-                        SectionHeader(c.title, Modifier.padding(top = 8.dp))
-                        CategorySettings(c, container, nav)
+            } else if (open != null) {
+                key(open) {
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(top = 4.dp, bottom = 24.dp).testTag("settings")) {
+                        CategorySettings(open, container, nav)
                     }
                 }
+            } else {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp).testTag("settings")) {
+                    categories.forEach { c -> CategoryRow(c, { page = c.name }, Modifier.testTag("settings_category_${c.name.lowercase()}")) }
+                }
             }
+        }
+    }
+}
+
+/** A category on the phone's list: its icon, name and what's in it; opens its page. */
+@Composable
+private fun CategoryRow(category: SettingsCategory, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(onClick = onClick, color = Color.Transparent, shape = RoundedCornerShape(16.dp), modifier = modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(category.icon, contentDescription = null, tint = AppColors.Accent)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(category.title, style = MaterialTheme.typography.titleMedium)
+                Text(category.summary, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = AppColors.TextDim)
         }
     }
 }

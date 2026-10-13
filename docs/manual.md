@@ -298,7 +298,8 @@ update, the home screen shows what's new once; **Settings > About > What's new**
 
 ## Settings
 
-On a computer or a wide tablet, settings are grouped in categories on the left:
+Settings are grouped in categories: on a phone, a list where each opens its own page (Back returns to the list); on
+a computer, a wide tablet or a TV, the categories are on the left and the chosen one's settings beside them:
 
 - **Media:** media servers, media folders, the preferred server, reporting progress, shared servers, sharing
   your files with the room, and where saved files and screenshots go.
