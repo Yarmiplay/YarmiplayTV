@@ -10,8 +10,8 @@
    */
   let videoCanvas: HTMLCanvasElement;
   let subtitleCanvas: HTMLCanvasElement;
-  let player: MediaPlayer | null = $state(null);
-  let s: PlayerState | null = $state(null);
+  let player = $state<MediaPlayer | null>(null);
+  let s = $state<PlayerState | null>(null);
   let url = $state("");
   let loading = $state(false);
   let error = $state<string | null>(null);

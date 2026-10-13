@@ -1,102 +1,128 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import buildInfo from "virtual:build-info";
-  import { THEMES, applyTheme, followSystem, themeOf, type ThemeKey } from "./lib/ui/theme";
+  import { go, route, settings } from "./app/context";
+  import PlayerView from "./components/PlayerView.svelte";
+  import { applyTheme, followSystem } from "./lib/ui/theme";
+  import Home from "./screens/Home.svelte";
+  import Join from "./screens/Join.svelte";
   import PlayerLab from "./screens/PlayerLab.svelte";
+  import Room from "./screens/Room.svelte";
+  import Settings from "./screens/Settings.svelte";
 
-  let route = $state(location.hash);
-  let theme = $state<ThemeKey>(themeOf(readTheme()));
+  /**
+   * The app's frame (MobileRoot.kt): Home, Player, Room and Settings, in a side list on wide windows and as tabs at
+   * the bottom on phones. The player stays mounted whichever section shows, so the video keeps playing.
+   */
+  const SECTIONS = [
+    { key: "home", label: "Home", href: "#/" },
+    { key: "player", label: "Player", href: "#/player" },
+    { key: "room", label: "Room", href: "#/room" },
+    { key: "settings", label: "Settings", href: "#/settings" },
+  ] as const;
 
-  function readTheme(): string | null {
-    try {
-      return localStorage.getItem("ytv:app_theme");
-    } catch {
-      return null;
-    }
-  }
-
-  function chooseTheme(key: ThemeKey) {
-    theme = key;
-    try {
-      localStorage.setItem("ytv:app_theme", key);
-    } catch {
-      // Private windows may refuse storage; the theme still applies until the page closes.
-    }
-    applyTheme(key);
-  }
+  const section = $derived.by(() => {
+    const r = $route;
+    if (r.includes("join=") || r.startsWith("#/join")) return "join";
+    if (r.startsWith("#/lab/player")) return "lab";
+    return r.replace(/^#\//, "").split("/")[0] || "home";
+  });
 
   onMount(() => {
-    const onHash = () => (route = location.hash);
-    addEventListener("hashchange", onHash);
-    const stop = followSystem(() => theme);
-    return () => {
-      removeEventListener("hashchange", onHash);
-      stop();
-    };
+    applyTheme($settings.theme);
+    return followSystem(() => $settings.theme);
   });
 </script>
 
-{#if route.startsWith("#/lab/player")}
+{#if section === "lab"}
   <PlayerLab />
 {:else}
-  <main class="shell">
-    <header>
-      <img src="./favicon.svg" alt="" width="40" height="40" />
-      <h1>YarmiplayTV</h1>
-    </header>
-    <section class="card">
-      <p>Watch together in your browser, with nothing to install. This page is being built.</p>
-      <p class="dim">Version {buildInfo.version}</p>
-      <p><a href="#/lab/player">Player lab</a>: try the browser player on a file from this device or a link.</p>
-    </section>
-    <section class="card">
-      <h2>Appearance</h2>
-      <div class="themes">
-        {#each THEMES as t (t.key)}
-          <label>
-            <input type="radio" name="theme" checked={theme === t.key} onchange={() => chooseTheme(t.key)} />
-            <span>{t.label}</span>
-            <span class="dim">{t.description}</span>
-          </label>
-        {/each}
-      </div>
-    </section>
-  </main>
+  <div class="frame">
+    <nav class="sections" aria-label="Sections">
+      <a class="brand" href="#/" aria-label="YarmiplayTV home"><img src="./favicon.svg" alt="" width="32" height="32" /></a>
+      {#each SECTIONS as s (s.key)}
+        <a href={s.href} class:on={section === s.key || (s.key === "room" && section === "join")} aria-current={section === s.key ? "page" : undefined}>{s.label}</a>
+      {/each}
+    </nav>
+    <div class="content" class:full={section === "player"}>
+      <PlayerView visible={section === "player"} />
+      {#if section === "home"}
+        <Home />
+      {:else if section === "join"}
+        <Join />
+      {:else if section === "room"}
+        <Room />
+      {:else if section === "settings"}
+        <Settings />
+      {:else if section !== "player"}
+        <main class="missing">
+          <p>There's nothing here.</p>
+          <button class="button" onclick={() => go("#/")}>Home</button>
+        </main>
+      {/if}
+    </div>
+  </div>
 {/if}
 
 <style>
-  .shell {
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 24px 16px;
+  .frame {
+    height: 100dvh;
     display: grid;
-    gap: 16px;
+    grid-template-columns: 200px 1fr;
   }
-  header {
+  .sections {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px 12px;
+    background: var(--surface);
+  }
+  .brand {
+    margin-bottom: 12px;
+  }
+  .sections a:not(.brand) {
+    padding: 10px 12px;
+    border-radius: 10px;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .sections a.on {
+    background: var(--surface-high);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .content {
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+  }
+  .content.full {
+    overflow: hidden;
+  }
+  .missing {
+    padding: 32px 16px;
+    display: grid;
     gap: 12px;
+    justify-items: start;
   }
-  h1 {
-    margin: 0;
-    font-size: 24px;
-  }
-  h2 {
-    margin: 0 0 8px;
-    font-size: 18px;
-  }
-  .themes {
-    display: grid;
-    gap: 8px;
-  }
-  .themes label {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    column-gap: 10px;
-    cursor: pointer;
-  }
-  .themes .dim {
-    grid-column: 2;
-    font-size: 14px;
+  @media (max-width: 699px) {
+    .frame {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr auto;
+    }
+    .sections {
+      order: 2;
+      flex-direction: row;
+      justify-content: space-around;
+      padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    }
+    .brand {
+      display: none;
+    }
+    .sections a:not(.brand) {
+      flex: 1;
+      text-align: center;
+      padding: 8px 4px;
+      font-size: 14px;
+    }
   }
 </style>
