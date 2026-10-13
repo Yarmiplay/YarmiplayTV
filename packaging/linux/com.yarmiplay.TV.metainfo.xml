@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.9.7" date="2026-10-13">
+      <description>
+        <p>In a room, pressing play right after switching to a video plays it: pressed while a stream is still opening, it plays once the video has loaded, and pressed just as the video appears, it's no longer paused again.</p>
+      </description>
+    </release>
     <release version="1.9.6" date="2026-10-13">
       <description>
         <p>The Skip button stays in one place, just above the controls, whether they show or not, with a new look that matches the player.</p>
