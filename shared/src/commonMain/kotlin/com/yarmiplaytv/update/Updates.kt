@@ -4,6 +4,7 @@ import com.yarmiplaytv.Logger
 import com.yarmiplaytv.data.SettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -82,6 +83,8 @@ class Updates(
     private val settingsStore: SettingsStore,
     private val currentVersion: String,
     private val checker: UpdateChecker = UpdateChecker(),
+    /** How often to look again while the app runs: Android keeps it running for days. */
+    private val recheckMillis: Long = 6 * 60 * 60 * 1000L,
 ) {
     /**
      * The download page's name for this platform ("android", "windows", "macos" or "linux"), set by the host;
@@ -98,24 +101,65 @@ class Updates(
     val state: StateFlow<UpdateState?> = _state.asStateFlow()
     private var download: Job? = null
 
+    private val _storeUpdate = MutableStateFlow<StoreUpdates?>(null)
+    /** The [store] that has a newer version out, for the home notice; null when none (or it was put off). */
+    val storeUpdate: StateFlow<StoreUpdates?> = _storeUpdate.asStateFlow()
+    private var storeDismissed = false
+    private var checking: Job? = null
+
     /**
-     * Shows the notice when the page has a newer version that wasn't dismissed. [failedInstall] is the version
-     * whose installer just failed (the desktop app starts again after it): that one shows why.
+     * Shows the notice when the page (or the [store]) has a newer version that wasn't dismissed, and looks again
+     * every [recheckMillis] while the app runs. [failedInstall] is the version whose installer just failed (the
+     * desktop app starts again after it): that one shows why.
      */
     fun checkOnLaunch(failedInstall: String? = null) {
-        val platform = platform ?: return
-        scope.launch {
-            val settings = settingsStore.current()
-            if (!settings.checkForUpdates) return@launch
-            val update = checker.check(platform, currentVersion) ?: return@launch
-            if (update.version == failedInstall) {
-                showFailed(update, INSTALL_FAILED)
-                return@launch
+        if (platform == null && store == null) return
+        if (checking?.isActive == true) return
+        checking = scope.launch {
+            var failed = failedInstall
+            while (true) {
+                if (settingsStore.current().checkForUpdates) {
+                    if (store != null) checkStore() else checkPage(failed)
+                }
+                failed = null
+                delay(recheckMillis)
             }
-            if (update.version == settings.dismissedUpdate) return@launch
-            Logger.i(TAG, "Version ${update.version} is available")
-            show(update)
         }
+    }
+
+    private suspend fun checkPage(failedInstall: String?) {
+        val platform = platform ?: return
+        // Already showing one, maybe downloading it: leave it be.
+        if (_state.value != null) return
+        val update = checker.check(platform, currentVersion) ?: return
+        if (update.version == failedInstall) {
+            showFailed(update, INSTALL_FAILED)
+            return
+        }
+        if (update.version == settingsStore.current().dismissedUpdate) return
+        Logger.i(TAG, "Version ${update.version} is available")
+        show(update)
+    }
+
+    private suspend fun checkStore() {
+        val store = store ?: return
+        if (storeDismissed || _storeUpdate.value != null) return
+        if (runCatching { store.check() }.getOrNull() == true) {
+            Logger.i(TAG, "A newer version is out in ${store.name}")
+            _storeUpdate.value = store
+        }
+    }
+
+    /** The home notice's Update for a [store] update: the store's own in-app update, else its page via [open]. */
+    fun updateFromStore(open: (String) -> Unit) {
+        val store = _storeUpdate.value ?: return
+        if (!store.update()) store.pageUrl?.let(open)
+    }
+
+    /** "Not now" on a [store] update: hidden until the app starts again. */
+    fun dismissStoreUpdate() {
+        storeDismissed = true
+        _storeUpdate.value = null
     }
 
     /**

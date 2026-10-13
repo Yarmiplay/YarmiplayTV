@@ -58,6 +58,11 @@ import kotlinx.coroutines.launch
 @Composable
 fun UpdateBanner(container: AppContainer, modifier: Modifier = Modifier) {
     val state by container.updates.state.collectAsStateWithLifecycle()
+    val inStore by container.updates.storeUpdate.collectAsStateWithLifecycle()
+    inStore?.let { store ->
+        StoreUpdateBanner(container, store, modifier)
+        return
+    }
     val s = state ?: return
     Card(
         modifier.testTag("update_banner"),
@@ -71,6 +76,29 @@ fun UpdateBanner(container: AppContainer, modifier: Modifier = Modifier) {
                 Text("YarmiplayTV ${s.update.version} is available", style = MaterialTheme.typography.titleMedium)
             }
             UpdateProgress(container, s, dismiss = true)
+        }
+    }
+}
+
+/** A newer version in the store that installed the app (Google Play): Update there, or not now. */
+@Composable
+private fun StoreUpdateBanner(container: AppContainer, store: StoreUpdates, modifier: Modifier) {
+    val uriHandler = LocalUriHandler.current
+    Card(
+        modifier.testTag("update_banner"),
+        colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.SystemUpdate, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(14.dp))
+                Text("A new version of YarmiplayTV is available in ${store.name}", style = MaterialTheme.typography.titleMedium)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button({ container.updates.updateFromStore(uriHandler::openUri) }, Modifier.testTag("store_update")) { Text("Update") }
+                TextButton(container.updates::dismissStoreUpdate) { Text("Not now") }
+            }
         }
     }
 }

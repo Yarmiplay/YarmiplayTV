@@ -10,5 +10,7 @@ import com.yarmiplaytv.AppContainer
 object UpdateSetup {
     fun install(app: Application, container: AppContainer) {
         container.updates.store = PlayUpdater(app)
+        // Only asks Play whether there's a newer version, for the home screen's notice.
+        container.updates.checkOnLaunch()
     }
 }

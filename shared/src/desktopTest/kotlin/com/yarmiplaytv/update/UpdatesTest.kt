@@ -89,6 +89,36 @@ class UpdatesTest {
     }
 
     @Test
+    fun `while the app runs it looks again, so a version released meanwhile shows too`() {
+        server.enqueue(MockResponse().setBody(manifest(windows = "1.1.0")))
+        server.enqueue(MockResponse().setBody(manifest(windows = "1.3.0")))
+        val updates = Updates(scope, store, "1.1.0", UpdateChecker(manifestUrl()), recheckMillis = 200).apply { platform = "windows" }
+        updates.checkOnLaunch()
+        awaitTrue { updates.state.value?.update?.version == "1.3.0" }
+        assertTrue(server.requestCount >= 2)
+    }
+
+    @Test
+    fun `a store's newer version shows on the home screen until put off`() {
+        var updated = 0
+        val play = object : StoreUpdates {
+            override val name = "Google Play"
+            override val pageUrl = "https://play.example/app"
+            override suspend fun check() = true
+            override fun update(): Boolean { updated++; return true }
+        }
+        val updates = Updates(scope, store, "1.1.0", UpdateChecker(manifestUrl()), recheckMillis = 100).apply { this.store = play }
+        updates.checkOnLaunch()
+        awaitTrue { updates.storeUpdate.value === play }
+        assertEquals("the download page isn't asked", 0, server.requestCount)
+        updates.updateFromStore { error("Play's own update ran") }
+        assertEquals(1, updated)
+        updates.dismissStoreUpdate()
+        runBlocking { delay(400) }
+        assertNull("put off until the app starts again", updates.storeUpdate.value)
+    }
+
+    @Test
     fun `shows a newer version and remembers when it's dismissed`() {
         server.enqueue(MockResponse().setBody(manifest()))
         val first = updates()

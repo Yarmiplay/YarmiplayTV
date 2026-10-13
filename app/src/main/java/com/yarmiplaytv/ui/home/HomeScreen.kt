@@ -42,6 +42,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -89,6 +90,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
     val plex by container.plexServers.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     val update by container.updates.state.collectAsStateWithLifecycle()
+    val storeUpdate by container.updates.storeUpdate.collectAsStateWithLifecycle()
     var libraries by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var recent by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var serverRecents by remember { mutableStateOf<List<ServerRecent>>(emptyList()) }
@@ -135,6 +137,9 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                     runCatching { firstFocus.requestFocus() }
                 }, Modifier.padding(horizontal = 48.dp), Modifier.focusRequester(updateFocus))
             }
+        }
+        storeUpdate?.let { store ->
+            item(key = "store-update") { StoreUpdateNotice(container, store.name, Modifier.padding(horizontal = 48.dp)) }
         }
         item(key = "whats-new") { TvWhatsNewCard(container, nav, Modifier.padding(horizontal = 48.dp)) }
         item(key = "tiles") {
@@ -306,6 +311,28 @@ private fun UpdateNotice(container: AppContainer, state: UpdateState, onDismiss:
 }
 
 /** A home tile: what it is and how it stands, all of it shown (the text wraps rather than being cut off). */
+/** A newer version in the store that installed the app (Google Play): OK updates there, or not now. */
+@Composable
+private fun StoreUpdateNotice(container: AppContainer, storeName: String, modifier: Modifier = Modifier) {
+    val uriHandler = LocalUriHandler.current
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        TvTile(
+            onClick = { container.updates.updateFromStore(uriHandler::openUri) },
+            modifier = Modifier.weight(1f).testTag("update_banner"),
+            focusedScale = 1.02f,
+        ) {
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.SystemUpdate, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(32.dp))
+                Spacer(Modifier.width(16.dp))
+                Text("A new version of YarmiplayTV is available in $storeName", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Spacer(Modifier.width(16.dp))
+                Pill("Update", AppColors.Accent)
+            }
+        }
+        ActionButton("Not now", container.updates::dismissStoreUpdate)
+    }
+}
+
 @Composable
 private fun StatusTile(icon: ImageVector, title: String, detail: String, color: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
     TvTile(onClick = onClick, modifier = modifier.heightIn(min = 120.dp)) {
