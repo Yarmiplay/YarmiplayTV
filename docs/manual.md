@@ -221,6 +221,11 @@ you're signed in, the same card opens the **MyAnimeList screen**: your account, 
 (watching, plan to watch, completed), the shows you matched by hand, the shows you don't track, and updates
 waiting to be sent.
 
+When your media servers or media folders have the next episode of a show on your list, its entry has **Play**
+(for everyone, in a room) and **Add to playlist** for it. **Episodes** lists every episode of the show you have,
+watched ones too, to play or add any of them. The app finds them by the show's titles and counts an episode only
+when MyAnimeList matching is sure it's that entry's.
+
 ### Automatic updates
 
 When you've watched 90% of an episode, the app updates your list: the episodes you've watched (never fewer than

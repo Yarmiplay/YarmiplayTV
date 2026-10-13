@@ -12,6 +12,8 @@ import com.yarmiplaytv.media.EpisodeInfo
 import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.MediaItemType
 import com.yarmiplaytv.media.mal.MalClient
+import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.tracking.AvailableEpisode
 import com.yarmiplaytv.tracking.MalCallbackServer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -136,3 +138,18 @@ fun MediaItem.malInfo(): EpisodeInfo? = when (type) {
     MediaItemType.SERIES -> EpisodeInfo(name, 1, 1, year, seriesKey = "$sourceKey/$id")
     else -> null
 }
+
+/** Plays [episode]: for everyone when in a room (as the library's Play does), else here. */
+fun playEpisode(container: AppContainer, episode: AvailableEpisode) {
+    val inRoom = container.sync.room.value.status == ConnectionStatus.CONNECTED
+    episode.item?.let { if (inRoom) container.playlist.playInRoom(it) else container.playlist.playHere(it) }
+        ?: episode.localUri?.let { container.playlist.playLocal(it, inRoom) }
+}
+
+/** Adds [episode] to the room's shared playlist. */
+fun addEpisodeToPlaylist(container: AppContainer, episode: AvailableEpisode) {
+    episode.item?.let(container.playlist::addToRoomPlaylist) ?: episode.localUri?.let(container.playlist::addLocalToRoomPlaylist)
+}
+
+/** The episode to watch next: the one after those watched (the first when rewatching from the start), if it's here. */
+fun nextEpisode(episodes: List<AvailableEpisode>, watched: Int): AvailableEpisode? = episodes.firstOrNull { it.number == watched + 1 }

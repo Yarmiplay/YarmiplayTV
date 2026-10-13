@@ -39,6 +39,7 @@ import com.yarmiplaytv.sync.discoverSyncplayServers
 import com.yarmiplaytv.syncplay.ServerKind
 import com.yarmiplaytv.syncplay.SyncplayEvent
 import com.yarmiplaytv.syncplay.YarmiplayInfo
+import com.yarmiplaytv.tracking.MalEpisodes
 import com.yarmiplaytv.tracking.MalService
 import com.yarmiplaytv.tracking.MalTracker
 import com.yarmiplaytv.tracking.SkipService
@@ -155,6 +156,8 @@ class AppContainer(
     val roomHistory = RoomHistory(scope, sync, settingsStore).also { it.start() }
     /** The room's "skip openings and endings" setting. */
     val roomAutoSkip = RoomAutoSkip(scope, sync, roomHistory, settingsStore, settings)
+    /** The episodes of a MyAnimeList entry that the library has, for the MyAnimeList screen's Play buttons. */
+    val malEpisodes = MalEpisodes(mal, mediaSource, local.files)
     /** Skips anime openings and endings (times from AniSkip), or offers a Skip button. */
     val skips = SkipService(
         scope, player, playlist.nowPlaying, mal, AniSkipClient(), servers, sync.room, roomAutoSkip.state, settings,

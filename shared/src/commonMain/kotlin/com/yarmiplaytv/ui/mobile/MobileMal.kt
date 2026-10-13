@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -24,8 +25,10 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -33,6 +36,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,6 +75,8 @@ import com.yarmiplaytv.media.mal.MalAnime
 import com.yarmiplaytv.media.mal.MalListStatus
 import com.yarmiplaytv.media.mal.MalListUpdate
 import com.yarmiplaytv.media.mal.MalStatus
+import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.tracking.AvailableEpisode
 import com.yarmiplaytv.tracking.MalService
 import com.yarmiplaytv.tracking.MalState
 import com.yarmiplaytv.ui.nav.Navigator
@@ -78,7 +84,10 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
 import com.yarmiplaytv.ui.shared.MAL_PRIVACY_NOTE
 import com.yarmiplaytv.ui.shared.PRIVACY_POLICY_URL
+import com.yarmiplaytv.ui.shared.addEpisodeToPlaylist
 import com.yarmiplaytv.ui.shared.malInfo
+import com.yarmiplaytv.ui.shared.nextEpisode
+import com.yarmiplaytv.ui.shared.playEpisode
 import com.yarmiplaytv.ui.shared.rememberMalLoginModel
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
@@ -477,7 +486,7 @@ private fun MalYourList(container: AppContainer) {
             entries == null -> CircularProgressIndicator(Modifier.size(28.dp))
             entries!!.isEmpty() -> Text("Nothing here.", color = AppColors.TextDim)
             else -> entries!!.forEach { (anime, list) ->
-                MalListRow(anime, list) { update ->
+                MalListRow(container, anime, list, lookUp = status in LOOK_UP_EPISODES) { update ->
                     scope.launch {
                         container.mal.update(anime.copy(myListStatus = list), update)
                         reload++
@@ -488,43 +497,110 @@ private fun MalYourList(container: AppContainer) {
     }
 }
 
+/** Lists whose entries look for their episodes in the library by themselves; the others when Episodes is opened. */
+private val LOOK_UP_EPISODES = setOf(MalStatus.WATCHING, MalStatus.PLAN_TO_WATCH, MalStatus.ON_HOLD)
+
+/**
+ * One entry of your list: progress, score and status to change, and when the library has the next episode, Play
+ * and Add to playlist for it ([lookUp]: find out by itself, else when Episodes is opened). Episodes lists every
+ * episode of the entry the library has.
+ */
 @Composable
-private fun MalListRow(anime: MalAnime, list: MalListStatus, onUpdate: (MalListUpdate) -> Unit) {
+private fun MalListRow(container: AppContainer, anime: MalAnime, list: MalListStatus, lookUp: Boolean, onUpdate: (MalListUpdate) -> Unit) {
     val uriHandler = LocalUriHandler.current
     var menu by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().testTag("mal_list_entry_${anime.id}"), verticalAlignment = Alignment.CenterVertically) {
-        Cover(anime, Modifier.width(40.dp).height(56.dp))
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(anime.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            val of = if (anime.numEpisodes > 0) " of ${anime.numEpisodes}" else ""
-            Text(
-                "${list.watchedEpisodes}$of watched" + (if (list.score > 0) " · ${list.score}/10" else "") + (if (list.isRewatching) " · rewatching" else ""),
-                color = AppColors.TextDim,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        IconButton({ onUpdate(MalListUpdate(watchedEpisodes = (list.watchedEpisodes - 1).coerceAtLeast(0))) }, enabled = list.watchedEpisodes > 0) {
-            Icon(Icons.Filled.Remove, "One episode fewer")
-        }
-        IconButton(
-            { onUpdate(MalService.progressUpdate(list, list.watchedEpisodes + 1, anime.numEpisodes, java.time.LocalDate.now().toString()) ?: MalListUpdate(watchedEpisodes = list.watchedEpisodes + 1)) },
-            enabled = anime.numEpisodes == 0 || list.watchedEpisodes < anime.numEpisodes,
-            modifier = Modifier.testTag("mal_list_plus_${anime.id}"),
-        ) { Icon(Icons.Filled.Add, "One episode more") }
-        Box {
-            IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
-            DropdownMenu(menu, { menu = false }) {
-                MalStatus.entries.filter { it != list.statusValue }.forEach { s ->
-                    DropdownMenuItem({ Text("Move to ${s.label}") }, { menu = false; onUpdate(MalListUpdate(status = s)) })
+    var episodes by remember(anime.id) { mutableStateOf<List<AvailableEpisode>?>(null) }
+    var picking by remember { mutableStateOf(false) }
+    LaunchedEffect(anime.id, lookUp || picking) {
+        if ((lookUp || picking) && episodes == null) episodes = container.malEpisodes.of(anime)
+    }
+    val room by container.sync.room.collectAsStateWithLifecycle()
+    val inRoom = room.status == ConnectionStatus.CONNECTED
+    val next = episodes?.let { nextEpisode(it, list.watchedEpisodes) }
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().testTag("mal_list_entry_${anime.id}"), verticalAlignment = Alignment.CenterVertically) {
+            Cover(anime, Modifier.width(40.dp).height(56.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(anime.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                val of = if (anime.numEpisodes > 0) " of ${anime.numEpisodes}" else ""
+                Text(
+                    "${list.watchedEpisodes}$of watched" + (if (list.score > 0) " · ${list.score}/10" else "") + (if (list.isRewatching) " · rewatching" else ""),
+                    color = AppColors.TextDim,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            IconButton({ onUpdate(MalListUpdate(watchedEpisodes = (list.watchedEpisodes - 1).coerceAtLeast(0))) }, enabled = list.watchedEpisodes > 0) {
+                Icon(Icons.Filled.Remove, "One episode fewer")
+            }
+            IconButton(
+                { onUpdate(MalService.progressUpdate(list, list.watchedEpisodes + 1, anime.numEpisodes, java.time.LocalDate.now().toString()) ?: MalListUpdate(watchedEpisodes = list.watchedEpisodes + 1)) },
+                enabled = anime.numEpisodes == 0 || list.watchedEpisodes < anime.numEpisodes,
+                modifier = Modifier.testTag("mal_list_plus_${anime.id}"),
+            ) { Icon(Icons.Filled.Add, "One episode more") }
+            Box {
+                IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
+                DropdownMenu(menu, { menu = false }) {
+                    MalStatus.entries.filter { it != list.statusValue }.forEach { s ->
+                        DropdownMenuItem({ Text("Move to ${s.label}") }, { menu = false; onUpdate(MalListUpdate(status = s)) })
+                    }
+                    (10 downTo 1).forEach { score ->
+                        DropdownMenuItem({ Text("Score $score/10") }, { menu = false; onUpdate(MalListUpdate(score = score)) })
+                    }
+                    DropdownMenuItem({ Text("Episodes…") }, { menu = false; picking = true }, modifier = Modifier.testTag("mal_episodes_${anime.id}"))
+                    DropdownMenuItem({ Text("Open on MyAnimeList") }, { menu = false; uriHandler.openUri(anime.url) })
                 }
-                (10 downTo 1).forEach { score ->
-                    DropdownMenuItem({ Text("Score $score/10") }, { menu = false; onUpdate(MalListUpdate(score = score)) })
+            }
+        }
+        next?.let { ep ->
+            Row(Modifier.padding(start = 50.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                FilledTonalButton({ playEpisode(container, ep) }, Modifier.testTag("mal_play_next_${anime.id}"), contentPadding = PaddingValues(horizontal = 12.dp)) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(" Episode ${ep.number}")
                 }
-                DropdownMenuItem({ Text("Open on MyAnimeList") }, { menu = false; uriHandler.openUri(anime.url) })
+                if (inRoom) {
+                    IconButton({ addEpisodeToPlaylist(container, ep) }, Modifier.testTag("mal_add_next_${anime.id}")) {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "Add episode ${ep.number} to the playlist")
+                    }
+                }
             }
         }
     }
+    if (picking) EpisodesDialog(container, anime, episodes, list.watchedEpisodes, inRoom) { picking = false }
+}
+
+/** Every episode of [anime] the library has, to play or add to the playlist; the next one to watch stands out. */
+@Composable
+private fun EpisodesDialog(container: AppContainer, anime: MalAnime, episodes: List<AvailableEpisode>?, watched: Int, inRoom: Boolean, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(anime.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            when {
+                episodes == null -> CircularProgressIndicator(Modifier.size(28.dp))
+                episodes.isEmpty() -> Text("None of its episodes are in your library or media folders.", color = AppColors.TextDim)
+                else -> Column(Modifier.verticalScroll(rememberScrollState()).testTag("mal_episodes_list")) {
+                    episodes.forEach { ep ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "Episode ${ep.number}" + if (ep.number <= watched) " · watched" else "",
+                                    color = if (ep.number == watched + 1) AppColors.Accent else AppColors.Text,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Text(ep.title, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            IconButton({ playEpisode(container, ep); onDismiss() }) { Icon(Icons.Filled.PlayArrow, "Play episode ${ep.number}") }
+                            if (inRoom) {
+                                IconButton({ addEpisodeToPlaylist(container, ep) }) { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "Add episode ${ep.number} to the playlist") }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onDismiss) { Text("Close") } },
+    )
 }
 
 /** The update settings, matched shows, shows not tracked, and updates waiting to be sent. */

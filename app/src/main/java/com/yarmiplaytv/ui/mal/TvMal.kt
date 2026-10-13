@@ -15,8 +15,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
@@ -45,6 +47,8 @@ import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.mal.MalAnime
 import com.yarmiplaytv.media.mal.MalListUpdate
 import com.yarmiplaytv.media.mal.MalStatus
+import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.tracking.AvailableEpisode
 import com.yarmiplaytv.tracking.MalService
 import com.yarmiplaytv.tracking.MalState
 import com.yarmiplaytv.ui.components.ActionButton
@@ -59,7 +63,10 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.MAL_ATTRIBUTION
 import com.yarmiplaytv.ui.shared.MAL_PRIVACY_NOTE
 import com.yarmiplaytv.ui.shared.PRIVACY_POLICY_URL
+import com.yarmiplaytv.ui.shared.addEpisodeToPlaylist
 import com.yarmiplaytv.ui.shared.malInfo
+import com.yarmiplaytv.ui.shared.nextEpisode
+import com.yarmiplaytv.ui.shared.playEpisode
 import com.yarmiplaytv.ui.shared.rememberMalLoginModel
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
@@ -92,6 +99,72 @@ fun MalLoginScreen(container: AppContainer, nav: Navigator) {
         model.status?.let { Text(it, color = AppColors.TextDim) }
         model.error?.let { Text(it, color = AppColors.Error) }
         Text(MAL_ATTRIBUTION, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+/** Lists whose entries look for their episodes in the library by themselves; the others when Episodes is pressed. */
+private val TV_LOOK_UP_EPISODES = setOf(MalStatus.WATCHING, MalStatus.PLAN_TO_WATCH, MalStatus.ON_HOLD)
+
+/**
+ * One entry of your list on TV: progress to change, and when the library has the next episode, Play and Add to
+ * playlist for it. Episodes opens every episode of the entry the library has, under the entry.
+ */
+@Composable
+private fun TvMalListRow(
+    container: AppContainer,
+    anime: MalAnime,
+    entry: com.yarmiplaytv.media.mal.MalListStatus,
+    lookUp: Boolean,
+    onUpdate: (MalListUpdate) -> Unit,
+) {
+    var episodes by remember(anime.id) { mutableStateOf<List<AvailableEpisode>?>(null) }
+    var open by remember { mutableStateOf(false) }
+    LaunchedEffect(anime.id, lookUp || open) {
+        if ((lookUp || open) && episodes == null) episodes = container.malEpisodes.of(anime)
+    }
+    val room by container.sync.room.collectAsStateWithLifecycle()
+    val inRoom = room.status == ConnectionStatus.CONNECTED
+    val next = episodes?.let { nextEpisode(it, entry.watchedEpisodes) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Cover(anime, Modifier.width(44.dp).height(62.dp))
+            Column(Modifier.weight(1f)) {
+                Text(anime.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val of = if (anime.numEpisodes > 0) " of ${anime.numEpisodes}" else ""
+                Text("${entry.watchedEpisodes}$of watched" + if (entry.score > 0) " · ${entry.score}/10" else "", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+            }
+            ActionButton("−1", { onUpdate(MalListUpdate(watchedEpisodes = (entry.watchedEpisodes - 1).coerceAtLeast(0))) }, enabled = entry.watchedEpisodes > 0)
+            ActionButton("+1", {
+                onUpdate(MalService.progressUpdate(entry, entry.watchedEpisodes + 1, anime.numEpisodes, java.time.LocalDate.now().toString()) ?: MalListUpdate(watchedEpisodes = entry.watchedEpisodes + 1))
+            }, enabled = anime.numEpisodes == 0 || entry.watchedEpisodes < anime.numEpisodes)
+        }
+        Row(Modifier.padding(start = 56.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            next?.let { ep ->
+                ActionButton("Play episode ${ep.number}", { playEpisode(container, ep) }, Modifier.testTag("mal_play_next_${anime.id}"), icon = Icons.Filled.PlayArrow, primary = true)
+                if (inRoom) ActionButton("Add to playlist", { addEpisodeToPlaylist(container, ep) }, icon = Icons.AutoMirrored.Filled.PlaylistAdd)
+            }
+            ActionButton(if (open) "Hide episodes" else "Episodes", { open = !open }, Modifier.testTag("mal_episodes_${anime.id}"))
+        }
+        if (open) {
+            Column(Modifier.padding(start = 56.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                when (val eps = episodes) {
+                    null -> Text("Looking in your library…", color = AppColors.TextDim)
+                    emptyList<AvailableEpisode>() -> Text("None of its episodes are in your library or media folders.", color = AppColors.TextDim)
+                    else -> eps.forEach { ep ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            ActionButton(
+                                "Episode ${ep.number}" + if (ep.number <= entry.watchedEpisodes) " · watched" else "",
+                                { playEpisode(container, ep) },
+                                icon = Icons.Filled.PlayArrow,
+                                primary = ep.number == entry.watchedEpisodes + 1,
+                            )
+                            if (inRoom) ActionButton("Add", { addEpisodeToPlaylist(container, ep) }, icon = Icons.AutoMirrored.Filled.PlaylistAdd)
+                            Text(ep.title, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -316,19 +389,8 @@ fun MalHubScreen(container: AppContainer, nav: Navigator) {
             null -> Text("Loading…", color = AppColors.TextDim)
             emptyList<Pair<MalAnime, com.yarmiplaytv.media.mal.MalListStatus>>() -> Text("Nothing here.", color = AppColors.TextDim)
             else -> list.forEach { (anime, entry) ->
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Cover(anime, Modifier.width(44.dp).height(62.dp))
-                    Column(Modifier.width(560.dp)) {
-                        Text(anime.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val of = if (anime.numEpisodes > 0) " of ${anime.numEpisodes}" else ""
-                        Text("${entry.watchedEpisodes}$of watched" + if (entry.score > 0) " · ${entry.score}/10" else "", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
-                    }
-                    fun update(u: MalListUpdate) = scope.launch { container.mal.update(anime.copy(myListStatus = entry), u); reload++ }
-                    ActionButton("−1", { update(MalListUpdate(watchedEpisodes = (entry.watchedEpisodes - 1).coerceAtLeast(0))) }, enabled = entry.watchedEpisodes > 0)
-                    ActionButton("+1", {
-                        update(MalService.progressUpdate(entry, entry.watchedEpisodes + 1, anime.numEpisodes, java.time.LocalDate.now().toString()) ?: MalListUpdate(watchedEpisodes = entry.watchedEpisodes + 1))
-                    }, enabled = anime.numEpisodes == 0 || entry.watchedEpisodes < anime.numEpisodes)
-                }
+                fun update(u: MalListUpdate) = scope.launch { container.mal.update(anime.copy(myListStatus = entry), u); reload++ }
+                TvMalListRow(container, anime, entry, lookUp = status in TV_LOOK_UP_EPISODES, onUpdate = ::update)
             }
         }
 
