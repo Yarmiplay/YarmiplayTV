@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.9.6" date="2026-10-13">
+      <description>
+        <p>The Skip button stays in one place, just above the controls, whether they show or not, with a new look that matches the player.</p>
+      </description>
+    </release>
     <release version="1.9.5" date="2026-10-13">
       <description>
         <p>Openings and endings found by listening when the file's chapters, your server's markers and AniSkip don't know them: the sound of an episode is compared with the episodes before and after it, and the song they share is skipped. Server episodes are listened to on Wi-Fi or Ethernet only unless you allow mobile data, and Settings &gt; Playback can turn listening off.</p>
