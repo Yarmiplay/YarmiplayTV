@@ -26,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AssistChip
@@ -111,13 +113,19 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
             return@Column
         }
         val np = nowPlaying
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+        val canUndo by container.playlist.shared.canUndo.collectAsStateWithLifecycle()
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
             androidx.compose.material3.FilledTonalButton(onBrowse) { Text("Add from library") }
             if (np != null && room.playlist.none { Filenames.same(it, np.fileName) }) {
                 androidx.compose.material3.OutlinedButton({ container.sync.client?.addToPlaylist(np.fileName) }) {
                     Icon(Icons.Filled.Add, contentDescription = null); Text(" Add current")
                 }
             }
+            Spacer(Modifier.weight(1f))
+            IconButton({ container.playlist.shared.sortAlphabetically() }, enabled = room.playlist.size > 1, modifier = Modifier.testTag("playlist_sort")) {
+                Icon(Icons.Filled.SortByAlpha, "Sort A to Z")
+            }
+            if (canUndo) IconButton({ container.playlist.shared.undo() }, Modifier.testTag("playlist_undo")) { Icon(Icons.AutoMirrored.Filled.Undo, "Undo") }
         }
         if (room.playlist.isEmpty()) {
             Text("The playlist is empty.", color = AppColors.TextDim, modifier = Modifier.padding(vertical = 12.dp))

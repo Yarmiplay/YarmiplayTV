@@ -57,6 +57,32 @@ object PlaylistEdits {
         return playlist.take(pivot) + playlist.drop(pivot).shuffled(random)
     }
 
+    /** [playlist] from A to Z: case doesn't matter, and numbers go in number order ("Episode 2" before "Episode 10"). */
+    fun sortAlphabetically(playlist: List<String>): List<String> = playlist.sortedWith(NATURAL_ORDER.thenBy { it })
+
+    /** Names compared ignoring case, with each run of digits compared as the number it is. */
+    val NATURAL_ORDER: Comparator<String> = Comparator { a, b ->
+        var i = 0
+        var j = 0
+        while (i < a.length && j < b.length) {
+            if (a[i] in '0'..'9' && b[j] in '0'..'9') {
+                val startA = i
+                val startB = j
+                while (i < a.length && a[i] in '0'..'9') i++
+                while (j < b.length && b[j] in '0'..'9') j++
+                val numberA = a.substring(startA, i).trimStart('0')
+                val numberB = b.substring(startB, j).trimStart('0')
+                if (numberA.length != numberB.length) return@Comparator numberA.length - numberB.length
+                numberA.compareTo(numberB).let { if (it != 0) return@Comparator it }
+            } else {
+                a[i].lowercaseChar().compareTo(b[j].lowercaseChar()).let { if (it != 0) return@Comparator it }
+                i++
+                j++
+            }
+        }
+        (a.length - i) - (b.length - j)
+    }
+
     /** Syncplay's playlist files: one entry per line. */
     fun parse(text: String): List<String> = text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
 
@@ -136,6 +162,9 @@ class SharedPlaylist(scope: CoroutineScope, private val sync: SyncController) {
         apply(PlaylistEdits.shuffle(playlist, index, entire, random))
         if (entire || index == null) sync.client?.selectPlaylistIndex(0)
     }
+
+    /** Sorts the playlist A to Z (numbers in number order); the room stays on the entry it's on, wherever it goes. */
+    fun sortAlphabetically() = apply(PlaylistEdits.sortAlphabetically(playlist))
 
     /** Replaces the playlist, e.g. with one loaded from a file. */
     fun replace(files: List<String>) = apply(files.map { it.trim() }.filter { it.isNotEmpty() }.distinct())

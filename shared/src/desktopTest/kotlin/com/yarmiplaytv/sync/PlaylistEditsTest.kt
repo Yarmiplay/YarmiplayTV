@@ -54,6 +54,24 @@ class PlaylistEditsTest {
     }
 
     @Test
+    fun `sorting goes A to Z ignoring case, with numbers in number order`() {
+        val messy = listOf(
+            "Show - 10.mkv", "show - 2.mkv", "Another Show S01E01.mkv", "Show - 1.mkv", "Show - 02v2.mkv",
+            "https://youtube.com/watch?v=x", "Show - 001.mkv",
+        )
+        assertEquals(
+            listOf(
+                "Another Show S01E01.mkv", "https://youtube.com/watch?v=x", "Show - 001.mkv", "Show - 1.mkv",
+                "show - 2.mkv", "Show - 02v2.mkv", "Show - 10.mkv",
+            ),
+            PlaylistEdits.sortAlphabetically(messy),
+        )
+        assertEquals(emptyList<String>(), PlaylistEdits.sortAlphabetically(emptyList()))
+        // Long runs of digits don't overflow.
+        assertEquals(listOf("a 99999999999999999999", "a 100000000000000000000"), PlaylistEdits.sortAlphabetically(listOf("a 100000000000000000000", "a 99999999999999999999")))
+    }
+
+    @Test
     fun `playlist files are one entry per line`() {
         val text = PlaylistEdits.format(listOf("a.mkv", "https://youtu.be/x"))
         assertEquals("a.mkv\nhttps://youtu.be/x\n", text)

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -308,6 +309,7 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
                     DropdownMenuItem({ Text("Shuffle everything") }, { open = false; shared.shuffle(entire = true) })
                 }
             }
+            ToolButton(Icons.Filled.SortByAlpha, "Sort A to Z", enabled = playlist.size > 1) { shared.sortAlphabetically() }
             ToolButton(Icons.AutoMirrored.Filled.Undo, "Undo (Ctrl+Z)", enabled = canUndo) { shared.undo() }
             Spacer(Modifier.weight(1f))
             Box {

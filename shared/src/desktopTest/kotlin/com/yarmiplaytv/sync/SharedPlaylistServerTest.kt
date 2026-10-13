@@ -137,6 +137,23 @@ class SharedPlaylistServerTest {
     }
 
     @Test
+    fun `sorting A to Z reorders it for everyone, keeps the room on its entry, and can be undone`() {
+        val alice = join("alice", alicePlayer)
+        val bob = join("bob", bobPlayer)
+        onMain { alice.playlist.shared.add(listOf("Show - 10.mkv", "Show - 2.mkv", "Show - 1.mkv")) }
+        awaitTrue("bob to see the playlist") { bob.sync.room.value.playlist.size == 3 }
+        onMain { alice.playlist.selectIndex(1) }
+        awaitTrue("bob to be on episode 2") { bob.sync.room.value.playlistIndex == 1 }
+
+        onMain { bob.playlist.shared.sortAlphabetically() }
+        awaitTrue("alice to see it sorted") { alice.sync.room.value.playlist == listOf("Show - 1.mkv", "Show - 2.mkv", "Show - 10.mkv") }
+        awaitTrue("the room to stay on episode 2") { alice.sync.room.value.playlistIndex == 1 && bob.sync.room.value.playlistIndex == 1 }
+
+        onMain { bob.playlist.shared.undo() }
+        awaitTrue("the sort to be undone") { alice.sync.room.value.playlist == listOf("Show - 10.mkv", "Show - 2.mkv", "Show - 1.mkv") }
+    }
+
+    @Test
     fun `links on untrusted domains only open when the user says so`() {
         val alice = join("alice", alicePlayer)
         val bob = join("bob", bobPlayer)

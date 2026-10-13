@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Visibility
@@ -43,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -108,11 +111,16 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
         }
         val np = nowPlaying
         val canAddCurrent = np != null && room.playlist.none { Filenames.same(it, np.fileName) }
+        val canUndo by container.playlist.shared.canUndo.collectAsStateWithLifecycle()
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 12.dp)) {
             ActionButton("Add from your libraries", { nav.popTo(Screen.Home) }, if (room.playlist.isEmpty()) Modifier.focusRequester(focus) else Modifier, icon = Icons.Filled.Home)
             if (canAddCurrent && np != null) {
                 ActionButton("Add current", { container.sync.client?.addToPlaylist(np.fileName) }, icon = Icons.Filled.Add)
             }
+            if (room.playlist.size > 1) {
+                ActionButton("Sort A to Z", { container.playlist.shared.sortAlphabetically() }, Modifier.testTag("playlist_sort"), icon = Icons.Filled.SortByAlpha)
+            }
+            if (canUndo) ActionButton("Undo", { container.playlist.shared.undo() }, Modifier.testTag("playlist_undo"), icon = Icons.AutoMirrored.Filled.Undo)
         }
         if (room.playlist.isEmpty()) {
             Text("The playlist is empty.", color = AppColors.TextDim)

@@ -194,6 +194,10 @@ On a computer, the player's playlist, room and chat buttons open a side panel. I
 videos, folders or links, drag to reorder, select several with Ctrl or Shift, remove with Delete and undo with
 Ctrl+Z.
 
+**Sort A to Z** (on every device, in the shared playlist) puts the playlist in alphabetical order for everyone in
+the room, with numbers in number order (episode 2 before episode 10). The room stays on the entry it's playing,
+and **Undo** puts the old order back.
+
 ### Picture-in-picture
 
 - **Android phones, tablets and TVs:** leaving the app while a video plays keeps it playing, in sync, in a small

@@ -199,7 +199,8 @@ In a room, the player's playlist, room and chat buttons open a side panel:
 
 - **Playlist:** add videos, a folder or URLs, drop files while the tab is open, drag or Alt+↑/↓ to
   reorder, Ctrl/Shift-click to select several, Delete to remove, Ctrl+Z to undo (anyone's last change),
-  double-click to play, shuffle, loop options, and save/load the list as a text file.
+  double-click to play, shuffle, sort A to Z (numbers in number order; also on phones and TV, with Undo), loop
+  options, and save/load the list as a text file.
 - **Chat:** Enter in the player opens it; ↑/↓ recall what you sent.
 
 Player keys: Space or K pauses, ←/→ or J/L seek, ↑/↓ change the volume (also the scroll wheel and the volume
