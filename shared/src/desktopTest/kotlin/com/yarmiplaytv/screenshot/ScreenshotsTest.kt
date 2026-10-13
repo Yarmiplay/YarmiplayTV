@@ -35,8 +35,11 @@ class ScreenshotsTest {
             state.value = PlaybackState(fileLoaded = true)
         }
 
-        override fun screenshot(path: String): Boolean {
+        val withSubtitles = mutableListOf<Boolean>()
+
+        override fun screenshot(path: String, subtitles: Boolean): Boolean {
             shots += path
+            withSubtitles += subtitles
             if (works) File(path).writeBytes(byteArrayOf(1, 2, 3))
             return works
         }

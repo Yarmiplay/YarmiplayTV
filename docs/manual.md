@@ -167,8 +167,9 @@ Settings > Playback can also stop showing the button.
 
 - **Audio and subtitles:** pick a track in the player. Settings > Playback sets the languages chosen
   automatically.
-- **Screenshots:** the camera button saves the current frame to Pictures/YarmiplayTV (or a folder you pick in
-  Settings).
+- **Screenshots:** the camera button in the player's bottom bar saves the current frame, subtitles included, to
+  Pictures/YarmiplayTV (or a folder you pick in Settings > Media). On a computer **F5** does the same, and **F6**
+  saves the frame without the subtitles.
 - **Hardware decoding** is on by default; turn it off in Settings > Playback if a video doesn't play right.
 
 ### Keys on a computer
@@ -178,7 +179,8 @@ Settings > Playback can also stop showing the button.
 - **↑** / **↓** or the scroll wheel: volume; **M**: mute
 - **N** / **B** or the media keys: next or previous playlist entry
 - **F** or **F11**: full screen; **Esc**: leave full screen or go back
-- **F5**: screenshot
+- **F5**: screenshot; **F6**: screenshot without the subtitles
+- **S**: skip the opening or ending while its Skip button shows
 - **H**: hide or show the controls
 - **P**: picture-in-picture
 - **Enter**: open the chat

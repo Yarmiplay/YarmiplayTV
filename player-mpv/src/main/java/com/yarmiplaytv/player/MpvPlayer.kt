@@ -254,9 +254,10 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
     /**
      * This libmpv has no image encoders, so the picture is copied from the surface mpv draws on: the video with
-     * its subtitles, without the black bars beside it (subtitles can sit in the ones above and below).
+     * its subtitles, without the black bars beside it (subtitles can sit in the ones above and below). [subtitles]
+     * can't leave them out here: they are part of the picture on the surface.
      */
-    override fun screenshot(path: String): Boolean {
+    override fun screenshot(path: String, subtitles: Boolean): Boolean {
         val source = surface?.takeIf { it.isValid } ?: return false
         val width = surfaceWidth
         val height = surfaceHeight

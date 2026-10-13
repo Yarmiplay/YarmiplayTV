@@ -67,7 +67,8 @@ class Screenshots(
     /** Where screenshots go while no folder is picked in the settings. */
     val defaultFolder: String get() = store.defaultFolder
 
-    fun take() {
+    /** Saves the current frame, with its subtitles unless [subtitles] is false (where the player can leave them out). */
+    fun take(subtitles: Boolean = true) {
         if (taking || !player.isFileLoaded) return
         taking = true
         val name = fileName(title(), LocalDateTime.now())
@@ -77,7 +78,7 @@ class Screenshots(
                 withContext(Dispatchers.IO) {
                     val file = store.scratchFile(name)
                     try {
-                        if (player.screenshot(file.path)) "Screenshot saved to ${store.save(file, target)}" else "Couldn't take a screenshot"
+                        if (player.screenshot(file.path, subtitles)) "Screenshot saved to ${store.save(file, target)}" else "Couldn't take a screenshot"
                     } finally {
                         file.delete()
                     }

@@ -19,7 +19,7 @@ class ShortcutsTest {
         override fun changeVolume(delta: Double) { log += "volume $delta" }
         override fun toggleMute() { log += "mute" }
         override fun focusChat() { log += "chat" }
-        override fun screenshot() { log += "screenshot" }
+        override fun screenshot(subtitles: Boolean) { log += if (subtitles) "screenshot" else "screenshot without subtitles" }
         override fun togglePictureInPicture() { log += "picture-in-picture" }
         var skipOffered = false
         override fun skipSegment(): Boolean {
@@ -92,6 +92,12 @@ class ShortcutsTest {
         assertFalse(handleShortcut(Key.F5, true, Target()))
         assertFalse(handleShortcut(Key.F5, false, Target(playerShowing = false)))
         assertEquals(listOf("screenshot"), log)
+    }
+
+    @Test
+    fun f6TakesAScreenshotWithoutTheSubtitles() {
+        assertTrue(handleShortcut(Key.F6, false, Target()))
+        assertEquals(listOf("screenshot without subtitles"), log)
     }
 
     @Test

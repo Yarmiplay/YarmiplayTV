@@ -220,7 +220,7 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
                 container.player.showText(if (mute) "Muted" else "Volume ${volume.volume.value.toInt()}%", 1000)
             }
             override fun focusChat() = DesktopRoomPanel.focusChat()
-            override fun screenshot() { container.screenshots?.take() }
+            override fun screenshot(subtitles: Boolean) { container.screenshots?.take(subtitles) }
             override fun skipSegment(): Boolean {
                 if (container.skips.prompt.value == null) return false
                 container.skips.skip()
