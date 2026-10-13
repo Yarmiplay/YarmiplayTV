@@ -39,6 +39,19 @@ Android asks you to allow installing apps from your browser.
 
 ![The desktop app playing in a room](../screenshots/2-player-in-room.png)
 
+### In a web browser
+
+Open [tv.yarmiplay.com/watch](../watch/) in Chrome, Edge, Firefox or Safari: nothing to install. The browser
+version joins rooms on a YarmiplayServerTV 1.8 or later that has HTTPS set up (its DuckDNS certificate); the host's
+**Watch in a browser** link opens the join screen with the server and room filled in. Plain Syncplay servers need
+the app, because browsers can't open their kind of connection.
+
+It plays files from your device (open one, drop one on the page, or add media folders in Settings > Media) with its
+own player: MKV, MP4, AVI, TS and WebM, styled subtitles, and DTS or AC-3 sound. Video is decoded by your graphics
+card where the browser can; HEVC needs a browser and computer that support it. Chrome and Edge remember media folders
+between visits; other browsers ask for the folder again. The shared playlist, chat, ready, managed rooms, saved and
+recent rooms and the themes work as in the app. Media servers, the file relay and MyAnimeList come next.
+
 ## The home screen
 
 Home has a card for each way to watch:

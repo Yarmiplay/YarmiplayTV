@@ -242,6 +242,7 @@ elsewhere):
 | `app` | The Android app: TV UI (Compose for TV) and the Android side of `shared` |
 | `player-mpv-desktop` | libmpv on the desktop through JNA, rendered with OpenGL (or software) into Compose |
 | `desktop` | The desktop app (Compose for Desktop): window, shortcuts, drag and drop, installers |
+| `web` | The browser version at tv.yarmiplay.com/watch (Svelte and TypeScript): its own player (FFmpeg in WebAssembly for demuxing and the codecs browsers lack, WebCodecs for hardware decoding, libass for subtitles) and the Syncplay client over a WebSocket to YarmiplayServerTV. `npm install`, `npm run dev`, `npm test`; `npm run libav` builds its FFmpeg (needs emsdk) |
 
 ## Development on Windows
 
