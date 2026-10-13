@@ -1,9 +1,12 @@
 name: Build
 
+# Changes that only touch the browser version (web/) are the Web workflow's.
 on:
   push:
     branches: [main]
+    paths-ignore: [web/**, .github/workflows/web.yml, .github/actions/web-libav/**]
   pull_request:
+    paths-ignore: [web/**, .github/workflows/web.yml, .github/actions/web-libav/**]
   workflow_dispatch:
 
 concurrency:

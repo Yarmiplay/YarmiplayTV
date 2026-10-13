@@ -1,0 +1,66 @@
+name: Web
+
+# The browser version in web/: type checks, unit tests, a production build, and the player's end-to-end tests in
+# Google Chrome against clips made with ffmpeg. The Build workflow skips changes that only touch web/.
+on:
+  push:
+    branches: [main]
+    paths: [web/**, .github/workflows/web.yml, .github/actions/web-libav/**]
+  pull_request:
+    paths: [web/**, .github/workflows/web.yml, .github/actions/web-libav/**]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Type check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      - uses: ./.github/actions/web-libav
+
+      - name: Build
+        run: npm run build
+
+      - name: Test clips
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg >/dev/null
+          CLIP_SECONDS=20 bash e2e/make-media.sh
+
+      - name: Install Chrome
+        run: npx playwright install --with-deps chrome
+
+      - name: Player tests
+        env:
+          E2E_PREVIEW: "1"
+        run: npx playwright test --reporter=line
+
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-test-results
+          path: web/test-results
+          if-no-files-found: ignore

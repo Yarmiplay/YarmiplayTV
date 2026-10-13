@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>YarmiplayTV</title>
+    <meta name="description" content="Watch together in your browser: Syncplay rooms on YarmiplayServerTV, with nothing to install." />
+    <meta name="theme-color" content="#0E1116" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <script>
+      // The theme before the first paint, so the page never flashes the wrong colours (see src/lib/ui/theme.ts).
+      (function () {
+        var key = "dark";
+        try { key = localStorage.getItem("ytv:app_theme") || "dark"; } catch (e) {}
+        if (key === "system") key = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        if (key !== "noire" && key !== "light") key = "dark";
+        document.documentElement.dataset.theme = key;
+        var bar = { dark: "#0E1116", noire: "#000000", light: "#F3F5F8" }[key];
+        document.querySelector('meta[name="theme-color"]').setAttribute("content", bar);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,11 +1,12 @@
 name: Download page
 
 # Publishes the download page (scripts/download_site.py) with the packages of the latest green Build on main,
-# except for the Windows installers and the .deb, which come from the latest release. Release runs are for tags,
-# so the branch is checked in the job's condition rather than filtered here.
+# except for the Windows installers and the .deb, which come from the latest release, and the browser version (web/)
+# from main at /watch/. Release runs are for tags, so the branch is checked in the job's condition rather than
+# filtered here.
 on:
   workflow_run:
-    workflows: [Build, Release]
+    workflows: [Build, Release, Web]
     types: [completed]
   workflow_dispatch:
 
@@ -32,7 +33,8 @@ jobs:
       (github.event.workflow_run.name == 'Release' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')))
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Long enough to build the player's FFmpeg when its cache is gone.
+    timeout-minutes: 30
     outputs:
       site_url: ${{ steps.pages.outputs.base_url }}
     steps:
@@ -92,6 +94,33 @@ jobs:
           ${FLATHUB_REPO:+--flathub-id "${FLATHUB_REPO##*/}"} ${SNAP_NAME:+--snap-name "$SNAP_NAME"}
           ${AUR_PACKAGE:+--aur-package "$AUR_PACKAGE"}
 
+      # The browser version comes from main as it is now, whichever run started this: a change that only touches
+      # web/ runs Web, not Build, so the Build run's commit may be older.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          path: main
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: main/web/package-lock.json
+
+      - name: Player's FFmpeg
+        uses: ./main/.github/actions/web-libav
+        with:
+          root: main
+
+      - name: Build the browser version
+        working-directory: main/web
+        env:
+          MAL_CLIENT_ID: ${{ secrets.MAL_CLIENT_ID }}
+        run: |
+          npm ci
+          npm run build
+          cp -r dist "$GITHUB_WORKSPACE/_site/watch"
+
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
@@ -113,8 +142,8 @@ jobs:
         run: |
           site="${SITE_URL%/}"
           host=$(echo "$site" | sed -E 's#^https?://([^/]+).*#\1#')
-          body=$(printf '{"host":"%s","key":"%s","keyLocation":"%s/%s.txt","urlList":["%s/","%s/privacy/","%s/manual/","%s/changelog/"]}' \
-            "$host" "$INDEXNOW_KEY" "$site" "$INDEXNOW_KEY" "$site" "$site" "$site" "$site")
+          body=$(printf '{"host":"%s","key":"%s","keyLocation":"%s/%s.txt","urlList":["%s/","%s/privacy/","%s/manual/","%s/changelog/","%s/watch/"]}' \
+            "$host" "$INDEXNOW_KEY" "$site" "$INDEXNOW_KEY" "$site" "$site" "$site" "$site" "$site")
           code=$(curl -s -o response.txt -w '%{http_code}' -X POST https://api.indexnow.org/indexnow \
             -H 'Content-Type: application/json; charset=utf-8' -d "$body" || true)
           echo "IndexNow answered HTTP $code"; cat response.txt 2>/dev/null || true

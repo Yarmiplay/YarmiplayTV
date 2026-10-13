@@ -1,0 +1,8 @@
+node_modules/
+dist/
+libav/build/
+public/libav/
+test-results/
+playwright-report/
+e2e/media/
+libav/libav.types.d.ts

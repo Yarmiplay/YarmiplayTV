@@ -1,0 +1,13 @@
+[
+  "avformat", "avcodec", "swresample",
+  "demuxer-webm", "demuxer-mp4", "demuxer-avi", "demuxer-mpegts", "demuxer-mpegps", "demuxer-ogg", "demuxer-flv",
+  "demuxer-wav", "demuxer-flac", "demuxer-mp3", "demuxer-aac", "demuxer-ac3", "demuxer-eac3", "demuxer-dts",
+  "demuxer-truehd",
+  "parser-h264", "parser-hevc", "parser-vp8", "parser-vp9", "parser-av1", "parser-mpegvideo", "parser-mpeg4video",
+  "parser-vc1", "parser-aac", "parser-ac3", "parser-dca", "parser-mlp", "parser-opus", "parser-flac", "parser-vorbis",
+  "parser-mpegaudio",
+  "decoder-ac3", "decoder-eac3", "decoder-dca", "decoder-truehd", "decoder-mlp", "decoder-aac", "decoder-mp3float",
+  "decoder-vorbis", "decoder-opus", "decoder-flac", "decoder-pcm_s16le", "decoder-pcm_s24le", "decoder-pcm_f32le",
+  "decoder-mpeg1video", "decoder-mpeg2video", "decoder-mpeg4", "decoder-msmpeg4v3", "decoder-vc1", "decoder-wmv3",
+  "bsf-extract_extradata", "bsf-h264_mp4toannexb", "bsf-hevc_mp4toannexb"
+]
