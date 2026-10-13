@@ -125,7 +125,7 @@ class HomeUiTest {
     }
 
     @Test
-    fun `the home screen in the light and noire themes`() = runDesktopComposeUiTest(1280, 800) {
+    fun `the home screen in the light, noire and monochrome themes`() = runDesktopComposeUiTest(1280, 800) {
         runBlocking { app.settingsStore.saveTheme("light") }
         waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "light" }
         show(1280, 800)
@@ -135,6 +135,10 @@ class HomeUiTest {
         waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "noire" }
         waitForIdle()
         screenshot("home_noire")
+        runBlocking { app.settingsStore.saveTheme("monochrome") }
+        waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "monochrome" }
+        waitForIdle()
+        screenshot("home_monochrome")
         // The player stays dark in the light theme.
         runBlocking { app.settingsStore.saveTheme("light") }
         waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "light" }

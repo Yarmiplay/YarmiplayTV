@@ -183,6 +183,11 @@ class SettingsUiTest {
         waitForIdle()
         screenshot("settings_appearance_noire")
         assertEquals("noire", runBlocking { app.settingsStore.current() }.theme)
+        onNodeWithTag("theme_monochrome").performClick()
+        waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "monochrome" }
+        waitForIdle()
+        screenshot("settings_appearance_monochrome")
+        assertEquals("monochrome", runBlocking { app.settingsStore.current() }.theme)
     }
 
     @Test

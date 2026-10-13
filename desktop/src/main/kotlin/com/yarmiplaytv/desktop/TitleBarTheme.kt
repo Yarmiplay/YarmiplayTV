@@ -35,7 +35,7 @@ internal fun useTitleBarTheme(window: Window, dark: Boolean) {
 internal fun macAppearance(theme: String): String = when (AppTheme.of(theme)) {
     AppTheme.LIGHT -> "NSAppearanceNameAqua"
     AppTheme.SYSTEM -> "system"
-    AppTheme.DARK, AppTheme.NOIRE -> "NSAppearanceNameDarkAqua"
+    AppTheme.DARK, AppTheme.NOIRE, AppTheme.MONOCHROME -> "NSAppearanceNameDarkAqua"
 }
 
 @Suppress("FunctionName")

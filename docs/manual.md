@@ -325,8 +325,8 @@ a computer, a wide tablet or a TV, the categories are on the left and the chosen
   chat, and your device's name.
 - **Playback:** hardware decoding, picture-in-picture, skipping openings and endings when watching alone, the
   Skip button and finding them by listening, the seek step and the audio and subtitle languages.
-- **Appearance:** the theme: **Dark** (night blue, the app's own look), **Noire** (true black and white, darkest
-  on OLED screens), **Light**, or **Match the system** (light or dark as your device is set, changing with it).
+- **Appearance:** the theme: **Dark** (night blue, the app's own look), **Noire** (dark purple, as NoireServerTV),
+  **Monochrome** (true black and white, darkest on OLED screens), **Light**, or **Match the system** (light or dark as your device is set, changing with it).
   Everything takes the new colours at once, except the player, which stays dark over the video. On Windows the
   window's title bar follows too; on a Mac it does after restarting the app.
 - **Updates:** checking for and installing new versions.

@@ -40,8 +40,24 @@ object Palettes {
         scrim = Color(0xCC000000),
     )
 
-    /** Black and white: true black (dark on OLED screens), greys, and white for what's chosen. */
+    /** Dark purple, as NoireServerTV: violet-tinted black, purple cards and a bright violet for what's chosen. */
     val Noire = Palette(
+        isLight = false,
+        background = Color(0xFF100C16),
+        surface = Color(0xFF1A1522),
+        surfaceHigh = Color(0xFF261E33),
+        accent = Color(0xFFA970FF),
+        onAccent = Color(0xFF12051F),
+        text = Color(0xFFE8ECF2),
+        textDim = Color(0xFF9AA4B2),
+        ready = Color(0xFF4CC38A),
+        notReady = Color(0xFFFFB74D),
+        error = Color(0xFFEF5350),
+        scrim = Color(0xCC000000),
+    )
+
+    /** Black and white: true black (dark on OLED screens), greys, and white for what's chosen. */
+    val Monochrome = Palette(
         isLight = false,
         background = Color(0xFF000000),
         surface = Color(0xFF0D0D0D),
@@ -76,7 +92,8 @@ object Palettes {
 /** The themes to pick from in Settings; [SYSTEM] is Light or Dark as the device's own setting is. */
 enum class AppTheme(val key: String, val label: String, val description: String) {
     DARK("dark", "Dark", "Night blue, the app's own look"),
-    NOIRE("noire", "Noire", "Black and white: true black, darkest on OLED screens"),
+    NOIRE("noire", "Noire", "Dark purple, as NoireServerTV"),
+    MONOCHROME("monochrome", "Monochrome", "Black and white: true black, darkest on OLED screens"),
     LIGHT("light", "Light", "Light backgrounds and dark text"),
     SYSTEM("system", "Match the system", "Light or dark, as your device is set");
 
@@ -84,6 +101,7 @@ enum class AppTheme(val key: String, val label: String, val description: String)
     fun palette(systemDark: Boolean): Palette = when (this) {
         DARK -> Palettes.Dark
         NOIRE -> Palettes.Noire
+        MONOCHROME -> Palettes.Monochrome
         LIGHT -> Palettes.Light
         SYSTEM -> if (systemDark) Palettes.Dark else Palettes.Light
     }

@@ -176,7 +176,7 @@ data class AppSettings(
     val lastSeenVersion: String = "",
     /** Show other people's chat in rooms; off hides all of it, whatever names they use. */
     val showRoomChat: Boolean = true,
-    /** The look: "dark", "noire", "light" or "system" (see com.yarmiplaytv.ui.theme.AppTheme). */
+    /** The look: "dark", "noire", "monochrome", "light" or "system" (see com.yarmiplaytv.ui.theme.AppTheme). */
     val theme: String = "dark",
     /** The user agreed to the community rules, asked once before the first room join. */
     val acceptedRoomRules: Boolean = false,

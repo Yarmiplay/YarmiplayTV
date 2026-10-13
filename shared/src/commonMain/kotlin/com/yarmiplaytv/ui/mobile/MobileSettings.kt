@@ -97,7 +97,7 @@ private enum class SettingsCategory(val title: String, val icon: ImageVector, va
     MAL("MyAnimeList", Icons.Filled.Tv, "Your account and list updates"),
     SYNCING("Syncing", Icons.Filled.Sync, "Unpausing, catching up, readiness, playlists, chat, your device's name"),
     PLAYBACK("Playback", Icons.Filled.PlayCircle, "Decoding, picture-in-picture, openings and endings, seeking, languages"),
-    APPEARANCE("Appearance", Icons.Filled.Palette, "Theme: dark, noire, light, or as your device is set"),
+    APPEARANCE("Appearance", Icons.Filled.Palette, "Theme: dark, noire, monochrome, light, or as your device is set"),
     UPDATES("Updates", Icons.Filled.SystemUpdate, "Checking for and installing new versions"),
     ABOUT("About", Icons.Filled.Info, "Version, what's new, the manual, privacy, licenses"),
 }
