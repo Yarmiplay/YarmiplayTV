@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.9.2" date="2026-10-13">
+      <description>
+        <p>Openings and endings found also from the file's chapters and your Jellyfin or Plex server's markers, and marked on the seek bar; the Android home screen says when there's a new version (also from Google Play); and a What's new card that highlights within its rounded corners.</p>
+      </description>
+    </release>
     <release version="1.9.1" date="2026-10-13">
       <description>
         <p>Dark window title bars on Windows and macOS, matching the app's dark theme whatever the system's mode.</p>
