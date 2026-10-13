@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { attachPlayer, go, session as sessionStore, settings } from "../app/context";
+  import { FileSource } from "../lib/player/bytes";
   import { MediaPlayer, type PlayerState } from "../lib/player/mediaPlayer";
+  import { SeekFrames } from "../lib/player/seekFrames";
   import type { FeedMessage, PlaylistStatus } from "../lib/sync/room";
   import { followsOperators, type RoomState } from "../lib/syncplay/client";
   import * as ManagedRooms from "../lib/syncplay/managedRooms";
@@ -27,6 +29,10 @@
   let hover = $state<{ x: number; time: number } | null>(null);
   let dragging = $state<number | null>(null);
   let seekNote = $state<string | null>(null);
+  let preview: HTMLCanvasElement | undefined = $state();
+  let previewShown = $state(false);
+  let seekFrames: Promise<SeekFrames | null> | null = null;
+  let seekFramesFor: unknown = null;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
@@ -121,6 +127,36 @@
     clearTimeout(noteTimer);
     noteTimer = setTimeout(() => (seekNote = null), 1200);
     poke();
+  }
+
+  /** The picture at [time] under the seek bar, for a file on this device (streams show the time only). */
+  async function showPreview(time: number) {
+    const source = player?.source;
+    if (!(source instanceof FileSource)) {
+      previewShown = false;
+      return;
+    }
+    if (seekFramesFor !== source) {
+      void seekFrames?.then((f) => f?.close());
+      seekFramesFor = source;
+      seekFrames = SeekFrames.open(source.file);
+    }
+    const frames = await seekFrames;
+    const bitmap = await frames?.frame(time, 160);
+    if (!bitmap || !preview) return;
+    preview.width = bitmap.width;
+    preview.height = bitmap.height;
+    preview.getContext("2d")?.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    previewShown = true;
+  }
+
+  /** Done with pictures for now: the second FFmpeg lets go of the file. */
+  function hidePreview() {
+    previewShown = false;
+    void seekFrames?.then((f) => f?.close());
+    seekFrames = null;
+    seekFramesFor = null;
   }
 
   function trackTime(event: PointerEvent, track: HTMLElement): number {
@@ -364,8 +400,14 @@
             aria-valuemin="0"
             aria-valuemax={s.duration}
             aria-valuenow={s.position}
-            onpointermove={(e) => (hover = { x: e.offsetX, time: trackTime(e, e.currentTarget) })}
-            onpointerleave={() => (hover = null)}
+            onpointermove={(e) => {
+              hover = { x: e.offsetX, time: trackTime(e, e.currentTarget) };
+              void showPreview(dragging ?? hover.time);
+            }}
+            onpointerleave={() => {
+              hover = null;
+              if (dragging === null) hidePreview();
+            }}
             onpointerdown={(e) => {
               e.currentTarget.setPointerCapture(e.pointerId);
               dragging = trackTime(e, e.currentTarget);
@@ -373,6 +415,7 @@
             onpointerup={(e) => {
               if (dragging !== null) player?.seek(trackTime(e, e.currentTarget));
               dragging = null;
+              if (!hover) hidePreview();
             }}
           >
             <div class="fill" style="width: {((dragging ?? s.position) / (s.duration || 1)) * 100}%"></div>
@@ -380,7 +423,10 @@
               <span class="mark" style="left: {(c.start / (s.duration || 1)) * 100}%" title={c.title}></span>
             {/each}
             {#if hover || dragging !== null}
-              <span class="hover-time" style="left: {hover?.x ?? 0}px">{formatTime(dragging ?? hover!.time)}</span>
+              <span class="hover-time" style="left: {hover?.x ?? 0}px">
+                <canvas bind:this={preview} class="preview" class:shown={previewShown}></canvas>
+                {formatTime(dragging ?? hover!.time)}
+              </span>
             {/if}
           </div>
           <div class="row">
@@ -654,9 +700,20 @@
     height: 10px;
     background: rgb(255 255 255 / 0.7);
   }
+  .preview {
+    display: none;
+    width: 160px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+  }
+  .preview.shown {
+    display: block;
+  }
   .hover-time {
     position: absolute;
     bottom: 24px;
+    display: grid;
+    justify-items: center;
     transform: translateX(-50%);
     padding: 2px 8px;
     border-radius: 6px;

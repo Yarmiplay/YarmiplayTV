@@ -14,7 +14,7 @@ export interface ByteSource {
 
 /** A file picked on this device: read straight from the disk, as slices. */
 export class FileSource implements ByteSource {
-  constructor(private readonly file: Blob & { name?: string }) {}
+  constructor(readonly file: Blob & { name?: string }) {}
 
   get size() {
     return this.file.size;

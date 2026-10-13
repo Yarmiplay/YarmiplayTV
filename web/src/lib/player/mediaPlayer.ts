@@ -104,6 +104,7 @@ export class MediaPlayer implements PlayerAdapter {
   private subtitles: SubtitleLayer | null = null;
 
   private readonly frames: VideoFrame[] = [];
+  private _source: ByteSource | null = null;
   private generation = 0;
   private eof = false;
   /** File time of the file's start; positions shown count from here (MPEG-TS files start a second or so in). */
@@ -185,6 +186,11 @@ export class MediaPlayer implements PlayerAdapter {
     return this.state;
   }
 
+  /** Where the file playing now is read from (a file on this device gets seek-bar pictures). */
+  get source(): ByteSource | null {
+    return this._source;
+  }
+
   setVolume(volume: number, muted = this.state.muted) {
     this.output?.setVolume(muted ? 0 : volume);
     this.update({ volume, muted });
@@ -201,6 +207,7 @@ export class MediaPlayer implements PlayerAdapter {
       const demuxer = await Demuxer.open(libav, source);
       if (generation !== this.generation) return void demuxer.close();
       this.demuxer = demuxer;
+      this._source = source;
 
       const videos = demuxer.streams.filter((s) => s.kind === "video" && !["mjpeg", "png", "bmp"].includes(s.codec));
       const audios = demuxer.streams.filter((s) => s.kind === "audio");

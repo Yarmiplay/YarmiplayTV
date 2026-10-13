@@ -127,3 +127,16 @@ test("ASS subtitles are drawn over the video, styled, and go away when turned of
   const without = await stage.screenshot({ path: "test-results/subtitles-off.png" });
   expect(withSubs.equals(without)).toBe(false);
 });
+
+test("the seek bar shows the time and, for a file on this device, a picture of that moment", async ({ page }) => {
+  test.skip(!existsSync(media("h264-aac.mp4")), "run e2e/make-media.sh first");
+  await page.goto("#/player");
+  await page.locator('.empty input[type="file"]').setInputFiles(media("h264-aac.mp4"));
+  await expect.poll(() => page.evaluate(() => (window as any).playerLab.player.isFileLoaded), { timeout: 20_000 }).toBe(true);
+  const track = page.getByRole("slider", { name: "Position" });
+  const box = (await track.boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2);
+  await expect(page.locator(".hover-time")).toContainText("00:10");
+  await expect(page.locator("canvas.preview.shown")).toBeVisible({ timeout: 10_000 });
+  await page.locator(".bottom").screenshot({ path: "test-results/seek-preview.png" });
+});
