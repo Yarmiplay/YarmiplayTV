@@ -134,6 +134,13 @@ class RoomScreenUiTest {
     }
 
     @Test
+    fun `a small phone shows the join form whole`() = runComposeUiTest {
+        show(360, 760)
+        onNodeWithTag("join_card").assertIsDisplayed()
+        screenshot("join_phone")
+    }
+
+    @Test
     fun `in a room, wide windows show the playlist, the chat and the room side by side`() = runComposeUiTest {
         joinRoom()
         show(1280, 800)

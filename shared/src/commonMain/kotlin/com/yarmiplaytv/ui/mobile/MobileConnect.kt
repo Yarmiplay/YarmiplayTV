@@ -2,7 +2,6 @@ package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -247,6 +246,7 @@ private fun RoomNameDialog(title: String, initial: String, onDone: (String?) -> 
 @Composable
 private fun ConnectForm(container: AppContainer, model: SyncplayConnectModel, status: ConnectionStatus, onConnected: () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val compact = maxWidth < COMPACT_FORM_WIDTH
         if (maxWidth >= 900.dp) {
             Row(
                 Modifier.align(Alignment.TopCenter).widthIn(max = 1100.dp).fillMaxWidth().padding(20.dp).testTag("join_two_panes"),
@@ -256,9 +256,9 @@ private fun ConnectForm(container: AppContainer, model: SyncplayConnectModel, st
                 JoinCard(container, model, status, onConnected, Modifier.weight(1.1f))
             }
         } else {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 KnownRooms(container, model, onConnected, compact = true)
-                JoinCard(container, model, status, onConnected, Modifier.fillMaxWidth())
+                JoinCard(container, model, status, onConnected, Modifier.fillMaxWidth(), compact = compact)
             }
         }
     }
@@ -334,14 +334,14 @@ private fun KnownRoomRow(container: AppContainer, model: SyncplayConnectModel, r
                 )
             }
             Column(Modifier.weight(1f)) {
-                Text(room.label.ifBlank { ManagedRooms.label(room.room) }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(room.label.ifBlank { ManagedRooms.label(room.room) }, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val where = listOfNotNull(
                     ManagedRooms.label(room.room).takeIf { room.label.isNotBlank() },
                     "${room.host}:${room.port}",
                     room.username.takeIf { it.isNotBlank() }?.let { "as $it" },
                     "skips openings".takeIf { room.autoSkip },
                 ).joinToString(" · ")
-                Text(where, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(where, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
             TextButton(::join, Modifier.testTag("rejoin_${room.room}")) { Text("Rejoin") }
             Box {
@@ -366,29 +366,52 @@ private fun KnownRoomRow(container: AppContainer, model: SyncplayConnectModel, r
     }
 }
 
-/** The form: server, you, room, then the buttons; passwords and auto-connect under "More options". */
+/** Narrower than this (phones), the form puts the server on a row of its own and leaves its title to the top bar. */
+private val COMPACT_FORM_WIDTH = 480.dp
+
+/**
+ * The form: server, you, room, then the buttons; passwords and auto-connect under "More options". [compact]
+ * (phones): the server gets the whole width, with the port and TLS under it.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun JoinCard(container: AppContainer, model: SyncplayConnectModel, status: ConnectionStatus, onConnected: () -> Unit, modifier: Modifier) {
+private fun JoinCard(container: AppContainer, model: SyncplayConnectModel, status: ConnectionStatus, onConnected: () -> Unit, modifier: Modifier, compact: Boolean = false) {
     val settings by container.settings.collectAsStateWithLifecycle()
     var more by remember { mutableStateOf(model.password.isNotEmpty() || model.autoConnect) }
     Surface(color = AppColors.Surface, shape = RoundedCornerShape(16.dp), modifier = modifier.testTag("join_card")) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Join a room", style = MaterialTheme.typography.titleLarge)
+        Column(Modifier.padding(if (compact) 14.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (!compact) Text("Join a room", style = MaterialTheme.typography.titleLarge)
 
             FormLabel("Server")
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            val host = @Composable { m: Modifier ->
                 OutlinedTextField(model.host, { model.host = it.trim() }, label = { Text("Server") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.weight(1f).testTag("field_host"))
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = m.testTag("field_host"))
+            }
+            val port = @Composable { m: Modifier ->
                 OutlinedTextField(model.port, { model.port = it.filter(Char::isDigit).take(5) }, label = { Text("Port") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(96.dp).testTag("field_port"))
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("TLS", color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = m.testTag("field_port"))
+            }
+            if (compact) {
+                host(Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    port(Modifier.width(110.dp))
+                    Spacer(Modifier.weight(1f))
+                    Text("Encrypted (TLS)", color = AppColors.TextDim, style = MaterialTheme.typography.bodyMedium)
                     Switch(model.tls, { model.tls = it })
                 }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    host(Modifier.weight(1f))
+                    port(Modifier.width(96.dp))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("TLS", color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
+                        Switch(model.tls, { model.tls = it })
+                    }
+                }
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Public servers:", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+            // Wraps rather than running off the side on narrow screens.
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                Text("Public servers:", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(end = 4.dp))
                 (8995..8999).forEach { port ->
                     SuggestionChip(
                         onClick = { model.host = "syncplay.pl"; model.port = port.toString() },
