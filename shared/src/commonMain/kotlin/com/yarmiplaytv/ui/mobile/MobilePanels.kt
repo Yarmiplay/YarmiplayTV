@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.PlayArrow
@@ -63,12 +64,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -114,6 +118,7 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
         }
         val np = nowPlaying
         val canUndo by container.playlist.shared.canUndo.collectAsStateWithLifecycle()
+        var addingLinks by rememberSaveable { mutableStateOf(false) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
             androidx.compose.material3.FilledTonalButton(onBrowse) { Text("Add from library") }
             if (np != null && room.playlist.none { Filenames.same(it, np.fileName) }) {
@@ -122,11 +127,13 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
                 }
             }
             Spacer(Modifier.weight(1f))
+            IconButton({ addingLinks = !addingLinks }, Modifier.testTag("playlist_add_links")) { Icon(Icons.Filled.Link, "Add links") }
             IconButton({ container.playlist.shared.sortAlphabetically() }, enabled = room.playlist.size > 1, modifier = Modifier.testTag("playlist_sort")) {
                 Icon(Icons.Filled.SortByAlpha, "Sort A to Z")
             }
             if (canUndo) IconButton({ container.playlist.shared.undo() }, Modifier.testTag("playlist_undo")) { Icon(Icons.AutoMirrored.Filled.Undo, "Undo") }
         }
+        if (addingLinks) LinkField(onAdd = { text -> container.playlist.addUrlsToRoomPlaylist(text.split(Regex("\\s+"))) > 0 }, onClose = { addingLinks = false })
         if (room.playlist.isEmpty()) {
             Text("The playlist is empty.", color = AppColors.TextDim, modifier = Modifier.padding(vertical = 12.dp))
             return@Column
@@ -161,6 +168,40 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
             }
         }
     }
+}
+
+/**
+ * Links (http or https, e.g. a video page or a stream) for the shared playlist, several at once separated by spaces or
+ * lines, as a paste from a browser often is. Add or the keyboard's Done adds them; anything that isn't a link is left out.
+ */
+@Composable
+private fun LinkField(onAdd: (String) -> Boolean, onClose: () -> Unit) {
+    var text by rememberSaveable { mutableStateOf("") }
+    var invalid by remember { mutableStateOf(false) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    fun add() {
+        if (onAdd(text)) {
+            text = ""
+            onClose()
+        } else {
+            invalid = text.isNotBlank()
+        }
+    }
+    OutlinedTextField(
+        text, { text = it; invalid = false },
+        label = { Text("Links") },
+        placeholder = { Text("https://…") },
+        supportingText = { Text(if (invalid) "Enter links starting with http:// or https://" else "Several at once: separate them with spaces or new lines") },
+        isError = invalid,
+        maxLines = 4,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done, autoCorrectEnabled = false),
+        keyboardActions = KeyboardActions(onDone = { add() }),
+        trailingIcon = {
+            IconButton(::add, enabled = text.isNotBlank(), modifier = Modifier.testTag("playlist_links_add")) { Icon(Icons.Filled.Add, "Add to the playlist") }
+        },
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).focusRequester(focus).testTag("playlist_links_field"),
+    )
 }
 
 /**
