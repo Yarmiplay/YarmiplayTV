@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.1.3" date="2026-10-14">
+      <description>
+        <p>On a computer, the room panel's count of new chat messages now sits beside the Chat tab's name in your theme's colour, instead of a small red dot over it.</p>
+      </description>
+    </release>
     <release version="2.1.2" date="2026-10-14">
       <description>
         <p>The TV player's controls fit in one row again: a single Menus button opens the menu you used last, and the tabs at its top switch to the shared playlist, the room, the chat, audio, subtitles or MyAnimeList.</p>
