@@ -57,7 +57,7 @@ fun JellyfinLoginScreen(container: AppContainer, nav: Navigator) {
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text("Jellyfin", style = MaterialTheme.typography.headlineMedium)
-        Text("Server address, e.g. http://192.168.1.10:8096. Inside the emulator your PC is 10.0.2.2.", color = AppColors.TextDim)
+        Text("Server address, e.g. http://192.168.1.10:8096", color = AppColors.TextDim)
         TvTextField(model.url, { model.url = it.trim() }, "Server", Modifier.focusRequester(firstFocus), placeholder = "http://192.168.1.10:8096", keyboardType = KeyboardType.Uri)
         if (model.discovered.isNotEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

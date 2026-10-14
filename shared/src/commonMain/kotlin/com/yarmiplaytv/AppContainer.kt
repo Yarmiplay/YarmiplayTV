@@ -13,6 +13,7 @@ import com.yarmiplaytv.local.LocalLibrary
 import com.yarmiplaytv.local.SeekFrames
 import com.yarmiplaytv.local.VideoThumbnails
 import com.yarmiplaytv.media.CompositeMediaSource
+import com.yarmiplaytv.media.LanHosts
 import com.yarmiplaytv.media.MediaSource
 import com.yarmiplaytv.media.MediaSourceException
 import com.yarmiplaytv.media.jellyfin.ClientInfo
@@ -71,6 +72,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 
 /** Process-wide singletons (one mpv instance, one Syncplay connection, the media servers). */
@@ -205,6 +207,7 @@ class AppContainer(
             sync.room.map { it.yarmiplay }.distinctUntilChanged().collect { info -> rememberServer(info) }
         }
         scope.launch { sync.session.collect(SessionDns::use) }
+        initial.jellyfinServers.forEach(::rememberLanAddress)
         // At home a server's name can lead to the router: the player and images reach it where Syncplay did.
         StreamRoutes.route = SessionDns::direct
         SingletonImageLoader.setSafe { context ->
@@ -301,9 +304,9 @@ class AppContainer(
     private suspend fun movedJellyfin(session: JellyfinSession): JellyfinSession? {
         for (url in session.candidateUrls) {
             if (url.trimEnd('/') == session.serverUrl) continue
-            val base = runCatching { jellyfinClient.normalizeServerUrl(url) }.getOrNull() ?: continue
+            val base = runCatching { jellyfinClient.resolveServerUrl(url) }.getOrNull() ?: continue
             if (runCatching { jellyfinClient.publicInfo(base) }.getOrNull()?.id != session.serverId) continue
-            val moved = session.copy(serverUrl = base)
+            val moved = session.copy(serverUrl = base, lanAddress = LanHosts.hintFor(base).orEmpty())
             if (runCatching { jellyfinClient.validate(moved) }.getOrDefault(false)) return moved
         }
         return null
@@ -343,6 +346,7 @@ class AppContainer(
     fun serverFor(key: String): MediaSource? = servers.value.firstOrNull { it.key == key }
 
     private fun put(source: MediaSource) {
+        if (source is JellyfinSource) rememberLanAddress(source.session)
         val updated = _servers.updateAndGet { list ->
             val i = list.indexOfFirst { it.key == source.key }
             sorted(if (i >= 0) list.toMutableList().apply { set(i, source) } else list + source)
@@ -354,6 +358,13 @@ class AppContainer(
                 is PlexSource -> runCatching { source.refreshIndex() }
             }
         }
+    }
+
+    /** A Jellyfin found at a local address under its certificate's name goes there whenever that answers. */
+    private fun rememberLanAddress(session: JellyfinSession) {
+        if (session.lanAddress.isEmpty()) return
+        val url = session.serverUrl.toHttpUrlOrNull() ?: return
+        LanHosts.add(url.host, session.lanAddress, url.port)
     }
 
     private fun save(list: List<MediaSource>) {

@@ -1,5 +1,6 @@
 package com.yarmiplaytv.media.jellyfin
 
+import com.yarmiplaytv.media.LanHosts
 import com.yarmiplaytv.media.MediaSourceException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -41,6 +42,11 @@ data class JellyfinSession(
     val candidateUrls: List<String> = emptyList(),
     /** The host stopped sharing it: its guest account answers 401. */
     val noLongerShared: Boolean = false,
+    /**
+     * The local address [serverUrl]'s name answers at on its home network, where the name may lead to the router
+     * instead (an HTTPS server found by its IP address, whose certificate is for the name); empty when it has none.
+     */
+    val lanAddress: String = "",
 ) {
     val isShared: Boolean get() = sharedBy.isNotEmpty()
 }
@@ -93,6 +99,12 @@ class JellyfinClient(
         return withPort.toString().trimEnd('/')
     }
 
+    /**
+     * [normalizeServerUrl], and for HTTPS on an IP address the name the server's certificate is for, which the
+     * address is kept for ([LanHosts]): the certificate couldn't be verified at the address.
+     */
+    suspend fun resolveServerUrl(input: String): String = LanHosts.byCertificateName(normalizeServerUrl(input))
+
     suspend fun publicInfo(serverUrl: String): PublicSystemInfo =
         get(serverUrl, null, "System/Info/Public") { }
 
@@ -104,7 +116,7 @@ class JellyfinClient(
      * (Settings → Quick Connect). Cancel the collecting coroutine to abort.
      */
     fun quickConnect(serverUrl: String, pollIntervalMs: Long = 2500): Flow<QuickConnectState> = flow {
-        val base = normalizeServerUrl(serverUrl)
+        val base = resolveServerUrl(serverUrl)
         val info = publicInfo(base)
         val initiated: QuickConnectResult = try {
             post(base, null, "QuickConnect/Initiate", null) { }
@@ -124,7 +136,7 @@ class JellyfinClient(
     }
 
     suspend fun login(serverUrl: String, username: String, password: String): JellyfinSession {
-        val base = normalizeServerUrl(serverUrl)
+        val base = resolveServerUrl(serverUrl)
         val info = publicInfo(base)
         val auth: AuthenticationResult = try {
             post(base, null, "Users/AuthenticateByName",
@@ -157,6 +169,7 @@ class JellyfinClient(
             userId = user.id,
             userName = user.name ?: "",
             accessToken = token,
+            lanAddress = LanHosts.hintFor(base).orEmpty(),
         )
     }
 

@@ -311,6 +311,17 @@ class RelayTest {
         assertEquals(listOf("http://192.168.1.20:8096", "http://sync.example:8999"), HostJellyfinSharing.candidates(shared.copy(proxy = false), session))
     }
 
+    @Test
+    fun `the shared Jellyfin on the Syncplay server's name keeps the address it was reached at at home`() {
+        val home = YarmiplaySession("t", 1, "https://myname.duckdns.org:8999", resolveTo = "192.168.1.20")
+        assertEquals("192.168.1.20", HostJellyfinSharing.lanAddress("https://myname.duckdns.org:8999", home))
+        assertEquals("192.168.1.20", HostJellyfinSharing.lanAddress("https://MyName.duckdns.org:8920", home))
+        assertEquals("", HostJellyfinSharing.lanAddress("http://192.168.1.20:8096", home))
+        assertEquals("", HostJellyfinSharing.lanAddress("https://other.example:8920", home))
+        val away = YarmiplaySession("t", 1, "https://myname.duckdns.org:8999", resolveTo = "46.116.126.210")
+        assertEquals("", HostJellyfinSharing.lanAddress("https://myname.duckdns.org:8999", away))
+    }
+
     // --- Prefetching the playlist's next file ------------------------------------------------------
 
     @Test

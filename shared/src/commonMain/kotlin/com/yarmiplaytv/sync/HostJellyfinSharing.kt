@@ -1,6 +1,7 @@
 package com.yarmiplaytv.sync
 
 import com.yarmiplaytv.Logger
+import com.yarmiplaytv.media.LanHosts
 import com.yarmiplaytv.media.jellyfin.JellyfinClient
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
 import com.yarmiplaytv.media.jellyfin.QuickConnectState
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
  * Adds the Jellyfin a YarmiplayServerTV host shares: finds an address that answers as that server, signs in with
@@ -65,13 +67,16 @@ class HostJellyfinSharing(
         if (existing != null && !existing.noLongerShared) {
             val valid = runCatching { jellyfin.validate(existing) }.getOrNull()
             if (valid == true) {
-                if (existing.isShared && existing.candidateUrls != candidates) save(existing.copy(candidateUrls = candidates))
+                val lan = lanAddress(existing.serverUrl, session).ifEmpty { existing.lanAddress }
+                if (existing.isShared && (existing.candidateUrls != candidates || existing.lanAddress != lan)) {
+                    save(existing.copy(candidateUrls = candidates, lanAddress = lan))
+                }
                 return
             }
             if (valid == null && existing.isShared) {
                 // Its address doesn't answer from here; another one of the host's may.
                 val url = probe(candidates, shared.serverId) ?: return
-                val moved = existing.copy(serverUrl = url, candidateUrls = candidates)
+                val moved = existing.copy(serverUrl = url, candidateUrls = candidates, lanAddress = lanAddress(url, session))
                 if (runCatching { jellyfin.validate(moved) }.getOrDefault(false)) save(moved)
                 return
             }
@@ -92,7 +97,9 @@ class HostJellyfinSharing(
                 is QuickConnectState.WaitingForApproval -> authorize(state.code)
                 is QuickConnectState.Authorized -> {
                     val name = shared.serverName.ifBlank { state.session.serverName }
-                    save(state.session.copy(serverName = "$name (via $via)", sharedBy = via, candidateUrls = candidates))
+                    save(state.session.copy(
+                        serverName = "$name (via $via)", sharedBy = via, candidateUrls = candidates, lanAddress = lanAddress(url, session),
+                    ))
                     sync.postLocal("Added $name, shared by the Syncplay host")
                     false
                 }
@@ -119,7 +126,7 @@ class HostJellyfinSharing(
     /** The first of [candidates] that answers as Jellyfin server [serverId]. */
     private suspend fun probe(candidates: List<String>, serverId: String): String? {
         for (url in candidates) {
-            val base = runCatching { jellyfin.normalizeServerUrl(url) }.getOrNull() ?: continue
+            val base = runCatching { jellyfin.resolveServerUrl(url) }.getOrNull() ?: continue
             val info = runCatching { jellyfin.publicInfo(base) }.getOrNull() ?: continue
             if (info.id == serverId) return base
         }
@@ -129,6 +136,18 @@ class HostJellyfinSharing(
     companion object {
         private const val TAG = "HostJellyfinSharing"
         private const val AUTHORIZE_TIMEOUT_MS = 30_000L
+
+        /**
+         * The local address [url]'s name answers at: where the Syncplay connection reached the server at home for its
+         * own name (the Jellyfin it proxies, or the host's on another port), or the address an IP's certificate named.
+         */
+        fun lanAddress(url: String, session: YarmiplaySession): String {
+            val host = url.toHttpUrlOrNull()?.host ?: return ""
+            session.resolveTo
+                ?.takeIf { host.equals(session.host, ignoreCase = true) && !LanHosts.isIpLiteral(host) && LanHosts.isLocalAddress(it) }
+                ?.let { return it }
+            return LanHosts.hintFor(url).orEmpty()
+        }
 
         /** The Syncplay server's own address first when it proxies Jellyfin, then the host's addresses. */
         fun candidates(shared: SharedJellyfin, session: YarmiplaySession): List<String> =

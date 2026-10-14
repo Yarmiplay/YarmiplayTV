@@ -25,6 +25,8 @@ tasks.test {
     // LivePlexTest: PLEX_LINK=1 signs in with a plex.tv/link code, PLEX_TOKEN uses an account token.
     environment("PLEX_LINK", System.getenv("PLEX_LINK") ?: "")
     environment("PLEX_TOKEN", System.getenv("PLEX_TOKEN") ?: "")
+    // LanHostsTest: LAN_TLS_SERVER=ip:port, an HTTPS server on this network whose certificate is for a name.
+    environment("LAN_TLS_SERVER", System.getenv("LAN_TLS_SERVER") ?: "")
     testLogging {
         events("passed", "skipped", "failed")
         showStandardStreams = true

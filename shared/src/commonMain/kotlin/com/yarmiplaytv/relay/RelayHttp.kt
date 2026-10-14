@@ -1,5 +1,6 @@
 package com.yarmiplaytv.relay
 
+import com.yarmiplaytv.media.LanHosts
 import com.yarmiplaytv.syncplay.ServerTlsFormat
 import com.yarmiplaytv.syncplay.YarmiplaySession
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -27,8 +28,9 @@ internal fun relayHttpClient(): OkHttpClient = OkHttpClient.Builder()
 /**
  * Resolves the session's host name to the address the Syncplay connection reached ([YarmiplaySession.resolveTo]),
  * e.g. the server's LAN address at home, where the name leads to the router. HTTPS still verifies the certificate
- * against the name; every other name resolves as usual. The relay, the media servers (the host's Jellyfin on the
- * Syncplay port is on that name) and images use it.
+ * against the name. Names with a local address in [LanHosts] (a Jellyfin found by its address at home) go there while
+ * it answers; every other name resolves as usual. The relay, the media servers (the host's Jellyfin on the Syncplay
+ * port is on that name) and images use it.
  */
 object SessionDns : Dns {
     @Volatile private var override: Pair<String, String>? = null
@@ -42,13 +44,13 @@ object SessionDns : Dns {
     override fun lookup(hostname: String): List<InetAddress> {
         val o = override
         if (o != null && o.first == hostname.lowercase()) return listOf(InetAddress.getByName(o.second))
-        return Dns.SYSTEM.lookup(hostname)
+        return LanHosts.lookup(hostname) ?: Dns.SYSTEM.lookup(hostname)
     }
 
     /** [url] on the address its host name resolves to here, for the player, which can't be given this lookup. */
     fun direct(url: String): String {
-        val (host, address) = override ?: return url
-        val parsed = url.toHttpUrlOrNull()?.takeIf { it.host == host } ?: return url
+        val (host, address) = override ?: return LanHosts.direct(url)
+        val parsed = url.toHttpUrlOrNull()?.takeIf { it.host == host } ?: return LanHosts.direct(url)
         return parsed.newBuilder().host(address).build().toString()
     }
 }

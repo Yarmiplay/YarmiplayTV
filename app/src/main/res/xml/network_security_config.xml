@@ -5,6 +5,9 @@
         <trust-anchors>
             <certificates src="system" />
             <certificates src="user" />
+            <!-- Let's Encrypt's ECDSA root, which Android only ships from 14 on: servers whose chain stops at it
+                 (a YarmiplayServerTV's Jellyfin on 8920) verify on older TVs and phones too. -->
+            <certificates src="@raw/isrg_root_x2" />
         </trust-anchors>
     </base-config>
 </network-security-config>

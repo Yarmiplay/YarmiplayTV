@@ -13,6 +13,7 @@ import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.data.SavedRoom
 import com.yarmiplaytv.data.SyncplayProfile
 import com.yarmiplaytv.defaultSyncplayName
+import com.yarmiplaytv.media.LanHosts
 import com.yarmiplaytv.media.jellyfin.DiscoveredServer
 import com.yarmiplaytv.media.jellyfin.JellyfinDiscovery
 import com.yarmiplaytv.media.jellyfin.JellyfinSource
@@ -34,6 +35,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -253,8 +257,14 @@ class JellyfinLoginModel(private val container: AppContainer, private val scope:
         private set
     private var quickJob: Job? = null
 
+    /** Servers on HTTPS at an IP address are listed under their certificate's name, which they're verified as. */
     suspend fun discover() {
-        discovered = DevicePlatform.withMulticastLock("jellyfin-discovery") { JellyfinDiscovery.discover() }
+        val found = DevicePlatform.withMulticastLock("jellyfin-discovery") { JellyfinDiscovery.discover() }
+        discovered = found
+        discovered = coroutineScope {
+            found.map { server -> async { server.copy(address = runCatching { LanHosts.byCertificateName(server.address) }.getOrDefault(server.address)) } }
+                .awaitAll()
+        }
     }
 
     fun startQuickConnect(onSignedIn: () -> Unit) {
