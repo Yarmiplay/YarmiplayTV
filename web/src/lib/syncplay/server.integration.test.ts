@@ -109,6 +109,8 @@ describe.skipIf(!server)(`against YarmiplayServerTV at ${server}`, () => {
     desktop.setReady(true);
     await eventually("desktop sees tv ready", () => desktop.state.users.some((u) => u.name === "tv" && u.isReady === true && u.file?.name === ep1.name));
 
+    // Until the room's first State (about a second after joining), a local play is taken back, as in Syncplay.
+    await eventually("desktop has the room's state", () => (desktop as unknown as { engine: { hasGlobalState: boolean } }).engine.hasGlobalState);
     desktopPlayer.setPaused(false);
     await eventually("tv unpaused", () => !tvPlayer.isPaused);
 
