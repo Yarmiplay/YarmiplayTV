@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.1.6" date="2026-10-14">
+      <description>
+        <p>A Jellyfin on HTTPS at home works when it's found on your network or typed by its address: the app uses the name on its certificate, and reaches it at home even when that name leads to your router. A YarmiplayServerTV host's shared Jellyfin keeps working at home after the app restarts, and older Android TVs accept its newer Let's Encrypt certificates. On TV, OK presses MyAnimeList's Allow button instead of jumping to the top of the page, the shared playlist shows whole names and keeps its Sort and Undo buttons usable, and the player's Ready and Menus buttons let the video show through. On the computer, the chat's new-message count is a proper circle.</p>
+      </description>
+    </release>
     <release version="2.1.5" date="2026-10-14">
       <description>
         <p>New messages in a room's chat no longer pop up over the video; they wait in the chat. To see them over the video as they arrive, turn on Settings &gt; Syncing &gt; Chat on the video.</p>
