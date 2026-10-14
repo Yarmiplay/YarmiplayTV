@@ -4,22 +4,32 @@ import android.view.KeyEvent as AndroidKeyEvent
 import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Bookmarks
@@ -51,10 +61,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
@@ -62,6 +76,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,7 +84,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.tv.material3.ClickableSurfaceDefaults
+import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.media.SkipSegment
@@ -100,13 +118,20 @@ import com.yarmiplaytv.ui.theme.OnVideo
 import com.yarmiplaytv.ui.theme.onVideoLabel
 import kotlinx.coroutines.delay
 
-internal enum class PanelKind { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES, MAL }
+internal enum class PanelKind(val label: String, val icon: ImageVector) {
+    PLAYLIST("Shared playlist", Icons.AutoMirrored.Filled.PlaylistPlay),
+    ROOM("Room", Icons.Filled.Groups),
+    CHAT("Chat", Icons.Filled.Forum),
+    AUDIO("Audio", Icons.Filled.Audiotrack),
+    SUBTITLES("Subtitles", Icons.Filled.Subtitles),
+    MAL("MyAnimeList", Icons.Filled.Bookmarks),
+}
 
 internal sealed interface Overlay {
     data object Hidden : Overlay
     data object Controls : Overlay
-    /** [fromControls]: opened from the controls bar, which Back then returns to. */
-    data class Side(val kind: PanelKind, val fromControls: Boolean) : Overlay
+    /** [focusContent]: the panel's content takes the focus; false when its tab was moved to, which keeps it. */
+    data class Side(val kind: PanelKind, val focusContent: Boolean = true) : Overlay
 }
 
 @Composable
@@ -128,9 +153,15 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
     val rootFocus = remember { FocusRequester() }
     val controlsFocus = remember { FocusRequester() }
     val panelFocus = remember { FocusRequester() }
-    val panelButtons = remember { PanelKind.entries.associateWith { FocusRequester() } }
-    // The panel whose button gets the focus when Back returns from it to the controls bar.
-    var returnTo by remember { mutableStateOf<PanelKind?>(null) }
+    val tabFocus = remember { PanelKind.entries.associateWith { FocusRequester() } }
+    val focusManager = LocalFocusManager.current
+    val panels = PanelKind.entries.filter { it != PanelKind.MAL || container.mal.client.configured }
+    // Up opens the panel used last.
+    var lastPanel by remember { mutableStateOf(PanelKind.ROOM) }
+    fun openPanel(kind: PanelKind, focusContent: Boolean = true) {
+        lastPanel = kind
+        overlay = Overlay.Side(kind, focusContent)
+    }
     val step = settings.playback.seekStepSeconds.toDouble()
     val hideAfter = settings.playback.controlsHideSeconds
     val inRoom = room.status == ConnectionStatus.CONNECTED
@@ -151,11 +182,13 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
         runCatching {
             when (target) {
                 Overlay.Hidden -> rootFocus.requestFocus()
-                Overlay.Controls -> (returnTo?.let(panelButtons::getValue) ?: controlsFocus).requestFocus()
-                is Overlay.Side -> panelFocus.requestFocus()
+                Overlay.Controls -> controlsFocus.requestFocus()
+                // A panel with nothing to pick (no tracks, say) gives its tab the focus.
+                is Overlay.Side -> if (target.focusContent && !runCatching { panelFocus.requestFocus(FocusDirection.Enter) }.getOrDefault(false)) {
+                    tabFocus.getValue(target.kind).requestFocus()
+                }
             }
         }
-        if (target == Overlay.Controls) returnTo = null
     }
     LaunchedEffect(overlay, interaction, hideAfter) {
         if (overlay == Overlay.Controls && !state.paused && hideAfter > 0) {
@@ -164,17 +197,9 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
         }
     }
 
+    // Back closes the controls or a panel, straight back to the video.
     BackHandler {
-        when (val current = overlay) {
-            Overlay.Hidden -> nav.back()
-            Overlay.Controls -> overlay = Overlay.Hidden
-            is Overlay.Side -> if (current.fromControls) {
-                returnTo = current.kind
-                overlay = Overlay.Controls
-            } else {
-                overlay = Overlay.Hidden
-            }
-        }
+        if (overlay == Overlay.Hidden) nav.back() else overlay = Overlay.Hidden
     }
 
     fun togglePause() = player.setPaused(!player.isPaused)
@@ -213,9 +238,21 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 if (global) return@onPreviewKeyEvent true
                 // Held keys repeat; only the first press toggles, or the bar would flicker.
                 val firstPress = down && ev.nativeKeyEvent.repeatCount == 0
-                // The button row is the bar's last row, so Down (like Menu) hides the bar again.
-                if (overlay == Overlay.Controls && (code == AndroidKeyEvent.KEYCODE_DPAD_DOWN || code == AndroidKeyEvent.KEYCODE_MENU)) {
+                // Menu shows and hides the controls, and closes a panel.
+                if (overlay != Overlay.Hidden && code == AndroidKeyEvent.KEYCODE_MENU) {
                     if (firstPress) overlay = Overlay.Hidden
+                    return@onPreviewKeyEvent true
+                }
+                if (overlay == Overlay.Controls) {
+                    // Past the bar's buttons, Down hides it and Up opens the panel used last.
+                    val past = when (code) {
+                        AndroidKeyEvent.KEYCODE_DPAD_DOWN -> FocusDirection.Down
+                        AndroidKeyEvent.KEYCODE_DPAD_UP -> FocusDirection.Up
+                        else -> return@onPreviewKeyEvent false
+                    }
+                    if (down && !focusManager.moveFocus(past) && firstPress) {
+                        if (past == FocusDirection.Down) overlay = Overlay.Hidden else openPanel(lastPanel)
+                    }
                     return@onPreviewKeyEvent true
                 }
                 if (overlay != Overlay.Hidden) return@onPreviewKeyEvent false
@@ -228,7 +265,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 when (code) {
                     AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
                     AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_MENU -> { if (firstPress) overlay = Overlay.Controls; true }
-                    AndroidKeyEvent.KEYCODE_DPAD_UP -> { if (down) overlay = Overlay.Side(PanelKind.ROOM, fromControls = false); true }
+                    AndroidKeyEvent.KEYCODE_DPAD_UP -> { if (firstPress) openPanel(lastPanel); true }
                     AndroidKeyEvent.KEYCODE_DPAD_LEFT -> { if (down) seekBy(-step); true }
                     AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> { if (down) seekBy(step); true }
                     else -> false
@@ -278,17 +315,16 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
             }
         }
 
-        if (overlay == Overlay.Controls || overlay is Overlay.Side) {
+        if (overlay == Overlay.Controls) {
             ControlsBar(
                 container = container,
                 title = nowPlaying?.title ?: "Nothing playing",
                 controlsFocus = controlsFocus,
-                panelButtons = panelButtons,
+                panels = panels,
                 pip = pip,
-                showHideHint = overlay == Overlay.Controls,
                 onTogglePause = ::togglePause,
                 onSeek = ::seekBy,
-                onOpenPanel = { overlay = Overlay.Side(it, fromControls = true) },
+                onOpenPanel = { openPanel(it) },
                 onHome = { nav.popTo(Screen.Home) },
                 modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { tvControlsHeight = with(density) { it.height.toDp() } },
             )
@@ -300,14 +336,24 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
         }
 
         (overlay as? Overlay.Side)?.let { side ->
-            Panel(Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(560.dp).padding(vertical = 24.dp, horizontal = 24.dp)) {
-                when (side.kind) {
-                    PanelKind.PLAYLIST -> PlaylistPanel(container, nav, panelFocus)
-                    PanelKind.ROOM -> RoomPanel(container, nav, panelFocus)
-                    PanelKind.CHAT -> ChatPanel(container, panelFocus)
-                    PanelKind.AUDIO -> TracksPanel(container, TrackType.AUDIO, panelFocus)
-                    PanelKind.SUBTITLES -> TracksPanel(container, TrackType.SUBTITLE, panelFocus)
-                    PanelKind.MAL -> MalPanel(container, panelFocus)
+            // The panel keeps the focus, so nothing behind it can be reached by mistake.
+            Panel(
+                Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(560.dp).padding(vertical = 24.dp, horizontal = 24.dp)
+                    .focusProperties { onExit = { cancelFocusChange() } }
+                    .focusGroup(),
+            ) {
+                Column {
+                    PanelTabs(panels, side.kind, tabFocus, onFocusTab = { if (it != side.kind) openPanel(it, focusContent = false) })
+                    Box(Modifier.weight(1f)) {
+                        when (side.kind) {
+                            PanelKind.PLAYLIST -> PlaylistPanel(container, nav, panelFocus)
+                            PanelKind.ROOM -> RoomPanel(container, nav, panelFocus)
+                            PanelKind.CHAT -> ChatPanel(container, panelFocus)
+                            PanelKind.AUDIO -> TracksPanel(container, TrackType.AUDIO, panelFocus)
+                            PanelKind.SUBTITLES -> TracksPanel(container, TrackType.SUBTITLE, panelFocus)
+                            PanelKind.MAL -> MalPanel(container, panelFocus)
+                        }
+                    }
                 }
             }
         }
@@ -461,9 +507,8 @@ private fun ControlsBar(
     container: AppContainer,
     title: String,
     controlsFocus: FocusRequester,
-    panelButtons: Map<PanelKind, FocusRequester>,
+    panels: List<PanelKind>,
     pip: PictureInPicture,
-    showHideHint: Boolean,
     onTogglePause: () -> Unit,
     onSeek: (Double) -> Unit,
     onOpenPanel: (PanelKind) -> Unit,
@@ -489,10 +534,10 @@ private fun ControlsBar(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, Modifier.weight(1f), color = OnVideo.Text, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (showHideHint) {
-                Spacer(Modifier.width(24.dp))
-                Text("▼ Hide", style = MaterialTheme.typography.bodyMedium, color = OnVideo.Text, modifier = Modifier.onVideoLabel())
-            }
+            Spacer(Modifier.width(24.dp))
+            Text("▲ Menus", style = MaterialTheme.typography.bodyMedium, color = OnVideo.Text, modifier = Modifier.onVideoLabel())
+            Spacer(Modifier.width(16.dp))
+            Text("▼ Hide", style = MaterialTheme.typography.bodyMedium, color = OnVideo.Text, modifier = Modifier.onVideoLabel())
         }
         Spacer(Modifier.height(12.dp))
         val segments by container.skips.segments.collectAsStateWithLifecycle()
@@ -504,7 +549,7 @@ private fun ControlsBar(
             Spacer(Modifier.width(24.dp))
             Text(formatClock(state.duration), color = OnVideo.Text, modifier = Modifier.onVideoLabel())
         }
-        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        ButtonRow(Modifier.padding(top = 12.dp), start = {
             IconAction(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, "Play/pause", onTogglePause, Modifier.focusRequester(controlsFocus), tint = OnVideo.Text)
             IconAction(Icons.Filled.Replay10, "Back", { onSeek(-10.0) }, tint = OnVideo.Text)
             IconAction(Icons.Filled.Forward10, "Forward", { onSeek(10.0) }, tint = OnVideo.Text)
@@ -524,7 +569,7 @@ private fun ControlsBar(
                     tint = if (ready) AppColors.Ready else AppColors.NotReady,
                 )
             }
-            Spacer(Modifier.weight(1f))
+        }, end = {
             rememberRelaySave(container)?.let { save ->
                 IconAction(
                     if (save.saving) Icons.Filled.Downloading else Icons.Filled.Download,
@@ -540,17 +585,69 @@ private fun ControlsBar(
             if (pip.supported && state.fileLoaded) {
                 IconAction(Icons.Filled.PictureInPictureAlt, pictureInPictureLabel, pip.toggle, Modifier.testTag("pip"), tint = OnVideo.Text)
             }
-            listOf(
-                Triple(PanelKind.PLAYLIST, Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist"),
-                Triple(PanelKind.ROOM, Icons.Filled.Groups, "Room"),
-                Triple(PanelKind.CHAT, Icons.Filled.Forum, "Chat"),
-                Triple(PanelKind.AUDIO, Icons.Filled.Audiotrack, "Audio"),
-                Triple(PanelKind.SUBTITLES, Icons.Filled.Subtitles, "Subtitles"),
-                Triple(PanelKind.MAL, Icons.Filled.Bookmarks, "MyAnimeList").takeIf { container.mal.client.configured },
-            ).filterNotNull().forEach { (kind, icon, label) ->
-                IconAction(icon, label, { onOpenPanel(kind) }, Modifier.focusRequester(panelButtons.getValue(kind)), tint = OnVideo.Text)
-            }
+            panels.forEach { kind -> IconAction(kind.icon, kind.label, { onOpenPanel(kind) }, tint = OnVideo.Text) }
             IconAction(Icons.Filled.Home, "Browse", onHome, tint = OnVideo.Text)
+        })
+    }
+}
+
+/**
+ * The bar's buttons: [start] at the left and [end] at the right, or one after the other when they don't fit, in a row
+ * that scrolls to whichever has the focus, with an arrow at each side that has more.
+ */
+@Composable
+private fun ButtonRow(modifier: Modifier = Modifier, start: @Composable RowScope.() -> Unit, end: @Composable RowScope.() -> Unit) {
+    val scroll = rememberScrollState()
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val width = maxWidth
+        val spacing = Arrangement.spacedBy(10.dp)
+        Row(Modifier.horizontalScroll(scroll).padding(horizontal = SCALE_ROOM), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.widthIn(min = width - SCALE_ROOM * 2), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(horizontalArrangement = spacing, verticalAlignment = Alignment.CenterVertically, content = start)
+                Row(Modifier.padding(start = 10.dp), horizontalArrangement = spacing, verticalAlignment = Alignment.CenterVertically, content = end)
+            }
+        }
+        if (scroll.canScrollBackward) MoreArrow(Icons.AutoMirrored.Filled.KeyboardArrowLeft, Modifier.align(Alignment.CenterStart).offset(x = -MORE_ARROW))
+        if (scroll.canScrollForward) MoreArrow(Icons.AutoMirrored.Filled.KeyboardArrowRight, Modifier.align(Alignment.CenterEnd).offset(x = MORE_ARROW))
+    }
+}
+
+/** Room for a focused button to grow at the row's ends. */
+private val SCALE_ROOM = 4.dp
+private val MORE_ARROW = 36.dp
+
+@Composable
+private fun MoreArrow(icon: ImageVector, modifier: Modifier) =
+    Icon(icon, contentDescription = null, tint = OnVideo.Text, modifier = modifier.size(32.dp))
+
+/**
+ * The panels' tabs, at the top of the open one: moving along them switches panel. Coming up from the panel, the
+ * focus lands on its own tab, not whichever is above.
+ */
+@Composable
+private fun PanelTabs(panels: List<PanelKind>, selected: PanelKind, tabFocus: Map<PanelKind, FocusRequester>, onFocusTab: (PanelKind) -> Unit) {
+    Row(
+        Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp)
+            .focusProperties { onEnter = { tabFocus.getValue(selected).requestFocus() } }
+            .focusGroup(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        panels.forEach { kind ->
+            val current = kind == selected
+            Surface(
+                onClick = { onFocusTab(kind) },
+                modifier = Modifier.size(48.dp).focusRequester(tabFocus.getValue(kind)).onFocusChanged { if (it.isFocused) onFocusTab(kind) }.testTag("panel_tab_${kind.name.lowercase()}"),
+                shape = ClickableSurfaceDefaults.shape(CircleShape),
+                colors = ClickableSurfaceDefaults.colors(
+                    containerColor = if (current) AppColors.Accent.copy(alpha = 0.25f) else Color.Transparent,
+                    contentColor = if (current) AppColors.Accent else AppColors.TextDim,
+                    focusedContainerColor = AppColors.Accent,
+                    focusedContentColor = AppColors.OnAccent,
+                ),
+                scale = ClickableSurfaceDefaults.scale(focusedScale = 1.1f),
+            ) {
+                Icon(kind.icon, contentDescription = kind.label, modifier = Modifier.align(Alignment.Center).size(26.dp))
+            }
         }
     }
 }

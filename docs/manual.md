@@ -198,6 +198,17 @@ Settings > Playback can also stop showing the button.
   saves the frame without the subtitles.
 - **Hardware decoding** is on by default; turn it off in Settings > Playback if a video doesn't play right.
 
+### The remote on a TV
+
+- **OK** or **↓**: show the controls; **↓** past their buttons or **Back** hides them again. When the buttons don't
+  all fit, the row scrolls as you move along it, and an arrow at its side shows there are more.
+- **←** / **→**: back or forward, while the controls are hidden
+- **↑**: open the panel you used last (the room the first time), with the controls hidden or from their buttons.
+  The panel's tabs at its top switch to the shared playlist, the room, the chat, audio, subtitles or
+  MyAnimeList as you move along them. **Back** or **Menu** closes the panel, straight back to the video.
+- **Play/pause**, **fast-forward**, **rewind**, **next** and **previous** keys work at any time; the captions key
+  switches subtitles.
+
 ### Keys on a computer
 
 - **Space** or **K**: play or pause
@@ -248,7 +259,8 @@ YarmiplayTV can keep your MyAnimeList list up to date as you watch.
 ### Signing in
 
 Choose the **MyAnimeList** card on the home screen. You sign in on MyAnimeList's own page: in your browser on
-computers, or in a page inside the app on phones, tablets and TV. YarmiplayTV never sees your password. Once
+computers, or in a page inside the app on phones, tablets and TV (on a TV, the arrows move a pointer over the page
+and OK clicks where it is, which brings up the keyboard in a text field). YarmiplayTV never sees your password. Once
 you're signed in, the same card opens the **MyAnimeList screen**: your account, what's playing, your list
 (watching, plan to watch, completed), the shows you matched by hand, the shows you don't track, and updates
 waiting to be sent.
@@ -309,7 +321,8 @@ server. On other servers YarmiplayTV works as a normal Syncplay client.
   their copy through the server, or downloaded first when your connection is slow. The next entry's start is
   fetched ahead so it begins at once. Relayed files are kept for at most a day and deleted when you leave the
   room. Settings > Share my files with the room stops your device from offering its files.
-- **Shared Jellyfin:** a Jellyfin server the host shares is added for you as "name (via server)".
+- **Shared Jellyfin:** a Jellyfin server the host shares is added for you as "name (via server)". Shared on the
+  Syncplay port, it's reached the way your Syncplay connection is, so it works at home too.
 - **At home:** a server with a certificate (for example `myname.duckdns.org`) works with TLS at home even when
   your router can't reach its own address from inside; the room shows "Connected at home via …".
 

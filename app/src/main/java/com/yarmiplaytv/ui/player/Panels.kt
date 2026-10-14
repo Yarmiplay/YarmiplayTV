@@ -1,6 +1,7 @@
 package com.yarmiplaytv.ui.player
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -160,32 +161,52 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
     }
 }
 
+/** The room panel scrolls as a whole, so the people in the room always have room. */
 @Composable
 internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequester) {
     val room by container.sync.room.collectAsStateWithLifecycle()
-    var newRoom by rememberSaveable { mutableStateOf("") }
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (room.status != ConnectionStatus.CONNECTED) {
+    if (room.status != ConnectionStatus.CONNECTED) {
+        Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             PanelHeader("Room")
             Text(if (room.status == ConnectionStatus.DISCONNECTED) "Not connected to Syncplay." else "Connecting…", color = AppColors.TextDim)
             ActionButton("Join a room", { nav.push(Screen.SyncplayConnect) }, Modifier.focusRequester(focus))
-            return@Column
         }
+        return
+    }
+    val blocked by container.sync.blocked.collectAsStateWithLifecycle()
+    val skip by container.roomAutoSkip.state.collectAsStateWithLifecycle()
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val relayStatus = container.relay?.let { relay ->
+        val current by relay.status.collectAsStateWithLifecycle()
+        current
+    }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { RoomPanelTop(container, room, relayStatus, skip, focus) }
+        val me = room.users.firstOrNull { it.name == room.username }
+        val streamingFrom = relayStatus?.takeIf { !it.downloading && !it.complete }?.seeders?.toSet().orEmpty()
+        items(room.users, key = { it.name }) { user -> RoomUserRow(container, room, user, me, blocked, streamingFrom) }
+        item { RoomPanelBottom(container, room, settings) }
+    }
+}
+
+@Composable
+private fun RoomPanelTop(
+    container: AppContainer,
+    room: RoomState,
+    relayStatus: com.yarmiplaytv.relay.RelayStatus?,
+    skip: com.yarmiplaytv.sync.RoomSkip,
+    focus: FocusRequester,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         PanelHeader(ManagedRooms.label(room.room), "${container.sync.client?.config?.host ?: ""} · Syncplay ${room.serverVersion ?: ""}")
         serverStatusLine(room.yarmiplay)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall) }
         connectionRouteLine(room)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall) }
-        val relayStatus = container.relay?.let { relay ->
-            val current by relay.status.collectAsStateWithLifecycle()
-            current
-        }
         val streamingFrom = relayStatus?.takeIf { !it.downloading && !it.complete }?.seeders?.toSet().orEmpty()
         relayStatus?.let { s ->
             if (streamingFrom.isEmpty()) Text(s.text, color = AppColors.Accent, style = MaterialTheme.typography.bodySmall)
             if (s.downloading && !s.complete) RelayDownloadBar(s.fraction)
             s.error?.let { Text(it, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall) }
         }
-        val blocked by container.sync.blocked.collectAsStateWithLifecycle()
-        val me = room.users.firstOrNull { it.name == room.username }
         val ready = room.isReady == true
         ActionButton(
             if (ready) "I'm ready" else "I'm not ready",
@@ -194,66 +215,78 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
             icon = if (ready) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
             tint = if (ready) AppColors.Ready else AppColors.NotReady,
         )
-        val skip by container.roomAutoSkip.state.collectAsStateWithLifecycle()
         ToggleRow(ROOM_SKIP_TITLE, skip.on, { if (skip.canChange) container.roomAutoSkip.set(!skip.on) }, subtitle = roomSkipSubtitle(skip))
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(room.users, key = { it.name }) { user ->
-                val isMe = user.name == room.username
-                val difference = if (isMe) null else fileDifferenceNote(user.file, me?.file)
-                val mismatch = difference != null
-                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Dot(
-                        when (user.isReady) {
-                            true -> AppColors.Ready
-                            false -> AppColors.NotReady
-                            null -> AppColors.TextDim
-                        },
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★ operator" else "") + (if (user.name in streamingFrom) " · streaming" else ""),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            user.file?.let { "${it.name} (${formatClock(it.duration)})" } ?: "No file open",
-                            color = if (mismatch) AppColors.NotReady else AppColors.TextDim,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        if (difference != null) Text(difference, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
-                        relayNote(room, user)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall) }
-                        if (user.name in blocked) Text(BLOCKED_NOTE, color = AppColors.Error, style = MaterialTheme.typography.labelSmall)
-                    }
-                    if (!isMe && room.isOperator) {
-                        val markReady = user.isReady != true
-                        IconAction(
-                            if (markReady) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
-                            if (markReady) "Mark ${user.name} ready" else "Mark ${user.name} not ready",
-                            { container.sync.setOthersReady(user.name, markReady) },
-                            tint = if (markReady) AppColors.Ready else AppColors.NotReady,
-                        )
-                    }
-                    if (!isMe) {
-                        val isBlocked = user.name in blocked
-                        IconAction(
-                            Icons.Filled.Block,
-                            if (isBlocked) "Unblock ${user.name}" else "Block ${user.name} (hide their messages)",
-                            { if (isBlocked) container.sync.unblock(user.name) else container.sync.block(user.name) },
-                            tint = if (isBlocked) AppColors.Error else AppColors.TextDim,
-                        )
-                    }
-                }
-            }
+    }
+}
+
+@Composable
+private fun RoomUserRow(
+    container: AppContainer,
+    room: RoomState,
+    user: com.yarmiplaytv.syncplay.RoomUser,
+    me: com.yarmiplaytv.syncplay.RoomUser?,
+    blocked: Set<String>,
+    streamingFrom: Set<String>,
+) {
+    val isMe = user.name == room.username
+    val difference = if (isMe) null else fileDifferenceNote(user.file, me?.file)
+    val mismatch = difference != null
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Dot(
+            when (user.isReady) {
+                true -> AppColors.Ready
+                false -> AppColors.NotReady
+                null -> AppColors.TextDim
+            },
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★ operator" else "") + (if (user.name in streamingFrom) " · streaming" else ""),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                user.file?.let { "${it.name} (${formatClock(it.duration)})" } ?: "No file open",
+                color = if (mismatch) AppColors.NotReady else AppColors.TextDim,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (difference != null) Text(difference, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
+            relayNote(room, user)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall) }
+            if (user.name in blocked) Text(BLOCKED_NOTE, color = AppColors.Error, style = MaterialTheme.typography.labelSmall)
         }
+        if (!isMe && room.isOperator) {
+            val markReady = user.isReady != true
+            IconAction(
+                if (markReady) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                if (markReady) "Mark ${user.name} ready" else "Mark ${user.name} not ready",
+                { container.sync.setOthersReady(user.name, markReady) },
+                tint = if (markReady) AppColors.Ready else AppColors.NotReady,
+            )
+        }
+        if (!isMe) {
+            val isBlocked = user.name in blocked
+            IconAction(
+                Icons.Filled.Block,
+                if (isBlocked) "Unblock ${user.name}" else "Block ${user.name} (hide their messages)",
+                { if (isBlocked) container.sync.unblock(user.name) else container.sync.block(user.name) },
+                tint = if (isBlocked) AppColors.Error else AppColors.TextDim,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RoomPanelBottom(container: AppContainer, room: RoomState, settings: com.yarmiplaytv.data.AppSettings) {
+    var newRoom by rememberSaveable { mutableStateOf("") }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             TvTextField(newRoom, { newRoom = it.take(60) }, "Switch room", Modifier.weight(1f), placeholder = ManagedRooms.label(room.room), onSubmit = {
                 if (newRoom.isNotBlank()) container.sync.changeRoom(newRoom)
             })
             IconAction(Icons.Filled.MeetingRoom, "Change room", { if (newRoom.isNotBlank()) container.sync.changeRoom(newRoom) })
         }
-        val settings by container.settings.collectAsStateWithLifecycle()
         val server = container.sync.server
         val others = roomsOnServer(settings.savedRooms, server, room.room)
         if (others.isNotEmpty()) {

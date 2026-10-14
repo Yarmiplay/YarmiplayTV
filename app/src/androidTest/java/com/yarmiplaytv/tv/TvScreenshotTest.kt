@@ -162,8 +162,8 @@ class TvScreenshotTest {
                 },
             )
             shot("player_panel_$slug")
-            tv.back() // back to the controls, on this panel's button
-            tv.awaitFocus(label)
+            tv.back() // straight back to the video
+            tv.key(KeyEvent.KEYCODE_DPAD_CENTER); tv.awaitFocus("Play/pause")
         }
         Screenshots.assertAllMatched()
     }

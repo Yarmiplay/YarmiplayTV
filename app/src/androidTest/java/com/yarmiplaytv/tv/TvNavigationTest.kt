@@ -307,28 +307,54 @@ class TvNavigationTest {
                 "" -> Unit
                 else -> tv.awaitFocus(focused)
             }
-            // Back steps back: to the controls, on the button that opened the panel, then to the video.
-            tv.back()
-            tv.awaitFocus(button)
-            tv.await(HIDE_HINT)
+            // Back closes the panel, straight back to the video.
             tv.back()
             tv.awaitGone(HIDE_HINT)
             tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
             tv.awaitFocus("Play/pause")
         }
+        tv.back()
+        tv.awaitGone(HIDE_HINT)
+        // D-pad up with the controls hidden opens the panel used last; up again reaches its tab, and moving along
+        // the tabs switches panel.
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("Off")
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("Subtitles")
+        tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
+        tv.awaitFocus("Audio")
+        tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
+        tv.awaitFocus("Chat")
+        tv.await("Give me a minute")
+        tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
+        tv.awaitFocus("Room")
+        tv.await("Different size than yours")
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
+        tv.awaitFocus("I'm ready")
+        // The focus stays in the panel: left goes nowhere behind it.
+        tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
+        tv.awaitFocus("I'm ready")
+        // Menu closes it too, and up opens the room panel again.
+        tv.key(KeyEvent.KEYCODE_MENU)
+        tv.awaitGone("I'm ready")
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("I'm ready")
+        tv.back()
+        tv.awaitGone("I'm ready")
         // Down and Menu each show and hide the controls.
         for (key in listOf(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_MENU)) {
             tv.key(key)
-            tv.awaitGone(HIDE_HINT)
-            tv.key(key)
             tv.awaitFocus("Play/pause")
             tv.await(HIDE_HINT)
+            tv.key(key)
+            tv.awaitGone(HIDE_HINT)
         }
-        tv.back()
-        tv.awaitGone(HIDE_HINT)
-        // D-pad up with the controls hidden opens the room panel directly, and Back returns to the video.
+        // Up from the controls' buttons opens the panel used last.
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        tv.awaitFocus("Play/pause")
         tv.key(KeyEvent.KEYCODE_DPAD_UP)
         tv.awaitFocus("I'm ready")
+        tv.awaitGone(HIDE_HINT)
         tv.back()
         tv.awaitGone("I'm ready")
         tv.awaitGone(HIDE_HINT)
