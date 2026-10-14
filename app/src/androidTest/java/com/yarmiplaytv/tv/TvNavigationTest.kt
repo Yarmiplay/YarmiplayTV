@@ -20,6 +20,7 @@ import com.yarmiplaytv.support.FakeSyncplayServer
 import com.yarmiplaytv.support.Scenarios
 import com.yarmiplaytv.support.Screenshots
 import com.yarmiplaytv.support.TvUi
+import com.yarmiplaytv.ui.shared.openSourceComponents
 import com.yarmiplaytv.update.Update
 import org.junit.After
 import org.junit.AfterClass
@@ -139,13 +140,16 @@ class TvNavigationTest {
         tv.awaitFocus("Join a Syncplay room")
         onMain { container.updates.show(Update("99.0", "https://tv.yarmiplay.com/", "https://tv.yarmiplay.com/YarmiplayTV.apk", null)) }
         tv.await("YarmiplayTV 99.0 is available")
-        tv.await("To install it, open Downloader and enter tv.yarmiplay.com/a")
+        // The download page's APK installs updates itself; OK on the notice would download this one, so Not now.
+        tv.await("Install it now")
         tv.key(KeyEvent.KEYCODE_DPAD_UP)
         tv.awaitFocus("YarmiplayTV 99.0 is available")
         tv.key(KeyEvent.KEYCODE_DPAD_UP)
         tv.awaitFocus("Settings")
         tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
         tv.awaitFocus("YarmiplayTV 99.0 is available")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Not now")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
         waitUntil(5_000) { container.updates.state.value == null && container.settings.value.dismissedUpdate == "99.0" }
         tv.awaitFocus("Join a Syncplay room")
@@ -164,8 +168,9 @@ class TvNavigationTest {
         tv.awaitFocus("mpv")
         tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
         tv.awaitFocus("FFmpeg")
-        tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = 30)
-        tv.awaitFocus("LWJGL")
+        // Down all the way reaches the last entry, however long the list gets.
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN, times = openSourceComponents.size + 2)
+        tv.awaitFocus(openSourceComponents.last().name)
         tv.back()
         tv.awaitFocus("Media")
     }
@@ -194,6 +199,9 @@ class TvNavigationTest {
         launch()
         tv.await("Libraries")
         tv.awaitFocus("Join a Syncplay room")
+        // The tiles' second row (MyAnimeList) is on the way down to the libraries.
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
+        tv.awaitFocus("MyAnimeList")
         tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
         tv.awaitFocus("Shows")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
@@ -264,6 +272,9 @@ class TvNavigationTest {
         launch()
         tv.await("Libraries")
         tv.awaitFocus("Join a Syncplay room")
+        // The tiles' second row (MyAnimeList) is on the way down to the libraries.
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
+        tv.awaitFocus("MyAnimeList")
         tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
         tv.awaitFocus("Shows")
         tv.key(KeyEvent.KEYCODE_DPAD_RIGHT, times = 2)

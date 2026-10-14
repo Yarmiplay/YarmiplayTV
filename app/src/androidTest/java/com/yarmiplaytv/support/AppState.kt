@@ -5,12 +5,14 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.TestSupport
 import com.yarmiplaytv.data.AppSettings
 import com.yarmiplaytv.data.PlaybackPrefs
+import com.yarmiplaytv.data.SavedRoom
 import com.yarmiplaytv.data.SyncplayProfile
 import com.yarmiplaytv.local.LocalFile
 import com.yarmiplaytv.local.LocalFolder
 import com.yarmiplaytv.local.LocalLibrary
 import com.yarmiplaytv.media.jellyfin.DiscoveredServer
 import com.yarmiplaytv.media.jellyfin.JellyfinDiscovery
+import com.yarmiplaytv.media.mal.MalClient
 import com.yarmiplaytv.sync.FeedMessage
 import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.syncplay.ConnectionStatus
@@ -61,6 +63,8 @@ class AppState {
             store.saveDownloadDirectory(saved.downloadDirectory)
             store.saveScreenshotDirectory(saved.screenshotDirectory)
             store.replaceRoomPlaylists(savedRoomPlaylists)
+            replaceSavedRooms(saved.savedRooms)
+            store.saveMalAccount(saved.mal)
         }
         onMain {
             removeAllServers()
@@ -100,7 +104,11 @@ class AppState {
             store.replaceRoomPlaylists(emptyMap())
             // What's new in this version would push the home screen's rows down.
             store.saveLastSeenVersion(container.appVersion)
+            // Rooms joined by earlier tests would show as "Rejoin …" on the home screen and in the join form's lists.
+            replaceSavedRooms(emptyList())
+            store.saveMalAccount(null)
         }
+        alwaysShowMyAnimeList()
         onMain { removeAllServers() }
         runBlocking { container.settingsStore.saveLastJellyfinUrl(LAST_JELLYFIN_URL) }
         setLocalLibrary(emptyList(), emptyList())
@@ -108,7 +116,8 @@ class AppState {
             val s = container.settings.value
             s.syncplay == PROFILE && s.jellyfinServers.isEmpty() && s.plexServers.isEmpty() && container.mediaSource.value == null &&
                 s.lastJellyfinUrl == LAST_JELLYFIN_URL && s.showRoomChat && s.acceptedRoomRules && s.deviceName.isEmpty() && s.addSharedServers && s.shareFiles &&
-                s.downloadDirectory.isEmpty() && s.screenshotDirectory.isEmpty() && s.lastSeenVersion == container.appVersion
+                s.downloadDirectory.isEmpty() && s.screenshotDirectory.isEmpty() && s.lastSeenVersion == container.appVersion &&
+                s.savedRooms.isEmpty() && s.mal == null
         }
         clearFeed()
     }
@@ -121,6 +130,23 @@ class AppState {
     fun signInPlex(fake: FakePlex) {
         onMain { container.addPlex(fake.session) }
         waitUntil(5_000) { container.servers.value.any { it.key == fake.key } && container.mediaSource.value != null }
+    }
+
+    /** Replaces the saved and recent rooms with [rooms], in their order. */
+    private suspend fun replaceSavedRooms(rooms: List<SavedRoom>) {
+        val store = container.settingsStore
+        container.settings.value.savedRooms.forEach { store.forgetSavedRoom(it.key) }
+        rooms.reversed().forEach { room -> if (room.saved) store.saveRoom(room) else store.saveRoomVisit(room) }
+    }
+
+    /**
+     * The home screen's MyAnimeList tile shows only in builds with a MyAnimeList Client ID, which CI's and most local
+     * builds have; a stand-in ID here keeps the screens the same in a build without one. Nothing is sent with it.
+     */
+    private fun alwaysShowMyAnimeList() {
+        val client = container.mal.client
+        if (client.configured) return
+        MalClient::class.java.getDeclaredField("clientId").apply { isAccessible = true }.set(client, "screenshots")
     }
 
     private fun removeAllServers() = container.servers.value.forEach { container.removeServer(it.key) }

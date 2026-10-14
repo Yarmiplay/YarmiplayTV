@@ -93,7 +93,8 @@ class TvScreenshotTest {
     fun signedInAndInRoom() {
         scenarios.busyRoom()
         launch()
-        tv.await("Continue watching")
+        // The home screen's rows below the libraries start off screen, where the list doesn't lay them out.
+        tv.await("Libraries"); tv.await("Movies")
         shot("home_full")
         tv.click("Shows"); tv.await("Harbor Lights")
         shot("browse_shows")
@@ -103,7 +104,7 @@ class TvScreenshotTest {
         shot("item_actions")
         tv.back(); tv.awaitGone("Play for everyone"); tv.awaitActivityFocus()
         tv.back(); tv.awaitGone("Docking")
-        tv.back(); tv.await("Continue watching")
+        tv.back(); tv.await("Libraries")
         tv.click("Search"); tv.await("Type to search")
         shot("search")
         tv.back()
@@ -118,7 +119,7 @@ class TvScreenshotTest {
         state.signInPlex(plex)
         waitUntil(5_000) { TestSupport.container.mediaSource.value is CompositeMediaSource }
         launch()
-        tv.await("Films"); tv.await("Continue watching · Screenshot Server")
+        tv.await("Films"); tv.await("Movies")
         shot("home_both_servers")
         tv.click("Settings"); tv.awaitFocus("Media")
         tv.key(KeyEvent.KEYCODE_DPAD_RIGHT); tv.key(KeyEvent.KEYCODE_DPAD_DOWN); tv.awaitFocus("Preferred server")
@@ -133,7 +134,7 @@ class TvScreenshotTest {
         state.signInPlex(plex)
         waitUntil(5_000) { (TestSupport.container.mediaSource.value as? CompositeMediaSource)?.sources?.size == 3 }
         launch()
-        tv.await("Jellyfin: 2 servers"); tv.await("Continue watching · Screenshot Server")
+        tv.await("Jellyfin: 2 servers"); tv.await("Libraries"); tv.await("Movies")
         shot("home_many_servers")
         tv.click("Jellyfin: 2 servers"); tv.await("Media servers"); tv.await("Plex Server")
         shot("servers")
