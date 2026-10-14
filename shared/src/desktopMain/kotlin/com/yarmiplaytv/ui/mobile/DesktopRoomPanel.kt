@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.items
@@ -41,8 +42,6 @@ import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -102,6 +101,8 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
@@ -159,6 +160,25 @@ actual fun toggleRoomSidePanel(tab: RoomPanelTab): Boolean {
 }
 
 private val PANEL_WIDTH = 380.dp
+
+/** New messages beside the Chat tab's name: a count in the theme's accent, as tall as the name and level with it. */
+@Composable
+private fun UnreadCount(count: Int) {
+    Box(
+        Modifier.heightIn(min = 18.dp).widthIn(min = 18.dp).clip(RoundedCornerShape(50)).background(AppColors.Accent)
+            .padding(horizontal = 5.dp)
+            .semantics(mergeDescendants = true) { contentDescription = if (count == 1) "1 new message" else "$count new messages" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (count > 99) "99+" else "$count",
+            color = AppColors.OnAccent,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
+    }
+}
 private val ROW_HEIGHT = 40.dp
 
 @Composable
@@ -187,11 +207,9 @@ actual fun RoomSidePanel(container: AppContainer) {
                 TabRow(selectedTabIndex = panel.tab.ordinal, containerColor = AppColors.Surface, modifier = Modifier.weight(1f)) {
                     RoomPanelTab.entries.forEach { tab ->
                         Tab(selected = panel.tab == tab, onClick = { panel.tab = tab }, modifier = Modifier.testTag("panel_tab_${tab.name}"), text = {
-                            val label = tab.label
-                            if (tab == RoomPanelTab.CHAT && panel.unread > 0) {
-                                BadgedBox(badge = { Badge { Text(if (panel.unread > 99) "99+" else "${panel.unread}") } }) { Text(label) }
-                            } else {
-                                Text(label)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(tab.label, maxLines = 1)
+                                if (tab == RoomPanelTab.CHAT && panel.unread > 0) UnreadCount(panel.unread)
                             }
                         })
                     }

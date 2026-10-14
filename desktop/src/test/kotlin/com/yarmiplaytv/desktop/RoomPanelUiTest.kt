@@ -238,6 +238,7 @@ class RoomPanelUiTest {
         onNodeWithTag("panel_tab_ROOM").performClick()
         onMain { bob.sync.sendChat("hi alice") }
         waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("1").fetchSemanticsNodes().isNotEmpty() }
+        screenshot("panel_chat_badge")
         onNodeWithTag("panel_tab_CHAT").performClick()
         waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("hi alice", substring = true).fetchSemanticsNodes().isNotEmpty() }
         onNodeWithText("1").assertDoesNotExist()
