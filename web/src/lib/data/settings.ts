@@ -55,6 +55,8 @@ export interface PlaybackPrefs {
   showSkipButton: boolean;
   detectSkips: boolean;
   detectOnAnyNetwork: boolean;
+  /** The browser version's own: names beside the player's icons. */
+  playerLabels: boolean;
 }
 
 export interface Settings {
@@ -136,6 +138,7 @@ export function load(): Settings {
       showSkipButton: bool("pb_skip_button", true),
       detectSkips: bool("pb_detect_skips", true),
       detectOnAnyNetwork: bool("pb_detect_any_network", false),
+      playerLabels: bool("pb_player_labels", false),
     },
     deviceName: text("device_name", "") || defaultDeviceName(),
     deviceId: deviceId(),
@@ -178,6 +181,7 @@ export function save(settings: Settings) {
   write("pb_skip_button", String(p.showSkipButton));
   write("pb_detect_skips", String(p.detectSkips));
   write("pb_detect_any_network", String(p.detectOnAnyNetwork));
+  write("pb_player_labels", String(p.playerLabels));
   write("device_name", settings.deviceName);
   write("share_files", String(settings.shareFiles));
   write("preferred_server", settings.preferredServer);

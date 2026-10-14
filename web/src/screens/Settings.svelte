@@ -144,6 +144,7 @@
               {#each [5, 10, 15, 30] as step (step)}<option value={String(step)}>{step} seconds</option>{/each}
             </select>
           </label>
+          <label class="switch"><input type="checkbox" checked={s.playback.playerLabels} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, playerLabels: (e.target as HTMLInputElement).checked } }))} /> Show names next to the player's buttons</label>
           <h3>Openings and endings</h3>
           <label class="switch"><input type="checkbox" checked={s.playback.autoSkipAlone} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, autoSkipAlone: (e.target as HTMLInputElement).checked } }))} /> Skip them by themselves when watching alone (in a room, the room decides)</label>
           <label class="switch"><input type="checkbox" checked={s.playback.showSkipButton} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, showSkipButton: (e.target as HTMLInputElement).checked } }))} /> Show a Skip button for a few seconds as one starts</label>

@@ -432,7 +432,7 @@
     {/if}
 
     {#if s?.loaded}
-      <div class="controls" class:shown={controlsShown || s.paused || panel !== null}>
+      <div class="controls" class:shown={controlsShown || s.paused || panel !== null} class:labelled={$settings.playback.playerLabels}>
         <div class="top">
           <button class="tool" onclick={() => go(inRoom ? "#/room" : "#/")} aria-label="Back" title="Back"><Icon name="arrow_back" size={24} /></button>
           <span class="title">{s.name}</span>
@@ -441,8 +441,8 @@
               {ManagedRooms.label(room.room)} · {room.users.length} · {readyCount} ready
             </button>
           {/if}
-          <button class="tool" onclick={pictureInPicture} aria-label="Picture-in-picture (P)" title="Picture-in-picture (P)"><Icon name="picture_in_picture_alt" size={24} /></button>
-          <button class="tool" onclick={toggleFullscreen} aria-label="Full screen (F)" title="Full screen (F)"><Icon name={fullscreen ? "fullscreen_exit" : "fullscreen"} size={24} /></button>
+          <button class="tool" onclick={pictureInPicture} aria-label="Picture-in-picture (P)" title="Picture-in-picture (P)"><Icon name="picture_in_picture_alt" size={24} /><span class="tool-label">Picture-in-picture</span></button>
+          <button class="tool" onclick={toggleFullscreen} aria-label="Full screen (F)" title="Full screen (F)"><Icon name={fullscreen ? "fullscreen_exit" : "fullscreen"} size={24} /><span class="tool-label">{fullscreen ? "Exit full screen" : "Full screen"}</span></button>
         </div>
 
         <div class="center">
@@ -515,7 +515,7 @@
               </button>
             {/if}
             <span class="spacer"></span>
-            <button class="tool" onclick={() => screenshot(true)} aria-label="Screenshot (F5)" title="Screenshot (F5; F6 without subtitles)"><Icon name="photo_camera" size={22} /></button>
+            <button class="tool" onclick={() => screenshot(true)} aria-label="Screenshot (F5)" title="Screenshot (F5; F6 without subtitles)"><Icon name="photo_camera" size={22} /><span class="tool-label">Screenshot</span></button>
             {#each PANELS as p (p.key)}
               <button class="tool" class:on={panel === p.key} onclick={() => (panel = panel === p.key ? null : p.key)} title={p.label}>
                 <Icon name={p.icon} size={22} /><span class="tool-label">{p.label}</span>
@@ -907,9 +907,17 @@
     align-items: center;
     gap: 6px;
   }
-  /* The panels' names show beside their icons where there's room. */
-  @media (max-width: 1099px) {
-    .tool-label {
+  /* The buttons' names show beside their icons when Settings > Playback says so; otherwise only screen readers get them. */
+  .controls:not(.labelled) .tool-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  /* On a phone the top bar keeps its room for the title. */
+  @media (max-width: 699px) {
+    .top .tool-label {
       position: absolute;
       width: 1px;
       height: 1px;

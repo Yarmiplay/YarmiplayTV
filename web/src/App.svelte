@@ -50,7 +50,7 @@
 {:else}
   <div class="frame">
     <nav class="sections" aria-label="Sections">
-      <a class="brand" href="#/" aria-label="YarmiplayTV home"><img src="./favicon.svg" alt="" width="32" height="32" /></a>
+      <a class="brand" href="#/" aria-label="YarmiplayTV home"><img src="./favicon.svg" alt="" width="32" height="32" /><span>YarmiplayTV</span></a>
       {#each SECTIONS as s (s.key)}
         <a href={s.href} class:on={section === s.key || (s.key === "room" && section === "join")} aria-current={section === s.key ? "page" : undefined}
           ><Icon name={s.icon} size={22} /><span>{s.label}</span></a
@@ -126,7 +126,15 @@
     background: var(--surface);
   }
   .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     margin-bottom: 12px;
+    padding: 0 4px;
+    color: var(--text);
+    font-weight: 700;
+    font-size: 18px;
+    text-decoration: none;
   }
   .sections a:not(.brand) {
     display: flex;
