@@ -218,6 +218,8 @@ ICONS = {
     "dns": '<path d="M20 13H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zM7 19c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM20 3H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1zM7 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/>',
     "sync": '<path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>',
     "download": '<path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/>',
+    "play_circle": '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM9.5 16.5v-9l7 4.5-7 4.5z"/>',
+    "help": '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/>',
 }
 
 
@@ -401,7 +403,7 @@ BASE_CSS = """ :root { --bg:#0E1116; --surface:#151A21; --surface2:#1E242E; --li
  .brand svg { width:2em; height:2em; flex:none; }
  .top nav { display:flex; flex-wrap:wrap; gap:.2em; }
  .top nav a { color:var(--soft); text-decoration:none; padding:.4em .75em; border-radius:8px; font-weight:500; }
- .top nav a:hover { color:var(--text); background:var(--surface); }
+ .top nav a:hover, .top nav a[aria-current] { color:var(--text); background:var(--surface); }
  code, pre { font-family:ui-monospace,Consolas,monospace; font-size:.9em; }
  code { background:var(--bg); padding:.1em .35em; border-radius:4px; color:var(--text); overflow-wrap:anywhere; }
  a:focus-visible, summary:focus-visible { outline:3px solid var(--text); outline-offset:3px; border-radius:6px; }
@@ -678,16 +680,9 @@ def headings(md, level=2):
     return [l.strip()[level + 1:].strip() for l in md.splitlines() if re.match(rf"{marks} \S", l.strip())]
 
 
-def toc_html(md):
-    """A table of contents linking the ## headings."""
-    entries = "".join(f'<li><a href="#{slug(h)}">{inline_markdown(html.escape(h, quote=False))}</a></li>'
-                      for h in headings(md))
-    return f'<nav class="toc" aria-label="Contents"><h2>Contents</h2><ul>{entries}</ul></nav>' if entries else ""
-
-
 def markdown_to_html(md):
     """The Markdown the docs pages use: # to #### headings (with anchors), paragraphs, "- " and "1. " lists, a
-    line with only an image as a figure, lines wrapped freely."""
+    line with only an image as a figure captioned with its alt text, lines wrapped freely."""
     blocks, para, items = [], [], []
     list_tag = "ul"
 
@@ -715,7 +710,9 @@ def markdown_to_html(md):
             blocks.append(f"<h{level}{anchor}>{inline_markdown(html.escape(text, quote=False))}</h{level}>")
         elif image:
             flush()
-            blocks.append(f"<figure>{inline_markdown(html.escape(stripped, quote=False))}</figure>")
+            alt = re.match(r"!\[([^\]]*)\]", stripped).group(1)
+            caption = f"<figcaption>{html.escape(alt, quote=False)}</figcaption>" if alt else ""
+            blocks.append(f"<figure>{inline_markdown(html.escape(stripped, quote=False))}{caption}</figure>")
         elif item:
             tag = "ul" if item.group(1) == "-" else "ol"
             if para or (items and tag != list_tag):
@@ -732,17 +729,162 @@ def markdown_to_html(md):
     return "\n".join(blocks)
 
 
+# The manual's starting points, as tiles under its introduction: (heading's anchor, title, icon, text). Tiles whose
+# heading is gone are left out.
+GUIDE_TILES = (
+    ("getting-started", "Getting started", "download", "Install it on a TV, phone or computer, or use a browser"),
+    ("joining-a-syncplay-room", "Join a room", "groups", "Servers, rooms, and the rooms you saved"),
+    ("the-player", "The player", "play_circle", "Controls, the remote, keys and picture-in-picture"),
+    ("troubleshooting", "Troubleshooting", "help", "Connecting, staying in sync and files that aren't found"),
+)
+
+
+def outline(md):
+    """The ## headings, each with the ### headings under it: [(text, [text])]."""
+    result = []
+    for line in md.splitlines():
+        m = re.match(r"(#{2,3}) (\S.*)", line.strip())
+        if m and len(m.group(1)) == 2:
+            result.append((m.group(2).strip(), []))
+        elif m and result:
+            result[-1][1].append(m.group(2).strip())
+    return result
+
+
+def toc_html(md):
+    """The contents beside a guide: its ## headings, each with its ### headings, which the page's script opens for
+    the section being read."""
+    def link(h):
+        return f'<a href="#{slug(h)}">{inline_markdown(html.escape(h, quote=False))}</a>'
+
+    entries = "".join(f"<li>{link(h)}" + (f"<ul>{''.join(f'<li>{link(s)}</li>' for s in subs)}</ul>" if subs else "")
+                      + "</li>" for h, subs in outline(md))
+    return (f'<nav class="side" id="contents" aria-label="Contents"><h2>Contents</h2><ol>{entries}</ol></nav>'
+            if entries else "")
+
+
+def guide_head(body):
+    """[body]'s title and the paragraph introducing it as the guide's heading, with the starting points under them:
+    (heading, the rest of the body)."""
+    m = re.match(r"\s*(<h1>.*?</h1>)\s*(<p>.*?</p>)?", body, re.S)
+    if not m:
+        return "", body
+    tiles = "".join(f'<a class="tile" href="#{anchor}"><span class="fi">{icon(name)}</span><span><b>{title}</b>'
+                    f'<small>{text}</small></span></a>'
+                    for anchor, title, name, text in GUIDE_TILES if f'id="{anchor}"' in body)
+    lede = m.group(2).replace("<p>", '<p class="lede">', 1) if m.group(2) else ""
+    return (f'<header class="doc-head">{m.group(1)}{lede}'
+            + (f'<div class="tiles">{tiles}</div>' if tiles else "") + "</header>", body[m.end():])
+
+
+GUIDE_CSS = """ .wrap { max-width:76em; }
+ .doc { display:grid; grid-template-columns:15em minmax(0,46em); grid-template-areas:"side head" "side body";
+        column-gap:3.5em; justify-content:center; }
+ .doc-head { grid-area:head; padding:1.5em 0 .5em; }
+ .doc main { grid-area:body; padding-top:0; }
+ .doc-head h1 { font-size:clamp(2.1em,5vw,3em); margin:0 0 .4em; letter-spacing:-.03em; }
+ .lede { font-size:1.15em; color:var(--soft); margin:0; }
+ .tiles { display:grid; grid-template-columns:repeat(2,1fr); gap:.75em; margin:1.8em 0 0; }
+ .tile { display:flex; gap:.9em; align-items:flex-start; padding:1em 1.1em; background:var(--surface);
+         border:1px solid var(--line); border-radius:16px; text-decoration:none; color:var(--text); line-height:1.35; }
+ .tile:hover { border-color:var(--accent); }
+ .tile b { display:block; }
+ .tile small { display:block; color:var(--muted); font-size:.88em; margin-top:.2em; }
+ .fi { width:2.4em; height:2.4em; border-radius:.7em; background:var(--tint); color:var(--accent); display:flex;
+       align-items:center; justify-content:center; flex:none; }
+ .fi svg { width:1.35em; height:1.35em; fill:currentColor; }
+ .side { grid-area:side; align-self:start; position:sticky; top:0; max-height:100vh; overflow:auto;
+         padding:1.6em .4em 2em 0; font-size:.92em; }
+ .side h2 { font-size:.78em; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin:0 0 .7em .9em; }
+ .side ol, .side ul { list-style:none; margin:0; padding:0; }
+ .side li { margin:0; }
+ .side a { display:block; color:var(--soft); text-decoration:none; padding:.32em .9em; border-radius:8px; line-height:1.35; }
+ .side a:hover { color:var(--text); background:var(--surface); }
+ .side ul { display:none; margin:.1em 0 .5em .9em; border-left:1px solid var(--line); }
+ .side ul a { color:var(--muted); font-size:.94em; padding:.24em .8em; border-radius:0 8px 8px 0; }
+ .side li.open > ul { display:block; }
+ .side li.open > a { color:var(--text); font-weight:600; }
+ .side a.active, .side li.open > a.active { color:var(--accent); background:var(--tint); }
+ .side ul a.active { background:none; box-shadow:inset 2px 0 var(--accent); }
+ main h2 { font-size:1.6em; margin:2.2em 0 .5em; padding-top:1.3em; border-top:1px solid var(--line); }
+ main h3 { font-size:1.18em; margin:1.8em 0 .4em; }
+ .anchor { color:var(--muted); text-decoration:none; font-weight:400; margin-left:.3em; opacity:0; }
+ h2:hover .anchor, h3:hover .anchor, .anchor:focus { opacity:1; }
+ figure { margin:1.6em 0; text-align:center; }
+ figure img { width:auto; max-height:34em; margin:0 auto; }
+ figcaption { color:var(--muted); font-size:.88em; margin-top:.6em; }
+ .to-top { display:none; position:fixed; right:16px; bottom:16px; padding:.55em 1em; border-radius:99px;
+           background:var(--surface2); border:1px solid var(--line); color:var(--text); text-decoration:none;
+           font-weight:600; font-size:.9em; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+ @media (max-width:960px) {
+  .doc { display:flex; flex-direction:column; }
+  .doc-head { order:1; padding-top:1em; }
+  .side { order:2; position:static; max-height:none; overflow:visible; margin:1.8em 0 .5em; padding:1em .6em;
+          background:var(--surface); border:1px solid var(--line); border-radius:16px; }
+  .side ol { columns:2; column-gap:1em; }
+  .side li { break-inside:avoid; }
+  .side li.open > ul, .side ul { display:none; }
+  .side li.open > a, .side a.active, .side li.open > a.active { font-weight:400; color:var(--soft); background:none; }
+  .doc main { order:3; }
+  body.scrolled .to-top { display:block; }
+ }
+ @media (max-width:600px) { .tiles { grid-template-columns:1fr; } .side ol { columns:1; } .lede { font-size:1.05em; } }"""
+
+# Marks the section being read in the contents, and opens its subsections there.
+GUIDE_JS = """<script>
+(function () {
+  var nav = document.getElementById("contents");
+  if (!nav) return;
+  var list = nav.querySelector("ol"), links = {}, all = nav.querySelectorAll("a");
+  var heads = document.querySelectorAll("main h2[id], main h3[id]");
+  for (var i = 0; i < all.length; i++) links[all[i].getAttribute("href").slice(1)] = all[i];
+  var current = null, open = null, queued = false;
+  function update() {
+    queued = false;
+    document.body.classList.toggle("scrolled", window.pageYOffset > 900);
+    var found = null;
+    for (var j = 0; j < heads.length && heads[j].getBoundingClientRect().top <= 140; j++) found = heads[j];
+    var a = found ? links[found.id] : null;
+    if (a === current) return;
+    if (current) current.classList.remove("active");
+    current = a;
+    var li = a ? a.parentNode : null;
+    while (li && li.parentNode !== list) li = li.parentNode;
+    if (open !== li) {
+      if (open) open.classList.remove("open");
+      if (li) li.classList.add("open");
+      open = li;
+    }
+    if (!a) return;
+    a.classList.add("active");
+    // Keeps the entry in view when the contents are taller than the window.
+    var r = a.getBoundingClientRect(), n = nav.getBoundingClientRect();
+    if (nav.scrollHeight > nav.clientHeight && (r.top < n.top || r.bottom > n.bottom))
+      nav.scrollTop += r.top - n.top - n.height / 3;
+  }
+  window.addEventListener("scroll", function () {
+    if (!queued) { queued = true; window.requestAnimationFrame(update); }
+  });
+  update();
+})();
+</script>"""
+
+
 def render_doc(md, description, site_url=None, path="", steps=False, toc=False):
     """A Markdown document as a page in the download page's style, one folder below the main page. With [steps] its
-    numbered lists are step cards (the testers page); with [toc] a table of contents of its ## headings comes after
-    the title."""
+    numbered lists are step cards (the testers page); with [toc] it's a guide: its title and introduction head it with
+    tiles for the main sections, and its contents stay beside it on wide screens, marking the section being read."""
     title = next((l[2:].strip() for l in md.splitlines() if l.startswith("# ")), NAME)
     body = markdown_to_html(md)
+    end = f'<p class="end"><a href="../">{NAME} downloads</a> &middot; <a href="{HOME_URL}">yarmiplay.com</a></p>'
     if toc:
-        # After the title and the paragraph that introduces the page.
-        intro = body.find("</p>")
-        at = intro + len("</p>") if intro >= 0 else body.find("</h1>") + len("</h1>")
-        body = body[:at] + "\n" + toc_html(md) + body[at:]
+        body = re.sub(r'<(h[23]) id="([^"]+)">(.*?)</\1>',
+                      r'<\1 id="\2">\3<a class="anchor" href="#\2" aria-label="Link to this section">#</a></\1>', body)
+        head, body = guide_head(body)
+        content = (f'<div class="doc">{head}{toc_html(md)}<main>{body}\n{end}</main></div>'
+                   '<a class="to-top" href="#contents">Contents</a>' + GUIDE_JS)
+    else:
+        content = f"<main>\n{body}\n{end}\n</main>"
     list_style = STEP_CSS if steps else PLAIN_LIST_CSS
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -765,23 +907,18 @@ def render_doc(md, description, site_url=None, path="", steps=False, toc=False):
  h2[id], h3[id], h4[id] {{ scroll-margin-top:1em; }}
  figure {{ margin:1.2em 0; }}
  figure img {{ max-width:100%; height:auto; border-radius:12px; border:1px solid var(--line); display:block; }}
- .toc {{ background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:.6em 1.4em 1em; margin:1.4em 0 2em; }}
- .toc h2 {{ font-size:.8em; margin:.8em 0 .5em; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }}
- .toc ul {{ columns:2; column-gap:2em; margin:0; padding-left:1.1em; }}
- .toc li {{ margin:0; padding:.15em 0; break-inside:avoid; }}
  .end {{ border-top:1px solid var(--line); margin-top:3em; padding-top:1.5em; color:var(--muted); }}
- @media (max-width:600px) {{ .toc ul {{ columns:1; }} }}
 {list_style}
+{GUIDE_CSS if toc else ""}
 </style></head>
 <body><div class="wrap">
 <header class="top">
  <a class="brand" href="../">{LOGO_SVG}{NAME}</a>
- <nav><a href="../#download">Download</a><a href="../manual/">Manual</a><a href="../changelog/">Patch notes</a></nav>
+ <nav>{"".join(f'<a href="{href}"' + (' aria-current="page"' if href == f"../{path}" else "") + f">{label}</a>"
+               for href, label in (("../#download", "Download"), ("../manual/", "Manual"), ("../changelog/", "Patch notes")))}</nav>
 </header>
-<main>
-{body}
-<p class="end"><a href="../">{NAME} downloads</a> &middot; <a href="{HOME_URL}">yarmiplay.com</a></p>
-</main></div></body></html>
+{content}
+</div></body></html>
 """
 
 
