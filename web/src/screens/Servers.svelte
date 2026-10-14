@@ -1,5 +1,6 @@
 <script lang="ts">
   import { changeSettings, settings } from "../app/context";
+  import Icon from "../components/Icon.svelte";
   import { addJellyfin, addPlex, jellyfinClient, plexClient, remove, sources } from "../app/media";
   import type { PlexServer } from "../lib/media";
 
@@ -114,7 +115,7 @@
     {#each $sources as s (s.key)}
       <div class="row">
         <span class="grow"><b>{s.displayName}</b> <span class="dim small">{s.kind}</span></span>
-        <button class="link" onclick={() => remove(s)}>Sign out</button>
+        <button class="link" onclick={() => remove(s)}><Icon name="logout" size={18} />Sign out</button>
       </div>
     {/each}
     {#if $sources.length > 1}
@@ -132,8 +133,8 @@
     </label>
     {#if !adding}
       <div class="row">
-        <button class="button" onclick={() => (adding = "jellyfin")}>Add Jellyfin</button>
-        <button class="button" onclick={linkPlex}>Link Plex</button>
+        <button class="button" onclick={() => (adding = "jellyfin")}><Icon name="add" size={20} />Add Jellyfin</button>
+        <button class="button" onclick={linkPlex}><Icon name="link" size={20} />Link Plex</button>
       </div>
     {/if}
   </section>
@@ -164,7 +165,7 @@
             <p>In another Jellyfin app, go to your profile, then Quick Connect, and enter:</p>
             <p class="code mono" dir="ltr">{code}</p>
           {:else}
-            <button class="button" onclick={startQuickConnect}>Sign in with Quick Connect</button>
+            <button class="button" onclick={startQuickConnect}><Icon name="key" size={18} />Sign in with Quick Connect</button>
           {/if}
           <p class="dim small">Or with your user name and password:</p>
         {/if}
@@ -172,7 +173,7 @@
           <label>User name <input bind:value={user} autocomplete="username" required /></label>
           <label>Password <input bind:value={password} type="password" autocomplete="current-password" /></label>
           <div class="row">
-            <button class="button" type="submit" disabled={busy || !user.trim()}>Sign in</button>
+            <button class="button" type="submit" disabled={busy || !user.trim()}><Icon name="login" size={18} />Sign in</button>
             <button class="button quiet" type="button" onclick={reset}>Cancel</button>
           </div>
         </form>
@@ -186,7 +187,7 @@
       {#if plexServers}
         <p>Pick the server to use:</p>
         {#each plexServers as server (server.machineId)}
-          <button class="button quiet" disabled={busy} onclick={() => pickPlex(server)}>{server.name}{server.owned ? "" : " (shared with you)"}</button>
+          <button class="button quiet" disabled={busy} onclick={() => pickPlex(server)}><Icon name="dns" size={18} />{server.name}{server.owned ? "" : " (shared with you)"}</button>
         {/each}
         {#if plexServers.length === 0}<p class="dim">This account has no servers.</p>{/if}
       {:else if plexCode}

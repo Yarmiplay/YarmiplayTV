@@ -11,7 +11,9 @@
   import { mal, skip } from "../app/watching";
   import { isQuestion, noticeShowMillis, type MalNotice } from "../lib/mal/service";
   import type { SkipSegment } from "../lib/skip/segment";
+  import type { IconName } from "../lib/ui/icons";
   import ChatPanel from "./ChatPanel.svelte";
+  import Icon from "./Icon.svelte";
   import MalPanel from "./MalPanel.svelte";
   import PeoplePanel from "./PeoplePanel.svelte";
   import PlaylistPanel from "./PlaylistPanel.svelte";
@@ -193,6 +195,25 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     session?.postLocal(withSubtitles ? "Saved a screenshot" : "Saved a screenshot without the subtitles");
   }
+
+  let fullscreen = $state(false);
+  $effect(() => {
+    const changed = () => (fullscreen = document.fullscreenElement !== null);
+    document.addEventListener("fullscreenchange", changed);
+    return () => document.removeEventListener("fullscreenchange", changed);
+  });
+  /** Material's replay and forward icons carry their seconds; other steps get the plain arrows. */
+  const stepIcons = $derived<[IconName, IconName]>(
+    seekStep === 5 ? ["replay_5", "forward_5"] : seekStep === 10 ? ["replay_10", "forward_10"] : seekStep === 30 ? ["replay_30", "forward_30"] : ["fast_rewind", "fast_forward"],
+  );
+  const PANELS: { key: "playlist" | "room" | "chat" | "audio" | "subtitles" | "mal"; label: string; icon: IconName }[] = [
+    { key: "playlist", label: "Playlist", icon: "queue_music" },
+    { key: "room", label: "Room", icon: "groups" },
+    { key: "chat", label: "Chat", icon: "forum" },
+    { key: "audio", label: "Audio", icon: "audiotrack" },
+    { key: "subtitles", label: "Subtitles", icon: "subtitles" },
+    { key: "mal", label: "MyAnimeList", icon: "bookmarks" },
+  ];
 
   async function toggleFullscreen() {
     if (document.fullscreenElement) await document.exitFullscreen();
@@ -386,7 +407,7 @@
 
     {#if skipPrompt}
       <button class="skip" onclick={() => skip.skipNow()}>
-        <span class="skip-icon">⏭</span>{skipPrompt.label}<kbd>S</kbd>
+        <span class="skip-icon"><Icon name="skip_next" size={22} /></span>{skipPrompt.label}<kbd>S</kbd>
       </button>
     {/if}
 
@@ -413,23 +434,23 @@
     {#if s?.loaded}
       <div class="controls" class:shown={controlsShown || s.paused || panel !== null}>
         <div class="top">
-          <button class="icon" onclick={() => go(inRoom ? "#/room" : "#/")} aria-label="Back">←</button>
+          <button class="tool" onclick={() => go(inRoom ? "#/room" : "#/")} aria-label="Back" title="Back"><Icon name="arrow_back" size={24} /></button>
           <span class="title">{s.name}</span>
           {#if room && inRoom}
             <button class="chip room-chip" onclick={() => (panel = panel === "room" ? null : "room")}>
               {ManagedRooms.label(room.room)} · {room.users.length} · {readyCount} ready
             </button>
           {/if}
-          <button class="icon" onclick={pictureInPicture} aria-label="Picture-in-picture (P)" title="Picture-in-picture (P)">⧉</button>
-          <button class="icon" onclick={toggleFullscreen} aria-label="Full screen (F)" title="Full screen (F)">⛶</button>
+          <button class="tool" onclick={pictureInPicture} aria-label="Picture-in-picture (P)" title="Picture-in-picture (P)"><Icon name="picture_in_picture_alt" size={24} /></button>
+          <button class="tool" onclick={toggleFullscreen} aria-label="Full screen (F)" title="Full screen (F)"><Icon name={fullscreen ? "fullscreen_exit" : "fullscreen"} size={24} /></button>
         </div>
 
         <div class="center">
-          <button class="round" onclick={() => session?.skip(false)} disabled={!session || session.skipTarget(false) === null} aria-label="Previous entry (B)">⏮</button>
-          <button class="round" onclick={() => seekBy(-seekStep)} aria-label="Back {seekStep} seconds">↺</button>
-          <button class="round big" onclick={togglePlay} aria-label={s.paused ? "Play" : "Pause"}>{s.paused ? "▶" : "⏸"}</button>
-          <button class="round" onclick={() => seekBy(seekStep)} aria-label="Forward {seekStep} seconds">↻</button>
-          <button class="round" onclick={() => session?.skip(true)} disabled={!session || session.skipTarget(true) === null} aria-label="Next entry (N)">⏭</button>
+          <button class="round" onclick={() => session?.skip(false)} disabled={!session || session.skipTarget(false) === null} aria-label="Previous entry (B)" title="Previous entry (B)"><Icon name="skip_previous" size={30} /></button>
+          <button class="round" onclick={() => seekBy(-seekStep)} aria-label="Back {seekStep} seconds" title="Back {seekStep} seconds"><Icon name={stepIcons[0]} size={30} /></button>
+          <button class="round big" onclick={togglePlay} aria-label={s.paused ? "Play" : "Pause"}><Icon name={s.paused ? "play_arrow" : "pause"} size={40} /></button>
+          <button class="round" onclick={() => seekBy(seekStep)} aria-label="Forward {seekStep} seconds" title="Forward {seekStep} seconds"><Icon name={stepIcons[1]} size={30} /></button>
+          <button class="round" onclick={() => session?.skip(true)} disabled={!session || session.skipTarget(true) === null} aria-label="Next entry (N)" title="Next entry (N)"><Icon name="skip_next" size={30} /></button>
         </div>
 
         <div class="bottom">
@@ -475,6 +496,9 @@
           </div>
           <div class="row">
             <span class="mono time">{formatTime(dragging ?? s.position)} / {formatTime(s.duration)}</span>
+            <button class="tool" onclick={() => player?.setVolume(s?.volume ?? 1, !s?.muted)} aria-label={s.muted ? "Unmute (M)" : "Mute (M)"} title={s.muted ? "Unmute (M)" : "Mute (M)"}>
+              <Icon name={s.muted || s.volume === 0 ? "volume_off" : "volume_up"} size={22} />
+            </button>
             <input
               class="volume"
               type="range"
@@ -491,13 +515,12 @@
               </button>
             {/if}
             <span class="spacer"></span>
-            <button class="icon" onclick={() => screenshot(true)} aria-label="Screenshot (F5)" title="Screenshot (F5; F6 without subtitles)">📷</button>
-            <button class="icon" class:on={panel === "playlist"} onclick={() => (panel = panel === "playlist" ? null : "playlist")}>Playlist</button>
-            <button class="icon" class:on={panel === "room"} onclick={() => (panel = panel === "room" ? null : "room")}>Room</button>
-            <button class="icon" class:on={panel === "chat"} onclick={() => (panel = panel === "chat" ? null : "chat")}>Chat</button>
-            <button class="icon" class:on={panel === "audio"} onclick={() => (panel = panel === "audio" ? null : "audio")}>Audio</button>
-            <button class="icon" class:on={panel === "subtitles"} onclick={() => (panel = panel === "subtitles" ? null : "subtitles")}>Subtitles</button>
-            <button class="icon" class:on={panel === "mal"} onclick={() => (panel = panel === "mal" ? null : "mal")}>MyAnimeList</button>
+            <button class="tool" onclick={() => screenshot(true)} aria-label="Screenshot (F5)" title="Screenshot (F5; F6 without subtitles)"><Icon name="photo_camera" size={22} /></button>
+            {#each PANELS as p (p.key)}
+              <button class="tool" class:on={panel === p.key} onclick={() => (panel = panel === p.key ? null : p.key)} title={p.label}>
+                <Icon name={p.icon} size={22} /><span class="tool-label">{p.label}</span>
+              </button>
+            {/each}
           </div>
         </div>
       </div>
@@ -507,7 +530,7 @@
       <aside class="side">
         <header>
           <h2>{{ playlist: "Playlist", room: "Room", chat: "Chat", audio: "Audio", subtitles: "Subtitles", mal: "MyAnimeList" }[panel]}</h2>
-          <button class="icon" onclick={() => (panel = null)} aria-label="Close">✕</button>
+          <button class="tool" onclick={() => (panel = null)} aria-label="Close" title="Close"><Icon name="close" size={22} /></button>
         </header>
         {#if panel === "playlist"}
           <PlaylistPanel />
@@ -724,6 +747,8 @@
     height: 56px;
     border-radius: 50%;
     border: 0;
+    display: inline-grid;
+    place-items: center;
     background: rgb(0 0 0 / 0.45);
     color: #fff;
     font-size: 22px;
@@ -789,6 +814,7 @@
   }
   .skip-icon {
     color: var(--accent);
+    display: inline-flex;
   }
   .skip kbd {
     font: 12px ui-monospace, monospace;
@@ -869,7 +895,7 @@
   .spacer {
     flex: 1;
   }
-  .icon {
+  .tool {
     background: none;
     border: 0;
     color: #fff;
@@ -877,9 +903,22 @@
     border-radius: 8px;
     cursor: pointer;
     font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
-  .icon.on,
-  .icon:hover {
+  /* The panels' names show beside their icons where there's room. */
+  @media (max-width: 1099px) {
+    .tool-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+  }
+  .tool.on,
+  .tool:hover {
     background: rgb(255 255 255 / 0.12);
   }
   .side {
@@ -905,7 +944,7 @@
     margin: 0;
     font-size: 17px;
   }
-  .side .icon {
+  .side .tool {
     color: var(--text);
   }
   .tracks {

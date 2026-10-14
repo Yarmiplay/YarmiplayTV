@@ -1,5 +1,6 @@
 <script lang="ts">
   import { go, library, session as sessionStore } from "../app/context";
+  import Icon from "../components/Icon.svelte";
   import { keepsFolders, type LocalFile } from "../lib/local/library";
   import { thumbnail } from "../lib/local/thumbnails";
 
@@ -56,10 +57,10 @@
     <h1>Files on this device</h1>
     <div class="row">
       <label class="button">
-        Open a video
+        <Icon name="video_file" size={20} />Open a video
         <input type="file" accept="video/*,.mkv,.avi,.ts,.m2ts,.webm" onchange={open} hidden />
       </label>
-      <a class="button quiet" href="#/settings/media">Media folders</a>
+      <a class="button quiet" href="#/settings/media"><Icon name="folder" size={20} />Media folders</a>
     </div>
   </header>
 
@@ -81,10 +82,10 @@
           <span class="dim small">{f.directory || f.folder}</span>
           <div class="row">
             {#if connected}
-              <button class="button small" onclick={() => play(f, true)}>Play in the room</button>
-              <button class="button quiet small" onclick={() => add(f)}>Add to playlist</button>
+              <button class="button small" onclick={() => play(f, true)}><Icon name="play_arrow" size={18} />Play in the room</button>
+              <button class="button quiet small" onclick={() => add(f)}><Icon name="playlist_add" size={18} />Add to playlist</button>
             {/if}
-            <button class="button quiet small" onclick={() => play(f, false)}>Play here</button>
+            <button class="button quiet small" onclick={() => play(f, false)}><Icon name="play_circle" size={18} />Play here</button>
           </div>
         </li>
       {/each}

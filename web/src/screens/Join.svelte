@@ -4,6 +4,7 @@
   import * as SavedRooms from "../lib/data/savedRooms";
   import type { SavedRoom } from "../lib/data/savedRooms";
   import * as ManagedRooms from "../lib/syncplay/managedRooms";
+  import Icon from "../components/Icon.svelte";
 
   /**
    * Joining a room (MobileConnect.kt for the web): the server takes the whole width with the port under it; saved and
@@ -55,10 +56,16 @@
 
   /** Why a browser couldn't join, in the user's terms. */
   function explain(reason: string): string {
-    if (/reach|refused|1006|didn't answer/i.test(reason)) {
-      return `${reason}. A browser can only join YarmiplayServerTV 1.8 or later with HTTPS set up (its DuckDNS certificate), and the host's "Watch in a browser" link fills this in. Check the server name and port.`;
+    if (!/reach|refused|1006|didn't answer/i.test(reason)) return reason;
+    const name = host.trim();
+    if (/^[\d.]+$|:/.test(name) || !name.includes(".")) {
+      return `${reason}. A browser can't check a server's certificate on an IP address or a name on your network: use the server's DuckDNS name (like myhome.duckdns.org), as the host's "Watch in a browser" link does.`;
     }
-    return reason;
+    return (
+      `${reason}. A browser can only join YarmiplayServerTV 1.8 or later with HTTPS set up (its DuckDNS certificate); check the server name and port. ` +
+      `On the server's own network, many routers can't reach their own public address: the apps get around that and a browser can't, ` +
+      `so the host adds a "LAN name for browsers" in YarmiplayServerTV's Network settings and shares the "Watch in a browser" link again.`
+    );
   }
 
   function join(profile = { host, port: portNumber, username, room, password }, opts: { lan?: string | null; saveAs?: string } = {}) {
@@ -103,7 +110,7 @@
             {#each group.rooms as r (SavedRooms.keyOf(r))}
               <li>
                 <button class="star" class:on={r.saved} aria-label={r.saved ? "Remove from saved rooms" : "Save this room"}
-                  onclick={() => edit((rooms) => SavedRooms.setSaved(rooms, SavedRooms.keyOf(r), !r.saved, r.label))}>{r.saved ? "★" : "☆"}</button>
+                  onclick={() => edit((rooms) => SavedRooms.setSaved(rooms, SavedRooms.keyOf(r), !r.saved, r.label))}><Icon name={r.saved ? "star" : "star_border"} size={22} /></button>
                 <div class="what">
                   {#if renaming === SavedRooms.keyOf(r)}
                     <form
@@ -121,21 +128,21 @@
                   {/if}
                   <span class="dim small address">{r.host}:{r.port} · {ManagedRooms.label(r.room)} · as {r.username}</span>
                 </div>
-                <button class="button small" onclick={() => rejoin(r)}>Rejoin</button>
+                <button class="button small" onclick={() => rejoin(r)}><Icon name="login" size={18} />Rejoin</button>
                 <details class="menu">
-                  <summary aria-label="More">⋮</summary>
+                  <summary aria-label="More" title="More"><Icon name="more_vert" size={22} /></summary>
                   <div>
                     <button
                       class="link"
                       onclick={() => {
                         renaming = SavedRooms.keyOf(r);
                         renameText = r.label;
-                      }}>Rename</button
+                      }}><Icon name="edit" size={18} />Rename</button
                     >
                     {#if r.saved}
-                      <button class="link" onclick={() => edit((rooms) => SavedRooms.setSaved(rooms, SavedRooms.keyOf(r), false))}>Remove from saved</button>
+                      <button class="link" onclick={() => edit((rooms) => SavedRooms.setSaved(rooms, SavedRooms.keyOf(r), false))}><Icon name="star_border" size={18} />Remove from saved</button>
                     {/if}
-                    <button class="link" onclick={() => edit((rooms) => SavedRooms.forget(rooms, SavedRooms.keyOf(r)))}>Forget</button>
+                    <button class="link" onclick={() => edit((rooms) => SavedRooms.forget(rooms, SavedRooms.keyOf(r)))}><Icon name="delete" size={18} />Forget</button>
                   </div>
                 </details>
               </li>
@@ -172,7 +179,7 @@
       Room
       <input bind:value={room} placeholder="Any name" required />
     </label>
-    <button type="button" class="link" onclick={() => (more = !more)} aria-expanded={more}>{more ? "Fewer options" : "More options"}</button>
+    <button type="button" class="link" onclick={() => (more = !more)} aria-expanded={more}><Icon name={more ? "expand_less" : "expand_more"} size={20} />{more ? "Fewer options" : "More options"}</button>
     {#if more}
       <label>
         Server password
@@ -205,7 +212,7 @@
       </label>
     {/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
-    <button class="button" type="submit" disabled={!complete || connecting}>{connecting ? "Joining…" : "Join room"}</button>
+    <button class="button" type="submit" disabled={!complete || connecting}><Icon name="login" size={20} />{connecting ? "Joining…" : "Join room"}</button>
     <p class="dim small">
       Browsers can join YarmiplayServerTV 1.8 or later with HTTPS set up. Plain Syncplay servers need the YarmiplayTV app.
     </p>
@@ -252,8 +259,10 @@
     overflow-wrap: anywhere;
   }
   .star {
+    display: inline-flex;
     background: none;
     border: 0;
+    padding: 4px;
     font-size: 20px;
     cursor: pointer;
     color: var(--text-dim);
@@ -267,7 +276,12 @@
   .menu summary {
     list-style: none;
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 4px;
+    display: flex;
+    border-radius: 50%;
+  }
+  .menu summary::-webkit-details-marker {
+    display: none;
   }
   .menu div {
     position: absolute;
@@ -304,6 +318,9 @@
     width: 100%;
   }
   .link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     background: none;
     border: 0;
     color: var(--accent);

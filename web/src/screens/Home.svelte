@@ -6,6 +6,7 @@
   import * as ManagedRooms from "../lib/syncplay/managedRooms";
   import { keepsFolders } from "../lib/local/library";
   import { sources } from "../app/media";
+  import Icon from "../components/Icon.svelte";
   import MediaTile from "../components/MediaTile.svelte";
   import type { MediaItem, MediaSource } from "../lib/media";
 
@@ -57,12 +58,13 @@
     <section class="card new">
       <h2>What's new in {version}</h2>
       <p>{whatsNew.text}</p>
-      <button class="button quiet" onclick={() => changeSettings((s) => ({ ...s, lastSeenVersion: version }))}>Got it</button>
+      <button class="button quiet" onclick={() => changeSettings((s) => ({ ...s, lastSeenVersion: version }))}><Icon name="check" size={18} />Got it</button>
     </section>
   {/if}
 
   <div class="cards">
     <button class="card tile" onclick={() => go(inRoom ? "#/room" : "#/join")}>
+      <span class="tile-icon"><Icon name="groups" size={22} /></span>
       <span class="label">{inRoom ? ManagedRooms.label(room!.room) : "Join a Syncplay room"}</span>
       <span class="dim">
         {#if inRoom}
@@ -88,6 +90,7 @@
           go("#/room");
         }}
       >
+        <span class="tile-icon"><Icon name="meeting_room" size={22} /></span>
         <span class="label">Rejoin {lastRoom.label || ManagedRooms.display(lastRoom.room)}</span>
         <span class="dim">{lastRoom.host}:{lastRoom.port} as {lastRoom.username}</span>
       </button>
@@ -95,12 +98,14 @@
 
     {#if playing?.loaded}
       <button class="card tile" onclick={() => go("#/player")}>
+        <span class="tile-icon"><Icon name="play_circle" size={22} /></span>
         <span class="label">Now playing</span>
         <span class="dim">{playing.name}</span>
       </button>
     {/if}
 
     <button class="card tile" onclick={() => go("#/files")}>
+      <span class="tile-icon"><Icon name="video_file" size={22} /></span>
       <span class="label">Files on this device</span>
       <span class="dim">
         {folderCount ? `${folderCount} media folder${folderCount === 1 ? "" : "s"}, ${fileCount} videos` : "Open a video or add media folders"}
@@ -108,11 +113,13 @@
     </button>
 
     <button class="card tile" onclick={() => go($sources.length ? "#/library" : "#/servers")}>
+      <span class="tile-icon"><Icon name="video_library" size={22} /></span>
       <span class="label">{$sources.length ? "Libraries" : "Jellyfin and Plex"}</span>
       <span class="dim">{$sources.length ? $sources.map((x) => x.displayName).join(" · ") : "Add a server to browse it and play from it"}</span>
     </button>
 
     <button class="card tile" onclick={() => go("#/settings/media")}>
+      <span class="tile-icon"><Icon name="folder" size={22} /></span>
       <span class="label">Media folders</span>
       <span class="dim">
         {keepsFolders() ? "Videos in them are found by themselves when a room plays them" : "Pick a folder for this visit; this browser can't keep it"}
@@ -180,6 +187,16 @@
     border: 0;
     cursor: pointer;
     min-height: 96px;
+  }
+  .tile-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    margin-bottom: 6px;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
   }
   .tile:hover {
     background: var(--surface-high);

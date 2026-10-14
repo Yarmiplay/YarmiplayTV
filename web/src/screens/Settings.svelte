@@ -4,18 +4,19 @@
   import { keepsFolders, type MediaFolder } from "../lib/local/library";
   import { UnpauseMode } from "../lib/syncplay/models";
   import { THEME_NOTE, THEMES } from "../lib/ui/theme";
+  import Icon from "../components/Icon.svelte";
 
   /**
    * Settings in categories (MobileSettings.kt): a list of pages on phones, the categories beside their settings on
    * wide windows. What browsers can't do (download folders, hardware decoding, updates) isn't here.
    */
   const CATEGORIES = [
-    { key: "appearance", label: "Appearance" },
-    { key: "media", label: "Media" },
-    { key: "myanimelist", label: "MyAnimeList" },
-    { key: "syncing", label: "Syncing" },
-    { key: "playback", label: "Playback" },
-    { key: "about", label: "About" },
+    { key: "appearance", label: "Appearance", icon: "palette" },
+    { key: "media", label: "Media", icon: "video_library" },
+    { key: "myanimelist", label: "MyAnimeList", icon: "bookmarks" },
+    { key: "syncing", label: "Syncing", icon: "sync" },
+    { key: "playback", label: "Playback", icon: "tune" },
+    { key: "about", label: "About", icon: "info" },
   ] as const;
 
   const current = $derived($route.split("/")[2] ?? "");
@@ -54,14 +55,14 @@
     <nav aria-label="Settings categories">
       <h1>Settings</h1>
       {#each CATEGORIES as c (c.key)}
-        <a href="#/settings/{c.key}" class:on={shown === c.key}>{c.label}</a>
+        <a href="#/settings/{c.key}" class:on={shown === c.key}><Icon name={c.icon} size={22} /><span class="grow">{c.label}</span>{#if !wide}<Icon name="chevron_right" size={20} />{/if}</a>
       {/each}
     </nav>
   {/if}
 
   {#if shown}
     <section class="page">
-      {#if !wide}<button class="back" onclick={() => go("#/settings")}>← Settings</button>{/if}
+      {#if !wide}<button class="back" onclick={() => go("#/settings")}><Icon name="arrow_back" size={20} />Settings</button>{/if}
 
       {#if shown === "appearance"}
         <h2>Appearance</h2>
@@ -79,7 +80,7 @@
         <div class="card group">
           <h3>Media servers</h3>
           <p class="dim small">Jellyfin and Plex: browse and search them, and a room's entries are found on them.</p>
-          <a class="button quiet" href="#/servers">Media servers</a>
+          <a class="button quiet" href="#/servers"><Icon name="dns" size={18} />Media servers</a>
         </div>
         <div class="card group">
           <h3>Media folders</h3>
@@ -87,17 +88,17 @@
           {#each folders as f, i (f.name + i)}
             <div class="row">
               <span class="grow">{f.name}{f.readable ? "" : " (needs your permission again)"}</span>
-              <button class="link" onclick={() => library.removeFolder(i)}>Remove</button>
+              <button class="link" onclick={() => library.removeFolder(i)} aria-label="Remove {f.name}" title="Remove"><Icon name="delete" size={20} /></button>
             </div>
           {/each}
           {#if folders.some((f) => !f.readable)}
-            <button class="button quiet" onclick={() => library.allowAgain()}>Allow access again</button>
+            <button class="button quiet" onclick={() => library.allowAgain()}><Icon name="lock" size={18} />Allow access again</button>
           {/if}
           {#if keepsFolders()}
-            <button class="button quiet" onclick={addFolder}>Add a media folder</button>
+            <button class="button quiet" onclick={addFolder}><Icon name="create_new_folder" size={18} />Add a media folder</button>
           {:else}
             <label class="button quiet">
-              Add a media folder (for this visit)
+              <Icon name="create_new_folder" size={18} />Add a media folder (for this visit)
               <input type="file" webkitdirectory multiple onchange={folderFiles} hidden />
             </label>
             <p class="dim small">This browser can't keep folders between visits; Chrome and Edge can.</p>
@@ -161,21 +162,21 @@
         <h2>MyAnimeList</h2>
         <div class="card group">
           <p>Keep your MyAnimeList list up to date as you watch, and find any show.</p>
-          <a class="button quiet" href="#/mal">MyAnimeList</a>
+          <a class="button quiet" href="#/mal"><Icon name="bookmarks" size={18} />MyAnimeList</a>
         </div>
       {:else if shown === "about"}
         <h2>About</h2>
         <div class="card group">
           <p>YarmiplayTV {version} in the browser</p>
           <div class="links">
-            <a href="https://tv.yarmiplay.com/manual/" target="_blank" rel="noopener">User manual</a>
-            <a href="https://tv.yarmiplay.com/changelog/" target="_blank" rel="noopener">All patch notes</a>
-            <a href="https://tv.yarmiplay.com/" target="_blank" rel="noopener">Website and downloads</a>
-            <a href="https://tv.yarmiplay.com/privacy/" target="_blank" rel="noopener">Privacy policy</a>
-            <a href="https://tv.yarmiplay.com/terms/" target="_blank" rel="noopener">Community rules</a>
-            <a href="https://github.com/Yarmiplay/YarmiplayTV" target="_blank" rel="noopener">Source code</a>
-            <a href="https://github.com/Yarmiplay/YarmiplayTV/issues" target="_blank" rel="noopener">Report a problem</a>
-            <a href="https://github.com/Yarmiplay/YarmiplayServerTV#readme" target="_blank" rel="noopener">YarmiplayServerTV</a>
+            <a href="https://tv.yarmiplay.com/manual/" target="_blank" rel="noopener"><Icon name="menu_book" />User manual</a>
+            <a href="https://tv.yarmiplay.com/changelog/" target="_blank" rel="noopener"><Icon name="new_releases" />All patch notes</a>
+            <a href="https://tv.yarmiplay.com/" target="_blank" rel="noopener"><Icon name="download" />Website and downloads</a>
+            <a href="https://tv.yarmiplay.com/privacy/" target="_blank" rel="noopener"><Icon name="shield" />Privacy policy</a>
+            <a href="https://tv.yarmiplay.com/terms/" target="_blank" rel="noopener"><Icon name="description" />Community rules</a>
+            <a href="https://github.com/Yarmiplay/YarmiplayTV" target="_blank" rel="noopener"><Icon name="code" />Source code</a>
+            <a href="https://github.com/Yarmiplay/YarmiplayTV/issues" target="_blank" rel="noopener"><Icon name="bug_report" />Report a problem</a>
+            <a href="https://github.com/Yarmiplay/YarmiplayServerTV#readme" target="_blank" rel="noopener"><Icon name="dns" />YarmiplayServerTV</a>
           </div>
           <h3>What's new</h3>
           {#each buildInfo.releases.slice(0, 5) as r (r.version)}
@@ -211,6 +212,9 @@
     font-size: 24px;
   }
   nav a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     padding: 10px 12px;
     border-radius: 10px;
     color: var(--text);
@@ -272,6 +276,9 @@
   }
   .link,
   .back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     background: none;
     border: 0;
     color: var(--accent);
@@ -282,5 +289,11 @@
   .links {
     display: grid;
     gap: 6px;
+  }
+  .links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    justify-self: start;
   }
 </style>

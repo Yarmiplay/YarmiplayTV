@@ -1,6 +1,7 @@
 <script lang="ts">
   import { session as sessionStore, settings } from "../app/context";
   import type { RoomState } from "../lib/syncplay/client";
+  import Icon from "./Icon.svelte";
 
   /**
    * Shown over any screen while a YarmiplayServerTV host decides about this browser, or after they said no
@@ -49,14 +50,14 @@
         <p>The host only lets in devices they approved. Ask them for access?</p>
         <div class="row">
           <button class="button quiet" onclick={() => session.disconnect()}>Close</button>
-          <button class="button" onclick={() => session.rejoin(true)}>Request access</button>
+          <button class="button" onclick={() => session.rejoin(true)}><Icon name="key" size={18} />Request access</button>
         </div>
       {:else}
         <h2 id="device-title">{prompt.title}</h2>
         <p>{prompt.message}</p>
         <div class="row">
           <button class="button quiet" onclick={() => session.disconnect()}>Close</button>
-          <button class="button" onclick={() => session.rejoin(true)}>Try again</button>
+          <button class="button" onclick={() => session.rejoin(true)}><Icon name="refresh" size={18} />Try again</button>
         </div>
       {/if}
     </div>

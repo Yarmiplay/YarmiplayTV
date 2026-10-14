@@ -1,6 +1,7 @@
 <script lang="ts">
   import { changeSettings, session as sessionStore, settings } from "../app/context";
   import type { FeedMessage } from "../lib/sync/room";
+  import Icon from "./Icon.svelte";
 
   /** The room's chat and notifications, newest at the bottom, with the message box under them (1.8.x layout). */
   let { input = $bindable() }: { input?: HTMLInputElement } = $props();
@@ -77,7 +78,7 @@
       disabled={!connected || !$settings.showChat}
       aria-label="Chat message"
     />
-    <button class="button small" type="submit" disabled={!connected || !text.trim()}>Send</button>
+    <button class="button small" type="submit" disabled={!connected || !text.trim()}><Icon name="send" size={18} />Send</button>
   </form>
 </div>
 

@@ -121,6 +121,23 @@ textarea {
   color: var(--on-accent);
   font-weight: 600;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+}
+
+/* Anything that starts with an icon lines it up with its text; :where keeps a component's own layout in charge. */
+:where(button, a, label, summary):has(> .icon) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A button with an icon before its text sits a little further left, as Material's do. */
+.button:has(> .icon:first-child) {
+  padding-left: 14px;
 }
 
 .button.quiet {

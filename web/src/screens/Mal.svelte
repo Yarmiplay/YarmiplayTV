@@ -1,5 +1,6 @@
 <script lang="ts">
   import { go } from "../app/context";
+  import Icon from "../components/Icon.svelte";
   import { mal, malClient, signInToMal } from "../app/watching";
   import MalEntry from "../components/MalEntry.svelte";
   import { MAL_STATUSES, malStatusLabel, type MalAnime, type MalStatus } from "../lib/mal/models";
@@ -51,14 +52,14 @@
     <section class="card group">
       <p>Keep your MyAnimeList list up to date as you watch: when you've watched 90% of an episode, the app updates it.</p>
       <p class="dim small">You sign in on MyAnimeList's own page; YarmiplayTV never sees your password. MyAnimeList's requests go through the YarmiplayServerTV of your last room.</p>
-      <button class="button" onclick={signInToMal}>Sign in to MyAnimeList</button>
+      <button class="button" onclick={signInToMal}><Icon name="login" size={18} />Sign in to MyAnimeList</button>
     </section>
   {:else}
     <section class="card group">
       <div class="row">
         {#if prefs.account?.picture}<img class="avatar" src={prefs.account.picture} alt="" />{/if}
         <b class="grow">{prefs.account?.userName}</b>
-        <button class="link" onclick={() => mal.signOut()}>Sign out</button>
+        <button class="link" onclick={() => mal.signOut()}><Icon name="logout" size={18} />Sign out</button>
       </div>
       <label class="switch"><input type="checkbox" checked={prefs.autoUpdate} onchange={(e) => mal.savePrefs((e.target as HTMLInputElement).checked, prefs.askFirst)} /> Update my list as I watch</label>
       <label class="switch"><input type="checkbox" checked={prefs.askFirst} onchange={(e) => mal.savePrefs(prefs.autoUpdate, (e.target as HTMLInputElement).checked)} /> Ask before each update</label>
@@ -71,7 +72,7 @@
       <h2>Find a show</h2>
       <form class="row" onsubmit={search}>
         <input class="grow" bind:value={query} placeholder="At least 3 letters" aria-label="Find a show on MyAnimeList" />
-        <button class="button quiet" type="submit" disabled={query.trim().length < 3}>Search</button>
+        <button class="button quiet" type="submit" disabled={query.trim().length < 3}><Icon name="search" size={18} />Search</button>
       </form>
       {#if searchError}<p class="error">{searchError}</p>{/if}
       {#if found}
@@ -93,7 +94,7 @@
       {#each list ?? [] as a (a.id)}
         <div class="list-row">
           <MalEntry anime={a} compact />
-          <button class="link" onclick={() => go(`#/search?q=${encodeURIComponent(a.title)}`)}>Find it in your libraries</button>
+          <button class="link" onclick={() => go(`#/search?q=${encodeURIComponent(a.title)}`)}><Icon name="search" size={18} />Find it in your libraries</button>
         </div>
       {/each}
       {#if list?.length === 0}<p class="dim">Nothing here.</p>{/if}

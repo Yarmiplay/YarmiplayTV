@@ -1,6 +1,7 @@
 <script lang="ts">
   import { go, session as sessionStore } from "../app/context";
   import ChatPanel from "../components/ChatPanel.svelte";
+  import Icon from "../components/Icon.svelte";
   import PeoplePanel from "../components/PeoplePanel.svelte";
   import PlaylistPanel from "../components/PlaylistPanel.svelte";
   import type { RoomState } from "../lib/syncplay/client";
@@ -25,17 +26,17 @@
     <section class="card empty">
       <h1>Not in a room</h1>
       <p class="dim">Join a room on a YarmiplayServerTV to watch together.</p>
-      <button class="button" onclick={() => go("#/join")}>Join a room</button>
+      <button class="button" onclick={() => go("#/join")}><Icon name="login" size={20} />Join a room</button>
     </section>
   {:else}
     <header>
       <h1>{ManagedRooms.label(room.room)}</h1>
-      <button class="button quiet" onclick={() => go("#/player")}>Player</button>
+      <button class="button quiet" onclick={() => go("#/player")}><Icon name="play_circle" size={20} />Player</button>
     </header>
     <nav class="tabs" aria-label="Room sections">
-      <button class:on={tab === "playlist"} onclick={() => (tab = "playlist")}>Playlist</button>
-      <button class:on={tab === "chat"} onclick={() => (tab = "chat")}>Chat</button>
-      <button class:on={tab === "room"} onclick={() => (tab = "room")}>Room</button>
+      <button class:on={tab === "playlist"} onclick={() => (tab = "playlist")}><Icon name="queue_music" size={20} />Playlist</button>
+      <button class:on={tab === "chat"} onclick={() => (tab = "chat")}><Icon name="forum" size={20} />Chat</button>
+      <button class:on={tab === "room"} onclick={() => (tab = "room")}><Icon name="groups" size={20} />Room</button>
     </nav>
     <div class="columns">
       <section class="card col" class:show={tab === "playlist"} aria-label="Playlist">
@@ -108,6 +109,10 @@
   }
   .tabs button {
     flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     background: var(--surface);
     border: 0;
     border-radius: 10px;

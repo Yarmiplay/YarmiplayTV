@@ -3,6 +3,7 @@
   import type { RoomState } from "../lib/syncplay/client";
   import { followsOperators } from "../lib/syncplay/client";
   import * as Filenames from "../lib/syncplay/filenames";
+  import Icon from "./Icon.svelte";
 
   /**
    * The shared playlist (MobilePanels.kt's playlist and DesktopRoomPanel.kt): select an entry for everyone, add files
@@ -77,17 +78,17 @@
   {:else}
     <div class="actions">
       <label class="button quiet small" class:disabled={locked}>
-        Add files
+        <Icon name="playlist_add" size={18} />Add files
         <input type="file" multiple accept="video/*,.mkv,.avi,.ts,.m2ts,.webm" onchange={addFiles} hidden disabled={locked} />
       </label>
-      <button class="button quiet small" onclick={() => session?.sortAlphabetically()} disabled={locked || playlist.length < 2}>Sort A to Z</button>
-      <button class="button quiet small" onclick={() => session?.undo()} disabled={locked || !canUndo}>Undo</button>
-      <button class="button quiet small" onclick={() => (menu = !menu)} disabled={locked} aria-expanded={menu}>More</button>
+      <button class="button quiet small" onclick={() => session?.sortAlphabetically()} disabled={locked || playlist.length < 2}><Icon name="sort_by_alpha" size={18} />Sort A to Z</button>
+      <button class="button quiet small" onclick={() => session?.undo()} disabled={locked || !canUndo}><Icon name="undo" size={18} />Undo</button>
+      <button class="button quiet small" onclick={() => (menu = !menu)} disabled={locked} aria-expanded={menu}><Icon name="more_vert" size={18} />More</button>
     </div>
     {#if menu}
       <div class="actions">
-        <button class="button quiet small" onclick={() => (session?.shuffle(false), (menu = false))}>Shuffle remaining</button>
-        <button class="button quiet small" onclick={() => (session?.shuffle(true), (menu = false))}>Shuffle entire</button>
+        <button class="button quiet small" onclick={() => (session?.shuffle(false), (menu = false))}><Icon name="shuffle" size={18} />Shuffle remaining</button>
+        <button class="button quiet small" onclick={() => (session?.shuffle(true), (menu = false))}><Icon name="shuffle" size={18} />Shuffle entire</button>
         <button
           class="button quiet small"
           disabled={!selected.size}
@@ -95,13 +96,13 @@
             session?.remove(selected);
             selected = new Set();
             menu = false;
-          }}>Remove selected</button
+          }}><Icon name="delete" size={18} />Remove selected</button
         >
       </div>
     {/if}
     <form class="link" onsubmit={addLink}>
       <input type="url" placeholder="Add a link" bind:value={link} aria-label="Link to add" disabled={locked} />
-      <button class="button quiet small" type="submit" disabled={locked || !link.trim()}>Add</button>
+      <button class="button quiet small" type="submit" disabled={locked || !link.trim()}><Icon name="add" size={18} />Add</button>
     </form>
     {#if playlist.length === 0}
       <p class="dim pad">The playlist is empty. Add videos from this device or a link; everyone in the room sees the same list.</p>
@@ -131,9 +132,9 @@
             {/if}
           </button>
           {#if room?.playlistIndex !== i}
-            <button class="play" onclick={() => session?.selectIndex(i)} disabled={locked} aria-label="Play for everyone">▶</button>
+            <button class="play" onclick={() => session?.selectIndex(i)} disabled={locked} aria-label="Play for everyone" title="Play for everyone"><Icon name="play_arrow" size={20} /></button>
           {:else}
-            <span class="play now" aria-label="Playing">●</span>
+            <span class="play now" role="img" aria-label="Playing" title="Playing"><Icon name="play_circle" size={20} /></span>
           {/if}
         </li>
       {/each}
@@ -219,6 +220,8 @@
     font-size: 12px;
   }
   .play {
+    display: inline-flex;
+    align-items: center;
     background: none;
     border: 0;
     padding: 8px 10px;

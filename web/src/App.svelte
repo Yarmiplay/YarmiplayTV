@@ -3,6 +3,7 @@
   import buildInfo from "virtual:build-info";
   import { go, route, settings } from "./app/context";
   import DeviceAccess from "./components/DeviceAccess.svelte";
+  import Icon from "./components/Icon.svelte";
   import PlayerView from "./components/PlayerView.svelte";
   import { applyTheme, followSystem } from "./lib/ui/theme";
   import { newVersion, watchForUpdates } from "./lib/ui/updates";
@@ -23,11 +24,11 @@
    * the bottom on phones. The player stays mounted whichever section shows, so the video keeps playing.
    */
   const SECTIONS = [
-    { key: "home", label: "Home", href: "#/" },
-    { key: "player", label: "Player", href: "#/player" },
-    { key: "search", label: "Search", href: "#/search" },
-    { key: "room", label: "Room", href: "#/room" },
-    { key: "settings", label: "Settings", href: "#/settings" },
+    { key: "home", label: "Home", href: "#/", icon: "home" },
+    { key: "player", label: "Player", href: "#/player", icon: "play_circle" },
+    { key: "search", label: "Search", href: "#/search", icon: "search" },
+    { key: "room", label: "Room", href: "#/room", icon: "groups" },
+    { key: "settings", label: "Settings", href: "#/settings", icon: "settings" },
   ] as const;
 
   const section = $derived.by(() => {
@@ -51,14 +52,16 @@
     <nav class="sections" aria-label="Sections">
       <a class="brand" href="#/" aria-label="YarmiplayTV home"><img src="./favicon.svg" alt="" width="32" height="32" /></a>
       {#each SECTIONS as s (s.key)}
-        <a href={s.href} class:on={section === s.key || (s.key === "room" && section === "join")} aria-current={section === s.key ? "page" : undefined}>{s.label}</a>
+        <a href={s.href} class:on={section === s.key || (s.key === "room" && section === "join")} aria-current={section === s.key ? "page" : undefined}
+          ><Icon name={s.icon} size={22} /><span>{s.label}</span></a
+        >
       {/each}
     </nav>
     <div class="content" class:full={section === "player"}>
       {#if $newVersion}
         <div class="update" role="status">
           <span>YarmiplayTV {$newVersion} is out.</span>
-          <button class="button small" onclick={() => location.reload()}>Reload</button>
+          <button class="button small" onclick={() => location.reload()}><Icon name="refresh" size={18} />Reload</button>
           <button class="link" onclick={() => newVersion.set(null)}>Later</button>
         </div>
       {/if}
@@ -126,10 +129,16 @@
     margin-bottom: 12px;
   }
   .sections a:not(.brand) {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     padding: 10px 12px;
     border-radius: 10px;
     color: var(--text);
     text-decoration: none;
+  }
+  .sections a:not(.brand, .on) :global(.icon) {
+    color: var(--text-dim);
   }
   .sections a.on {
     background: var(--surface-high);
@@ -166,9 +175,11 @@
     }
     .sections a:not(.brand) {
       flex: 1;
+      flex-direction: column;
+      gap: 2px;
       text-align: center;
-      padding: 8px 4px;
-      font-size: 14px;
+      padding: 6px 4px;
+      font-size: 12px;
     }
   }
 </style>

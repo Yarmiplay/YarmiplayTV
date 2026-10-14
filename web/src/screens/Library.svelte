@@ -1,5 +1,6 @@
 <script lang="ts">
   import { route } from "../app/context";
+  import Icon from "../components/Icon.svelte";
   import { sourceByKey, sources } from "../app/media";
   import MediaTile, { knownItems } from "../components/MediaTile.svelte";
   import type { MediaItem, MediaSource } from "../lib/media";
@@ -60,7 +61,7 @@
     {#if $sources.length === 0}
       <section class="card">
         <p>Add a Jellyfin or Plex server to browse its libraries here.</p>
-        <a class="button" href="#/servers">Media servers</a>
+        <a class="button" href="#/servers"><Icon name="dns" size={20} />Media servers</a>
       </section>
     {/if}
     {#each groups as g (g.source.key)}

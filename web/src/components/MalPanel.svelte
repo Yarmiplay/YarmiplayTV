@@ -1,5 +1,6 @@
 <script lang="ts">
   import { mal, signInToMal } from "../app/watching";
+  import Icon from "./Icon.svelte";
   import type { MalAnime } from "../lib/mal/models";
   import type { MalState } from "../lib/mal/service";
   import MalEntry from "./MalEntry.svelte";
@@ -38,23 +39,23 @@
     <p class="dim">MyAnimeList isn't available in this build.</p>
   {:else if ms.kind === "signedOut"}
     <p>Sign in to keep your MyAnimeList list up to date as you watch.</p>
-    <button class="button" onclick={signInToMal}>Sign in to MyAnimeList</button>
+    <button class="button" onclick={signInToMal}><Icon name="login" size={18} />Sign in to MyAnimeList</button>
   {:else if ms.kind === "idle"}
     <p class="dim">Nothing that's an episode of a show is playing.</p>
   {:else if ms.kind === "matching"}
     <p class="dim">Finding {ms.info.title} on MyAnimeList…</p>
   {:else if ms.kind === "failed"}
     <p class="error">{ms.message}</p>
-    <button class="button quiet" onclick={() => mal.refresh()}>Try again</button>
+    <button class="button quiet" onclick={() => mal.refresh()}><Icon name="refresh" size={18} />Try again</button>
   {:else if ms.kind === "ignored"}
     <p>{ms.info.title} isn't tracked.</p>
-    <button class="button quiet" onclick={() => mal.ignore(ms.kind === "ignored" ? ms.info.seriesKey : "", false)}>Track it again</button>
+    <button class="button quiet" onclick={() => mal.ignore(ms.kind === "ignored" ? ms.info.seriesKey : "", false)}><Icon name="visibility_off" size={18} />Track it again</button>
   {:else if ms.kind === "matched"}
     <MalEntry anime={ms.entry} />
     <p class="small dim">This is episode {ms.match.episode} of it.</p>
     <div class="row">
-      <button class="button small" onclick={() => ms.kind === "matched" && mal.watched(ms.info)}>Mark episode {ms.match.episode} watched</button>
-      {#if canUndo}<button class="button quiet small" onclick={() => mal.undo()}>Undo</button>{/if}
+      <button class="button small" onclick={() => ms.kind === "matched" && mal.watched(ms.info)}><Icon name="check_circle" size={18} />Mark episode {ms.match.episode} watched</button>
+      {#if canUndo}<button class="button quiet small" onclick={() => mal.undo()}><Icon name="undo" size={18} />Undo</button>{/if}
       <button class="link" onclick={() => ms.kind === "matched" && startPicking(ms.info.title)}>Wrong entry?</button>
       <button class="link" onclick={() => ms.kind === "matched" && mal.ignore(ms.info.seriesKey, true, ms.info.title)}>Don't track this show</button>
     </div>
@@ -78,7 +79,7 @@
     >
       <input bind:value={query} aria-label="Search MyAnimeList" />
       <label class="small">Episode <input type="number" min="1" bind:value={episode} class="num" /></label>
-      <button class="button quiet small" type="submit">Search</button>
+      <button class="button quiet small" type="submit"><Icon name="search" size={18} />Search</button>
     </form>
     <ul class="choices">
       {#each results as r (r.id)}

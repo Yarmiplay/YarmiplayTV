@@ -4,6 +4,7 @@
   import * as FileMatch from "../lib/syncplay/fileMatch";
   import * as ManagedRooms from "../lib/syncplay/managedRooms";
   import { formatTime } from "../lib/syncplay/models";
+  import Icon from "./Icon.svelte";
 
   /**
    * The room (MobilePanels.kt's people and room parts): who's here, ready or not, and what they play, with a warning
@@ -44,7 +45,7 @@
 <div class="people">
   {#if !room || room.status === "DISCONNECTED"}
     <p class="dim">Not in a room.</p>
-    <button class="button" onclick={() => go("#/join")}>Join a room</button>
+    <button class="button" onclick={() => go("#/join")}><Icon name="login" size={20} />Join a room</button>
   {:else}
     <section>
       <h3>{ManagedRooms.label(room.room)}</h3>
@@ -97,7 +98,7 @@
 
     <section>
       <button class="button" onclick={() => session?.toggleReady()} disabled={room.status !== "CONNECTED"}>
-        {room.isReady ? "I'm not ready" : "I'm ready"}
+        <Icon name={room.isReady ? "block" : "check_circle"} size={20} />{room.isReady ? "I'm not ready" : "I'm ready"}
       </button>
     </section>
 
@@ -111,7 +112,7 @@
         }}
       >
         <input bind:value={newRoom} placeholder="Room name" aria-label="Room to switch to" />
-        <button class="button quiet" type="submit" disabled={!newRoom.trim()}>Switch</button>
+        <button class="button quiet" type="submit" disabled={!newRoom.trim()}><Icon name="meeting_room" size={18} />Switch</button>
       </form>
     </section>
 
@@ -121,14 +122,14 @@
         {#if inManagedRoom(room)}
           <p class="small">
             Full name: <span class="mono">{room.room}</span>
-            <button class="link" onclick={() => copy(room!.room)}>{copied === room.room ? "Copied" : "Copy"}</button>
+            <button class="link" onclick={() => copy(room!.room)}><Icon name={copied === room.room ? "check" : "content_copy"} size={16} />{copied === room.room ? "Copied" : "Copy"}</button>
           </p>
           {#if operator}
             <p class="small">You're an operator.</p>
             {#if savedPassword}
               <p class="small">
                 Operator password: <span class="mono">{savedPassword}</span>
-                <button class="link" onclick={() => copy(savedPassword!)}>{copied === savedPassword ? "Copied" : "Copy"}</button>
+                <button class="link" onclick={() => copy(savedPassword!)}><Icon name={copied === savedPassword ? "check" : "content_copy"} size={16} />{copied === savedPassword ? "Copied" : "Copy"}</button>
               </p>
             {/if}
           {:else}
@@ -140,7 +141,7 @@
               }}
             >
               <input bind:value={operatorPassword} placeholder="AB-123-456" aria-label="Operator password" class="mono" />
-              <button class="button quiet" type="submit" disabled={!operatorPassword.trim()}>Become operator</button>
+              <button class="button quiet" type="submit" disabled={!operatorPassword.trim()}><Icon name="key" size={18} />Become operator</button>
             </form>
             {#if followsOperators(room)}<p class="dim small">Only operators play, pause, seek or change the playlist.</p>{/if}
           {/if}
@@ -152,15 +153,15 @@
             }}
           >
             <input bind:value={managedName} maxlength={ManagedRooms.MAX_BASE_NAME_LENGTH} placeholder="Name" aria-label="Managed room name" />
-            <button class="button quiet" type="submit" disabled={!ManagedRooms.isValidBaseName(managedName)}>Create managed room</button>
+            <button class="button quiet" type="submit" disabled={!ManagedRooms.isValidBaseName(managedName)}><Icon name="lock" size={18} />Create managed room</button>
           </form>
         {/if}
       </section>
     {/if}
 
     <section class="row">
-      <button class="button quiet" onclick={() => go("#/join")}>Edit connection</button>
-      <button class="button quiet" onclick={() => session?.disconnect()}>Disconnect</button>
+      <button class="button quiet" onclick={() => go("#/join")}><Icon name="edit" size={18} />Edit connection</button>
+      <button class="button quiet" onclick={() => session?.disconnect()}><Icon name="logout" size={18} />Disconnect</button>
     </section>
   {/if}
 </div>
@@ -253,6 +254,9 @@
     flex-wrap: wrap;
   }
   .link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     background: none;
     border: 0;
     color: var(--accent);

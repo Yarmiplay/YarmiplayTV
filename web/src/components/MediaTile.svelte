@@ -9,6 +9,7 @@
   import { go, session as sessionStore } from "../app/context";
   import { sourceByKey } from "../app/media";
   import { displayTitle, isPlayable } from "../lib/media";
+  import Icon from "./Icon.svelte";
 
   /** One library item (MobileBrowse.kt's tiles): a folder opens, a video offers play in the room, play here, or add. */
   let { item, substitute = false }: { item: MediaItem; substitute?: boolean } = $props();
@@ -41,10 +42,10 @@
 
 <li class="card tile">
   {#if playable}
-    <div class="thumb">{#if image}<img src={image} alt="" loading="lazy" />{/if}</div>
+    <div class="thumb">{#if image}<img src={image} alt="" loading="lazy" />{:else}<Icon name="movie" size={36} />{/if}</div>
   {:else}
     <a class="thumb" href="#/library/{encodeURIComponent(item.sourceKey)}/{encodeURIComponent(item.id)}">
-      {#if image}<img src={image} alt="" loading="lazy" />{/if}
+      {#if image}<img src={image} alt="" loading="lazy" />{:else}<Icon name="folder" size={36} />{/if}
     </a>
   {/if}
   <b class="name">
@@ -56,13 +57,13 @@
   {#if playable}
     <div class="row">
       {#if substitute}
-        <button class="button small" onclick={pick}>Play as the room's entry</button>
+        <button class="button small" onclick={pick}><Icon name="play_arrow" size={18} />Play as the room's entry</button>
       {:else}
         {#if connected}
-          <button class="button small" onclick={() => act("room")}>Play in the room</button>
-          <button class="button quiet small" onclick={() => act("add")}>Add to playlist</button>
+          <button class="button small" onclick={() => act("room")}><Icon name="play_arrow" size={18} />Play in the room</button>
+          <button class="button quiet small" onclick={() => act("add")}><Icon name="playlist_add" size={18} />Add to playlist</button>
         {/if}
-        <button class="button quiet small" onclick={() => act("here")}>Play here</button>
+        <button class="button quiet small" onclick={() => act("here")}><Icon name="play_circle" size={18} />Play here</button>
       {/if}
     </div>
   {/if}
@@ -75,7 +76,9 @@
     align-content: start;
   }
   .thumb {
-    display: block;
+    display: grid;
+    place-items: center;
+    color: var(--text-dim);
     aspect-ratio: 16 / 9;
     border-radius: 10px;
     background: var(--surface-high);
