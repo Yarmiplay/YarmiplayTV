@@ -245,4 +245,4 @@ actual fun appLogoPainter(): Painter {
 actual val malSignInInApp = false
 
 @Composable
-actual fun MalSignInPage(url: String, onNavigate: (String) -> Boolean, modifier: Modifier) = Unit
+actual fun MalSignInPage(url: String, onNavigate: (String) -> Boolean, modifier: Modifier, remotePointer: Boolean) = Unit

@@ -153,7 +153,7 @@ expect val malSignInInApp: Boolean
 /**
  * MyAnimeList's sign-in page at [url] in a web view (Android; nothing on desktop). [onNavigate] sees where the page
  * goes and returns true for the redirect it handled; the app never reads the form, and the web view's cookies and
- * storage are deleted afterwards.
+ * storage are deleted afterwards. [remotePointer] (TV) adds a pointer the remote's arrows move and OK taps with.
  */
 @Composable
-expect fun MalSignInPage(url: String, onNavigate: (String) -> Boolean, modifier: Modifier = Modifier)
+expect fun MalSignInPage(url: String, onNavigate: (String) -> Boolean, modifier: Modifier = Modifier, remotePointer: Boolean = false)

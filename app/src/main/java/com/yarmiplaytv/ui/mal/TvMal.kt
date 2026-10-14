@@ -78,8 +78,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Signing in to MyAnimeList on TV, which usually has no browser: what's shared and kept first, then MyAnimeList's
- * own page in a web view. The app only watches where the page goes (to catch the redirect); it never reads the
- * form, and the web view's cookies and storage are deleted afterwards.
+ * own page in a web view, with a pointer the remote moves. The app only watches where the page goes (to catch the
+ * redirect); it never reads the form, and the web view's cookies and storage are deleted afterwards.
  */
 @Composable
 fun MalLoginScreen(container: AppContainer, nav: Navigator) {
@@ -89,7 +89,7 @@ fun MalLoginScreen(container: AppContainer, nav: Navigator) {
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     val page = url
     if (page != null && model.status == null && model.error == null) {
-        MalSignInPage(page, { target -> model.onRedirect(target) { nav.back() } }, Modifier.fillMaxSize())
+        MalSignInPage(page, { target -> model.onRedirect(target) { nav.back() } }, Modifier.fillMaxSize(), remotePointer = true)
         return
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 96.dp, vertical = 40.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
