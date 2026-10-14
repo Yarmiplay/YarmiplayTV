@@ -308,7 +308,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<section class="player" class:hidden={!visible} data-theme="dark">
+<section class="player" class:hidden={!visible}>
   <!-- The keys work everywhere on this screen (onKey); a click on the picture plays or pauses, as in the apps. -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <div
@@ -504,7 +504,7 @@
     {/if}
 
     {#if panel}
-      <aside class="side" data-theme={$settings.theme === "light" ? "dark" : undefined}>
+      <aside class="side">
         <header>
           <h2>{{ playlist: "Playlist", room: "Room", chat: "Chat", audio: "Audio", subtitles: "Subtitles", mal: "MyAnimeList" }[panel]}</h2>
           <button class="icon" onclick={() => (panel = null)} aria-label="Close">✕</button>
@@ -544,12 +544,14 @@
 </section>
 
 <style>
+  /* What's written straight on the video stays white on see-through black, in every theme. */
   .player {
+    --on-video: #fff;
     height: 100%;
     display: flex;
     flex-direction: column;
     background: #000;
-    color: var(--text);
+    color: var(--on-video);
   }
   .hidden {
     display: none;
@@ -570,6 +572,9 @@
   .subs {
     pointer-events: none;
   }
+  .empty {
+    color: var(--on-video);
+  }
   .empty,
   .sheet {
     position: absolute;
@@ -581,9 +586,33 @@
     text-align: center;
     padding: 16px;
   }
+  /* The player takes the theme (2.0.3): its sheets and panels are the theme's cards over the video. */
   .sheet {
-    background: var(--scrim);
+    background: rgb(0 0 0 / 0.55);
     z-index: 3;
+  }
+  .sheet > * {
+    max-width: 560px;
+  }
+  .sheet h2 {
+    background: var(--surface);
+    color: var(--text);
+    border-radius: 16px 16px 0 0;
+    padding: 16px 16px 4px;
+    margin: 0;
+    width: 100%;
+  }
+  .sheet > p,
+  .sheet > .row {
+    background: var(--surface);
+    color: var(--text);
+    margin: 0;
+    padding: 4px 16px;
+    width: 100%;
+  }
+  .sheet > .row {
+    border-radius: 0 0 16px 16px;
+    padding-bottom: 16px;
   }
   .sheet h2 {
     margin: 0;

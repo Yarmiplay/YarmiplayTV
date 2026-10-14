@@ -1,5 +1,5 @@
 /**
- * The app's themes, as in AppColors.kt: Dark (night blue, the app's own look and what the player always uses), Noire
+ * The app's themes, as in AppColors.kt: Dark (night blue, the app's own look), Noire
  * (dark purple, as NoireServerTV), Monochrome (true black and white), Light, and Match the system (Light or Dark as the device is set). The colours themselves
  * live in app.css as custom properties under `html[data-theme=…]`; this file picks which set applies.
  */
@@ -16,7 +16,7 @@ export const THEMES: { key: ThemeKey; label: string; description: string }[] = [
 ];
 
 /** Under the theme choices: what no theme changes. */
-export const THEME_NOTE = "The player stays dark in every theme, as it sits over the video.";
+export const THEME_NOTE = "The player takes the theme too; what's written on the video stays white, on see-through black.";
 
 /** The browser bar's colour for each palette: its background. */
 const BAR: Record<PaletteKey, string> = { dark: "#0E1116", noire: "#100C16", monochrome: "#000000", light: "#F3F5F8" };
