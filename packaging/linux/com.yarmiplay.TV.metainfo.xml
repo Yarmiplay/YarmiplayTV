@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.1.0" date="2026-10-14">
+      <description>
+        <p>YarmiplayTV in your web browser, with nothing to install: open tv.yarmiplay.com/watch to join a room on a YarmiplayServerTV with HTTPS set up. It has its own player for MKV, MP4, AVI, TS and WebM with styled subtitles and DTS or AC-3 sound, plays from your device, Jellyfin and Plex or another viewer's copy through the server, skips openings and endings, and keeps MyAnimeList up to date, with the shared playlist, chat, saved rooms and themes as in the app.</p>
+      </description>
+    </release>
     <release version="2.0.3" date="2026-10-14">
       <description>
         <p>The player follows your theme: its panels, sheets and buttons take the theme's colours, and what's written on the video (the title, the times, hints) is now white on see-through black, so it reads on any picture. The shared playlist shows each file's whole name instead of cutting it short.</p>
