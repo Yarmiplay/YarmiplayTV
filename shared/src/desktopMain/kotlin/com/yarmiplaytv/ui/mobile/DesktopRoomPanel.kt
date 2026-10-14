@@ -95,7 +95,10 @@ import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.AlignmentLine
+import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
@@ -106,11 +109,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.local.FileLocalLibrary
@@ -128,6 +134,7 @@ import java.nio.file.Paths
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 /** The desktop side panel's state; the window's Enter shortcut calls [focusChat]. */
@@ -161,24 +168,46 @@ actual fun toggleRoomSidePanel(tab: RoomPanelTab): Boolean {
 
 private val PANEL_WIDTH = 380.dp
 
-/** New messages beside the Chat tab's name: a count in the theme's accent, as tall as the name and level with it. */
+/**
+ * New messages beside the Chat tab's name: a count in the theme's accent, level with the name. A circle for one or two
+ * digits ("99+" a pill as tall), with the digits in its middle both ways.
+ */
 @Composable
 private fun UnreadCount(count: Int) {
+    val text = if (count > 99) "99+" else "$count"
+    val round = text.length <= 2
     Box(
-        Modifier.heightIn(min = 18.dp).widthIn(min = 18.dp).clip(RoundedCornerShape(50)).background(AppColors.Accent)
-            .padding(horizontal = 5.dp)
+        Modifier.height(BADGE_SIZE).then(if (round) Modifier.width(BADGE_SIZE) else Modifier.widthIn(min = BADGE_SIZE))
+            .clip(RoundedCornerShape(50)).background(AppColors.Accent)
+            .then(if (round) Modifier else Modifier.padding(horizontal = 5.dp))
             .semantics(mergeDescendants = true) { contentDescription = if (count == 1) "1 new message" else "$count new messages" },
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            if (count > 99) "99+" else "$count",
+            text,
+            Modifier.digitsCentered(BADGE_FONT_SIZE),
             color = AppColors.OnAccent,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
+            style = TextStyle(fontSize = BADGE_FONT_SIZE, fontWeight = FontWeight.Bold),
             maxLines = 1,
         )
     }
 }
+
+/**
+ * Moves the text so its digits, which stand on the baseline about 0.7 em tall, have their middle where the middle of
+ * its box was: a font's line box has room for accents above and descenders below, which would leave them off-centre.
+ */
+private fun Modifier.digitsCentered(fontSize: TextUnit) = layout { measurable, constraints ->
+    val text = measurable.measure(constraints)
+    val baseline = text[FirstBaseline]
+    val shift = if (baseline == AlignmentLine.Unspecified) 0 else (text.height / 2f + DIGIT_HEIGHT_EM / 2 * fontSize.toPx() - baseline).roundToInt()
+    layout(text.width, text.height) { text.place(0, shift) }
+}
+
+private const val DIGIT_HEIGHT_EM = 0.7f
+private val BADGE_FONT_SIZE = 11.sp
+private val BADGE_SIZE = 20.dp
+private val TAB_HEIGHT = 48.dp
 private val ROW_HEIGHT = 40.dp
 
 @Composable
@@ -206,12 +235,17 @@ actual fun RoomSidePanel(container: AppContainer) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TabRow(selectedTabIndex = panel.tab.ordinal, containerColor = AppColors.Surface, modifier = Modifier.weight(1f)) {
                     RoomPanelTab.entries.forEach { tab ->
-                        Tab(selected = panel.tab == tab, onClick = { panel.tab = tab }, modifier = Modifier.testTag("panel_tab_${tab.name}"), text = {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(tab.label, maxLines = 1)
+                        // Less side padding than a text tab's, so the Chat tab's count fits beside its name at full size.
+                        Tab(selected = panel.tab == tab, onClick = { panel.tab = tab }, modifier = Modifier.testTag("panel_tab_${tab.name}")) {
+                            Row(
+                                Modifier.height(TAB_HEIGHT).padding(horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text(tab.label, style = MaterialTheme.typography.titleSmall, maxLines = 1)
                                 if (tab == RoomPanelTab.CHAT && panel.unread > 0) UnreadCount(panel.unread)
                             }
-                        })
+                        }
                     }
                 }
                 IconButton({ panel.open = false }) { Icon(Icons.Filled.Close, "Close the panel") }
