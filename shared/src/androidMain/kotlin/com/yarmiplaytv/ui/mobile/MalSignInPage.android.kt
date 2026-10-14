@@ -45,6 +45,8 @@ actual fun MalSignInPage(url: String, onNavigate: (String) -> Boolean, modifier:
                 // MyAnimeList's page needs JavaScript; the app adds none of its own.
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
+                // Focusing the web view would otherwise focus the page's first field, scrolling it to the top.
+                settings.setNeedInitialFocus(false)
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = navigate(request.url.toString())
                 }
@@ -126,7 +128,7 @@ private class RemotePointer(context: Context, val web: WebView) : FrameLayout(co
     }
 
     private fun tap() {
-        web.requestFocus()
+        if (!web.hasFocus()) web.requestFocus()
         val time = SystemClock.uptimeMillis()
         for (action in intArrayOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
             val touch = MotionEvent.obtain(time, time, action, x, y, 0)
