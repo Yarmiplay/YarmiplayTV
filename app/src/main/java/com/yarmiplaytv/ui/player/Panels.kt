@@ -3,6 +3,8 @@ package com.yarmiplaytv.ui.player
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -85,7 +87,7 @@ import kotlinx.coroutines.launch
 private fun PanelHeader(title: String, subtitle: String? = null) {
     Column(Modifier.padding(bottom = 12.dp)) {
         Text(title, style = MaterialTheme.typography.headlineSmall)
-        if (subtitle != null) Text(subtitle, color = AppColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (subtitle != null) Text(subtitle, color = AppColors.TextDim)
     }
 }
 
@@ -94,10 +96,11 @@ private fun SizeWarning(text: String) {
     Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Filled.Warning, contentDescription = null, tint = AppColors.NotReady, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(6.dp))
-        Text(text, color = AppColors.NotReady, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(text, color = AppColors.NotReady, style = MaterialTheme.typography.labelMedium)
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: FocusRequester) {
     val room by container.sync.room.collectAsStateWithLifecycle()
@@ -113,7 +116,8 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
         val np = nowPlaying
         val canAddCurrent = np != null && room.playlist.none { Filenames.same(it, np.fileName) }
         val canUndo by container.playlist.shared.canUndo.collectAsStateWithLifecycle()
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 12.dp)) {
+        // The buttons wrap rather than squeeze the last ones into slivers in the panel's width.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 12.dp)) {
             ActionButton("Add from your libraries", { nav.popTo(Screen.Home) }, if (room.playlist.isEmpty()) Modifier.focusRequester(focus) else Modifier, icon = Icons.Filled.Home)
             if (canAddCurrent && np != null) {
                 ActionButton("Add current", { container.sync.client?.addToPlaylist(np.fileName) }, icon = Icons.Filled.Add)
@@ -146,7 +150,8 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
                             } else {
                                 Text("${index + 1}.", color = AppColors.TextDim, modifier = Modifier.width(32.dp))
                             }
-                            Column {
+                            // The whole name, on as many lines as it takes.
+                            Column(Modifier.weight(1f)) {
                                 Text(file, fontWeight = if (current) FontWeight.Bold else FontWeight.Normal)
                                 room.sizeWarning(file)?.let { SizeWarning(it) }
                             }
