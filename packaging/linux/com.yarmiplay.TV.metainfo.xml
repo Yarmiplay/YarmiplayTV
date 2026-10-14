@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.1.5" date="2026-10-14">
+      <description>
+        <p>New messages in a room's chat no longer pop up over the video; they wait in the chat. To see them over the video as they arrive, turn on Settings &gt; Syncing &gt; Chat on the video.</p>
+      </description>
+    </release>
     <release version="2.1.4" date="2026-10-14">
       <description>
         <p>On a TV, the home screen's notice of a new version and Settings &gt; Updates' Open Google Play button open YarmiplayTV's page in the Play Store on the TV, instead of starting the update in the background or showing a QR code for your phone.</p>
