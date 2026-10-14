@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PictureInPictureAlt
@@ -320,11 +321,10 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 container = container,
                 title = nowPlaying?.title ?: "Nothing playing",
                 controlsFocus = controlsFocus,
-                panels = panels,
                 pip = pip,
                 onTogglePause = ::togglePause,
                 onSeek = ::seekBy,
-                onOpenPanel = { openPanel(it) },
+                onOpenMenus = { openPanel(lastPanel) },
                 onHome = { nav.popTo(Screen.Home) },
                 modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { tvControlsHeight = with(density) { it.height.toDp() } },
             )
@@ -343,7 +343,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                     .focusGroup(),
             ) {
                 Column {
-                    PanelTabs(panels, side.kind, tabFocus, onFocusTab = { if (it != side.kind) openPanel(it, focusContent = false) })
+                    PanelTabs(panels, side.kind, tabFocus, onFocusTab = { if (it != side.kind) openPanel(it, focusContent = false) }, onClickTab = { openPanel(it) })
                     Box(Modifier.weight(1f)) {
                         when (side.kind) {
                             PanelKind.PLAYLIST -> PlaylistPanel(container, nav, panelFocus)
@@ -507,11 +507,11 @@ private fun ControlsBar(
     container: AppContainer,
     title: String,
     controlsFocus: FocusRequester,
-    panels: List<PanelKind>,
     pip: PictureInPicture,
     onTogglePause: () -> Unit,
     onSeek: (Double) -> Unit,
-    onOpenPanel: (PanelKind) -> Unit,
+    /** Opens the menu used last; its tabs switch to the others. */
+    onOpenMenus: () -> Unit,
     onHome: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -585,15 +585,15 @@ private fun ControlsBar(
             if (pip.supported && state.fileLoaded) {
                 IconAction(Icons.Filled.PictureInPictureAlt, pictureInPictureLabel, pip.toggle, Modifier.testTag("pip"), tint = OnVideo.Text)
             }
-            panels.forEach { kind -> IconAction(kind.icon, kind.label, { onOpenPanel(kind) }, tint = OnVideo.Text) }
+            ActionButton("Menus", onOpenMenus, Modifier.testTag("menus"), icon = Icons.Filled.Menu)
             IconAction(Icons.Filled.Home, "Browse", onHome, tint = OnVideo.Text)
         })
     }
 }
 
 /**
- * The bar's buttons: [start] at the left and [end] at the right, or one after the other when they don't fit, in a row
- * that scrolls to whichever has the focus, with an arrow at each side that has more.
+ * The bar's buttons: [start] at the left and [end] at the right. They fit on a 1080p TV; with larger text they follow
+ * one another in a row that scrolls to whichever has the focus, with an arrow at each side that has more.
  */
 @Composable
 private fun ButtonRow(modifier: Modifier = Modifier, start: @Composable RowScope.() -> Unit, end: @Composable RowScope.() -> Unit) {
@@ -621,11 +621,17 @@ private fun MoreArrow(icon: ImageVector, modifier: Modifier) =
     Icon(icon, contentDescription = null, tint = OnVideo.Text, modifier = modifier.size(32.dp))
 
 /**
- * The panels' tabs, at the top of the open one: moving along them switches panel. Coming up from the panel, the
- * focus lands on its own tab, not whichever is above.
+ * The panels' tabs, at the top of the open one: moving along them switches panel, and OK goes into it. Coming up from
+ * the panel, the focus lands on its own tab, not whichever is above.
  */
 @Composable
-private fun PanelTabs(panels: List<PanelKind>, selected: PanelKind, tabFocus: Map<PanelKind, FocusRequester>, onFocusTab: (PanelKind) -> Unit) {
+private fun PanelTabs(
+    panels: List<PanelKind>,
+    selected: PanelKind,
+    tabFocus: Map<PanelKind, FocusRequester>,
+    onFocusTab: (PanelKind) -> Unit,
+    onClickTab: (PanelKind) -> Unit,
+) {
     Row(
         Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp)
             .focusProperties { onEnter = { tabFocus.getValue(selected).requestFocus() } }
@@ -635,7 +641,7 @@ private fun PanelTabs(panels: List<PanelKind>, selected: PanelKind, tabFocus: Ma
         panels.forEach { kind ->
             val current = kind == selected
             Surface(
-                onClick = { onFocusTab(kind) },
+                onClick = { onClickTab(kind) },
                 modifier = Modifier.size(48.dp).focusRequester(tabFocus.getValue(kind)).onFocusChanged { if (it.isFocused) onFocusTab(kind) }.testTag("panel_tab_${kind.name.lowercase()}"),
                 shape = ClickableSurfaceDefaults.shape(CircleShape),
                 colors = ClickableSurfaceDefaults.colors(

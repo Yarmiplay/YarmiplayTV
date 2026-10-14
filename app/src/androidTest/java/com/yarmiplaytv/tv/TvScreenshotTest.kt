@@ -149,6 +149,8 @@ class TvScreenshotTest {
         shot("player")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER); tv.await("0:00")
         shot("player_controls", ignore = listOf(SEEK_BAR_CACHE_END))
+        // Menus opens the room; each menu's tab switches to it.
+        tv.click("Menus"); tv.await("I'm ready")
         val panels = listOf("Shared playlist" to "playlist", "Room" to "room", "Chat" to "chat", "Audio" to "audio", "Subtitles" to "subtitles")
         for ((label, slug) in panels) {
             tv.click(label)
@@ -162,8 +164,6 @@ class TvScreenshotTest {
                 },
             )
             shot("player_panel_$slug")
-            tv.back() // straight back to the video
-            tv.key(KeyEvent.KEYCODE_DPAD_CENTER); tv.awaitFocus("Play/pause")
         }
         Screenshots.assertAllMatched()
     }

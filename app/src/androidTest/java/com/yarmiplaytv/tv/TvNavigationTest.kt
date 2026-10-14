@@ -284,63 +284,45 @@ class TvNavigationTest {
 
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
         tv.awaitFocus("Play/pause")
-        // Left to right: play/pause, back 10 s, forward 10 s, the playlist's previous and next entry, ready, screenshot,
-        // then the panel buttons.
-        val row = listOf("Back", "Forward", "Previous in the playlist", "Next in the playlist", "Ready", "Screenshot", "Shared playlist", "Room", "Chat", "Audio", "Subtitles")
-        // What gets focus when each panel opens; TEXT_FIELD is the chat's message field.
-        val panels = listOf("Shared playlist" to Scenarios.CLIP_NAME, "Room" to "I'm ready", "Chat" to TEXT_FIELD, "Audio" to "", "Subtitles" to "Off")
-        for ((button, focused) in panels) {
-            for (next in row.subList(0, row.indexOf(button) + 1)) {
-                tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
-                tv.awaitFocus(next)
-            }
-            tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
-            when (button) {
-                "Shared playlist" -> { tv.await("everyone sees these changes"); tv.await("File size differs from Alex's") }
-                "Room" -> tv.await("Different size than yours")
-                "Chat" -> tv.await("Give me a minute")
-                "Audio" -> tv.await("Audio")
-                else -> Unit
-            }
-            when (focused) {
-                TEXT_FIELD -> tv.awaitFocusedTextField()
-                "" -> Unit
-                else -> tv.awaitFocus(focused)
-            }
-            // Back closes the panel, straight back to the video.
-            tv.back()
-            tv.awaitGone(HIDE_HINT)
-            tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
-            tv.awaitFocus("Play/pause")
+        // Left to right, all in one row: play/pause, back 10 s, forward 10 s, the playlist's previous and next entry,
+        // ready, screenshot, the menus, browse.
+        for (next in listOf("Back", "Forward", "Previous in the playlist", "Next in the playlist", "Ready", "Screenshot", "Menus", "Browse")) {
+            tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+            tv.awaitFocus(next)
         }
-        tv.back()
-        tv.awaitGone(HIDE_HINT)
-        // D-pad up with the controls hidden opens the panel used last; up again reaches its tab, and moving along
-        // the tabs switches panel.
-        tv.key(KeyEvent.KEYCODE_DPAD_UP)
-        tv.awaitFocus("Off")
-        tv.key(KeyEvent.KEYCODE_DPAD_UP)
-        tv.awaitFocus("Subtitles")
+        // Menus opens the room the first time.
         tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
-        tv.awaitFocus("Audio")
+        tv.awaitFocus("Menus")
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        tv.awaitFocus("I'm ready")
+        tv.await("Different size than yours")
+        // Up reaches the room's tab, and moving along the tabs switches menu.
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("Room")
         tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
+        tv.awaitFocus("Shared playlist")
+        tv.await("everyone sees these changes"); tv.await("File size differs from Alex's")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT, times = 2)
         tv.awaitFocus("Chat")
         tv.await("Give me a minute")
-        tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
-        tv.awaitFocus("Room")
-        tv.await("Different size than yours")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Audio")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Subtitles")
         tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
-        tv.awaitFocus("I'm ready")
-        // The focus stays in the panel: left goes nowhere behind it.
+        tv.awaitFocus("Off")
+        // The focus stays in the menu: left goes nowhere behind it.
         tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
-        tv.awaitFocus("I'm ready")
-        // Menu closes it too, and up opens the room panel again.
-        tv.key(KeyEvent.KEYCODE_MENU)
-        tv.awaitGone("I'm ready")
-        tv.key(KeyEvent.KEYCODE_DPAD_UP)
-        tv.awaitFocus("I'm ready")
+        tv.awaitFocus("Off")
+        // Back closes it, straight back to the video; up opens the menu used last.
         tv.back()
-        tv.awaitGone("I'm ready")
+        tv.awaitGone("Off")
+        tv.awaitGone(HIDE_HINT)
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("Off")
+        // Menu closes it too.
+        tv.key(KeyEvent.KEYCODE_MENU)
+        tv.awaitGone("Off")
         // Down and Menu each show and hide the controls.
         for (key in listOf(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_MENU)) {
             tv.key(key)
@@ -349,14 +331,14 @@ class TvNavigationTest {
             tv.key(key)
             tv.awaitGone(HIDE_HINT)
         }
-        // Up from the controls' buttons opens the panel used last.
+        // Up from the controls' buttons opens the menu used last.
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
         tv.awaitFocus("Play/pause")
         tv.key(KeyEvent.KEYCODE_DPAD_UP)
-        tv.awaitFocus("I'm ready")
+        tv.awaitFocus("Off")
         tv.awaitGone(HIDE_HINT)
         tv.back()
-        tv.awaitGone("I'm ready")
+        tv.awaitGone("Off")
         tv.awaitGone(HIDE_HINT)
         assertEquals(true, container.player.state.value.paused)
     }
@@ -381,8 +363,7 @@ class TvNavigationTest {
     }
 
     companion object {
-        private const val TEXT_FIELD = "<text field>"
-        private const val HIDE_HINT = "▼ Hide"
+            private const val HIDE_HINT = "▼ Hide"
         private val state = AppState()
         private lateinit var syncplay: FakeSyncplayServer
         private lateinit var jellyfin: FakeJellyfin

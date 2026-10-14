@@ -172,7 +172,8 @@ Syncplay client's media directories. On a computer you can also drop files on th
 
 Tap or move the mouse to show the controls: play and pause, back and forward (double-tap the left or right side
 of the video on a phone), the previous and next playlist entry, the seek bar and the volume. The buttons at the
-bottom open the shared playlist, the room, the chat, audio tracks, subtitles and MyAnimeList. Dragging along the
+bottom open the shared playlist, the room, the chat, audio tracks, subtitles and MyAnimeList (on a TV, the
+**Menus** button opens them). Dragging along the
 seek bar, or holding the mouse over it, shows the time there, and for a video on your device a picture of that
 moment too.
 
@@ -200,12 +201,11 @@ Settings > Playback can also stop showing the button.
 
 ### The remote on a TV
 
-- **OK** or **↓**: show the controls; **↓** past their buttons or **Back** hides them again. When the buttons don't
-  all fit, the row scrolls as you move along it, and an arrow at its side shows there are more.
+- **OK** or **↓**: show the controls; **↓** past their buttons or **Back** hides them again.
 - **←** / **→**: back or forward, while the controls are hidden
-- **↑**: open the panel you used last (the room the first time), with the controls hidden or from their buttons.
-  The panel's tabs at its top switch to the shared playlist, the room, the chat, audio, subtitles or
-  MyAnimeList as you move along them. **Back** or **Menu** closes the panel, straight back to the video.
+- **↑**, or the **Menus** button in the controls: open the menu you used last (the room the first time). Its tabs
+  at the top switch to the shared playlist, the room, the chat, audio, subtitles or MyAnimeList as you move along
+  them, and **OK** on a tab goes into that menu. **Back** or **Menu** closes it, straight back to the video.
 - **Play/pause**, **fast-forward**, **rewind**, **next** and **previous** keys work at any time; the captions key
   switches subtitles.
 
