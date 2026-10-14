@@ -69,7 +69,13 @@ export interface Settings {
   acceptedRoomRules: boolean;
   playback: PlaybackPrefs;
   deviceName: string;
+  /** A random id for this browser, as the apps keep `device_id` (Jellyfin and Plex tell devices apart by it). */
+  deviceId: string;
   shareFiles: boolean;
+  /** The media server that streams a room's file when several have it exactly ("" for the first). */
+  preferredServer: string;
+  /** Tell the media servers how far playback got, and mark episodes watched. */
+  reportPlayback: boolean;
   lastSeenVersion: string;
   savedRooms: SavedRoom[];
 }
@@ -82,6 +88,16 @@ function defaultDeviceName(): string {
   const browser = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "Browser";
   const os = /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS" : /Windows/.test(ua) ? "Windows" : /Mac OS/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "";
   return os ? `${browser} on ${os}` : browser;
+}
+
+/** This browser's `device_id`, made once. */
+function deviceId(): string {
+  let id = read("device_id");
+  if (!id) {
+    id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Math.random()).slice(2);
+    write("device_id", id);
+  }
+  return id;
 }
 
 export function load(): Settings {
@@ -122,7 +138,10 @@ export function load(): Settings {
       detectOnAnyNetwork: bool("pb_detect_any_network", false),
     },
     deviceName: text("device_name", "") || defaultDeviceName(),
+    deviceId: deviceId(),
     shareFiles: bool("share_files", true),
+    preferredServer: text("preferred_server", ""),
+    reportPlayback: bool("report_playback", true),
     lastSeenVersion: text("last_seen_version", ""),
     savedRooms: SavedRooms.normalize(SavedRooms.decode(text("sp_saved_rooms", ""))),
   };
@@ -161,6 +180,8 @@ export function save(settings: Settings) {
   write("pb_detect_any_network", String(p.detectOnAnyNetwork));
   write("device_name", settings.deviceName);
   write("share_files", String(settings.shareFiles));
+  write("preferred_server", settings.preferredServer);
+  write("report_playback", String(settings.reportPlayback));
   write("last_seen_version", settings.lastSeenVersion);
   write("sp_saved_rooms", SavedRooms.encode(settings.savedRooms));
 }
