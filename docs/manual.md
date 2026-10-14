@@ -50,7 +50,15 @@ It plays files from your device (open one, drop one on the page, or add media fo
 own player: MKV, MP4, AVI, TS and WebM, styled subtitles, and DTS or AC-3 sound. Video is decoded by your graphics
 card where the browser can; HEVC needs a browser and computer that support it. Chrome and Edge remember media folders
 between visits; other browsers ask for the folder again. The shared playlist, chat, ready, managed rooms, saved and
-recent rooms and the themes work as in the app. Media servers, the file relay and MyAnimeList come next.
+recent rooms and the themes work as in the app.
+
+Jellyfin and Plex servers are added under **Media servers** (Quick Connect, a password, or a plex.tv/link code) and
+play in its player; your own Jellyfin has to be reachable over HTTPS. The room's entries are looked up on them in the
+app's order, then fetched from another viewer through the server's file relay, which asks the host to approve the
+browser as a device the first time. Openings and endings are skipped as in the app (the file's chapters, the media
+server's markers, AniSkip, or listening), and MyAnimeList stays up to date as you watch: sign in from Settings >
+MyAnimeList, through the room's server. Not in the browser: finding servers on your network, Play next episode from
+your MyAnimeList list, and the hardware-decoding switch.
 
 ## The home screen
 
