@@ -113,12 +113,14 @@ fun ActionButton(
     enabled: Boolean = true,
     primary: Boolean = false,
     tint: Color? = null,
+    /** The background while not focused; focused, it's always the opaque tile with the accent border. */
+    container: Color = if (primary) AppColors.Accent.copy(alpha = 0.25f) else AppColors.SurfaceHigh,
 ) {
     TvTile(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier,
-        container = if (primary) AppColors.Accent.copy(alpha = 0.25f) else AppColors.SurfaceHigh,
+        container = container,
         focusedScale = 1.06f,
     ) {
         Row(
