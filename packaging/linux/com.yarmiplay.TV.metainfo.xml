@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.1.2" date="2026-10-14">
+      <description>
+        <p>The TV player's controls fit in one row again: a single Menus button opens the menu you used last, and the tabs at its top switch to the shared playlist, the room, the chat, audio, subtitles or MyAnimeList.</p>
+      </description>
+    </release>
     <release version="2.1.1" date="2026-10-14">
       <description>
         <p>Fixes for TV. A Jellyfin server the YarmiplayServerTV host shares on the Syncplay port now lists and plays at home too, where the router can't reach its own address from inside. Signing in to MyAnimeList works with the remote: the arrows move a pointer over the page and OK clicks, which brings up the keyboard in a text field. The player's buttons scroll when they don't all fit, so none are cut off, and its panels are quicker to use: Up opens the one you used last, tabs at the top switch between them, and Back or Menu closes them straight back to the video.</p>
