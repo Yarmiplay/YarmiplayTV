@@ -98,6 +98,8 @@ class AppState {
             store.saveDownloadDirectory("")
             store.saveScreenshotDirectory("")
             store.replaceRoomPlaylists(emptyMap())
+            // What's new in this version would push the home screen's rows down.
+            store.saveLastSeenVersion(container.appVersion)
         }
         onMain { removeAllServers() }
         runBlocking { container.settingsStore.saveLastJellyfinUrl(LAST_JELLYFIN_URL) }
@@ -106,7 +108,7 @@ class AppState {
             val s = container.settings.value
             s.syncplay == PROFILE && s.jellyfinServers.isEmpty() && s.plexServers.isEmpty() && container.mediaSource.value == null &&
                 s.lastJellyfinUrl == LAST_JELLYFIN_URL && s.showRoomChat && s.acceptedRoomRules && s.deviceName.isEmpty() && s.addSharedServers && s.shareFiles &&
-                s.downloadDirectory.isEmpty() && s.screenshotDirectory.isEmpty()
+                s.downloadDirectory.isEmpty() && s.screenshotDirectory.isEmpty() && s.lastSeenVersion == container.appVersion
         }
         clearFeed()
     }
