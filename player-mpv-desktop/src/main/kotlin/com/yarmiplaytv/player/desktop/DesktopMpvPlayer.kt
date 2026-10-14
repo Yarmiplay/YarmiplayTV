@@ -4,6 +4,7 @@ import com.yarmiplaytv.player.Chapter
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.PlayerEvent
+import com.yarmiplaytv.player.StreamRoutes
 import com.yarmiplaytv.player.Track
 import com.yarmiplaytv.player.TrackType
 import kotlinx.coroutines.CoroutineScope
@@ -136,7 +137,7 @@ class DesktopMpvPlayer(
 
     /** file:// URIs become plain paths; a missing local file is reported as such instead of mpv's generic error. */
     private fun mpvTarget(url: String): String {
-        if (!url.startsWith("file:")) return url
+        if (!url.startsWith("file:")) return StreamRoutes.route(url)
         val path = runCatching { Paths.get(URI(url)).toString() }.getOrElse { return url }
         if (!File(path).isFile) openError = "File not found"
         return path

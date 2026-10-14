@@ -30,6 +30,7 @@ kotlin {
             implementation(libs.jetbrains.compose.material.icons)
             implementation(libs.jetbrains.lifecycle.runtime.compose)
             implementation(libs.coil.compose)
+            implementation(libs.coil.network.okhttp)
         }
         if (android) {
             androidMain.dependencies {

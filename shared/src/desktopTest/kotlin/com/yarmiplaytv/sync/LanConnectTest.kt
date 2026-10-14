@@ -57,6 +57,18 @@ class LanConnectTest {
     }
 
     @Test
+    fun `the player streams the host's Jellyfin from where the connection reached the server`() {
+        val stream = "https://MyName.duckdns.org:8999/Videos/abc/stream?static=true&api_key=k"
+        assertEquals(stream, SessionDns.direct(stream))
+        SessionDns.use(YarmiplaySession("t", 1, "https://myname.duckdns.org:8999", resolveTo = "192.168.1.20"))
+        assertEquals("https://192.168.1.20:8999/Videos/abc/stream?static=true&api_key=k", SessionDns.direct(stream))
+        assertEquals("http://other.example:8096/Videos/abc/stream", SessionDns.direct("http://other.example:8096/Videos/abc/stream"))
+        assertEquals("content://media/1", SessionDns.direct("content://media/1"))
+        SessionDns.use(YarmiplaySession("t", 1, "https://myname.duckdns.org:8999", resolveTo = "2a02:6b8::20"))
+        assertEquals("https://[2a02:6b8::20]:8999/Videos/abc/stream?static=true&api_key=k", SessionDns.direct(stream))
+    }
+
+    @Test
     fun `discovery sends nothing off Wi-Fi and Ethernet`() = runBlocking {
         val asked = mutableListOf<Set<Int>>()
         SyncplayDiscovery.scanner = { ports -> asked += ports; listOf(LanServer("id", "1.7.2", 8999, null, "192.168.1.20")) }

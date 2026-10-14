@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -56,8 +57,11 @@ sealed interface QuickConnectState {
 class JellyfinClient(
     val clientInfo: ClientInfo,
     http: OkHttpClient? = null,
+    /** Looks up server names; the app maps a Syncplay server's name to the address it reached it at. */
+    dns: Dns = Dns.SYSTEM,
 ) {
     internal val http: OkHttpClient = http ?: OkHttpClient.Builder()
+        .dns(dns)
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()

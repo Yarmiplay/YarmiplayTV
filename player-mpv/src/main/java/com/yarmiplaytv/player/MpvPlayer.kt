@@ -204,7 +204,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             url
         }
         url.startsWith("file://") -> Uri.parse(url).path ?: url
-        else -> url
+        else -> StreamRoutes.route(url)
     }
 
     override fun stop() {

@@ -1,5 +1,8 @@
 package com.yarmiplaytv
 
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.yarmiplaytv.data.AppSettings
 import com.yarmiplaytv.data.KnownServer
 import com.yarmiplaytv.data.SettingsStore
@@ -22,6 +25,7 @@ import com.yarmiplaytv.media.plex.PlexClient
 import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.player.Player
+import com.yarmiplaytv.player.StreamRoutes
 import com.yarmiplaytv.relay.RelayManager
 import com.yarmiplaytv.relay.SessionDns
 import com.yarmiplaytv.screenshot.ScreenshotStore
@@ -67,6 +71,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 
 /** Process-wide singletons (one mpv instance, one Syncplay connection, the media servers). */
 class AppContainer(
@@ -106,7 +111,7 @@ class AppContainer(
         deviceId = runBlocking { settingsStore.deviceId() },
         version = appVersion,
     )
-    val jellyfinClient = JellyfinClient(clientInfo)
+    val jellyfinClient = JellyfinClient(clientInfo, dns = SessionDns)
     val plexClient = PlexClient(clientInfo)
 
     val player: Player = createPlayer(initial)
@@ -200,6 +205,13 @@ class AppContainer(
             sync.room.map { it.yarmiplay }.distinctUntilChanged().collect { info -> rememberServer(info) }
         }
         scope.launch { sync.session.collect(SessionDns::use) }
+        // At home a server's name can lead to the router: the player and images reach it where Syncplay did.
+        StreamRoutes.route = SessionDns::direct
+        SingletonImageLoader.setSafe { context ->
+            ImageLoader.Builder(context)
+                .components { add(OkHttpNetworkFetcherFactory(callFactory = { OkHttpClient.Builder().dns(SessionDns).build() })) }
+                .build()
+        }
         scope.launch {
             sync.events.collect { event -> if (event is SyncplayEvent.ServerNamed) saveUnderName(event) }
         }
