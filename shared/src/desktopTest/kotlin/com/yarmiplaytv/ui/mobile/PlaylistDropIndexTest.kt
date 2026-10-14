@@ -2,6 +2,8 @@ package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaylistDropIndexTest {
@@ -50,5 +52,23 @@ class PlaylistDropIndexTest {
         assertEquals(0, playlistDragTarget(3, -190f, rows, 3))
         assertEquals(3, playlistDragTarget(0, 900f, rows, 3))
         assertEquals(2, playlistDragTarget(2, 0f, rows, 3))
+    }
+}
+
+class LastClickTest {
+    @Test
+    fun `a second click on the same row soon after is a double click`() {
+        var now = 1_000L
+        val clicks = LastClick { now }
+        assertFalse(clicks.isSecond(2, 300))
+        now += 200
+        assertTrue(clicks.isSecond(2, 300))
+        // A third click starts a new pair.
+        now += 100
+        assertFalse(clicks.isSecond(2, 300))
+        now += 400
+        assertFalse("too slow", clicks.isSecond(2, 300))
+        now += 100
+        assertFalse("another row", clicks.isSecond(3, 300))
     }
 }

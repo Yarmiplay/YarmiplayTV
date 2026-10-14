@@ -36,4 +36,33 @@ object LocalMatcher {
         if (normalized.isEmpty()) return null
         return files.firstOrNull { FileNames.normalize(it.name) == normalized }?.let { Match(it, MatchKind.NORMALIZED_FILENAME) }
     }
+
+    /**
+     * [find] over the same [files] for many names, such as every entry of a long playlist: each file's name is looked
+     * at, and normalized, once rather than per name. The same file wins as with [find].
+     */
+    class Index(files: List<LocalFile>) {
+        private val exact = HashMap<String, LocalFile>()
+        private val anyCase = HashMap<String, LocalFile>()
+        private val normalized = HashMap<String, LocalFile>()
+
+        init {
+            for (file in files) {
+                exact.putIfAbsent(file.name, file)
+                anyCase.putIfAbsent(caseKey(file.name), file)
+                FileNames.normalize(file.name).takeIf { it.isNotEmpty() }?.let { normalized.putIfAbsent(it, file) }
+            }
+        }
+
+        fun find(fileName: String): Match? {
+            val wanted = FileNames.baseName(fileName)
+            exact[wanted]?.let { return Match(it, MatchKind.EXACT_FILENAME) }
+            anyCase[caseKey(wanted)]?.let { return Match(it, MatchKind.EXACT_FILENAME) }
+            val key = FileNames.normalize(wanted).ifEmpty { return null }
+            return normalized[key]?.let { Match(it, MatchKind.NORMALIZED_FILENAME) }
+        }
+
+        /** Equal for two names exactly when `equals(ignoreCase = true)` is: it compares each character that way. */
+        private fun caseKey(name: String): String = buildString(name.length) { name.forEach { append(it.uppercaseChar().lowercaseChar()) } }
+    }
 }

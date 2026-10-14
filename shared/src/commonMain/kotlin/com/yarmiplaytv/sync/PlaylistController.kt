@@ -382,10 +382,15 @@ class PlaylistController(
      * Whether this device can play a playlist entry without asking: a URL, a file picked here, or one in the
      * media folders. Entries that aren't may still be found on a media server when selected.
      */
-    fun isAvailable(fileName: String): Boolean =
+    fun isAvailable(fileName: String): Boolean = isAvailable(fileName) { LocalMatcher.find(local.files.value, it) }
+
+    /** [isAvailable] for many entries: [local] is an index of this device's files, built once for all of them. */
+    fun isAvailable(fileName: String, local: LocalMatcher.Index): Boolean = isAvailable(fileName, local::find)
+
+    private fun isAvailable(fileName: String, findLocal: (String) -> LocalMatcher.Match?): Boolean =
         Filenames.isUrl(fileName) ||
             knownPlayables.keys.any { Filenames.same(it, fileName) } ||
-            LocalMatcher.find(local.files.value, fileName) != null ||
+            findLocal(fileName) != null ||
             locator.hasRelay(fileName)
 
     /** Adds files from this device to the shared playlist in one edit, before index [at] or at the end, skipping ones already in it. */

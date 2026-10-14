@@ -62,6 +62,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -102,6 +103,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -120,6 +122,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.local.FileLocalLibrary
+import com.yarmiplaytv.local.LocalMatcher
 import com.yarmiplaytv.sync.FeedMessage
 import com.yarmiplaytv.sync.PlaylistEdits
 import com.yarmiplaytv.syncplay.ConnectionStatus
@@ -135,7 +138,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** The desktop side panel's state; the window's Enter shortcut calls [focusChat]. */
 object DesktopRoomPanel {
@@ -282,7 +287,14 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
     val listFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
     LaunchedEffect(playlist) { selected = selected.filter { it in playlist.indices }.toSet() }
-    val available = remember(playlist, localFiles) { playlist.map(container.playlist::isAvailable) }
+    // Matching every entry against a big library takes a while, so the index of its names is built off the UI thread;
+    // until it's ready every entry shows as available.
+    val localIndex by produceState<LocalMatcher.Index?>(null, localFiles) { value = withContext(Dispatchers.Default) { LocalMatcher.Index(localFiles) } }
+    val available = remember(playlist, localIndex) { localIndex?.let { index -> playlist.map { container.playlist.isAvailable(it, index) } }.orEmpty() }
+    // A click selects at once; a second one on the same row soon after plays it. (A click handler that also takes
+    // double clicks holds every single click back until the double-click time has passed.)
+    val doubleClickMs = LocalViewConfiguration.current.doubleTapTimeoutMillis
+    val lastClick = remember { LastClick() }
     val options = settings.sync
 
     fun saveOptions(sharedPlaylists: Boolean = options.sharedPlaylists, loop: Boolean = options.loopPlaylist, single: Boolean = options.loopSingleFile) {
@@ -465,13 +477,11 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
                             listFocus.requestFocus()
                             selected = rangeOf(anchor ?: index, index)
                         }
-                        .onClick(
-                            keyboardModifiers = { !isCtrlPressed && !isMetaPressed && !isShiftPressed },
-                            onDoubleClick = { play(index) },
-                        ) {
+                        .onClick(keyboardModifiers = { !isCtrlPressed && !isMetaPressed && !isShiftPressed }) {
                             listFocus.requestFocus()
                             selected = setOf(index)
                             anchor = index
+                            if (lastClick.isSecond(index, doubleClickMs)) play(index)
                         }
                         .pointerInput(index, playlist.size) {
                             detectDragGestures(
@@ -510,6 +520,21 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
 }
 
 private fun rangeOf(a: Int, b: Int): Set<Int> = (minOf(a, b)..maxOf(a, b)).toSet()
+
+/** The last click on a playlist row, to tell a double click from two single ones. */
+internal class LastClick(private val now: () -> Long = System::currentTimeMillis) {
+    private var index = -1
+    private var at = 0L
+
+    /** Records a click on row [index]; true when it's the second within [withinMs] on that row (then it starts over). */
+    fun isSecond(index: Int, withinMs: Long): Boolean {
+        val time = now()
+        val second = index == this.index && time - at <= withinMs
+        this.index = if (second) -1 else index
+        at = time
+        return second
+    }
+}
 
 /**
  * Where the row at [from], dragged [offset] pixels, lands among [rows] (rows differ in height, as long names wrap): the

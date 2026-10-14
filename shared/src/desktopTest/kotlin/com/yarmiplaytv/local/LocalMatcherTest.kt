@@ -48,4 +48,26 @@ class LocalMatcherTest {
         assertTrue(LocalMatcher.isVideo("a.MKV", "application/octet-stream"))
         assertFalse(LocalMatcher.isVideo("notes.txt", "text/plain"))
     }
+
+    @Test
+    fun `the index finds what find does, for every kind of match and none`() {
+        val withDuplicates = files + listOf(
+            LocalFile(ep1, 1, "content://y/dup", "Other"),
+            LocalFile("MY.MOVIE.2020.1080P.MP4", 30, "content://y/upper", "Other"),
+        )
+        val index = LocalMatcher.Index(withDuplicates)
+        val names = listOf(ep1, "D:\\Anime\\" + ep1.uppercase(), "My Movie 2020 1080p.mp4", "my.movie.2020.1080p.mp4", "MY.MOVIE.2020.1080P.MP4", "Something else.mkv", "", "!!!.mkv")
+        for (name in names) assertEquals(name, LocalMatcher.find(withDuplicates, name), index.find(name))
+    }
+
+    @Test
+    fun `a long playlist is matched against a big library quickly`() {
+        val library = (1..3000).map { LocalFile("Show $it - S01E%02d [1080p] (Group).mkv".format(it % 24), 1, "file:///$it") }
+        val playlist = (1..200).map { "Missing Show $it - S02E%02d.mkv".format(it % 24) }
+        val started = System.nanoTime()
+        val index = LocalMatcher.Index(library)
+        assertTrue(playlist.all { index.find(it) == null })
+        // Matching each entry with find takes seconds here; the index normalizes each name once.
+        assertTrue((System.nanoTime() - started) / 1_000_000 < 1_000)
+    }
 }
