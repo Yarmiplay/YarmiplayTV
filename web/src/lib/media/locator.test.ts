@@ -9,7 +9,7 @@ import type { MediaSource } from "./mediaSource";
 const movie = "North Wind (2022).mkv";
 
 function setup(localNames: string[] = [], relayed: Record<string, string> = {}) {
-  const files: LocalFile[] = localNames.map((name) => ({ name, size: 10, directory: "", folder: "Movies", open: async () => new File([], name) }));
+  const files: LocalFile[] = localNames.map((name) => ({ name, size: 10, modified: 0, directory: "", folder: "Movies", open: async () => new File([], name) }));
   const local: LocalFiles = { find: (name) => find(files, name) };
   let servers: MediaSource[] = [];
   const locator = new MediaLocator<string>(local, () => servers, (name) => relayed[name] ?? null);
