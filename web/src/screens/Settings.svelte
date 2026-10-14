@@ -12,6 +12,7 @@
   const CATEGORIES = [
     { key: "appearance", label: "Appearance" },
     { key: "media", label: "Media" },
+    { key: "myanimelist", label: "MyAnimeList" },
     { key: "syncing", label: "Syncing" },
     { key: "playback", label: "Playback" },
     { key: "about", label: "About" },
@@ -142,6 +143,11 @@
               {#each [5, 10, 15, 30] as step (step)}<option value={String(step)}>{step} seconds</option>{/each}
             </select>
           </label>
+          <h3>Openings and endings</h3>
+          <label class="switch"><input type="checkbox" checked={s.playback.autoSkipAlone} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, autoSkipAlone: (e.target as HTMLInputElement).checked } }))} /> Skip them by themselves when watching alone (in a room, the room decides)</label>
+          <label class="switch"><input type="checkbox" checked={s.playback.showSkipButton} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, showSkipButton: (e.target as HTMLInputElement).checked } }))} /> Show a Skip button for a few seconds as one starts</label>
+          <label class="switch"><input type="checkbox" checked={s.playback.detectSkips} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, detectSkips: (e.target as HTMLInputElement).checked } }))} /> Find them by listening when nothing else knows them</label>
+          <label class="switch"><input type="checkbox" checked={s.playback.detectOnAnyNetwork} disabled={!s.playback.detectSkips} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, detectOnAnyNetwork: (e.target as HTMLInputElement).checked } }))} /> Also listen to server episodes on mobile data</label>
           <label>
             Audio languages, in order
             <input value={s.playback.audioLanguages} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, audioLanguages: (e.target as HTMLInputElement).value } }))} />
@@ -150,6 +156,12 @@
             Subtitle languages, in order
             <input value={s.playback.subtitleLanguages} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, subtitleLanguages: (e.target as HTMLInputElement).value } }))} />
           </label>
+        </div>
+      {:else if shown === "myanimelist"}
+        <h2>MyAnimeList</h2>
+        <div class="card group">
+          <p>Keep your MyAnimeList list up to date as you watch, and find any show.</p>
+          <a class="button quiet" href="#/mal">MyAnimeList</a>
         </div>
       {:else if shown === "about"}
         <h2>About</h2>

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>MyAnimeList sign-in</title>
+  <style>
+    :root { color-scheme: dark light; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0e1116; color: #e8ecf2; font: 16px/1.5 system-ui, sans-serif; }
+    @media (prefers-color-scheme: light) { body { background: #f3f5f8; color: #12161c; } }
+    p { margin: 16px; text-align: center; }
+  </style>
+</head>
+<body>
+  <p id="message">Signing in to MyAnimeList…</p>
+  <script>
+    // Where MyAnimeList sends the browser back after sign-in: the code goes to the YarmiplayTV page that opened
+    // this window (same site only), and is taken out of the address bar and history.
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var answer = { type: "mal-callback", code: q.get("code"), state: q.get("state"), error: q.get("error") };
+      history.replaceState(null, "", location.pathname);
+      var opener = null;
+      try { opener = window.opener && window.opener.location.origin === location.origin ? window.opener : null; } catch (e) { opener = null; }
+      if (opener) {
+        opener.postMessage(answer, location.origin);
+        window.close();
+      }
+      document.getElementById("message").textContent = answer.error
+        ? "MyAnimeList sign-in was cancelled. You can close this tab."
+        : "You can close this tab.";
+    })();
+  </script>
+</body>
+</html>

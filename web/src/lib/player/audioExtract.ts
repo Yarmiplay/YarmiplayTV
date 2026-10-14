@@ -76,3 +76,20 @@ export async function* decodeMono(
     libav.terminate();
   }
 }
+
+/** How long a file is, read by its own FFmpeg (for listening to episodes whose length no server gave). */
+export async function mediaDuration(source: ByteSource): Promise<number | null> {
+  const libav = await createLibAV();
+  try {
+    // The caller reads the same source afterwards: closing the demuxer mustn't close it.
+    const borrowed: ByteSource = { size: source.size, name: source.name, read: (p, l) => source.read(p, l), close() {} };
+    const demuxer = await Demuxer.open(libav, borrowed);
+    const duration = demuxer.duration;
+    await demuxer.close();
+    return duration > 0 ? duration : null;
+  } catch {
+    return null;
+  } finally {
+    libav.terminate();
+  }
+}

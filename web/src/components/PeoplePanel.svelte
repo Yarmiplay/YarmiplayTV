@@ -84,6 +84,17 @@
       {/each}
     </ul>
 
+    {@const autoSkip = session?.roomAutoSkip()}
+    {#if autoSkip?.inRoom}
+      <section>
+        <label class="switch">
+          <input type="checkbox" checked={autoSkip.on} disabled={!autoSkip.canChange} onchange={(e) => session?.setRoomAutoSkip((e.target as HTMLInputElement).checked)} />
+          Skip openings and endings{autoSkip.shared ? " for everyone in the room" : ""}
+        </label>
+        {#if autoSkip.shared && autoSkip.setBy}<p class="dim small">Last changed by {autoSkip.setBy}</p>{/if}
+      </section>
+    {/if}
+
     <section>
       <button class="button" onclick={() => session?.toggleReady()} disabled={room.status !== "CONNECTED"}>
         {room.isReady ? "I'm not ready" : "I'm ready"}
@@ -180,6 +191,11 @@
     padding: 10px;
     border-radius: 10px;
     background: var(--surface-high);
+  }
+  .switch {
+    display: flex;
+    gap: 8px;
+    align-items: center;
   }
   .users {
     list-style: none;

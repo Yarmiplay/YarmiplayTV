@@ -140,3 +140,21 @@ test("the seek bar shows the time and, for a file on this device, a picture of t
   await expect(page.locator("canvas.preview.shown")).toBeVisible({ timeout: 10_000 });
   await page.locator(".bottom").screenshot({ path: "test-results/seek-preview.png" });
 });
+
+test("an opening chapter offers a Skip button, and S skips it", async ({ page }) => {
+  test.skip(!existsSync(media("h264-ac3-aac-chapters.mkv")), "run e2e/make-media.sh first");
+  await page.goto("#/player");
+  await page.locator('.empty input[type="file"]').setInputFiles(media("h264-ac3-aac-chapters.mkv"));
+  await expect.poll(() => page.evaluate(() => (window as any).playerLab.player.isFileLoaded), { timeout: 20_000 }).toBe(true);
+  // The opening is marked on the seek bar.
+  await expect(page.locator(".track .part")).toHaveCount(1, { timeout: 10_000 });
+  // Out of a room a file plays as soon as it opens; from 3 s it reaches the opening at 4 s.
+  await page.evaluate(() => {
+    const p = (window as any).playerLab.player;
+    p.seek(3);
+    p.setPaused(false);
+  });
+  await expect(page.getByRole("button", { name: /Skip opening/ })).toBeVisible({ timeout: 8_000 });
+  await page.keyboard.press("s");
+  await expect.poll(() => page.evaluate(() => (window as any).playerLab.player.position), { timeout: 5_000 }).toBeGreaterThan(15.5);
+});

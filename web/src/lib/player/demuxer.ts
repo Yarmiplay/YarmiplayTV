@@ -1,5 +1,5 @@
 import type { ByteSource } from "./bytes";
-import { seconds, type LavPacket, type LavStream, type LibAV } from "./libav";
+import { seconds, type LavChapter, type LavPacket, type LavStream, type LibAV } from "./libav";
 
 export type StreamKind = "video" | "audio" | "subtitle" | "attachment" | "other";
 
@@ -78,11 +78,7 @@ export class Demuxer {
     const [fmtCtx, raw] = await libav.ff_init_demuxer_file(device);
     const streams: StreamInfo[] = [];
     for (const s of raw) streams.push(await describe(libav, s));
-    const chapters = (await libav.ff_get_demuxer_chapters(fmtCtx).catch(() => [])).map((c) => ({
-      start: c.start,
-      end: c.end,
-      title: c.metadata?.title ?? "",
-    }));
+    const chapters = await readChapters(libav, fmtCtx);
     const duration = Math.max(0, ...raw.map((s) => (Number.isFinite(s.duration) ? s.duration : 0)));
     const startTime =
       seconds(await libav.AVFormatContext_start_time(fmtCtx), await libav.AVFormatContext_start_timehi(fmtCtx), 1, 1_000_000) ?? 0;
@@ -152,6 +148,31 @@ export class Demuxer {
     const duration = packet.duration ? seconds(packet.duration, packet.durationhi, num, den) : null;
     return { packet, stream, time, duration, key: ((packet.flags ?? 0) & this.libav.AV_PKT_FLAG_KEY) !== 0 };
   }
+}
+
+/**
+ * Chapters in seconds, from each AVChapter's own 64-bit times: libav.js's own seconds come from the low 32 bits only,
+ * which Matroska's nanoseconds outgrow after 4.29 s.
+ */
+async function readChapters(libav: LibAV, fmtCtx: number): Promise<Chapter[]> {
+  const raw = await libav.ff_get_demuxer_chapters(fmtCtx).catch((): LavChapter[] => []);
+  const out: Chapter[] = [];
+  for (const c of raw) {
+    const [start, starthi, end, endhi, num, den] = await Promise.all([
+      libav.AVChapter_start(c.ptr),
+      libav.AVChapter_starthi(c.ptr),
+      libav.AVChapter_end(c.ptr),
+      libav.AVChapter_endhi(c.ptr),
+      libav.AVChapter_time_base_num(c.ptr),
+      libav.AVChapter_time_base_den(c.ptr),
+    ]);
+    out.push({
+      start: seconds(start, starthi, num, den) ?? c.start,
+      end: seconds(end, endhi, num, den) ?? c.end,
+      title: c.metadata?.title ?? "",
+    });
+  }
+  return out;
 }
 
 async function describe(libav: LibAV, s: LavStream): Promise<StreamInfo> {

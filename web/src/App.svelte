@@ -9,6 +9,8 @@
   import Files from "./screens/Files.svelte";
   import Home from "./screens/Home.svelte";
   import Library from "./screens/Library.svelte";
+  import Mal from "./screens/Mal.svelte";
+  import "./app/watching";
   import Search from "./screens/Search.svelte";
   import Servers from "./screens/Servers.svelte";
   import Join from "./screens/Join.svelte";
@@ -77,6 +79,8 @@
         <Library />
       {:else if section === "search"}
         <Search />
+      {:else if section === "mal"}
+        <Mal />
       {:else if section !== "player"}
         <main class="missing">
           <p>There's nothing here.</p>

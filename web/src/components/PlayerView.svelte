@@ -8,7 +8,11 @@
   import { followsOperators, type RoomState } from "../lib/syncplay/client";
   import * as ManagedRooms from "../lib/syncplay/managedRooms";
   import { formatTime } from "../lib/syncplay/models";
+  import { mal, skip } from "../app/watching";
+  import { isQuestion, noticeShowMillis, type MalNotice } from "../lib/mal/service";
+  import type { SkipSegment } from "../lib/skip/segment";
   import ChatPanel from "./ChatPanel.svelte";
+  import MalPanel from "./MalPanel.svelte";
   import PeoplePanel from "./PeoplePanel.svelte";
   import PlaylistPanel from "./PlaylistPanel.svelte";
 
@@ -25,7 +29,20 @@
   let room = $state<RoomState | null>(null);
   let status = $state<PlaylistStatus>({ kind: "idle" });
   let toast = $state<FeedMessage | null>(null);
-  let panel = $state<"playlist" | "room" | "chat" | "audio" | "subtitles" | null>(null);
+  let panel = $state<"playlist" | "room" | "chat" | "audio" | "subtitles" | "mal" | null>(null);
+  let skipPrompt = $state<{ segment: SkipSegment; label: string } | null>(null);
+  let segments = $state<SkipSegment[]>([]);
+  let malNotice = $state<MalNotice | null>(null);
+  let malTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => skip.prompt.subscribe((p) => (skipPrompt = p)));
+  $effect(() => skip.segments.subscribe((s) => (segments = s)));
+  $effect(() =>
+    mal.notice.subscribe((n) => {
+      malNotice = n;
+      clearTimeout(malTimer);
+      if (n) malTimer = setTimeout(() => (malNotice = null), noticeShowMillis(n));
+    }),
+  );
   let controlsShown = $state(true);
   let hover = $state<{ x: number; time: number } | null>(null);
   let dragging = $state<number | null>(null);
@@ -199,7 +216,9 @@
   function onKey(event: KeyboardEvent) {
     if (!visible || !player) return;
     const target = event.target as HTMLElement;
-    if (target.closest("input, textarea, select") && event.key !== "Escape") return;
+    // Typing goes to text fields; a file picker or a checkbox that keeps the focus mustn't swallow the keys.
+    const typing = target.closest('input:not([type="file"]):not([type="checkbox"]):not([type="radio"]), textarea, select');
+    if (typing && event.key !== "Escape") return;
     if (event.ctrlKey || event.altKey || event.metaKey) return;
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
     switch (key) {
@@ -258,6 +277,10 @@
         break;
       case "p":
         void pictureInPicture();
+        break;
+      case "s":
+        if (!skipPrompt) return;
+        skip.skipNow();
         break;
       default:
         return;
@@ -361,6 +384,21 @@
       </div>
     {/if}
 
+    {#if skipPrompt}
+      <button class="skip" onclick={() => skip.skipNow()}>
+        <span class="skip-icon">⏭</span>{skipPrompt.label}<kbd>S</kbd>
+      </button>
+    {/if}
+
+    {#if malNotice}
+      <div class="mal-note" class:question={isQuestion(malNotice)}>
+        <span>{malNotice.text}</span>
+        {#if malNotice.undo}<button class="link-light" onclick={() => malNotice?.undo?.()}>Undo</button>{/if}
+        {#if malNotice.confirm}<button class="link-light" onclick={() => malNotice?.confirm?.()}>Update</button>{/if}
+        {#if malNotice.pick}<button class="link-light" onclick={() => (panel = "mal")}>Pick the entry</button>{/if}
+      </div>
+    {/if}
+
     {#if seekNote}
       <div class="note">{seekNote}</div>
     {/if}
@@ -422,6 +460,9 @@
             }}
           >
             <div class="fill" style="width: {((dragging ?? s.position) / (s.duration || 1)) * 100}%"></div>
+            {#each segments as seg (seg.kind + seg.start)}
+              <span class="part" style="left: {(seg.start / (s.duration || 1)) * 100}%; width: {((seg.end - seg.start) / (s.duration || 1)) * 100}%" title={seg.kind === "opening" ? "Opening" : "Ending"}></span>
+            {/each}
             {#each s.chapters as c, i (i)}
               <span class="mark" style="left: {(c.start / (s.duration || 1)) * 100}%" title={c.title}></span>
             {/each}
@@ -456,6 +497,7 @@
             <button class="icon" class:on={panel === "chat"} onclick={() => (panel = panel === "chat" ? null : "chat")}>Chat</button>
             <button class="icon" class:on={panel === "audio"} onclick={() => (panel = panel === "audio" ? null : "audio")}>Audio</button>
             <button class="icon" class:on={panel === "subtitles"} onclick={() => (panel = panel === "subtitles" ? null : "subtitles")}>Subtitles</button>
+            <button class="icon" class:on={panel === "mal"} onclick={() => (panel = panel === "mal" ? null : "mal")}>MyAnimeList</button>
           </div>
         </div>
       </div>
@@ -464,7 +506,7 @@
     {#if panel}
       <aside class="side" data-theme={$settings.theme === "light" ? "dark" : undefined}>
         <header>
-          <h2>{{ playlist: "Playlist", room: "Room", chat: "Chat", audio: "Audio", subtitles: "Subtitles" }[panel]}</h2>
+          <h2>{{ playlist: "Playlist", room: "Room", chat: "Chat", audio: "Audio", subtitles: "Subtitles", mal: "MyAnimeList" }[panel]}</h2>
           <button class="icon" onclick={() => (panel = null)} aria-label="Close">✕</button>
         </header>
         {#if panel === "playlist"}
@@ -473,6 +515,8 @@
           <PeoplePanel />
         {:else if panel === "chat"}
           <ChatPanel bind:input={chatInput} />
+        {:else if panel === "mal"}
+          <MalPanel />
         {:else if panel === "audio" && s}
           <ul class="tracks">
             {#each s.audioTracks as t (t.id)}
@@ -695,6 +739,66 @@
   }
   .fill {
     background: var(--accent);
+  }
+  /* The Skip button stays in one place just above the controls, whether they show or not (1.9.6). */
+  .skip {
+    position: absolute;
+    right: 24px;
+    bottom: 110px;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1px solid rgb(255 255 255 / 0.15);
+    background: rgb(20 20 24 / 0.72);
+    backdrop-filter: blur(10px);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .skip-icon {
+    color: var(--accent);
+  }
+  .skip kbd {
+    font: 12px ui-monospace, monospace;
+    padding: 1px 6px;
+    border-radius: 5px;
+    border: 1px solid rgb(255 255 255 / 0.35);
+    border-bottom-width: 2px;
+  }
+  /* MyAnimeList's brief note: two seconds, one line, in the corner (1.8.9). */
+  .mal-note {
+    position: absolute;
+    top: 64px;
+    right: 16px;
+    z-index: 4;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 6px 12px;
+    border-radius: 10px;
+    background: rgb(0 0 0 / 0.7);
+    color: #fff;
+    font-size: 14px;
+  }
+  .mal-note.question {
+    border: 1px solid var(--accent);
+  }
+  .link-light {
+    background: none;
+    border: 0;
+    color: var(--accent);
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .part {
+    position: absolute;
+    top: 8px;
+    height: 6px;
+    background: rgb(255 255 255 / 0.45);
+    border-radius: 3px;
   }
   .mark {
     position: absolute;

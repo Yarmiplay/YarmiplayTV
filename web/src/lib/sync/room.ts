@@ -11,6 +11,7 @@ import { Store } from "../store";
 import {
   SyncplayClient,
   followsOperators,
+  roomSettingsShared,
   hasManagedRooms,
   nextPlaylistIndex,
   type RoomState,
@@ -368,6 +369,17 @@ export class RoomSession {
       case "sessionEnded":
         this.relay.cancelAll();
         break;
+      case "roomSettingsChanged": {
+        const me = this.room.value.username;
+        if (event.first) {
+          // A saved room this device last had it on in turns it on again (never off: someone else may want it).
+          const entry = this.currentRoomEntry();
+          if (entry?.saved && entry.autoSkip && !event.settings.autoSkip) this.client?.setRoomAutoSkip(true);
+        } else if (event.settings.setBy && event.settings.setBy !== me) {
+          this.post({ text: `${event.settings.setBy} turned ${event.settings.autoSkip ? "on" : "off"} skipping openings and endings` });
+        }
+        break;
+      }
     }
   }
 
@@ -459,6 +471,45 @@ export class RoomSession {
 
   toggleReady() {
     this.client?.toggleReady();
+  }
+
+  // --- Skipping openings and endings in rooms (RoomAutoSkip.kt) ---------------------------------
+
+  /** The saved or recent room this connection is in. */
+  private currentRoomEntry(): SavedRooms.SavedRoom | null {
+    const join = this.lastJoin;
+    const room = this.room.value.room;
+    if (!join || !room) return null;
+    const key = SavedRooms.keyOf({ host: join.profile.host.trim(), port: join.profile.port, room });
+    return this.settings.savedRooms.find((r) => SavedRooms.keyOf(r) === key) ?? null;
+  }
+
+  /**
+   * The room's "skip openings and endings": on YarmiplayServerTV the room's own setting, the same for everyone (in a
+   * managed room only operators change it); elsewhere this device's choice, remembered with the room.
+   */
+  roomAutoSkip(): { inRoom: boolean; on: boolean; shared: boolean; setBy: string | null; canChange: boolean } {
+    const room = this.room.value;
+    if (room.status !== "CONNECTED" || !room.room) return { inRoom: false, on: false, shared: false, setBy: null, canChange: false };
+    const shared = roomSettingsShared(room.yarmiplay);
+    const settings = room.yarmiplay.roomSettings;
+    return {
+      inRoom: true,
+      on: shared ? settings?.autoSkip === true : this.currentRoomEntry()?.autoSkip === true,
+      shared,
+      setBy: shared ? (settings?.setBy ?? null) : null,
+      canChange: !followsOperators(room),
+    };
+  }
+
+  /** Turns it on or off: for the whole room when shared, else for this device in this room. */
+  setRoomAutoSkip(on: boolean) {
+    const state = this.roomAutoSkip();
+    if (!state.inRoom || !state.canChange) return;
+    if (state.shared) this.client?.setRoomAutoSkip(on);
+    const entry = this.currentRoomEntry();
+    if (entry) this.changeSettings({ ...this.settings, savedRooms: SavedRooms.setAutoSkip(this.settings.savedRooms, SavedRooms.keyOf(entry), on) });
+    this.room.set({ ...this.room.value });
   }
 
   setOthersReady(username: string, isReady: boolean) {

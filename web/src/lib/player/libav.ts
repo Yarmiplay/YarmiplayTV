@@ -48,6 +48,7 @@ export interface LavStream {
 }
 
 export interface LavChapter {
+  ptr: number;
   start: number;
   end: number;
   metadata?: Record<string, string>;
@@ -69,6 +70,12 @@ export interface LibAV {
   ff_block_reader_dev_send(name: string, position: number, data: Uint8Array | null, opts?: { errorCode?: number }): Promise<void>;
   ff_init_demuxer_file(name: string): Promise<[number, LavStream[]]>;
   ff_get_demuxer_chapters(fmtCtx: number): Promise<LavChapter[]>;
+  AVChapter_start(ptr: number): Promise<number>;
+  AVChapter_starthi(ptr: number): Promise<number>;
+  AVChapter_end(ptr: number): Promise<number>;
+  AVChapter_endhi(ptr: number): Promise<number>;
+  AVChapter_time_base_num(ptr: number): Promise<number>;
+  AVChapter_time_base_den(ptr: number): Promise<number>;
   ff_read_frame_multi(fmtCtx: number, pkt: number, opts: { limit?: number; unify?: boolean }): Promise<[number, Record<number, LavPacket[]>]>;
   avformat_seek_file_max(fmtCtx: number, streamIndex: number, ts: number, tshi: number, flags: number): Promise<number>;
   av_seek_frame(fmtCtx: number, streamIndex: number, ts: number, tshi: number, flags: number): Promise<number>;

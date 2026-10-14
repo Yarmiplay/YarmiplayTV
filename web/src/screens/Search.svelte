@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { session as sessionStore } from "../app/context";
+  import { route, session as sessionStore } from "../app/context";
   import { sources } from "../app/media";
   import MediaTile from "../components/MediaTile.svelte";
   import type { PlaylistStatus } from "../lib/sync/room";
@@ -11,7 +11,7 @@
    */
   const session = $derived($sessionStore);
   let status = $state<PlaylistStatus>({ kind: "idle" });
-  let query = $state("");
+  let query = $state(new URLSearchParams($route.split("?")[1] ?? "").get("q") ?? "");
   let results = $state<MediaItem[] | null>(null);
   let errors = $state<string[]>([]);
   let searching = $state(false);
