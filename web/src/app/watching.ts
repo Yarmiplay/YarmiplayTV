@@ -27,6 +27,7 @@ import type { SkipSegment as Skip } from "../lib/skip/segment";
 import { Store } from "../lib/store";
 import { episodeFromFile, type NowPlaying } from "../lib/sync/room";
 import { followsOperators, type RoomState } from "../lib/syncplay/client";
+import { isLoopbackHost } from "../lib/syncplay/transport";
 import { library, player, session } from "./context";
 import { sourceByKey, sources } from "./media";
 import { settings } from "./settings";
@@ -57,7 +58,7 @@ function passthroughBase(): string | null {
   }
   const last = settings.value.savedRooms[0];
   if (!last) return null;
-  const local = /^(localhost|127\.)/.test(last.host) && location.protocol === "http:";
+  const local = isLoopbackHost(last.host);
   return `${local ? "http" : "https"}://${last.host}:${last.port}`;
 }
 

@@ -24,6 +24,13 @@ export const urlHost = (host: string): string => {
   return h.includes(":") && !h.startsWith("[") ? `[${h}]` : h;
 };
 
+/**
+ * Whether [host] is this computer. Browsers let even an https page talk to it unencrypted (the traffic never leaves
+ * the machine), so a server on the same computer is reached at ws://localhost: its certificate is for its DuckDNS
+ * name, and its own public address is often out of reach from inside the home.
+ */
+export const isLoopbackHost = (host: string): boolean => /^(localhost|127\.\d+\.\d+\.\d+|\[?::1\]?)$/i.test(host.trim());
+
 export const webSocketUrl = (host: string, port: number, tls: boolean): string =>
   `${tls ? "wss" : "ws"}://${urlHost(host)}:${port}/yarmiplay/ws`;
 

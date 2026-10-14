@@ -4,6 +4,7 @@
   import * as SavedRooms from "../lib/data/savedRooms";
   import type { SavedRoom } from "../lib/data/savedRooms";
   import * as ManagedRooms from "../lib/syncplay/managedRooms";
+  import { isLoopbackHost } from "../lib/syncplay/transport";
   import Icon from "../components/Icon.svelte";
 
   /**
@@ -58,13 +59,17 @@
   function explain(reason: string): string {
     if (!/reach|refused|1006|didn't answer/i.test(reason)) return reason;
     const name = host.trim();
+    if (isLoopbackHost(name)) {
+      return `${reason}. Nothing answered on this computer at port ${port}: check that YarmiplayServerTV is running here, and allow the browser to reach this device if it asks.`;
+    }
     if (/^[\d.]+$|:/.test(name) || !name.includes(".")) {
-      return `${reason}. A browser can't check a server's certificate on an IP address or a name on your network: use the server's DuckDNS name (like myhome.duckdns.org), as the host's "Watch in a browser" link does.`;
+      return `${reason}. A browser can't check a server's certificate on an IP address or a name on your network: use the server's DuckDNS name (like myhome.duckdns.org), as the host's "Watch in a browser" link does. On the server's own computer, localhost works too.`;
     }
     return (
       `${reason}. A browser can only join YarmiplayServerTV 1.8 or later with HTTPS set up (its DuckDNS certificate); check the server name and port. ` +
       `On the server's own network, many routers can't reach their own public address: the apps get around that and a browser can't, ` +
-      `so the host adds a "LAN name for browsers" in YarmiplayServerTV's Network settings and shares the "Watch in a browser" link again.`
+      `so the host adds a "LAN name for browsers" in YarmiplayServerTV's Network settings and shares the "Watch in a browser" link again. ` +
+      `On the server's own computer, join with localhost as the server.`
     );
   }
 

@@ -46,6 +46,12 @@ version joins rooms on a YarmiplayServerTV 1.8 or later that has HTTPS set up (i
 **Watch in a browser** link opens the join screen with the server and room filled in. Plain Syncplay servers need
 the app, because browsers can't open their kind of connection.
 
+At home, some routers can't reach their own public address from inside, which the apps work around and a browser
+can't. On the computer running YarmiplayServerTV, type `localhost` as the server and allow the browser to reach
+apps on this device when it asks. For the other devices at home, the host sets a **LAN name for browsers** in
+YarmiplayServerTV's Network settings (a second DuckDNS name) and shares the Watch in a browser link again; publishing
+IPv6 there helps too, where the internet connection has it.
+
 It plays files from your device (open one, drop one on the page, or add media folders in Settings > Media) with its
 own player: MKV, MP4, AVI, TS and WebM, styled subtitles, and DTS or AC-3 sound. Video is decoded by your graphics
 card where the browser can; HEVC needs a browser and computer that support it. Chrome and Edge remember media folders

@@ -21,6 +21,7 @@ import {
 import * as Filenames from "../syncplay/filenames";
 import * as ManagedRooms from "../syncplay/managedRooms";
 import type { FileInfo } from "../syncplay/models";
+import { isLoopbackHost } from "../syncplay/transport";
 import type { DeviceAuth } from "../syncplay/yarmiplay";
 import * as PlaylistEdits from "./playlistEdits";
 import { TrustedDomains } from "./playlistEdits";
@@ -217,14 +218,14 @@ export class RoomSession {
     const operatorPassword = options.operatorPassword ? ManagedRooms.normalizePassword(options.operatorPassword) : "";
     if (operatorPassword && ManagedRooms.isManaged(room)) Settings.saveRoomPassword(`${this.server}/${room}`, operatorPassword);
 
-    const local = /^(localhost|127\.|\[::1\])/.test(profile.host.trim()) && location.protocol === "http:";
+    const local = isLoopbackHost(profile.host);
     const config: SyncplayConfig = {
       host: profile.host.trim(),
       port: profile.port,
       username: profile.username.trim(),
       room,
       password: profile.password || null,
-      // wss:// always, but for a server on this computer while developing from http://localhost.
+      // wss:// always, but for a server on this computer.
       useTls: !local,
       deviceAuth: this.deviceAuth,
       appVersion: this.appVersion,
