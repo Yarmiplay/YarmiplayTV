@@ -12,7 +12,8 @@ keep working across builds. <site>/a/ redirects to the APK for TV apps like Down
 is docs/privacy.md (the Play Store privacy policy), <site>/terms/ is docs/terms.md (the community rules the
 apps ask users to agree to), <site>/test/ is docs/testers.md (how to join the Google Play
 test), <site>/manual/ is docs/manual.md (the user manual, with a table of contents and the store screenshots),
-<site>/changelog/ lists every version's patch notes from the Linux metainfo's <releases>, <site>/screenshots/ holds the desktop screenshots the Linux metainfo points to, and <site>/version.json
+<site>/changelog/ lists every version's patch notes from the Linux metainfo's <releases>, <site>/watch/ is the
+browser version (web/, which the Pages workflow builds and copies there after this script), <site>/screenshots/ holds the desktop screenshots the Linux metainfo points to, and <site>/version.json
 lists each platform's package
 and version for the apps' update check. With --site-url the pages carry canonical URLs and the site a
 sitemap.xml and a robots.txt pointing to it for search engines; --indexnow-key publishes the key file that lets the Pages workflow notify IndexNow.
@@ -36,10 +37,14 @@ NAME = "YarmiplayTV"
 REPO_URL = "https://github.com/Yarmiplay/YarmiplayTV"
 SERVER_URL = "https://servertv.yarmiplay.com/"
 HOME_URL = "https://yarmiplay.com/"
+# The browser version (web/), which the Pages workflow publishes under the site's watch/. Pages served elsewhere
+# (scripts/apk_server.py) link to it in full.
+WATCH_PATH = "watch/"
+WATCH_URL = "https://tv.yarmiplay.com/watch/"
 TITLE = f"{NAME}: watch videos in sync with friends (Syncplay for Google TV, Android, Windows, macOS, Linux)"
 DESCRIPTION = ("Watch videos together with friends, wherever they are. A Syncplay client with mpv built in for "
                "Google TV, Android phones and tablets, Windows, macOS and Linux that plays from Jellyfin, Plex or "
-               "your own files. Free and open source.")
+               "your own files, and a browser version with nothing to install. Free and open source.")
 # Link previews (Open Graph) need a raster image; this is the Play Store feature graphic.
 PREVIEW_IMAGE = os.path.join("docs", "play", "feature-graphic-1024x500.png")
 # The app icon as desktop/build.gradle.kts draws it: ic_logo.xml's triangles on the rounded gradient tile.
@@ -199,6 +204,24 @@ def platforms(short_link, stores=(), play_test=False):
     ]
 
 
+def browser_card(watch):
+    """The browser version's card: the main way in on devices without an app (games consoles, smart TVs that don't
+    run Android, iPhone, iPad, Chromebooks), and a way to watch without installing anywhere. [watch] is escaped."""
+    return (
+        '<section class="card" data-platform="browser"><span class="badge">For this device</span>'
+        '<h2>Web browser</h2><p class="blurb">Nothing to install: PlayStation, Xbox, smart TVs, iPhone, iPad, '
+        'Chromebooks and any computer.</p>'
+        f'<div class="dl"><a class="btn" href="{watch}">Watch in your browser<small>Nothing to install</small></a></div>'
+        '<details class="steps"><summary>What it needs</summary><ul>'
+        f'<li>A room on a <a href="{SERVER_URL}">YarmiplayServerTV</a> 1.8 or later with HTTPS set up (its DuckDNS '
+        "certificate). The host's <b>Watch in a browser</b> link opens it with the server and room filled in. Plain "
+        "Syncplay servers need the app.</li>"
+        "<li>A recent Chrome, Edge, Firefox or Safari. It plays MKV, MP4, AVI, TS and WebM with its own player; "
+        "HEVC needs a browser and device that support it.</li>"
+        "</ul></details></section>"
+    )
+
+
 def sha256_of(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -243,7 +266,7 @@ def app_head(version, site_url=None, preview=False):
             f'<meta property="og:title" content="{html.escape(TITLE)}">',
             f'<meta property="og:description" content="{html.escape(DESCRIPTION)}">']
     app = {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": NAME,
-           "description": DESCRIPTION, "operatingSystem": "Android, Windows, macOS, Linux",
+           "description": DESCRIPTION, "operatingSystem": "Android, Windows, macOS, Linux, web browser",
            "applicationCategory": "MultimediaApplication", "softwareVersion": version,
            "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}
     if site_url:
@@ -262,9 +285,9 @@ def app_head(version, site_url=None, preview=False):
 
 
 def render_page(downloads, version, built, short_link=None, docs=(), site_url=None,
-                google_verification=None, preview=False, stores=()):
-    """downloads: {platform key: [Download]}; docs: the DOCS entries published next to it; stores: linux_stores().
-    Returns the page as a str."""
+                google_verification=None, preview=False, stores=(), watch=WATCH_PATH):
+    """downloads: {platform key: [Download]}; docs: the DOCS entries published next to it; stores: linux_stores();
+    watch: the browser version's address. Returns the page as a str."""
     cards = []
     play_test = any(folder == PLAY_TEST[1].rstrip("/") for _, folder, _, _ in docs)
     store_links = dict(STORE_LINKS, linux=[(label, url, "Updates automatically") for label, _, url, _ in stores])
@@ -287,6 +310,8 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
                      + "".join(f"<li>{s}</li>" for s in p.steps) + f"</{tag}></details>")
             sums = "".join(f"<div>{html.escape(d.href.rsplit('/', 1)[-1])}<br><code>{d.sha256}</code></div>"
                            for d in files if d.sha256)
+            buttons += (f'<p class="web">Or <a href="{html.escape(watch)}">watch in your browser</a>, '
+                        'with nothing to install.</p>')
             body = (f'<div class="dl">{buttons}</div>{steps}'
                     + (f"<details><summary>SHA-256</summary>{sums}</details>" if sums else ""))
         else:
@@ -296,6 +321,7 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
                 body += f'<p class="src">{intro}</p><pre>{html.escape(cmd)}</pre>'
         cards.append(f'<section class="card" data-platform="{p.key}"><span class="badge">For this device</span>'
                      f'<h2>{p.title}</h2><p class="blurb">{p.blurb}</p>{body}</section>')
+    cards.append(browser_card(html.escape(watch)))
 
     meta = f"Version {html.escape(version)} &middot; built {html.escape(built)}"
     return f"""<!doctype html>
@@ -343,7 +369,8 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
  summary {{ cursor:pointer; }}
  .host {{ margin-top:1.6em; text-align:center; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:1.2em 1.5em; }}
  .host p {{ color:var(--muted); margin:.3em 0 0; }}
- #ios {{ display:none; text-align:center; color:var(--muted); margin:-1em 0 2em; }}
+ .web {{ display:none; margin:.2em 0 0; color:var(--muted); font-size:.95em; }}
+ .card.here .web {{ display:block; }}
  footer {{ text-align:center; color:var(--muted); margin-top:3em; font-size:.95em; }}
  @media (min-width:1600px) {{ body {{ font-size:20px; }} main {{ max-width:1500px; }} }}
 </style></head>
@@ -353,7 +380,6 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
  <p>A Syncplay client with mpv built in. Watch in sync with desktop Syncplay users, from Jellyfin or your own files.</p>
  <p class="meta">{meta}</p>
 </header>
-<p id="ios">iPhone and iPad aren't supported.</p>
 <div class="grid">
 {chr(10).join(cards)}
 </div>
@@ -361,24 +387,34 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
  <strong>Host your own server</strong>
  <p><a href="{SERVER_URL}">YarmiplayServerTV</a> runs a Syncplay server and a Jellyfin server from your Windows, macOS or Linux computer.</p>
 </section>
-<footer><a href="{HOME_URL}">yarmiplay.com</a> &middot; <a href="{REPO_URL}">Source</a>{''.join(f' &middot; <a href="{folder}/">{label}</a>' for _, folder, label, _ in docs)}</footer>
+<footer><a href="{HOME_URL}">yarmiplay.com</a> &middot; <a href="{html.escape(watch)}">Watch in your browser</a> &middot; <a href="{REPO_URL}">Source</a>{''.join(f' &middot; <a href="{folder}/">{label}</a>' for _, folder, label, _ in docs)}</footer>
 </main>
 <script>
 (function () {{
   var ua = navigator.userAgent, key = null;
   var tv = /Android/i.test(ua) && /\\bTV\\b|GoogleTV|AFT[A-Z]|BRAVIA|SMART-TV|Large Screen/i.test(ua);
+  // Games consoles and smart TVs that don't run Android have no app: the browser version is theirs. (Xbox's
+  // browser says Windows, and webOS's and Tizen's say Linux, so they're checked first.)
+  var noApp = !/Android/i.test(ua) &&
+    /PlayStation|Xbox|Nintendo|Tizen|SMART-TV|SmartTV|Web0S|webOS|NetCast|VIDAA|Viera|Saphi|Roku|HbbTV/i.test(ua);
   if (/Android/i.test(ua)) key = "android";
-  else if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) {{
-    document.getElementById("ios").style.display = "block";
-  }}
+  else if (noApp) key = "browser";
+  // iPhone, iPad (whose Safari can say Macintosh) and Chromebooks: no app made for them either.
+  else if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) key = "browser";
+  else if (/CrOS/.test(ua)) key = "browser";
   else if (/Windows/.test(ua)) key = "windows";
   else if (/Macintosh|Mac OS X/.test(ua)) key = "macos";
-  else if (/Linux|X11|CrOS/.test(ua)) key = "linux";
+  else if (/Linux|X11/.test(ua)) key = "linux";
   var card = key && document.querySelector('[data-platform="' + key + '"]');
   if (!card) return;
   card.classList.add("here");
-  card.parentNode.insertBefore(card, card.parentNode.firstChild);
+  var grid = card.parentNode;
+  // With an app for this device, the browser version comes right after it, as the way to watch without installing.
+  var web = document.querySelector('[data-platform="browser"]');
+  if (web && web !== card) grid.insertBefore(web, grid.firstChild);
+  grid.insertBefore(card, grid.firstChild);
   var btn = card.querySelector(".btn");
+  if (noApp && btn) btn.focus();
   if (tv) {{
     var steps = card.querySelector("ul");
     if (steps && steps.lastElementChild) steps.insertBefore(steps.lastElementChild, steps.firstElementChild);
@@ -651,6 +687,7 @@ def build(dist, out, version, site_url, desktop_version=None, google_verificatio
 
     now = datetime.datetime.now(datetime.timezone.utc)
     built = now.strftime("%Y-%m-%d %H:%M UTC")
+    pages.append(WATCH_PATH)
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
         f.write(render_page(by_platform(downloads), version, built, short_link, docs, site_url,
                             google_verification, preview, stores))

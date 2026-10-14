@@ -16,7 +16,7 @@ import socket
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from download_site import Download, by_platform, render_page
+from download_site import WATCH_URL, Download, by_platform, render_page
 
 APK_MIME = "application/vnd.android.package-archive"
 DOWNLOAD_NAME = "YarmiplayTV.apk"
@@ -84,7 +84,7 @@ def make_handler(apk_path, version):
                 downloads = by_platform({".apk": Download("/" + DOWNLOAD_NAME, "APK", st.st_size)})
             host = self.headers.get("Host")
             short_link = f"http://{host}/a" if host else None
-            body = render_page(downloads, version, built, short_link=short_link).encode()
+            body = render_page(downloads, version, built, short_link=short_link, watch=WATCH_URL).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
