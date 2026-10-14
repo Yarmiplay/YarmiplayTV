@@ -115,12 +115,15 @@ class Scenarios(private val state: AppState, private val syncplay: FakeSyncplayS
 
     private fun insertClip(): Uri {
         val resolver = TestSupport.app.contentResolver
-        // A leftover copy would make MediaStore rename the new one to "… (1).mp4".
+        // A leftover copy would make MediaStore rename the new one to "… (1).mp4". One left by an earlier install of the
+        // tests, or half-written by a run that was killed, isn't this install's to delete, so the shell clears the folder.
+        Screenshots.shell("content delete --uri ${MediaStore.Video.Media.EXTERNAL_CONTENT_URI} --where relative_path='$CLIP_FOLDER/'")
+        Screenshots.shell("rm -rf /sdcard/$CLIP_FOLDER")
         resolver.delete(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "${MediaStore.Video.Media.DISPLAY_NAME}=?", arrayOf(CLIP_NAME))
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, CLIP_NAME)
             put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/YarmiplayTV-tests")
+            put(MediaStore.Video.Media.RELATIVE_PATH, CLIP_FOLDER)
             put(MediaStore.Video.Media.IS_PENDING, 1)
         }
         val uri = requireNotNull(resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values))
@@ -134,6 +137,7 @@ class Scenarios(private val state: AppState, private val syncplay: FakeSyncplayS
 
     companion object {
         const val CLIP_NAME = "Orbit Station S01E02.mp4"
+        private val CLIP_FOLDER = "${Environment.DIRECTORY_MOVIES}/YarmiplayTV-tests"
         const val CLIP_DURATION = 3.0
         const val ALEX_CLIP_SIZE = 700L shl 20
 

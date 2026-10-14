@@ -3,6 +3,8 @@ package com.yarmiplaytv.screenshots
 import android.view.KeyEvent
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -190,7 +192,9 @@ class MobileScreenshotTest {
 
         tap("tab_Room"); await("disconnect")
         shot("room")
-        compose.onNodeWithTag("chat_field").performScrollTo()
+        // On a phone the chat is further down the room page; a tablet's room has it in a column of its own.
+        val scrolledToChat = hasTestTag("chat_field") and hasAnyAncestor(hasScrollAction())
+        if (compose.onAllNodes(scrolledToChat).fetchSemanticsNodes().isNotEmpty()) compose.onNode(scrolledToChat).performScrollTo()
         shot("room_chat")
         tap("tab_Settings"); await("settings")
         shot("settings_signed_in")
