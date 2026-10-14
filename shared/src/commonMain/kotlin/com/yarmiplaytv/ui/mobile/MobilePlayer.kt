@@ -416,6 +416,7 @@ private fun PlayerToasts(container: AppContainer, modifier: Modifier = Modifier)
     var shown by remember { mutableStateOf<List<Pair<Long, FeedMessage>>>(emptyList()) }
     LaunchedEffect(Unit) {
         container.sync.toasts.collect { msg ->
+            if (!msg.showsOnVideo(container.settings.value.chatOnVideo)) return@collect
             val id = System.nanoTime()
             shown = (shown + (id to msg)).takeLast(3)
         }

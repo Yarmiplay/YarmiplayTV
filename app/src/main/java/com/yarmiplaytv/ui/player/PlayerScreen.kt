@@ -118,6 +118,7 @@ import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.OnVideo
 import com.yarmiplaytv.ui.theme.onVideoLabel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filter
 
 internal enum class PanelKind(val label: String, val icon: ImageVector) {
     PLAYLIST("Shared playlist", Icons.AutoMirrored.Filled.PlaylistPlay),
@@ -291,7 +292,8 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
             VideoChip("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(24.dp))
         }
 
-        ToastHost(container.sync.toasts, Modifier.align(Alignment.TopStart).padding(32.dp))
+        val toasts = remember(container) { container.sync.toasts.filter { it.showsOnVideo(container.settings.value.chatOnVideo) } }
+        ToastHost(toasts, Modifier.align(Alignment.TopStart).padding(32.dp))
         TvMalNotice(container, Modifier.align(Alignment.TopEnd).padding(32.dp))
         // One place, controls or not: just above the controls bar, so it never jumps. OK presses it while the
         // controls are hidden; with them open, OK belongs to the focused control.

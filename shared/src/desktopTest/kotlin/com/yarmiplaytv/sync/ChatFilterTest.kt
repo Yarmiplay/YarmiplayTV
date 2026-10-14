@@ -1,12 +1,14 @@
 package com.yarmiplaytv.sync
 
 import com.yarmiplaytv.FakePlayer
+import com.yarmiplaytv.data.AppSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -60,5 +62,14 @@ class ChatFilterTest {
         assertTrue(sync.blocked.value.isEmpty())
         sync.receiveChat("Troll", "hello again")
         assertEquals(listOf("Troll: hello again"), lines())
+    }
+
+    @Test
+    fun `chat pops up over the video only when the setting is on, which it isn't at first, and room notices always do`() {
+        val chat = FeedMessage("hi", from = "Alex")
+        val notice = FeedMessage("Alex joined")
+        assertFalse(chat.showsOnVideo(AppSettings().chatOnVideo))
+        assertTrue(chat.showsOnVideo(chatOnVideo = true))
+        assertTrue(notice.showsOnVideo(chatOnVideo = false))
     }
 }

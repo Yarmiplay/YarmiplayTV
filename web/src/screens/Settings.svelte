@@ -134,6 +134,9 @@
           <label class="switch"><input type="checkbox" checked={s.autoReady} onchange={(e) => set((x) => ({ ...x, autoReady: (e.target as HTMLInputElement).checked }))} /> Ready once the room's entry has loaded</label>
           <label class="switch"><input type="checkbox" checked={s.autosavePlaylists} onchange={(e) => set((x) => ({ ...x, autosavePlaylists: (e.target as HTMLInputElement).checked }))} /> Remember room playlists</label>
           <label class="switch"><input type="checkbox" checked={s.showChat} onchange={(e) => set((x) => ({ ...x, showChat: (e.target as HTMLInputElement).checked }))} /> Show chat</label>
+          {#if s.showChat}
+            <label class="switch"><input type="checkbox" checked={s.chatOnVideo} onchange={(e) => set((x) => ({ ...x, chatOnVideo: (e.target as HTMLInputElement).checked }))} /> Chat on the video</label>
+          {/if}
           <label>
             Device name (what the host sees)
             <input value={s.deviceName} maxlength="60" onchange={(e) => set((x) => ({ ...x, deviceName: (e.target as HTMLInputElement).value.trim() || x.deviceName }))} />

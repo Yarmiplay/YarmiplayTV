@@ -68,6 +68,7 @@ import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.UnpauseMode
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.shared.CHAT_ON_VIDEO_NOTE
 import com.yarmiplaytv.ui.shared.DETECT_ANY_NETWORK_SUBTITLE
 import com.yarmiplaytv.ui.shared.DETECT_ANY_NETWORK_TITLE
 import com.yarmiplaytv.ui.shared.DETECT_SKIPS_SUBTITLE
@@ -286,6 +287,14 @@ private fun SyncingSettings(container: AppContainer) {
         settings.showRoomChat,
         Modifier.testTag("toggle_show_chat"),
     ) { container.scope.launch { container.settingsStore.saveShowRoomChat(it) } }
+    if (settings.showRoomChat) {
+        SettingsToggle(
+            "Chat on the video",
+            CHAT_ON_VIDEO_NOTE,
+            settings.chatOnVideo,
+            Modifier.testTag("toggle_chat_on_video"),
+        ) { container.scope.launch { container.settingsStore.saveChatOnVideo(it) } }
+    }
     if (container.supportsDeviceAccess) {
         SettingTextField(
             settings.deviceName,

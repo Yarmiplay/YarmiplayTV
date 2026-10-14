@@ -120,7 +120,8 @@ The Room tab shows, in order:
 
 - **Shared playlist**: everyone in the room sees and edits the same list.
 - **Chat**: messages from the others, and yours. **Hide chat** hides it; tap a name to block it (until you
-  leave the room).
+  leave the room). New messages stay in the chat; turn on **Settings > Syncing > Chat on the video** to have
+  them pop up over the video as they arrive too.
 - **The people in the room**: who's ready, what each one is playing, and warnings when someone's copy of the
   file differs from yours (a different size or name; playback still syncs).
 - **Switching rooms**, managed rooms, **Edit connection** and **Disconnect**.
@@ -364,7 +365,7 @@ a computer, a wide tablet or a TV, the categories are on the left and the chosen
   your files with the room, and where saved files and screenshots go.
 - **MyAnimeList:** opens the MyAnimeList screen.
 - **Syncing:** when you unpause, catching up and slowing down, when you're ready, remembering playlists, the
-  chat, and your device's name.
+  chat and whether new messages show over the video, and your device's name.
 - **Playback:** hardware decoding, picture-in-picture, skipping openings and endings when watching alone, the
   Skip button and finding them by listening, the seek step and the audio and subtitle languages.
 - **Appearance:** the theme: **Dark** (night blue, the app's own look), **Noire** (dark purple, as NoireServerTV),

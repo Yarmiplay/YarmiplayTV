@@ -41,7 +41,10 @@ interface OperatorPasswords {
 }
 
 /** A line in the on-screen chat / notification feed. */
-data class FeedMessage(val text: String, val from: String? = null, val isError: Boolean = false, val at: Long = System.currentTimeMillis())
+data class FeedMessage(val text: String, val from: String? = null, val isError: Boolean = false, val at: Long = System.currentTimeMillis()) {
+    /** Whether it pops up over the video: room notices always, chat only with [chatOnVideo] on. */
+    fun showsOnVideo(chatOnVideo: Boolean): Boolean = from == null || chatOnVideo
+}
 
 /**
  * Owns the [SyncplayClient] for the current room and wires it to the mpv player. The protocol

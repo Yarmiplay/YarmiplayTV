@@ -14,4 +14,6 @@ const val BLOCKED_NOTE = "Blocked: their messages are hidden until you leave the
 
 const val HIDDEN_CHAT_NOTE = "Room chat is hidden: nobody's messages are shown, whatever name they use."
 
+const val CHAT_ON_VIDEO_NOTE = "Show new messages over the video as they arrive; the chat panel has them either way"
+
 const val ROOM_PRIVACY_HINT = "Anyone who knows the room's name can join it on that server, so pick one that's hard to guess, or use your own server with a password."

@@ -67,6 +67,8 @@ export interface Settings {
   onlyTrustedDomains: boolean;
   autosavePlaylists: boolean;
   showChat: boolean;
+  /** Chat messages pop up over the video as they arrive; off keeps them to the chat panel. */
+  chatOnVideo: boolean;
   theme: ThemeKey;
   acceptedRoomRules: boolean;
   playback: PlaybackPrefs;
@@ -130,6 +132,7 @@ export function load(): Settings {
     onlyTrustedDomains: bool("only_trusted_domains", true),
     autosavePlaylists: bool("autosave_playlists", true),
     showChat: bool("chat_show", true),
+    chatOnVideo: bool("chat_on_video", false),
     theme: themeOf(read("app_theme")),
     acceptedRoomRules: bool("room_rules_accepted", false),
     playback: {
@@ -174,6 +177,7 @@ export function save(settings: Settings) {
   write("only_trusted_domains", String(settings.onlyTrustedDomains));
   write("autosave_playlists", String(settings.autosavePlaylists));
   write("chat_show", String(settings.showChat));
+  write("chat_on_video", String(settings.chatOnVideo));
   write("app_theme", settings.theme);
   write("room_rules_accepted", String(settings.acceptedRoomRules));
   const p = settings.playback;

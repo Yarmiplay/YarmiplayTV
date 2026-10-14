@@ -60,6 +60,7 @@ import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.AboutLink
 import com.yarmiplaytv.ui.shared.CHANGELOG_URL
+import com.yarmiplaytv.ui.shared.CHAT_ON_VIDEO_NOTE
 import com.yarmiplaytv.ui.shared.DETECT_ANY_NETWORK_SUBTITLE
 import com.yarmiplaytv.ui.shared.DETECT_ANY_NETWORK_TITLE
 import com.yarmiplaytv.ui.shared.DETECT_SKIPS_SUBTITLE
@@ -157,6 +158,14 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                     { container.scope.launch { container.settingsStore.saveShowRoomChat(!settings.showRoomChat) } },
                     subtitle = "Off hides everyone's chat messages in rooms, whatever name they use",
                 )
+                if (settings.showRoomChat) {
+                    ToggleRow(
+                        "Chat on the video",
+                        settings.chatOnVideo,
+                        { container.scope.launch { container.settingsStore.saveChatOnVideo(!settings.chatOnVideo) } },
+                        subtitle = CHAT_ON_VIDEO_NOTE,
+                    )
+                }
                 if (container.supportsDeviceAccess) {
                     var deviceName by rememberSavedText(settings.deviceName) { name -> container.scope.launch { container.settingsStore.saveDeviceName(name) } }
                     TvTextField(

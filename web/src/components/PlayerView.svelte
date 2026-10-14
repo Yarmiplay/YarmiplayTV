@@ -80,7 +80,8 @@
       session.room.subscribe((r) => (room = r)),
       session.status.subscribe((st) => (status = st)),
       session.toasts.subscribe((t) => {
-        if (!t || (t.from && panel === "chat")) return;
+        // Chat pops up over the video only when Settings asks for it, and not while the chat panel shows it.
+        if (!t || (t.from && (panel === "chat" || !$settings.chatOnVideo))) return;
         toast = t;
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => (toast = null), t.isError ? 6000 : 3500);
