@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Builds the YarmiplayTV download page: one card per OS (Android TVs, phones and tablets share one APK), each with
-its download and install steps.
+Builds the YarmiplayTV download page: what the app does, then one card per OS (Android TVs, phones and tablets
+share one APK), each with its download and install steps.
 
   python scripts/download_site.py --dist dist --out _site [--version 0.1.0] [--site-url URL]
       [--google-verification TOKEN] [--indexnow-key KEY] [--flathub-id ID] [--snap-name NAME] [--aur-package NAME]
@@ -204,15 +204,117 @@ def platforms(short_link, stores=(), play_test=False):
     ]
 
 
+# Material Icons (Apache-2.0, the set the browser version uses): the paths of the few this page shows.
+ICONS = {
+    "android": '<path d="m17.6 9.48 1.84-3.18c.16-.31.04-.69-.26-.85a.637.637 0 0 0-.83.22l-1.88 3.24a11.463 11.463 0 0 0-8.94 0L5.65 5.67a.643.643 0 0 0-.87-.2c-.28.18-.37.54-.22.83L6.4 9.48A10.78 10.78 0 0 0 1 18h22a10.78 10.78 0 0 0-5.4-8.52zM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z"/>',
+    "desktop_windows": '<path d="M20 3H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h6v2H8v2h8v-2h-2v-2h6c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2"/>',
+    "laptop_mac": '<path d="M20 18c1.1 0 1.99-.9 1.99-2L22 5c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2H0c0 1.1.9 2 2 2h20c1.1 0 2-.9 2-2h-4zM4 5h16v11H4V5zm8 14c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z"/>',
+    "terminal": '<path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16c1.1 0 2-.9 2-2V6a2 2 0 0 0-2-2zm0 14H4V8h16v10zm-2-1h-6v-2h6v2zM7.5 17l-1.41-1.41L8.67 13l-2.59-2.59L7.5 9l4 4-4 4z"/>',
+    "language": '<path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95a15.65 15.65 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.92 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.987 7.987 0 0 1 5.08 16zm2.95-8H5.08a7.987 7.987 0 0 1 4.33-3.56A15.65 15.65 0 0 0 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/>',
+    "groups": '<path d="M12 12.75c1.63 0 3.07.39 4.24.9 1.08.48 1.76 1.56 1.76 2.73V18H6v-1.61c0-1.18.68-2.26 1.76-2.73 1.17-.52 2.61-.91 4.24-.91zM4 13c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm1.13 1.1c-.37-.06-.74-.1-1.13-.1-.99 0-1.93.21-2.78.58A2.01 2.01 0 0 0 0 16.43V18h4.5v-1.61c0-.83.23-1.61.63-2.29zM20 13c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm4 3.43c0-.81-.48-1.53-1.22-1.85A6.95 6.95 0 0 0 20 14c-.39 0-.76.04-1.13.1.4.68.63 1.46.63 2.29V18H24v-1.57zM12 6c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z"/>',
+    "video_library": '<path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 12.5v-9l6 4.5-6 4.5z"/>',
+    "subtitles": '<path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM4 12h4v2H4v-2zm10 6H4v-2h10v2zm6 0h-4v-2h4v2zm0-4H10v-2h10v2z"/>',
+    "fast_forward": '<path d="m4 18 8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>',
+    "dns": '<path d="M20 13H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zM7 19c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM20 3H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1zM7 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/>',
+    "sync": '<path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>',
+    "download": '<path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/>',
+}
+
+
+def icon(name):
+    return f'<svg viewBox="0 0 24 24" aria-hidden="true">{ICONS[name]}</svg>'
+
+
+PLATFORM_ICONS = {"android": "android", "windows": "desktop_windows", "macos": "laptop_mac", "linux": "terminal",
+                  "browser": "language"}
+
+# What the app does, under the heading: (icon, title, text).
+FEATURES = (
+    ("groups", "Rooms with friends",
+     "Play, pause and seek together, chat and share a playlist in any Syncplay room, even with friends on desktop "
+     "Syncplay."),
+    ("video_library", "Your own library",
+     "Play from Jellyfin, Plex or the files on your device: the shared playlist finds each person's copy by name."),
+    ("subtitles", "mpv built in",
+     "MKV, HEVC, every audio track and styled anime subtitles play just as they do in mpv."),
+    ("fast_forward", "Skip the intro",
+     "Skip openings and endings for the whole room, and keep MyAnimeList up to date as you watch."),
+)
+
+# The heading's picture: one moment of a video on a TV and a phone at once, drawn rather than a screenshot so it
+# stays sharp at any size.
+ILLUSTRATION = (
+    '<svg class="art" viewBox="0 0 560 420" role="img" '
+    'aria-label="The same moment of a video playing on a TV and on a phone">'
+    '<defs>'
+    '<radialGradient id="art-glow"><stop offset="0" stop-color="#3DA5F4" stop-opacity=".22"/>'
+    '<stop offset="1" stop-color="#3DA5F4" stop-opacity="0"/></radialGradient>'
+    '<linearGradient id="art-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0F1C33"/>'
+    '<stop offset=".55" stop-color="#2D5F93"/><stop offset="1" stop-color="#F0A868"/></linearGradient>'
+    '<linearGradient id="art-shade" x1="0" y1="0" x2="0" y2="1"><stop offset=".55" stop-color="#000" stop-opacity="0"/>'
+    '<stop offset="1" stop-color="#000" stop-opacity=".6"/></linearGradient>'
+    '<symbol id="art-scene" viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice">'
+    '<rect width="160" height="90" fill="url(#art-sky)"/><circle cx="112" cy="54" r="13" fill="#FFD28A"/>'
+    '<path d="M0 64 30 44 52 58 78 36 108 62 132 48 160 60V90H0Z" fill="#1C3352"/>'
+    '<path d="M0 74 24 62 50 72 84 54 118 72 142 64 160 70V90H0Z" fill="#0E1A2C"/></symbol>'
+    '<clipPath id="art-tv"><rect x="20" y="28" width="428" height="241" rx="6"/></clipPath>'
+    '<clipPath id="art-phone"><rect x="8" y="34" width="134" height="76"/></clipPath>'
+    '</defs>'
+    '<ellipse cx="280" cy="210" rx="280" ry="200" fill="url(#art-glow)"/>'
+    # The TV.
+    '<rect x="196" y="285" width="76" height="14" fill="#1A2029"/>'
+    '<rect x="150" y="297" width="168" height="9" rx="4.5" fill="#232A35"/>'
+    '<rect x="8" y="16" width="452" height="270" rx="16" fill="#0A0D12" stroke="#2A313C" stroke-width="2"/>'
+    '<g clip-path="url(#art-tv)"><use href="#art-scene" x="20" y="28" width="428" height="241"/>'
+    '<rect x="20" y="28" width="428" height="241" fill="url(#art-shade)"/></g>'
+    '<rect x="34" y="42" width="112" height="26" rx="13" fill="#0A0D12" fill-opacity=".72"/>'
+    '<circle cx="50" cy="55" r="4" fill="#4CC38A"/>'
+    '<text x="60" y="59.5" font-size="12.5" font-weight="600" fill="#fff">3 watching</text>'
+    '<text x="36" y="245" font-size="13" font-weight="600" fill="#fff">24:18</text>'
+    '<rect x="36" y="254" width="340" height="4" rx="2" fill="#fff" fill-opacity=".3"/>'
+    '<rect x="36" y="254" width="211" height="4" rx="2" fill="#3DA5F4"/>'
+    '<circle cx="247" cy="256" r="6.5" fill="#fff"/>'
+    # The phone, in a room: the same frame above the chat.
+    '<g transform="translate(396 118)">'
+    '<rect width="150" height="290" rx="24" fill="#0A0D12" stroke="#2A313C" stroke-width="2"/>'
+    '<rect x="8" y="10" width="134" height="270" rx="17" fill="#12161D"/>'
+    '<rect x="58" y="17" width="34" height="7" rx="3.5" fill="#0A0D12"/>'
+    '<g clip-path="url(#art-phone)"><use href="#art-scene" x="8" y="34" width="134" height="76"/>'
+    '<rect x="8" y="34" width="134" height="76" fill="url(#art-shade)"/></g>'
+    '<rect x="16" y="101" width="118" height="3" rx="1.5" fill="#fff" fill-opacity=".3"/>'
+    '<rect x="16" y="101" width="73" height="3" rx="1.5" fill="#3DA5F4"/>'
+    '<circle cx="89" cy="102.5" r="4" fill="#fff"/>'
+    '<text x="18" y="133" font-size="11" font-weight="700" fill="#E8EAED">Movie night</text>'
+    '<text x="18" y="147" font-size="9" fill="#9AA0A6">3 ready · 24:18</text>'
+    '<rect x="18" y="160" width="74" height="24" rx="12" fill="#232A35"/>'
+    '<text x="29" y="176" font-size="10" fill="#E8EAED">Ready?</text>'
+    '<rect x="66" y="192" width="66" height="24" rx="12" fill="#3DA5F4"/>'
+    '<text x="78" y="208" font-size="10" font-weight="600" fill="#06121F">Ready!</text>'
+    '<rect x="18" y="224" width="96" height="24" rx="12" fill="#232A35"/>'
+    '<text x="29" y="240" font-size="10" fill="#E8EAED">Starting now</text>'
+    '</g>'
+    # Kept in sync.
+    '<circle cx="404" cy="122" r="27" fill="#3DA5F4" stroke="#0E1116" stroke-width="6"/>'
+    f'<g transform="translate(390 108) scale(1.17)" fill="#06121F">{ICONS["sync"]}</g>'
+    '</svg>'
+)
+
+
+def card_head(key, title, blurb):
+    return (f'<div class="head"><span class="pi">{icon(PLATFORM_ICONS[key])}</span><h3>{title}</h3></div>'
+            f'<p class="blurb">{blurb}</p>')
+
+
 def browser_card(watch):
     """The browser version's card: the main way in on devices without an app (games consoles, smart TVs that don't
     run Android, iPhone, iPad, Chromebooks), and a way to watch without installing anywhere. [watch] is escaped."""
+    head = card_head("browser", "Web browser", "Nothing to install: PlayStation, Xbox, smart TVs, iPhone, iPad, "
+                     "Chromebooks and any computer.")
     return (
-        '<section class="card" data-platform="browser"><span class="badge">For this device</span>'
-        '<h2>Web browser</h2><p class="blurb">Nothing to install: PlayStation, Xbox, smart TVs, iPhone, iPad, '
-        'Chromebooks and any computer.</p>'
+        '<section class="card wide" data-platform="browser"><span class="badge">For this device</span>'
+        f'<div class="row"><div>{head}</div>'
         f'<div class="dl"><a class="btn" href="{watch}">Watch in your browser<small>Nothing to install</small></a></div>'
-        '<details class="steps"><summary>What it needs</summary><ul>'
+        '</div><details class="steps"><summary>What it needs</summary><ul>'
         f'<li>A room on a <a href="{SERVER_URL}">YarmiplayServerTV</a> 1.8 or later with HTTPS set up (its DuckDNS '
         "certificate). The host's <b>Watch in a browser</b> link opens it with the server and room filled in. Plain "
         "Syncplay servers need the app.</li>"
@@ -284,6 +386,29 @@ def app_head(version, site_url=None, preview=False):
     return "\n".join(tags)
 
 
+# The look the main page and the docs pages share: the app's Dark theme colours, and the bar along the top.
+BASE_CSS = """ :root { --bg:#0E1116; --surface:#151A21; --surface2:#1E242E; --line:#262C36; --text:#E8EAED; --soft:#C4C7CC;
+         --muted:#9AA0A6; --accent:#3DA5F4; --on-accent:#06121F; --tint:rgba(61,165,244,.13); }
+ * { box-sizing:border-box; }
+ html { scroll-behavior:smooth; }
+ body { margin:0; color:var(--text); font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+        background:radial-gradient(1100px 620px at 78% -8%,rgba(61,165,244,.14),transparent 70%) no-repeat,var(--bg); }
+ .wrap { max-width:1120px; margin:0 auto; padding:0 24px; }
+ a { color:var(--accent); }
+ .top { display:flex; align-items:center; justify-content:space-between; gap:1em; padding:1.1em 0; }
+ .brand { display:inline-flex; align-items:center; gap:.5em; color:var(--text); text-decoration:none; font-weight:700;
+          font-size:1.15em; letter-spacing:-.01em; }
+ .brand svg { width:2em; height:2em; flex:none; }
+ .top nav { display:flex; flex-wrap:wrap; gap:.2em; }
+ .top nav a { color:var(--soft); text-decoration:none; padding:.4em .75em; border-radius:8px; font-weight:500; }
+ .top nav a:hover { color:var(--text); background:var(--surface); }
+ code, pre { font-family:ui-monospace,Consolas,monospace; font-size:.9em; }
+ code { background:var(--bg); padding:.1em .35em; border-radius:4px; color:var(--text); overflow-wrap:anywhere; }
+ a:focus-visible, summary:focus-visible { outline:3px solid var(--text); outline-offset:3px; border-radius:6px; }
+ @media (max-width:620px) { .wrap { padding:0 16px; } .top nav a:not(:first-child) { display:none; } }
+ @media (min-width:1600px) { body { font-size:20px; } .wrap { max-width:1500px; } }"""
+
+
 def render_page(downloads, version, built, short_link=None, docs=(), site_url=None,
                 google_verification=None, preview=False, stores=(), watch=WATCH_PATH):
     """downloads: {platform key: [Download]}; docs: the DOCS entries published next to it; stores: linux_stores();
@@ -302,93 +427,190 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
             (href, attr, label, note), rest = links[0], links[1:]
             buttons = f'<a class="btn" href="{href}"{attr}>{label}<small>{note}</small></a>'
             if rest:
-                buttons += '<p class="more">' + " &middot; ".join(
-                    f'<span><a href="{href}"{attr}>{label}</a> <small>{note}</small></span>'
-                    for href, attr, label, note in rest) + "</p>"
+                buttons += '<p class="more">' + "".join(
+                    f'<a href="{href}"{attr}>{label} <small>{note}</small></a>' for href, attr, label, note in rest
+                ) + "</p>"
             tag = "ul" if p.alternatives else "ol"
             steps = (f'<details class="steps"><summary>How to install</summary><{tag}>'
                      + "".join(f"<li>{s}</li>" for s in p.steps) + f"</{tag}></details>")
             sums = "".join(f"<div>{html.escape(d.href.rsplit('/', 1)[-1])}<br><code>{d.sha256}</code></div>"
                            for d in files if d.sha256)
-            buttons += (f'<p class="web">Or <a href="{html.escape(watch)}">watch in your browser</a>, '
-                        'with nothing to install.</p>')
             body = (f'<div class="dl">{buttons}</div>{steps}'
-                    + (f"<details><summary>SHA-256</summary>{sums}</details>" if sums else ""))
+                    + (f'<details class="sums"><summary>SHA-256</summary>{sums}</details>' if sums else ""))
         else:
             body = '<p class="none">No package for this platform yet.</p>'
             if p.source:
                 intro, cmd = p.source
                 body += f'<p class="src">{intro}</p><pre>{html.escape(cmd)}</pre>'
         cards.append(f'<section class="card" data-platform="{p.key}"><span class="badge">For this device</span>'
-                     f'<h2>{p.title}</h2><p class="blurb">{p.blurb}</p>{body}</section>')
+                     f'{card_head(p.key, p.title, p.blurb)}{body}</section>')
     cards.append(browser_card(html.escape(watch)))
 
-    meta = f"Version {html.escape(version)} &middot; built {html.escape(built)}"
+    features = "".join(f'<div class="feature"><span class="fi">{icon(name)}</span><h3>{title}</h3><p>{text}</p></div>'
+                       for name, title, text in FEATURES)
+    pages = {folder: label for _, folder, label, _ in docs}
+    nav = [("#download", "Download")] + [(f"{f}/", pages[f]) for f in ("manual", "changelog") if f in pages]
+    nav.append((REPO_URL, "Source"))
+    legal = ("privacy", "terms")
+    columns = (
+        ("Help", [(f"{folder}/", label) for folder, label in pages.items() if folder not in legal]),
+        ("Project", [(HOME_URL, "yarmiplay.com"), (watch, "Watch in your browser"), (SERVER_URL, "YarmiplayServerTV"),
+                     (REPO_URL, "Source code")]),
+        ("Legal", [(f"{folder}/", pages[folder]) for folder in legal if folder in pages]),
+    )
+    footer_columns = "".join(
+        f'<div><h4>{title}</h4><ul>'
+        + "".join(f'<li><a href="{html.escape(href)}">{html.escape(label)}</a></li>' for href, label in links)
+        + "</ul></div>" for title, links in columns if links)
+    w = html.escape(watch)
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0E1116">
 <title>{html.escape(TITLE)}</title>
 {search_head(DESCRIPTION, site_url, "", google_verification)}
 {app_head(version, site_url, preview)}
 <style>
- :root {{ --bg:#0E1116; --card:#171B22; --line:#262C36; --text:#E8EAED; --muted:#9AA0A6; --accent:#3DA5F4; }}
- * {{ box-sizing:border-box; }}
- body {{ margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }}
- main {{ max-width:1100px; margin:0 auto; padding:6vh 4vw 4vh; }}
- header {{ text-align:center; margin-bottom:2.5em; }}
- h1 {{ font-size:clamp(2.2em,6vw,3.4em); margin:0; letter-spacing:-.02em; display:inline-flex; align-items:center; gap:.3em; }}
- h1 svg {{ width:1.15em; height:1.15em; flex:none; }}
- header p {{ color:var(--muted); font-size:1.15em; margin:.4em auto; max-width:46em; }}
- .meta {{ font-size:.95em; }}
- a {{ color:var(--accent); }}
- .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:1.2em; }}
- .card {{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:1.4em 1.5em; position:relative; }}
- .card.here {{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }}
- .badge {{ display:none; position:absolute; top:-.75em; left:1.2em; background:var(--accent); color:var(--bg);
-          font-size:.8em; font-weight:700; padding:.1em .7em; border-radius:99px; }}
+{BASE_CSS}
+ .hero {{ display:grid; grid-template-columns:1.05fr .95fr; align-items:center; gap:3em; padding:2.5em 0 1em; }}
+ .eyebrow {{ display:inline-block; color:var(--accent); background:var(--tint); font-weight:600; font-size:.88em;
+            padding:.3em .9em; border-radius:99px; margin:0 0 1.2em; }}
+ h1 {{ font-size:clamp(2.4em,5.2vw,3.8em); line-height:1.06; letter-spacing:-.03em; margin:0 0 .45em; }}
+ h1 span {{ color:var(--accent); }}
+ .lede {{ color:var(--soft); font-size:1.18em; margin:0 0 1.7em; max-width:32em; }}
+ .cta {{ display:flex; flex-wrap:wrap; gap:.75em; }}
+ .hero-meta {{ color:var(--muted); font-size:.9em; margin:1.3em 0 0; }}
+ .art {{ width:100%; height:auto; display:block; }}
+ .section {{ padding:3.5em 0 0; }}
+ h2 {{ font-size:clamp(1.6em,3vw,2.1em); letter-spacing:-.02em; margin:0 0 .25em; }}
+ .sub {{ color:var(--muted); margin:0 0 1.6em; font-size:1.05em; }}
+ .features {{ display:grid; grid-template-columns:repeat(4,1fr); gap:1em; }}
+ .feature {{ background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:1.4em; }}
+ .fi {{ width:2.75em; height:2.75em; border-radius:.75em; background:var(--tint); color:var(--accent); display:flex;
+       align-items:center; justify-content:center; margin-bottom:.9em; }}
+ .fi svg {{ width:1.5em; height:1.5em; fill:currentColor; }}
+ .feature h3 {{ margin:0 0 .3em; font-size:1.1em; }}
+ .feature p {{ margin:0; color:var(--muted); font-size:.95em; }}
+ .grid {{ display:grid; grid-template-columns:repeat(4,1fr); gap:1em; }}
+ .card {{ background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:1.4em; position:relative;
+         display:flex; flex-direction:column; }}
+ .card.here {{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent),0 16px 48px -16px rgba(61,165,244,.45); }}
+ .badge {{ display:none; position:absolute; top:-.8em; left:1.2em; background:var(--accent); color:var(--on-accent);
+          font-size:.78em; font-weight:700; padding:.15em .75em; border-radius:99px; }}
  .card.here .badge {{ display:block; }}
- h2 {{ margin:0 0 .2em; font-size:1.35em; }}
- .blurb, .src, ol, ul, details {{ color:var(--muted); }}
- .blurb {{ margin:0 0 1em; }}
- .dl {{ display:flex; flex-direction:column; align-items:flex-start; gap:.6em; margin-bottom:.8em; }}
- .more {{ margin:0; color:var(--muted); font-size:.95em; }}
- .more a {{ font-weight:600; text-decoration:none; }} .more a:hover {{ text-decoration:underline; }}
- .more span {{ white-space:nowrap; }} .more small {{ font-size:.85em; }}
- .btn {{ display:inline-flex; flex-direction:column; padding:.6em 1.2em; border-radius:10px; background:var(--accent);
-        color:var(--bg); text-decoration:none; font-weight:700; font-size:1.05em; }}
+ .head {{ display:flex; align-items:center; gap:.75em; margin-bottom:.6em; }}
+ .pi {{ width:2.5em; height:2.5em; border-radius:.7em; background:var(--surface2); color:var(--text); display:flex;
+       align-items:center; justify-content:center; flex:none; }}
+ .here .pi {{ background:var(--tint); color:var(--accent); }}
+ .pi svg {{ width:1.4em; height:1.4em; fill:currentColor; }}
+ h3 {{ margin:0; font-size:1.2em; }}
+ .blurb {{ color:var(--muted); margin:0 0 1.2em; font-size:.95em; }}
+ .dl {{ display:flex; flex-direction:column; gap:.6em; margin:0 0 1em; }}
+ .btn {{ display:flex; flex-direction:column; padding:.65em 1.1em; border-radius:12px; background:var(--tint);
+        color:var(--accent); text-decoration:none; font-weight:700; line-height:1.3; border:1px solid transparent; }}
  .btn small {{ font-weight:500; opacity:.8; font-size:.8em; }}
- .btn:hover {{ filter:brightness(1.1); }}
- a:focus-visible, summary:focus-visible {{ outline:3px solid var(--text); outline-offset:3px; }}
- ol, ul {{ padding-left:1.3em; margin:.4em 0; }} ul li + li {{ margin-top:.4em; }}
- code, pre {{ font-family:ui-monospace,Consolas,monospace; font-size:.9em; }}
- code {{ background:var(--bg); padding:.1em .35em; border-radius:4px; color:var(--text); overflow-wrap:anywhere; }}
+ .btn:hover {{ background:rgba(61,165,244,.22); }}
+ .here .btn, .btn.primary {{ background:var(--accent); color:var(--on-accent); }}
+ .here .btn:hover, .btn.primary:hover {{ background:#5DB5F6; }}
+ .btn.big {{ display:inline-flex; flex-direction:row; align-items:center; gap:.75em; padding:.8em 1.5em .8em 1.1em;
+            font-size:1.05em; }}
+ .btn.big svg {{ width:1.5em; height:1.5em; fill:currentColor; flex:none; }}
+ .btn.big span {{ display:flex; flex-direction:column; }}
+ .btn.ghost {{ background:none; color:var(--text); border-color:var(--line); }}
+ .btn.ghost:hover {{ background:var(--surface); border-color:var(--muted); }}
+ .more {{ display:flex; flex-wrap:wrap; gap:.5em; margin:0; }}
+ .more a {{ padding:.35em .75em; border:1px solid var(--line); border-radius:9px; text-decoration:none; color:var(--text);
+           font-size:.88em; font-weight:600; white-space:nowrap; }}
+ .more a:hover {{ border-color:var(--accent); }}
+ .more small {{ color:var(--muted); font-weight:400; }}
+ details {{ color:var(--muted); font-size:.92em; }}
+ details + details {{ margin-top:.45em; }}
+ summary {{ cursor:pointer; color:var(--soft); }}
+ summary:hover {{ color:var(--text); }}
+ details ol, details ul {{ padding-left:1.25em; margin:.5em 0 .2em; }}
+ details li + li {{ margin-top:.45em; }}
+ .sums {{ font-size:.82em; }}
+ .sums div {{ margin-top:.5em; }}
  pre {{ background:var(--bg); padding:.7em 1em; border-radius:8px; overflow-x:auto; color:var(--text); margin:.3em 0 0; }}
- .none {{ margin:0 0 .3em; }}
- details {{ margin-top:.8em; font-size:.85em; }} details div {{ margin-top:.5em; }}
- details.steps {{ margin-top:0; font-size:1em; }}
- summary {{ cursor:pointer; }}
- .host {{ margin-top:1.6em; text-align:center; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:1.2em 1.5em; }}
- .host p {{ color:var(--muted); margin:.3em 0 0; }}
- .web {{ display:none; margin:.2em 0 0; color:var(--muted); font-size:.95em; }}
- .card.here .web {{ display:block; }}
- footer {{ text-align:center; color:var(--muted); margin-top:3em; font-size:.95em; }}
- @media (min-width:1600px) {{ body {{ font-size:20px; }} main {{ max-width:1500px; }} }}
+ .none, .src {{ color:var(--muted); margin:0 0 .4em; }}
+ .card.wide {{ grid-column:1/-1; }}
+ .wide .row {{ display:flex; flex-wrap:wrap; align-items:center; gap:1em 2em; }}
+ .wide .row > div:first-child {{ flex:1 1 20em; }}
+ .wide .blurb {{ margin:0; }}
+ .wide .dl {{ margin:0; min-width:15em; }}
+ .wide details {{ margin-top:1em; }}
+ .host {{ display:flex; align-items:center; flex-wrap:wrap; gap:1.2em 1.6em; margin-top:3.5em; padding:1.8em 2em;
+         border:1px solid var(--line); border-radius:20px; background:linear-gradient(135deg,#16212F,var(--surface) 60%); }}
+ .host .fi {{ margin:0; width:3.25em; height:3.25em; }}
+ .host div {{ flex:1 1 20em; }}
+ .host h2 {{ font-size:1.35em; margin:0 0 .15em; }}
+ .host p {{ margin:0; color:var(--muted); }}
+ .host .btn {{ display:inline-flex; }}
+ footer {{ display:grid; grid-template-columns:1.6fr repeat(3,1fr); gap:1.5em; border-top:1px solid var(--line);
+          margin-top:4em; padding:2.5em 0 3em; color:var(--muted); font-size:.93em; }}
+ footer p {{ margin:.7em 0 0; font-size:.92em; }}
+ footer h4 {{ color:var(--text); margin:.3em 0 .7em; font-size:.8em; text-transform:uppercase; letter-spacing:.08em; }}
+ footer ul {{ list-style:none; padding:0; margin:0; }}
+ footer li + li {{ margin-top:.4em; }}
+ footer ul a {{ color:var(--muted); text-decoration:none; }}
+ footer ul a:hover {{ color:var(--text); }}
+ @media (max-width:1060px) {{ .grid, .features {{ grid-template-columns:repeat(2,1fr); }} }}
+ @media (max-width:900px) {{
+  .hero {{ grid-template-columns:1fr; gap:2em; padding-top:1em; }}
+  .art {{ max-width:30em; margin:0 auto; }}
+ }}
+ @media (max-width:760px) {{ footer {{ grid-template-columns:1fr 1fr; }} footer > div:first-child {{ grid-column:1/-1; }} }}
+ @media (max-width:620px) {{
+  .grid, .features {{ grid-template-columns:1fr; }}
+  .cta .btn {{ flex:1 1 100%; }}
+  .host {{ padding:1.4em; }}
+ }}
 </style></head>
-<body><main>
-<header>
- <h1>{LOGO_SVG}{NAME}</h1>
- <p>A Syncplay client with mpv built in. Watch in sync with desktop Syncplay users, from Jellyfin or your own files.</p>
- <p class="meta">{meta}</p>
+<body><div class="wrap">
+<header class="top">
+ <a class="brand" href="./">{LOGO_SVG}{NAME}</a>
+ <nav>{"".join(f'<a href="{html.escape(href)}">{html.escape(label)}</a>' for href, label in nav)}</nav>
 </header>
-<div class="grid">
-{chr(10).join(cards)}
-</div>
-<section class="host">
- <strong>Host your own server</strong>
- <p><a href="{SERVER_URL}">YarmiplayServerTV</a> runs a Syncplay server and a Jellyfin server from your Windows, macOS or Linux computer.</p>
+<main>
+<section class="hero">
+ <div>
+  <p class="eyebrow">Free and open source &middot; Works with Syncplay</p>
+  <h1>Watch together,<br><span>in sync.</span></h1>
+  <p class="lede">{NAME} plays the same moment for everyone in the room, wherever they are: on Google TV, phones,
+  computers or straight from a browser.</p>
+  <div class="cta">
+   <a class="btn primary big" id="get" href="#download">{icon("download")}<span><b>Download</b><small>Google TV, Android, Windows, macOS, Linux</small></span></a>
+   <a class="btn ghost big" id="alt" href="{w}">{icon("language")}<span><b>Watch in your browser</b><small>Nothing to install</small></span></a>
+  </div>
+  <p class="hero-meta">Version {html.escape(version)} &middot; No accounts, ads or tracking</p>
+ </div>
+ {ILLUSTRATION}
 </section>
-<footer><a href="{HOME_URL}">yarmiplay.com</a> &middot; <a href="{html.escape(watch)}">Watch in your browser</a> &middot; <a href="{REPO_URL}">Source</a>{''.join(f' &middot; <a href="{folder}/">{label}</a>' for _, folder, label, _ in docs)}</footer>
+<section class="section" aria-labelledby="what">
+ <h2 id="what">Everything movie night needs</h2>
+ <p class="sub">A Syncplay client with mpv built in, made for the couch as much as the desk.</p>
+ <div class="features">{features}</div>
+</section>
+<section class="section" id="download" aria-labelledby="get-it">
+ <h2 id="get-it">Get {NAME}</h2>
+ <p class="sub">One app for Google TV, Android phones and tablets, and every computer.</p>
+ <div class="grid">
+{chr(10).join(cards)}
+ </div>
+</section>
+<section class="host">
+ <span class="fi">{icon("dns")}</span>
+ <div><h2>Host your own server</h2>
+ <p>YarmiplayServerTV runs a Syncplay server and a Jellyfin server from your Windows, macOS or Linux computer.</p></div>
+ <a class="btn" href="{SERVER_URL}">YarmiplayServerTV<small>servertv.yarmiplay.com</small></a>
+</section>
 </main>
+<footer>
+ <div><a class="brand" href="./">{LOGO_SVG}{NAME}</a>
+ <p>Version {html.escape(version)} &middot; built {html.escape(built)}</p></div>
+ {footer_columns}
+</footer>
+</div>
 <script>
 (function () {{
   var ua = navigator.userAgent, key = null;
@@ -408,13 +630,23 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
   var card = key && document.querySelector('[data-platform="' + key + '"]');
   if (!card) return;
   card.classList.add("here");
-  var grid = card.parentNode;
-  // With an app for this device, the browser version comes right after it, as the way to watch without installing.
-  var web = document.querySelector('[data-platform="browser"]');
-  if (web && web !== card) grid.insertBefore(web, grid.firstChild);
-  grid.insertBefore(card, grid.firstChild);
-  var btn = card.querySelector(".btn");
-  if (noApp && btn) btn.focus();
+  card.parentNode.insertBefore(card, card.parentNode.firstChild);
+  var btn = card.querySelector(".btn"), get = document.getElementById("get"), alt = document.getElementById("alt");
+  // The heading's main button gets this device's: the browser version, or the app's first download.
+  if (key === "browser") {{
+    var href = get.getAttribute("href"), inner = get.innerHTML;
+    get.setAttribute("href", alt.getAttribute("href"));
+    get.innerHTML = alt.innerHTML;
+    alt.setAttribute("href", href);
+    alt.innerHTML = inner;
+    alt.querySelector("b").textContent = "Get the app";
+  }} else if (btn) {{
+    get.setAttribute("href", btn.getAttribute("href"));
+    if (btn.hasAttribute("download")) get.setAttribute("download", "");
+    get.querySelector("b").textContent = "Get it for " + card.querySelector("h3").textContent;
+    get.querySelector("small").textContent = btn.firstChild.nodeValue;
+  }}
+  if (noApp) get.focus();
   if (tv) {{
     var steps = card.querySelector("ul");
     if (steps && steps.lastElementChild) steps.insertBefore(steps.lastElementChild, steps.firstElementChild);
@@ -518,42 +750,49 @@ def render_doc(md, description, site_url=None, path="", steps=False, toc=False):
 <title>{html.escape(title)}</title>
 {search_head(description, site_url, path)}
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0E1116">
 <style>
- body {{ margin:0; background:#0E1116; color:#E8EAED; font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }}
- main {{ max-width:760px; margin:0 auto; padding:6vh 5vw; }}
- h1 {{ font-size:2.2em; letter-spacing:-.02em; margin:0 0 .6em; }}
- h2 {{ font-size:1.3em; margin:1.6em 0 .4em; }}
- p, li {{ color:#C4C7CC; }}
- a {{ color:#3DA5F4; }}
- code {{ font-family:ui-monospace,Consolas,monospace; font-size:.9em; background:#171B22; padding:.1em .35em; border-radius:4px; }}
- h3 {{ font-size:1.1em; margin:1.4em 0 .3em; color:#E8EAED; }}
- h4 {{ font-size:1em; margin:1.2em 0 .2em; color:#E8EAED; }}
+{BASE_CSS}
+ body {{ line-height:1.6; }}
+ .wrap {{ max-width:52em; }}
+ main {{ padding:2em 0 3em; }}
+ h1 {{ font-size:clamp(1.9em,5vw,2.4em); letter-spacing:-.02em; line-height:1.15; margin:0 0 .6em; }}
+ h2 {{ font-size:1.35em; margin:1.8em 0 .4em; letter-spacing:-.01em; }}
+ p, li {{ color:var(--soft); }}
+ code {{ background:var(--surface); }}
+ h3 {{ font-size:1.1em; margin:1.4em 0 .3em; }}
+ h4 {{ font-size:1em; margin:1.2em 0 .2em; }}
  h2[id], h3[id], h4[id] {{ scroll-margin-top:1em; }}
  figure {{ margin:1.2em 0; }}
- figure img {{ max-width:100%; height:auto; border-radius:12px; border:1px solid #262C36; display:block; }}
- .toc {{ background:#171B22; border:1px solid #262C36; border-radius:14px; padding:.6em 1.4em 1em; margin:1.4em 0 2em; }}
- .toc h2 {{ font-size:1em; margin:.6em 0 .3em; color:#9AA0A6; text-transform:uppercase; letter-spacing:.06em; }}
+ figure img {{ max-width:100%; height:auto; border-radius:12px; border:1px solid var(--line); display:block; }}
+ .toc {{ background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:.6em 1.4em 1em; margin:1.4em 0 2em; }}
+ .toc h2 {{ font-size:.8em; margin:.8em 0 .5em; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }}
  .toc ul {{ columns:2; column-gap:2em; margin:0; padding-left:1.1em; }}
- .toc li {{ margin:.15em 0; break-inside:avoid; }}
+ .toc li {{ margin:0; padding:.15em 0; break-inside:avoid; }}
+ .end {{ border-top:1px solid var(--line); margin-top:3em; padding-top:1.5em; color:var(--muted); }}
  @media (max-width:600px) {{ .toc ul {{ columns:1; }} }}
 {list_style}
- a:focus-visible {{ outline:3px solid #E8EAED; outline-offset:3px; }}
 </style></head>
-<body><main>
+<body><div class="wrap">
+<header class="top">
+ <a class="brand" href="../">{LOGO_SVG}{NAME}</a>
+ <nav><a href="../#download">Download</a><a href="../manual/">Manual</a><a href="../changelog/">Patch notes</a></nav>
+</header>
+<main>
 {body}
-<p><a href="../">{NAME} downloads</a> &middot; <a href="{HOME_URL}">yarmiplay.com</a></p>
-</main></body></html>
+<p class="end"><a href="../">{NAME} downloads</a> &middot; <a href="{HOME_URL}">yarmiplay.com</a></p>
+</main></div></body></html>
 """
 
 
 STEP_CSS = """ ol { list-style:none; counter-reset:step; padding:0; }
- ol li { counter-increment:step; position:relative; background:#171B22; border:1px solid #262C36; border-radius:14px;
+ ol li { counter-increment:step; position:relative; background:var(--surface); border:1px solid var(--line); border-radius:16px;
          padding:1em 1.2em 1.1em 3.8em; margin:.8em 0; }
  ol li::before { content:counter(step); position:absolute; left:1.1em; top:1em; width:1.8em; height:1.8em; border-radius:50%;
-                 background:#3DA5F4; color:#0E1116; font-weight:700; display:flex; align-items:center; justify-content:center; }
- ol li b { display:block; color:#E8EAED; font-size:1.1em; }
- ol li a { display:block; width:max-content; margin-top:.7em; padding:.5em 1.1em; border-radius:10px; background:#3DA5F4; color:#0E1116;
-           font-weight:700; text-decoration:none; }
+                 background:var(--accent); color:var(--on-accent); font-weight:700; display:flex; align-items:center; justify-content:center; }
+ ol li b { display:block; color:var(--text); font-size:1.1em; }
+ ol li a { display:block; width:max-content; margin-top:.7em; padding:.5em 1.1em; border-radius:10px; background:var(--accent);
+           color:var(--on-accent); font-weight:700; text-decoration:none; }
  ol li a:hover { filter:brightness(1.1); }"""
 PLAIN_LIST_CSS = """ ol, ul { padding-left:1.4em; }
  li { margin:.25em 0; }"""
