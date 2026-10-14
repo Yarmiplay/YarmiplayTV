@@ -59,7 +59,8 @@ between visits; other browsers ask for the folder again. The shared playlist, ch
 recent rooms and the themes work as in the app.
 
 Jellyfin and Plex servers are added under **Media servers** (Quick Connect, a password, or a plex.tv/link code) and
-play in its player; your own Jellyfin has to be reachable over HTTPS. The room's entries are looked up on them in the
+play in its player; your own Jellyfin has to be reachable over HTTPS. When the room's host shares their Jellyfin
+through YarmiplayServerTV, it's added by itself, through the server, as in the app. The room's entries are looked up on them in the
 app's order, then fetched from another viewer through the server's file relay, which asks the host to approve the
 browser as a device the first time. Openings and endings are skipped as in the app (the file's chapters, the media
 server's markers, AniSkip, or listening), and MyAnimeList stays up to date as you watch: sign in from Settings >

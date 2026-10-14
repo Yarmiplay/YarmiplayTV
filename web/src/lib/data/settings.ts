@@ -74,6 +74,8 @@ export interface Settings {
   /** A random id for this browser, as the apps keep `device_id` (Jellyfin and Plex tell devices apart by it). */
   deviceId: string;
   shareFiles: boolean;
+  /** Sign in by themselves to the Jellyfin a YarmiplayServerTV host shares. */
+  addSharedServers: boolean;
   /** The media server that streams a room's file when several have it exactly ("" for the first). */
   preferredServer: string;
   /** Tell the media servers how far playback got, and mark episodes watched. */
@@ -143,6 +145,7 @@ export function load(): Settings {
     deviceName: text("device_name", "") || defaultDeviceName(),
     deviceId: deviceId(),
     shareFiles: bool("share_files", true),
+    addSharedServers: bool("add_shared_servers", true),
     preferredServer: text("preferred_server", ""),
     reportPlayback: bool("report_playback", true),
     lastSeenVersion: text("last_seen_version", ""),
@@ -184,6 +187,7 @@ export function save(settings: Settings) {
   write("pb_player_labels", String(p.playerLabels));
   write("device_name", settings.deviceName);
   write("share_files", String(settings.shareFiles));
+  write("add_shared_servers", String(settings.addSharedServers));
   write("preferred_server", settings.preferredServer);
   write("report_playback", String(settings.reportPlayback));
   write("last_seen_version", settings.lastSeenVersion);

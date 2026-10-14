@@ -193,6 +193,11 @@ export class RoomSession {
     return this.client;
   }
 
+  /** The room's server as it was entered, without its port; null outside a room. */
+  get serverHost(): string | null {
+    return this.server?.replace(/:\d+$/, "") ?? null;
+  }
+
   updateSettings(settings: Settings.Settings) {
     const sharingChanged = settings.shareFiles !== this.settings.shareFiles;
     this.settings = settings;

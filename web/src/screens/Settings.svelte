@@ -81,6 +81,10 @@
           <h3>Media servers</h3>
           <p class="dim small">Jellyfin and Plex: browse and search them, and a room's entries are found on them.</p>
           <a class="button quiet" href="#/servers"><Icon name="dns" size={18} />Media servers</a>
+          <label class="switch">
+            <input type="checkbox" checked={s.addSharedServers} onchange={(e) => set((x) => ({ ...x, addSharedServers: (e.target as HTMLInputElement).checked }))} />
+            <span>Add media servers shared by Syncplay hosts<br /><span class="dim small">When a YarmiplayServerTV host shares their Jellyfin, sign in to it automatically</span></span>
+          </label>
         </div>
         <div class="card group">
           <h3>Media folders</h3>
