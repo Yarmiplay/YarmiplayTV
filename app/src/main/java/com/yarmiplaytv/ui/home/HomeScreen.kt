@@ -42,6 +42,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Constraints
@@ -79,7 +80,9 @@ import com.yarmiplaytv.ui.shared.serversDetail
 import com.yarmiplaytv.ui.shared.serversTitle
 import com.yarmiplaytv.ui.shared.updateStateLine
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.update.StoreUpdates
 import com.yarmiplaytv.update.UpdateState
+import com.yarmiplaytv.update.openStoreApp
 import kotlinx.coroutines.flow.map
 
 @Composable
@@ -124,7 +127,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                 Text("YarmiplayTV", style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.weight(1f))
                 // The tiles under these buttons would otherwise win over the full-width update notice.
-                val toNotice = if (update != null) Modifier.focusProperties { down = updateFocus } else Modifier
+                val toNotice = if (update != null || storeUpdate != null) Modifier.focusProperties { down = updateFocus } else Modifier
                 if (source != null) IconAction(Icons.Filled.Search, "Search", { nav.push(Screen.Search()) }, toNotice)
                 Spacer(Modifier.width(8.dp))
                 IconAction(Icons.Filled.Settings, "Settings", { nav.push(Screen.Settings) }, toNotice)
@@ -139,7 +142,12 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
             }
         }
         storeUpdate?.let { store ->
-            item(key = "store-update") { StoreUpdateNotice(container, store.name, Modifier.padding(horizontal = 48.dp)) }
+            item(key = "store-update") {
+                StoreUpdateNotice(container, store, {
+                    container.updates.dismissStoreUpdate()
+                    runCatching { firstFocus.requestFocus() }
+                }, Modifier.padding(horizontal = 48.dp), Modifier.focusRequester(updateFocus))
+            }
         }
         item(key = "whats-new") { TvWhatsNewCard(container, nav, Modifier.padding(horizontal = 48.dp)) }
         item(key = "tiles") {
@@ -311,25 +319,31 @@ private fun UpdateNotice(container: AppContainer, state: UpdateState, onDismiss:
 }
 
 /** A home tile: what it is and how it stands, all of it shown (the text wraps rather than being cut off). */
-/** A newer version in the store that installed the app (Google Play): OK updates there, or not now. */
+/**
+ * A newer version in the store that installed the app (Google Play): OK opens its page in the store's app, where
+ * Update is (its in-app update where the store app can't be opened), or not now.
+ */
 @Composable
-private fun StoreUpdateNotice(container: AppContainer, storeName: String, modifier: Modifier = Modifier) {
+private fun StoreUpdateNotice(container: AppContainer, store: StoreUpdates, onDismiss: () -> Unit, modifier: Modifier = Modifier, tileModifier: Modifier = Modifier) {
     val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
         TvTile(
-            onClick = { container.updates.updateFromStore(uriHandler::openUri) },
-            modifier = Modifier.weight(1f).testTag("update_banner"),
+            onClick = {
+                if (store.pageUrl?.let { openStoreApp(context, it) } != true) container.updates.updateFromStore(uriHandler::openUri)
+            },
+            modifier = tileModifier.weight(1f).testTag("update_banner"),
             focusedScale = 1.02f,
         ) {
             Row(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.SystemUpdate, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(32.dp))
                 Spacer(Modifier.width(16.dp))
-                Text("A new version of YarmiplayTV is available in $storeName", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text("A new version of YarmiplayTV is available in ${store.name}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 Spacer(Modifier.width(16.dp))
-                Pill("Update", AppColors.Accent)
+                Pill("Open ${store.name}", AppColors.Accent)
             }
         }
-        ActionButton("Not now", container.updates::dismissStoreUpdate)
+        ActionButton("Not now", onDismiss)
     }
 }
 

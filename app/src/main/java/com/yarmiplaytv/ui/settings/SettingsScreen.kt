@@ -84,6 +84,7 @@ import com.yarmiplaytv.ui.theme.AppTheme
 import com.yarmiplaytv.ui.theme.THEME_NOTE
 import com.yarmiplaytv.update.UpdateCheck
 import com.yarmiplaytv.update.UpdateState
+import com.yarmiplaytv.update.openStoreApp
 import kotlinx.coroutines.launch
 
 @Composable
@@ -341,12 +342,17 @@ private fun UpdatesSection(container: AppContainer, showLink: (AboutLink) -> Uni
     val store = updates.store
     if (store != null) {
         val available = (check.result as? UpdateCheck.InStore)?.available
+        val context = LocalContext.current
+        // The store's app on the TV shows its page; a QR code for a phone only where it can't.
+        fun openStore(url: String) {
+            if (!openStoreApp(context, url)) showLink(AboutLink(store.name, "", url, ""))
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             if (available == true) {
-                ActionButton("Update", { if (!store.update()) store.pageUrl?.let { showLink(AboutLink(store.name, "", it, "")) } }, primary = true)
+                ActionButton("Update", { if (!store.update()) store.pageUrl?.let(::openStore) }, primary = true)
             }
             store.pageUrl?.takeIf { it.startsWith("http") }?.let { url ->
-                ActionButton("${store.name} link", { showLink(AboutLink(store.name, "", url, "")) })
+                ActionButton("Open ${store.name}", { openStore(url) }, Modifier.testTag("open_store"))
             }
         }
     }

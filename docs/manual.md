@@ -338,7 +338,8 @@ server. On other servers YarmiplayTV works as a normal Syncplay client.
 **Settings > Updates > Check for updates** looks for a new version on every device, and installs it the way
 your copy was installed:
 
-- **Google Play:** updates through Google Play, from the app.
+- **Google Play:** updates through Google Play, from the app. **Open Google Play** shows the app's page in the
+  Play Store, on a TV too.
 - **The APK from the download page** (phones, tablets, TVs): downloads the new APK and asks Android to install
   it. The first time, allow YarmiplayTV to install apps when Android asks.
 - **Windows installer:** downloads and installs the new version, then restarts the app. With **Automatic
@@ -349,7 +350,7 @@ your copy was installed:
 - **Flatpak, Snap and the AUR:** shows the command that updates it, to copy, and opens your software center.
 
 The home screen also says when there's a new version: the app looks when it starts and every few hours while it
-runs (a Google Play copy asks Google Play). Turn off **Check for updates when the app starts** in the same section
+runs (a Google Play copy asks Google Play; on a TV, its notice opens the app's Play Store page). Turn off **Check for updates when the app starts** in the same section
 to only check when you ask. After an
 update, the home screen shows what's new once; **Settings > About > What's new** has it any time, and the
 [patch notes](../changelog/) page has every version's.
