@@ -82,11 +82,15 @@ fun WhatsNewScreen(container: AppContainer) {
     if (showLink) QrLinkDialog("All patch notes", CHANGELOG_URL) { showLink = false }
 }
 
+/** The version the home screen's What's new card is about, or null when there's nothing new to show. */
+fun whatsNewCardVersion(lastSeenVersion: String, appVersion: String): String? =
+    WhatsNew.cardVersion(lastSeenVersion, appVersion)?.takeIf { ReleaseNotes.of(it) != null }
+
 /** "What's new in 1.8.5" on the home screen, once after an update; opening or hiding it doesn't show it again. */
 @Composable
 fun TvWhatsNewCard(container: AppContainer, nav: Navigator, modifier: Modifier = Modifier) {
     val settings by container.settings.collectAsStateWithLifecycle()
-    val version = WhatsNew.cardVersion(settings.lastSeenVersion, container.appVersion) ?: return
+    val version = whatsNewCardVersion(settings.lastSeenVersion, container.appVersion) ?: return
     val note = ReleaseNotes.of(version) ?: return
     fun seen() = container.scope.launch { container.settingsStore.saveLastSeenVersion(version) }
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

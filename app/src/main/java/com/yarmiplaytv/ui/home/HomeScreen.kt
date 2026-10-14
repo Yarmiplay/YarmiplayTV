@@ -72,6 +72,7 @@ import com.yarmiplaytv.ui.components.TvTile
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.settings.TvWhatsNewCard
+import com.yarmiplaytv.ui.settings.whatsNewCardVersion
 import com.yarmiplaytv.ui.shared.ServerRecent
 import com.yarmiplaytv.ui.shared.readyButtonLabel
 import com.yarmiplaytv.ui.shared.recentByServer
@@ -92,6 +93,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
     val jellyfin by container.jellyfinServers.collectAsStateWithLifecycle()
     val plex by container.plexServers.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
+    val settings by container.settings.collectAsStateWithLifecycle()
     val update by container.updates.state.collectAsStateWithLifecycle()
     val storeUpdate by container.updates.storeUpdate.collectAsStateWithLifecycle()
     var libraries by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
@@ -149,7 +151,10 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                 }, Modifier.padding(horizontal = 48.dp), Modifier.focusRequester(updateFocus))
             }
         }
-        item(key = "whats-new") { TvWhatsNewCard(container, nav, Modifier.padding(horizontal = 48.dp)) }
+        // Only with something to show: an empty item would still take the list's gap above the tiles.
+        if (whatsNewCardVersion(settings.lastSeenVersion, container.appVersion) != null) {
+            item(key = "whats-new") { TvWhatsNewCard(container, nav, Modifier.padding(horizontal = 48.dp)) }
+        }
         item(key = "tiles") {
             // Three to a row, sharing its width inside the TV-safe area, so their text has room to show in full.
             TileGrid(Modifier.fillMaxWidth().padding(horizontal = 48.dp, vertical = 8.dp)) {
