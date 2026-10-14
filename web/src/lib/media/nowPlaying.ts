@@ -17,6 +17,6 @@ export function serverNowPlaying(playable: PlayableMedia): ServerNowPlaying {
     title: playable.title || playable.fileName,
     fileName: playable.fileName,
     size: playable.sizeBytes,
-    open: () => HttpSource.open(playable.url, { name: playable.fileName }),
+    open: () => HttpSource.open(playable.url, { name: playable.fileName, size: playable.sizeBytes }),
   };
 }

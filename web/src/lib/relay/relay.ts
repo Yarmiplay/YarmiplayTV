@@ -60,6 +60,7 @@ export function findRelayFile(room: RoomState, fileName: string): RelayFile | nu
 export const openRelayFile = (session: YarmiplaySession, file: RelayFile) =>
   HttpSource.open(`${session.baseUrl}/yarmiplay/files/${encodeURIComponent(file.id)}?mode=stream`, {
     name: file.name,
+    size: file.size,
     headers: auth(session),
   });
 

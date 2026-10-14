@@ -76,6 +76,11 @@
       {:else if shown === "media"}
         <h2>Media</h2>
         <div class="card group">
+          <h3>Media servers</h3>
+          <p class="dim small">Jellyfin and Plex: browse and search them, and a room's entries are found on them.</p>
+          <a class="button quiet" href="#/servers">Media servers</a>
+        </div>
+        <div class="card group">
           <h3>Media folders</h3>
           <p class="dim small">Videos in them are found by their names when a room plays them, like the desktop Syncplay client's media directories.</p>
           {#each folders as f, i (f.name + i)}

@@ -68,19 +68,26 @@ export class HttpSource implements ByteSource {
     private readonly readAhead: number,
   ) {}
 
-  /** Opens [url], learning its size from a first small Range request. */
-  static async open(url: string, opts: { name?: string; headers?: Record<string, string>; readAheadBlocks?: number } = {}) {
+  /**
+   * Opens [url], learning its size from a first small Range request. A cross-origin server that doesn't expose
+   * Content-Range (Jellyfin) leaves the size to [opts.size] (what the server said about the item) or a HEAD request.
+   */
+  static async open(url: string, opts: { name?: string; headers?: Record<string, string>; readAheadBlocks?: number; size?: number } = {}) {
     const headers = opts.headers ?? {};
     const response = await fetch(url, { headers: { ...headers, Range: "bytes=0-0" } });
     if (!response.ok) throw new HttpError(response.status, `${response.status} ${response.statusText}`.trim());
     const range = response.headers.get("Content-Range");
-    const total = range ? Number(range.split("/")[1]) : Number(response.headers.get("Content-Length"));
     await response.body?.cancel();
-    if (!Number.isFinite(total) || total <= 0) throw new Error("The server didn't say how big the file is");
     if (response.status !== 206) {
       // Without ranges every seek would download from the start; the relay and media servers all support them.
       throw new Error("The server doesn't allow reading parts of the file");
     }
+    let total = range ? Number(range.split("/")[1]) : opts.size && opts.size > 0 ? opts.size : NaN;
+    if (!Number.isFinite(total) || total <= 0) {
+      const head = await fetch(url, { method: "HEAD", headers });
+      total = Number(head.headers.get("Content-Length"));
+    }
+    if (!Number.isFinite(total) || total <= 0) throw new Error("The server didn't say how big the file is");
     const name = opts.name ?? decodeURIComponent(new URL(url, location.href).pathname.split("/").pop() || "video");
     return new HttpSource(url, total, name, headers, opts.readAheadBlocks ?? 8);
   }

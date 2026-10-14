@@ -340,6 +340,7 @@
             Pick file
             <input type="file" accept="video/*,.mkv,.avi,.ts,.m2ts,.webm" onchange={(e) => pickFile(e, true)} hidden />
           </label>
+          {#if status.kind === "notFound"}<button class="button quiet" onclick={() => go("#/search")}>Search servers</button>{/if}
           <button class="button quiet" onclick={() => session?.dismissStatus()}>Close</button>
         </div>
       </div>

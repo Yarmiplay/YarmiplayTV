@@ -1,25 +1,17 @@
 import buildInfo from "virtual:build-info";
-import * as SettingsData from "../lib/data/settings";
 import { LocalLibrary } from "../lib/local/library";
 import type { MediaPlayer } from "../lib/player/mediaPlayer";
 import { Store } from "../lib/store";
 import { RoomSession } from "../lib/sync/room";
 import type { DeviceAuth } from "../lib/syncplay/yarmiplay";
-import { applyTheme } from "../lib/ui/theme";
 import { BrowserDeviceKeys } from "../lib/yarmiplay/deviceKeys";
+import { sources } from "./media";
+import { onSettingsChanged, settings } from "./settings";
 
 /** The app's one of everything: settings, this device's files, the player and the room. */
 
-export const settings = new Store(SettingsData.load());
-
-/** Saves and applies a change to the settings. */
-export function changeSettings(change: (s: SettingsData.Settings) => SettingsData.Settings) {
-  const next = change(settings.value);
-  SettingsData.save(next);
-  settings.set(next);
-  applyTheme(next.theme);
-  session.value?.updateSettings(next);
-}
+export { changeSettings, settings } from "./settings";
+onSettingsChanged((next) => session.value?.updateSettings(next));
 
 export const library = new LocalLibrary();
 void library.restore();
@@ -40,7 +32,7 @@ export const player = new Store<MediaPlayer | null>(null);
 
 export function attachPlayer(p: MediaPlayer) {
   player.set(p);
-  session.set(new RoomSession(p, library, settings.value, deviceAuth, buildInfo.version, (s) => settings.set(s)));
+  session.set(new RoomSession(p, library, settings.value, deviceAuth, buildInfo.version, (s) => settings.set(s), () => sources.value));
 }
 
 /** Where the app is: the hash route. */

@@ -13,7 +13,7 @@ import {
   type Sessions,
 } from "../lib/media";
 import { Store } from "../lib/store";
-import { settings } from "./context";
+import { settings } from "./settings";
 
 /**
  * The media servers this browser is signed in to (Settings > Media servers): Jellyfin and Plex sessions kept under the

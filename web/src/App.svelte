@@ -8,6 +8,9 @@
   import { newVersion, watchForUpdates } from "./lib/ui/updates";
   import Files from "./screens/Files.svelte";
   import Home from "./screens/Home.svelte";
+  import Library from "./screens/Library.svelte";
+  import Search from "./screens/Search.svelte";
+  import Servers from "./screens/Servers.svelte";
   import Join from "./screens/Join.svelte";
   import PlayerLab from "./screens/PlayerLab.svelte";
   import Room from "./screens/Room.svelte";
@@ -20,6 +23,7 @@
   const SECTIONS = [
     { key: "home", label: "Home", href: "#/" },
     { key: "player", label: "Player", href: "#/player" },
+    { key: "search", label: "Search", href: "#/search" },
     { key: "room", label: "Room", href: "#/room" },
     { key: "settings", label: "Settings", href: "#/settings" },
   ] as const;
@@ -67,6 +71,12 @@
         <Settings />
       {:else if section === "files"}
         <Files />
+      {:else if section === "servers"}
+        <Servers />
+      {:else if section === "library"}
+        <Library />
+      {:else if section === "search"}
+        <Search />
       {:else if section !== "player"}
         <main class="missing">
           <p>There's nothing here.</p>

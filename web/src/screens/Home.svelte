@@ -5,6 +5,17 @@
   import type { RoomState } from "../lib/syncplay/client";
   import * as ManagedRooms from "../lib/syncplay/managedRooms";
   import { keepsFolders } from "../lib/local/library";
+  import { sources } from "../app/media";
+  import MediaTile from "../components/MediaTile.svelte";
+  import type { MediaItem, MediaSource } from "../lib/media";
+
+  /** Each server's "Continue watching" and recently added, as on the apps' home screen. */
+  let rows = $state<{ source: MediaSource; items: MediaItem[] }[]>([]);
+  $effect(() => {
+    const list = $sources;
+    rows = [];
+    list.forEach((s) => s.recent(12).then((items) => items.length && (rows = [...rows, { source: s, items }]), () => {}));
+  });
 
   /** Home (MobileHome.kt for the web): a card for each way to watch, with their text in full. */
   const session = $derived($sessionStore);
@@ -96,6 +107,11 @@
       </span>
     </button>
 
+    <button class="card tile" onclick={() => go($sources.length ? "#/library" : "#/servers")}>
+      <span class="label">{$sources.length ? "Libraries" : "Jellyfin and Plex"}</span>
+      <span class="dim">{$sources.length ? $sources.map((x) => x.displayName).join(" · ") : "Add a server to browse it and play from it"}</span>
+    </button>
+
     <button class="card tile" onclick={() => go("#/settings/media")}>
       <span class="label">Media folders</span>
       <span class="dim">
@@ -103,6 +119,15 @@
       </span>
     </button>
   </div>
+
+  {#each rows as row (row.source.key)}
+    <section class="shelf">
+      <h2>{row.source.displayName}</h2>
+      <ul class="cards">
+        {#each row.items as item (item.id)}<MediaTile {item} />{/each}
+      </ul>
+    </section>
+  {/each}
 
   <p class="dim small">Version {version} · <a href="https://tv.yarmiplay.com/manual/" target="_blank" rel="noopener">Manual</a></p>
 </main>
@@ -141,6 +166,11 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 12px;
+  }
+  .shelf .cards {
+    list-style: none;
+    margin: 0;
+    padding: 0;
   }
   .tile {
     display: grid;

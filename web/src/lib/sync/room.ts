@@ -1,7 +1,10 @@
 import * as Settings from "../data/settings";
 import * as SavedRooms from "../data/savedRooms";
 import type { LocalFile, LocalLibrary } from "../local/library";
+import { MediaLocator, ownCopy, type EpisodeInfo, type MediaItem, type MediaSource, type PlayableMedia, type RoomLocation, type ServerCopy } from "../media";
+import * as FileNames from "../media/fileNames";
 import { findRelayFile, openRelayFile, RelaySharing } from "../relay/relay";
+import type { RelayFile } from "../syncplay/yarmiplay";
 import { FileSource, HttpSource, type ByteSource } from "../player/bytes";
 import type { MediaPlayer } from "../player/mediaPlayer";
 import { Store } from "../store";
@@ -38,14 +41,64 @@ export type PlaylistStatus =
   /** The room picked a URL that isn't on a trusted domain; it only opens when the user says so. */
   | { kind: "untrusted"; url: string; domain: string | null };
 
-/** What the player is (about to be) showing. */
+/** What the player is (about to be) showing (PlaylistController.kt's NowPlaying). */
 export interface NowPlaying {
   title: string;
   /** The name the room knows it by: the file's name, or the URL. */
   fileName: string;
   size: number;
+  /** Identifies this playback (the stream's URL, or the file's place here); reports and skipping key on it. */
+  key: string;
+  /** The duration the server gave, until the player knows its own. */
+  durationHint: number;
+  /** Server items that are this file (whichever copy is streamed); playback is reported to each. */
+  copies: ServerCopy[];
+  /** Which episode of which show this is, from the server or the file name; null for movies and unknown files. */
+  episode: EpisodeInfo | null;
+  /** The media server item streamed, for its skip markers. */
+  item: { sourceKey: string; itemId: string } | null;
+  /** The file on this device, when it's one (listening reads its neighbours). */
+  local: LocalFile | null;
+  /** Read over the network (listening to other episodes waits for an unmetered network). */
+  remote: boolean;
   open(): Promise<ByteSource>;
 }
+
+/** The episode a file is, from its name (and folder, e.g. "Show/Season 2"), for files no server describes. */
+export function episodeFromFile(fileName: string, directory: string | null = null): EpisodeInfo | null {
+  const p = FileNames.parseEpisode(fileName, directory);
+  if (!p) return null;
+  return { seriesName: p.title, season: p.season, episode: p.episode, year: p.year, seriesKey: `file/${FileNames.normalize(p.title)}`, malId: null };
+}
+
+/** A media server's stream as something to play. */
+export function playableNowPlaying(playable: PlayableMedia, copies: ServerCopy[] = ownCopy(playable)): NowPlaying {
+  return {
+    title: playable.title || playable.fileName,
+    fileName: playable.fileName,
+    size: playable.sizeBytes,
+    key: playable.url,
+    durationHint: playable.durationSeconds,
+    copies,
+    episode: playable.episode ?? episodeFromFile(playable.fileName),
+    item: playable.sourceKey ? { sourceKey: playable.sourceKey, itemId: playable.itemId } : null,
+    local: null,
+    remote: true,
+    open: () => HttpSource.open(playable.url, { name: playable.fileName, size: playable.sizeBytes }),
+  };
+}
+
+/** Where the next entry was found ahead of time; used when the room gets to it. */
+interface Prepared {
+  fileName: string;
+  location: RoomLocation<RelayFile>;
+  at: number;
+}
+
+/** Lets the selected entry start opening before the next one is looked up. */
+const PREPARE_DELAY_MS = 1_500;
+/** A lookup this old is done again: the servers' libraries may have changed. */
+const PREPARED_MAX_AGE_MS = 30 * 60 * 1000;
 
 const MAX_FEED = 200;
 const MAX_UNDO = 50;
@@ -110,6 +163,10 @@ export class RoomSession {
   private pendingCreate: string | null = null;
   private saveNextAs: string | null = null;
   private readonly relay: RelaySharing;
+  readonly locator: MediaLocator<RelayFile>;
+  private prepared: Prepared | null = null;
+  private preparing: { fileName: string; lookup: Promise<RoomLocation<RelayFile>> } | null = null;
+  private prepareTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private readonly player: MediaPlayer,
@@ -118,9 +175,12 @@ export class RoomSession {
     private readonly deviceAuth: DeviceAuth | null,
     private readonly appVersion: string,
     private readonly onSettingsChanged: (s: Settings.Settings) => void = () => {},
+    private readonly servers: () => readonly MediaSource[] = () => [],
   ) {
     this.relay = new RelaySharing(() => this.client, library, () => this.settings.shareFiles, () => this.reportedFile);
     library.subscribe(() => this.relay.refresh());
+    this.locator = new MediaLocator<RelayFile>(library, servers, (name) => findRelayFile(this.room.value, name));
+    this.locator.preferredServer = settings.preferredServer;
   }
 
   get isActive(): boolean {
@@ -135,6 +195,7 @@ export class RoomSession {
     const sharingChanged = settings.shareFiles !== this.settings.shareFiles;
     this.settings = settings;
     if (this.client) this.client.settings = settings.sync;
+    this.locator.preferredServer = settings.preferredServer;
     if (sharingChanged) this.relay.refresh();
   }
 
@@ -439,31 +500,112 @@ export class RoomSession {
       await this.load(known, resetPosition, true);
       return;
     }
-    // Step 1 of MediaLocator.locateForRoom: this device's files. (Media servers and the relay come next.)
+    // Found ahead of time, or looked up now in the apps' order (MediaLocator): this device, the media servers, the relay.
     this.status.set({ kind: "resolving", fileName: filename });
-    const match = this.library.find(filename);
-    if (match) {
-      await this.load(localNowPlaying(match.file), resetPosition, true);
-      return;
+    const ahead = this.takePrepared(filename);
+    let found = await (ahead ?? this.locate(filename));
+    // Missing ahead of time may be there now (e.g. a viewer who has it joined): look again.
+    if (ahead && found.kind === "missing") found = await this.locate(filename);
+    await this.play(found, filename, resetPosition);
+  }
+
+  private async locate(fileName: string): Promise<RoomLocation<RelayFile>> {
+    try {
+      return await this.locator.locateForRoom(fileName);
+    } catch (e) {
+      return { kind: "missing", reason: (e as Error).message || "Lookup failed" };
     }
-    // Step 4: another viewer's copy, through the YarmiplayServerTV file relay.
-    const relayed = findRelayFile(this.room.value, filename);
-    const session = this.client?.session;
-    if (relayed && session) {
-      await this.load(
-        { title: relayed.name, fileName: relayed.name, size: relayed.size, open: () => openRelayFile(session, relayed) },
-        resetPosition,
-        true,
-      );
-      return;
+  }
+
+  private async play(found: RoomLocation<RelayFile>, filename: string, resetPosition: boolean) {
+    switch (found.kind) {
+      case "local":
+        await this.load(localNowPlaying(found.file), resetPosition, true);
+        return;
+      case "server":
+        await this.load(playableNowPlaying(found.playable, found.copies), resetPosition, true);
+        return;
+      case "relay": {
+        const session = this.client?.session;
+        const relayed = found.file;
+        if (!session) break;
+        await this.load(
+          {
+            title: relayed.name,
+            fileName: relayed.name,
+            size: relayed.size,
+            key: `relay:${relayed.id}`,
+            durationHint: relayed.duration,
+            copies: [],
+            episode: episodeFromFile(relayed.name),
+            item: null,
+            local: null,
+            remote: true,
+            open: () => openRelayFile(session, relayed),
+          },
+          resetPosition,
+          true,
+        );
+        return;
+      }
+      case "missing":
+        break;
     }
-    const reason = this.room.value.yarmiplay.session && this.room.value.yarmiplay.capabilities.fileRelay
-      ? "Nobody in the room is sharing it yet"
-      : this.library.hasFolders
-        ? "Not in your media folders"
-        : "Add a media folder, or pick the file, to play the room's entries";
+    const servers = this.servers();
+    const where = [servers.length > 1 ? "your media servers" : servers[0]?.displayName, this.library.hasFolders ? "your media folders" : null]
+      .filter(Boolean)
+      .join(" or ");
+    const relayOn = this.room.value.yarmiplay.session && this.room.value.yarmiplay.capabilities.fileRelay;
+    const reason =
+      found.kind === "missing" && found.reason
+        ? found.reason
+        : relayOn
+          ? "Nobody in the room is sharing it yet"
+          : "Add a media folder or a media server, or pick the file, to play the room's entries";
     this.status.set({ kind: "notFound", fileName: filename, reason });
-    this.postLocal(`'${filename}' not found: ${reason.toLowerCase()}`, true);
+    this.postLocal(where ? `'${filename}' not found in ${where}` : `Can't load '${filename}': ${reason.toLowerCase()}`, true);
+  }
+
+  /** The entry after the selected one, as the room advances to it; null when there's none (or a link, or this one). */
+  private nextEntry(): string | null {
+    const room = this.room.value;
+    if (room.status !== "CONNECTED" || room.playlistIndex === null) return null;
+    const s = this.settings.sync;
+    const next = nextPlaylistIndex(room.playlist.length, room.playlistIndex, s.loopPlaylist, s.loopSingleFile);
+    if (next === null || next === room.playlistIndex) return null;
+    const name = room.playlist[next];
+    return name && !Filenames.isUrl(name) ? name : null;
+  }
+
+  /** Looks up the playlist's next entry a moment after this one starts, so moving on starts at once. */
+  private schedulePrepare() {
+    clearTimeout(this.prepareTimer);
+    this.prepareTimer = setTimeout(() => void this.prepareNext(), PREPARE_DELAY_MS);
+  }
+
+  private async prepareNext() {
+    const name = this.nextEntry();
+    if (!name || [...this.known.keys()].some((k) => Filenames.same(k, name))) return;
+    if (!this.locator.hasServers && !this.library.hasFolders && !this.locator.hasRelay(name)) return;
+    const prepared = this.prepared;
+    const fresh = prepared && Filenames.same(prepared.fileName, name) && Date.now() - prepared.at < PREPARED_MAX_AGE_MS ? prepared : null;
+    // A relay entry can show up later (a viewer who has the file joins); found elsewhere it won't get better.
+    if (fresh && fresh.location.kind !== "relay") return;
+    const lookup = this.preparing && Filenames.same(this.preparing.fileName, name) ? this.preparing.lookup : this.locate(name);
+    this.preparing = { fileName: name, lookup };
+    const location = await lookup;
+    if (this.preparing?.lookup === lookup) this.preparing = null;
+    this.prepared = location.kind === "missing" ? null : { fileName: name, location, at: fresh?.at ?? Date.now() };
+  }
+
+  /** What was found for [filename] ahead of time, or the lookup still under way; null when it wasn't prepared. */
+  private takePrepared(filename: string): Promise<RoomLocation<RelayFile>> | null {
+    const p = this.prepared;
+    if (p && Filenames.same(p.fileName, filename)) {
+      this.prepared = null;
+      if (Date.now() - p.at < PREPARED_MAX_AGE_MS) return Promise.resolve(p.location);
+    }
+    return this.preparing && Filenames.same(this.preparing.fileName, filename) ? this.preparing.lookup : null;
   }
 
   private async load(media: NowPlaying, resetPosition: boolean, fromRoom: boolean) {
@@ -486,7 +628,8 @@ export class RoomSession {
     }
     if (token !== this.loadToken) return;
     this.status.set({ kind: "idle" });
-    const file: FileInfo = { name: media.fileName, duration: this.player.duration, size: media.size };
+    this.schedulePrepare();
+    const file: FileInfo = { name: media.fileName, duration: this.player.duration || media.durationHint, size: media.size };
     this.reportedFile = file;
     this.client?.fileLoaded(file, resetPosition);
     if (fromRoom && this.settings.autoReady && this.isActive) this.client?.setReady(true, false);
@@ -500,6 +643,50 @@ export class RoomSession {
     this.known.set(media.fileName, media);
     if (inRoom && this.client && this.isActive) this.client.playInRoom(media.fileName);
     else await this.load(media, inRoom, false);
+  }
+
+  /**
+   * A media server's item: [mode] "room" adds its file name to the shared playlist (if needed) and selects it, so
+   * everyone loads their own copy; "here" plays it only here; "add" only adds it. Without a room, it plays here.
+   */
+  async playItem(source: MediaSource, item: MediaItem, mode: "room" | "here" | "add") {
+    let playable: PlayableMedia;
+    try {
+      playable = await source.playable(item);
+    } catch (e) {
+      this.postLocal(`Can't play ${item.name}: ${(e as Error).message}`, true);
+      return;
+    }
+    const media = playableNowPlaying(playable);
+    this.known.set(media.fileName, media);
+    // The same file on the other servers, so playback is reported to them too.
+    void this.locator.copiesOf(playable).then((copies) => {
+      const known = this.known.get(media.fileName);
+      if (known?.key === media.key) this.known.set(media.fileName, { ...known, copies });
+    });
+    if (mode === "add") {
+      if (!this.client) this.postLocal("Join a Syncplay room to use the shared playlist", true);
+      else this.reportAdded(1, this.add([media.fileName]));
+    } else if (mode === "room" && this.client && this.isActive) {
+      this.client.playInRoom(media.fileName);
+    } else {
+      await this.load(media, mode === "room", false);
+    }
+  }
+
+  /** Manual pick after a failed lookup: plays a media server's [item] as the playlist entry. */
+  async resolveManuallyItem(source: MediaSource, item: MediaItem) {
+    const s = this.status.value;
+    let playable: PlayableMedia;
+    try {
+      playable = await source.playable(item);
+    } catch (e) {
+      this.postLocal(`Can't play ${item.name}: ${(e as Error).message}`, true);
+      return;
+    }
+    const media = playableNowPlaying(playable);
+    if (s.kind === "notFound") this.known.set(s.fileName, media);
+    await this.load(media, true, true);
   }
 
   /** Plays a direct link locally; Syncplay identifies streams by their URL. */
@@ -664,6 +851,13 @@ function localNowPlaying(file: LocalFile): NowPlaying {
     title: file.name,
     fileName: file.name,
     size: file.size,
+    key: `local:${file.folder}/${file.directory}/${file.name}|${file.size}`,
+    durationHint: 0,
+    copies: [],
+    episode: episodeFromFile(file.name, file.directory || null),
+    item: null,
+    local: file,
+    remote: false,
     open: async () => new FileSource(await file.open()),
   };
 }
@@ -675,5 +869,17 @@ function urlNowPlaying(url: string): NowPlaying {
   } catch {
     // As it is.
   }
-  return { title: name || url, fileName: url, size: 0, open: () => HttpSource.open(url) };
+  return {
+    title: name || url,
+    fileName: url,
+    size: 0,
+    key: url,
+    durationHint: 0,
+    copies: [],
+    episode: episodeFromFile(name),
+    item: null,
+    local: null,
+    remote: true,
+    open: () => HttpSource.open(url),
+  };
 }
