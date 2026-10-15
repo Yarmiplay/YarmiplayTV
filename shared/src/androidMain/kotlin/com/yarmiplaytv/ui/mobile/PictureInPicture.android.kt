@@ -86,7 +86,10 @@ actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: 
             }
         }
         // Android 12 enters by itself (setAutoEnterEnabled); leaveHint also acts as a reliable fallback.
-        val leaveHint = Runnable { if (latestAuto && !activity.isInPictureInPictureMode) runCatching { activity.enterPictureInPictureMode(latestParams) } }
+        val leaveHint = Runnable {
+            if (activity.isFinishing || activity.isChangingConfigurations) return@Runnable
+            if (latestAuto && !activity.isInPictureInPictureMode) runCatching { activity.enterPictureInPictureMode(latestParams) }
+        }
         val playPause = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) = player.setPaused(!player.isPaused)
         }
