@@ -26,6 +26,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
@@ -76,11 +79,22 @@ fun SkipChip(label: String, key: Any, modifier: Modifier = Modifier, hint: Strin
     val left = remember(key) { Animatable(1f) }
     LaunchedEffect(key) { left.animateTo(0f, tween(SkipService.PROMPT_MILLIS.toInt(), easing = LinearEasing)) }
     val shape = if (large) RoundedCornerShape(14.dp) else SkipChipShape
+    val accent = AppColors.Accent
     Box(
         modifier
             .clip(shape)
             .background(Color(0xE6121419))
-            .border(1.dp, Color.White.copy(alpha = 0.16f), shape),
+            .border(1.dp, Color.White.copy(alpha = 0.16f), shape)
+            .drawWithContent {
+                drawContent()
+                val barWidth = size.width * left.value
+                val barHeight = 3.dp.toPx()
+                drawRect(
+                    color = accent,
+                    topLeft = Offset(0f, size.height - barHeight),
+                    size = Size(barWidth, barHeight),
+                )
+            },
     ) {
         Row(
             Modifier.padding(
@@ -103,7 +117,6 @@ fun SkipChip(label: String, key: Any, modifier: Modifier = Modifier, hint: Strin
                 Keycap(it, large)
             }
         }
-        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(left.value).height(3.dp).background(AppColors.Accent))
     }
 }
 

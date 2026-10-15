@@ -26,10 +26,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Sync
@@ -128,7 +128,7 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                 showBack = false,
                 actions = {
                     IconButton(onClick = { container.exitApp() }, modifier = Modifier.testTag("settings_exit_app")) {
-                        Icon(Icons.Filled.Logout, contentDescription = "Exit YarmiplayTV", tint = AppColors.TextDim)
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Exit YarmiplayTV", tint = AppColors.TextDim)
                     }
                 },
             )
@@ -197,7 +197,7 @@ private fun ExitAppRow(container: AppContainer, modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxWidth().testTag("settings_exit_app_button"),
     ) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Logout, contentDescription = null, tint = AppColors.NotReady)
+            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = AppColors.NotReady)
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text("Exit YarmiplayTV", style = MaterialTheme.typography.titleMedium, color = AppColors.NotReady)

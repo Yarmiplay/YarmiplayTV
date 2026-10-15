@@ -53,6 +53,24 @@ class SkipButtonUiTest {
     }
 
     @Test
+    fun `the Skip button stays static in size and does not stretch or move across the window`() = runComposeUiTest {
+        setContent {
+            MobileTheme {
+                Box(Modifier.size(1920.dp, 1080.dp).background(Color(0xFF202830))) {
+                    SkipSegmentButton(
+                        SkipPrompt(SkipSegment(SkipSegment.Kind.OPENING, 28.7, 118.7)),
+                        {},
+                        Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                        hint = "S",
+                    )
+                }
+            }
+        }
+        val width = onNodeWithTag("skip_segment").fetchSemanticsNode().size.width
+        org.junit.Assert.assertTrue("width should be compact content width but was $width", width < 300)
+    }
+
+    @Test
     fun `the opening and ending are marked where they are on the bar`() = runComposeUiTest {
         setContent {
             Box(Modifier.size(1000.dp, 6.dp).background(Color.DarkGray)) {
