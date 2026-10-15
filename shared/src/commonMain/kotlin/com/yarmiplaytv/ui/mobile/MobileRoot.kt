@@ -143,25 +143,29 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                 kind.isLarge -> SectionNav.RAIL
                 else -> SectionNav.BAR
             }
-            MobileScaffold(
-                container = container,
-                snackbar = snackbar,
-                selected = selectedTab,
-                style = style,
-                screen = screen,
-                isPortrait = isPortrait,
-                onTab = {
-                    if (it.screen == Screen.Player) {
-                        if (nav.current != Screen.Player) nav.push(Screen.Player)
+            if (screen == Screen.Player && kind == DeviceKind.DESKTOP) {
+                // On desktop the player is fullscreen, covering the window
+                CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
+            } else {
+                MobileScaffold(
+                    container = container,
+                    snackbar = snackbar,
+                    selected = selectedTab,
+                    style = style,
+                    screen = screen,
+                    isPortrait = isPortrait,
+                    onTab = {
+                        if (it.screen == Screen.Player) {
+                            if (nav.current != Screen.Player) nav.push(Screen.Player)
+                        } else {
+                            nav.switchTab(it.screen)
+                        }
+                    },
+                    onOpenPlayer = { nav.push(Screen.Player) },
+                ) {
+                    if (screen == Screen.Player) {
+                        CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
                     } else {
-                        nav.switchTab(it.screen)
-                    }
-                },
-                onOpenPlayer = { nav.push(Screen.Player) },
-            ) {
-                if (screen == Screen.Player) {
-                    CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
-                } else {
                     saveable.SaveableStateProvider(screen.key) {
                         when (screen) {
                             Screen.Home -> MobileHomeScreen(container, nav, kind)
@@ -183,6 +187,7 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                     }
                 }
             }
+        }
             // A dialog would fill the small picture-in-picture window.
             if (!PlayerPictureInPicture.active) {
                 nav.actionItem?.let { item ->
@@ -247,7 +252,7 @@ private fun MobileScaffold(
                         }
                     }
                 }
-                SectionNav.SIDEBAR -> {
+                SectionNav.SIDEBAR -> if (screen != Screen.Player) {
                     Sidebar(selected, onTab)
                     VerticalDivider(color = AppColors.SurfaceHigh)
                 }

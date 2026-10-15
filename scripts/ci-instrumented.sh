@@ -66,8 +66,8 @@ wait_for_apks
 # A copy signed with another runner's debug key would refuse the update.
 adb uninstall com.yarmiplaytv > /dev/null 2>&1
 adb uninstall com.yarmiplaytv.test > /dev/null 2>&1
-adb install -r -t app/build/outputs/apk/debug/app-debug.apk || exit 1
-adb install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || exit 1
+adb install -r -t -g app/build/outputs/apk/debug/app-debug.apk || exit 1
+adb install -r -t -g app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || exit 1
 wait_until_idle
 adb logcat -c
 
