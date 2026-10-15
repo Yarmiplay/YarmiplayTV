@@ -18,8 +18,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
@@ -117,7 +119,6 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     val onBars by barsHover.collectIsHoveredAsState()
     val pip = rememberPictureInPicture(player, settings.playback.pictureInPicture, inRoom)
 
-    FullscreenLandscape(pictureInPicture = pip.active)
     LaunchedEffect(pip.active) {
         if (pip.active) {
             sheet = null
@@ -180,10 +181,23 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     val isAudio = FileNames.isAudio(nowPlaying?.fileName ?: state.url.orEmpty())
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val isPortrait = maxWidth < maxHeight
+        FullscreenLandscape(pictureInPicture = pip.active, isPortrait = isPortrait)
         if (isPortrait) {
-            Column(Modifier.fillMaxSize().background(AppColors.Background)) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .background(AppColors.Background)
+                    .statusBarsPadding(),
+            ) {
                 // Top video / audio player area
-                Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black).testTag("player").playerScreenInput(input)) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .background(Color.Black)
+                        .testTag("player")
+                        .playerScreenInput(input),
+                ) {
                     CompositionLocalProvider(LocalContentColor provides OnVideo.Text) {
                         VideoSurface(player, Modifier.fillMaxSize())
                         Box(Modifier.fillMaxSize().testTag("player_gestures").videoGestures(input))
@@ -212,35 +226,17 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         )
 
                         androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
-                            Box(Modifier.fillMaxSize().testTag("player_controls")) {
+                            Box(Modifier.fillMaxSize()) {
                                 Row(
                                     Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     IconButton(nav::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
-                                    Text(nowPlaying?.title ?: "Nothing playing", color = OnVideo.Text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                    Spacer(Modifier.weight(1f))
                                     RoomStatusChip(room, playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls })
                                     if (pip.supported && state.fileLoaded) {
                                         IconButton(pip.toggle, Modifier.testTag("pip")) {
                                             Icon(Icons.Filled.PictureInPictureAlt, contentDescription = pictureInPictureLabel, tint = Color.White)
-                                        }
-                                    }
-                                }
-                                if (state.fileLoaded) {
-                                    val skips = inRoom && room.playlist.isNotEmpty()
-                                    Row(
-                                        Modifier.align(Alignment.Center),
-                                        horizontalArrangement = Arrangement.spacedBy(if (skips) 12.dp else 24.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        if (skips) {
-                                            RoundButton(Icons.Filled.SkipPrevious, "Previous in the playlist", enabled = container.playlist.skipTarget(room, forward = false) != null, modifier = Modifier.testTag("skip_previous")) { input.skip(false) }
-                                        }
-                                        RoundButton(Icons.Filled.FastRewind, "Back ${step.toInt()} seconds") { seekBy(-step) }
-                                        RoundButton(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, if (state.paused) "Play" else "Pause", big = true, modifier = Modifier.testTag("play_pause")) { togglePause() }
-                                        RoundButton(Icons.Filled.FastForward, "Forward ${step.toInt()} seconds") { seekBy(step) }
-                                        if (skips) {
-                                            RoundButton(Icons.Filled.SkipNext, "Next in the playlist", enabled = container.playlist.skipTarget(room, forward = true) != null, modifier = Modifier.testTag("skip_next")) { input.skip(true) }
                                         }
                                     }
                                 }
@@ -249,7 +245,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                     }
                 }
 
-                // Portrait bottom section
+                // Portrait middle details section (title, series, room ready chip, MAL notice card)
                 Column(
                     Modifier
                         .weight(1f)
@@ -263,8 +259,6 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                 nowPlaying?.title ?: "Nothing playing",
                                 style = MaterialTheme.typography.titleLarge,
                                 color = AppColors.Text,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
                             )
                             val subtitle = nowPlaying?.episode?.seriesName ?: if (isAudio) "Music" else ""
                             if (subtitle.isNotEmpty()) {
@@ -272,18 +266,26 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                     subtitle,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = AppColors.TextDim,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
                         if (inRoom) {
+                            Spacer(Modifier.width(8.dp))
                             ReadyChip(ready = room.isReady == true, onClick = { container.sync.toggleReady(); touch() }, modifier = Modifier.testTag("player_ready"))
                         }
                     }
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(16.dp))
+                    MalNoticeCard(container, onPick = { openSheet(PlayerSheet.MAL) }, Modifier.fillMaxWidth())
+                }
 
+                // Portrait bottom player controls section (seek bar, playback buttons, sheet shortcuts)
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .testTag("player_controls"),
+                ) {
                     val segments by container.skips.segments.collectAsStateWithLifecycle()
                     var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
                     LaunchedEffect(Unit) {
@@ -306,6 +308,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                             IconButton(
                                 onClick = { input.skip(false) },
                                 enabled = container.playlist.skipTarget(room, forward = false) != null,
+                                modifier = Modifier.testTag("skip_previous"),
                             ) {
                                 Icon(Icons.Filled.SkipPrevious, "Previous in the playlist", tint = AppColors.Text)
                             }
@@ -315,7 +318,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         }
                         FilledIconButton(
                             onClick = { togglePause() },
-                            modifier = Modifier.size(56.dp),
+                            modifier = Modifier.size(56.dp).testTag("play_pause"),
                             colors = IconButtonDefaults.filledIconButtonColors(containerColor = AppColors.Accent),
                         ) {
                             Icon(
@@ -332,29 +335,27 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                             IconButton(
                                 onClick = { input.skip(true) },
                                 enabled = container.playlist.skipTarget(room, forward = true) != null,
+                                modifier = Modifier.testTag("skip_next"),
                             ) {
                                 Icon(Icons.Filled.SkipNext, "Next in the playlist", tint = AppColors.Text)
                             }
                         }
                     }
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
 
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceAround,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist") { openSheet(PlayerSheet.PLAYLIST) }
-                        SheetButton(Icons.Filled.Groups, "Room") { openSheet(PlayerSheet.ROOM) }
-                        SheetButton(Icons.Filled.Forum, "Chat") { openSheet(PlayerSheet.CHAT) }
-                        SheetButton(Icons.Filled.Audiotrack, "Audio") { openSheet(PlayerSheet.AUDIO) }
-                        SheetButton(Icons.Filled.Subtitles, "Subtitles") { openSheet(PlayerSheet.SUBTITLES) }
-                        if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList") { openSheet(PlayerSheet.MAL) }
+                        SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist", tint = AppColors.Text) { openSheet(PlayerSheet.PLAYLIST) }
+                        SheetButton(Icons.Filled.Groups, "Room", tint = AppColors.Text) { openSheet(PlayerSheet.ROOM) }
+                        SheetButton(Icons.Filled.Forum, "Chat", tint = AppColors.Text) { openSheet(PlayerSheet.CHAT) }
+                        SheetButton(Icons.Filled.Audiotrack, "Audio", tint = AppColors.Text) { openSheet(PlayerSheet.AUDIO) }
+                        SheetButton(Icons.Filled.Subtitles, "Subtitles", tint = AppColors.Text) { openSheet(PlayerSheet.SUBTITLES) }
+                        if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList", tint = AppColors.Text) { openSheet(PlayerSheet.MAL) }
                     }
-
-                    Spacer(Modifier.height(16.dp))
-                    MalNoticeCard(container, onPick = { openSheet(PlayerSheet.MAL) }, Modifier.fillMaxWidth())
                 }
             }
         } else {
@@ -563,8 +564,13 @@ private fun PictureInPictureElsewhere(pip: PictureInPicture) {
 }
 
 @Composable
-private fun SheetButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    IconButton(onClick, Modifier.testTag("sheet_$label")) { Icon(icon, contentDescription = label, tint = Color.White) }
+private fun SheetButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color = Color.White,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick, Modifier.testTag("sheet_$label")) { Icon(icon, contentDescription = label, tint = tint) }
 }
 
 @Composable

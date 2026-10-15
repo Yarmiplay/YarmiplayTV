@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.2.2" date="2026-10-15">
+      <description>
+        <p>Portrait mode player layout improvements on Android: avoid camera hole cutout over video, full video title, bottom-anchored player controls, and bottom navigation bar.</p>
+      </description>
+    </release>
     <release version="2.2.1" date="2026-10-15">
       <description>
         <p>Auto picture-in-picture when leaving the app on phones and tablets, stay connected when minimized with notification playback controls, and What's New section.</p>

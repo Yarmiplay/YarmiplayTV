@@ -171,7 +171,7 @@ actual fun VideoSurface(player: Player, modifier: Modifier) = DesktopVideo.surfa
 
 /** The desktop window decides about full screen itself (double-click, F). */
 @Composable
-actual fun FullscreenLandscape(pictureInPicture: Boolean) = Unit
+actual fun FullscreenLandscape(pictureInPicture: Boolean, isPortrait: Boolean) = Unit
 
 actual val autoPictureInPictureSetting = true
 actual val autoPictureInPictureTitle = "Picture-in-picture when minimized"

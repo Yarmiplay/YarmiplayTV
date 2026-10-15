@@ -75,7 +75,7 @@ expect fun RoomSidePanel(container: AppContainer)
  * picture-in-picture ([pictureInPicture]) only the screen stays on: the window is the system's then.
  */
 @Composable
-expect fun FullscreenLandscape(pictureInPicture: Boolean = false)
+expect fun FullscreenLandscape(pictureInPicture: Boolean = false, isPortrait: Boolean = false)
 
 /**
  * Picture-in-picture for the player: Android's PiP window, the desktop's mini player. [active] while the video is

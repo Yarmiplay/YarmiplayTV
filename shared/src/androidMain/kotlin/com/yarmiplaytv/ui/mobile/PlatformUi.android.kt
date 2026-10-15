@@ -87,7 +87,7 @@ actual fun VideoSurface(player: Player, modifier: Modifier) {
 }
 
 @Composable
-actual fun FullscreenLandscape(pictureInPicture: Boolean) {
+actual fun FullscreenLandscape(pictureInPicture: Boolean, isPortrait: Boolean) {
     val context = LocalContext.current
     val view = LocalView.current
     DisposableEffect(view) {
@@ -96,11 +96,15 @@ actual fun FullscreenLandscape(pictureInPicture: Boolean) {
     }
     // In picture-in-picture the window belongs to the system; the lock and hidden bars come back with full screen.
     if (pictureInPicture) return
-    DisposableEffect(Unit) {
+    DisposableEffect(isPortrait) {
         val activity = context.findActivity()
         val insets = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
-        insets?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        insets?.hide(WindowInsetsCompat.Type.systemBars())
+        if (isPortrait) {
+            insets?.show(WindowInsetsCompat.Type.systemBars())
+        } else {
+            insets?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            insets?.hide(WindowInsetsCompat.Type.systemBars())
+        }
         onDispose {
             insets?.show(WindowInsetsCompat.Type.systemBars())
         }
