@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.2.4" date="2026-10-15">
+      <description>
+        <p>Fix desktop player fullscreen navbar visibility and improve mobile portrait controls.</p>
+      </description>
+    </release>
     <release version="2.2.3" date="2026-10-15">
       <description>
         <p>Seamless orientation switching between portrait and landscape without video reload or black screens.</p>
