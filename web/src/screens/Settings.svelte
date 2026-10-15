@@ -16,6 +16,7 @@
     { key: "myanimelist", label: "MyAnimeList", icon: "bookmarks" },
     { key: "syncing", label: "Syncing", icon: "sync" },
     { key: "playback", label: "Playback", icon: "tune" },
+    { key: "whatsnew", label: "What's new", icon: "new_releases" },
     { key: "about", label: "About", icon: "info" },
   ] as const;
 
@@ -152,6 +153,7 @@
             </select>
           </label>
           <label class="switch"><input type="checkbox" checked={s.playback.playerLabels} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, playerLabels: (e.target as HTMLInputElement).checked } }))} /> Show names next to the player's buttons</label>
+          <label class="switch"><input type="checkbox" checked={s.playback.stayConnectedMinimized} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, stayConnectedMinimized: (e.target as HTMLInputElement).checked } }))} /> Stay connected when minimized</label>
           <h3>Openings and endings</h3>
           <label class="switch"><input type="checkbox" checked={s.playback.autoSkipAlone} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, autoSkipAlone: (e.target as HTMLInputElement).checked } }))} /> Skip them by themselves when watching alone (in a room, the room decides)</label>
           <label class="switch"><input type="checkbox" checked={s.playback.showSkipButton} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, showSkipButton: (e.target as HTMLInputElement).checked } }))} /> Show a Skip button for a few seconds as one starts</label>
@@ -171,6 +173,16 @@
         <div class="card group">
           <p>Keep your MyAnimeList list up to date as you watch, and find any show.</p>
           <a class="button quiet" href="#/mal"><Icon name="bookmarks" size={18} />MyAnimeList</a>
+        </div>
+      {:else if shown === "whatsnew"}
+        <h2>What's new</h2>
+        <div class="card group">
+          {#each buildInfo.releases as r (r.version)}
+            <div class="release">
+              <h3>{r.version} <span class="dim small">{r.date}</span></h3>
+              <p>{r.text}</p>
+            </div>
+          {/each}
         </div>
       {:else if shown === "about"}
         <h2>About</h2>

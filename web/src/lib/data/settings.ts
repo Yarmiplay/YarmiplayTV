@@ -51,6 +51,7 @@ export interface PlaybackPrefs {
   audioLanguages: string;
   subtitleLanguages: string;
   seekStepSeconds: number;
+  stayConnectedMinimized: boolean;
   autoSkipAlone: boolean;
   showSkipButton: boolean;
   detectSkips: boolean;
@@ -139,6 +140,7 @@ export function load(): Settings {
       audioLanguages: text("pb_alang", "jpn,ja"),
       subtitleLanguages: text("pb_slang", "eng,en"),
       seekStepSeconds: int("pb_seek_step", 10),
+      stayConnectedMinimized: bool("stay_connected_minimized", true),
       autoSkipAlone: bool("pb_auto_skip", false),
       showSkipButton: bool("pb_skip_button", true),
       detectSkips: bool("pb_detect_skips", true),
@@ -184,6 +186,7 @@ export function save(settings: Settings) {
   write("pb_alang", p.audioLanguages);
   write("pb_slang", p.subtitleLanguages);
   write("pb_seek_step", String(p.seekStepSeconds));
+  write("stay_connected_minimized", String(p.stayConnectedMinimized));
   write("pb_auto_skip", String(p.autoSkipAlone));
   write("pb_skip_button", String(p.showSkipButton));
   write("pb_detect_skips", String(p.detectSkips));

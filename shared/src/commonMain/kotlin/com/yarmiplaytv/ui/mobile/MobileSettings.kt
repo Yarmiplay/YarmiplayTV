@@ -362,6 +362,12 @@ private fun PlaybackSettings(container: AppContainer) {
             Modifier.testTag("toggle_pip"),
         ) { on -> savePlayback { it.copy(pictureInPicture = on) } }
     }
+    SettingsToggle(
+        "Stay connected when minimized",
+        "Keep room sync and playback active in background with playback controls in notifications",
+        pb.stayConnectedMinimized,
+        Modifier.testTag("toggle_stay_connected"),
+    ) { on -> savePlayback { it.copy(stayConnectedMinimized = on) } }
     SettingsToggle(SKIP_ALONE_TITLE, SKIP_ALONE_SUBTITLE, pb.autoSkipAlone, Modifier.testTag("toggle_auto_skip")) { on ->
         savePlayback { it.copy(autoSkipAlone = on) }
     }

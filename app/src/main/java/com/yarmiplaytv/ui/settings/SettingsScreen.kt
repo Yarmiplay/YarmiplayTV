@@ -258,6 +258,12 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         subtitle = "A playing video keeps going, in sync, in a small window over other apps",
                     )
                 }
+                ToggleRow(
+                    "Stay connected when minimized",
+                    pb.stayConnectedMinimized,
+                    { savePlayback(pb.copy(stayConnectedMinimized = !pb.stayConnectedMinimized)) },
+                    subtitle = "Keep room sync and playback active in background with playback controls",
+                )
                 ToggleRow(SKIP_ALONE_TITLE, pb.autoSkipAlone, { savePlayback(pb.copy(autoSkipAlone = !pb.autoSkipAlone)) }, subtitle = SKIP_ALONE_SUBTITLE)
                 ToggleRow(SKIP_BUTTON_TITLE, pb.showSkipButton, { savePlayback(pb.copy(showSkipButton = !pb.showSkipButton)) }, subtitle = SKIP_BUTTON_SUBTITLE)
                 ToggleRow(DETECT_SKIPS_TITLE, pb.detectSkips, { savePlayback(pb.copy(detectSkips = !pb.detectSkips)) }, subtitle = DETECT_SKIPS_SUBTITLE)

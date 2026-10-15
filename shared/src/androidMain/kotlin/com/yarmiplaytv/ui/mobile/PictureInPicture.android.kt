@@ -54,7 +54,7 @@ actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: 
 
     var active by remember { mutableStateOf(activity.isInPictureInPictureMode) }
     val state by player.state.collectAsState()
-    val auto = autoEnter && state.fileLoaded && !state.paused
+    val auto = autoEnter && state.fileLoaded
     val params = remember(state.displayAspect, state.paused, auto) { pipParams(activity, state.displayAspect, state.paused, auto) }
     val latestParams by rememberUpdatedState(params)
     val latestAuto by rememberUpdatedState(auto)
@@ -91,15 +91,16 @@ actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: 
         activity.addOnPictureInPictureModeChangedListener(modeListener)
         lifecycle.addObserver(lifecycleObserver)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) activity.addOnUserLeaveHintListener(leaveHint)
-        ContextCompat.registerReceiver(activity, playPause, IntentFilter(ACTION_PLAY_PAUSE), ContextCompat.RECEIVER_NOT_EXPORTED)
+        ContextCompat.registerReceiver(activity, playPause, IntentFilter(ACTION_PIP_PLAY_PAUSE), ContextCompat.RECEIVER_NOT_EXPORTED)
         onDispose {
             activity.removeOnPictureInPictureModeChangedListener(modeListener)
             lifecycle.removeObserver(lifecycleObserver)
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) activity.removeOnUserLeaveHintListener(leaveHint)
             runCatching { activity.unregisterReceiver(playPause) }
             PlayerPictureInPicture.active = false
-            // Off the player, leaving the app mustn't shrink it into a window.
-            runCatching { activity.setPictureInPictureParams(pipParams(activity, 0.0, paused = true, autoEnter = false)) }
+            // Off the player screen, keep auto-enter enabled if media is loaded and setting is on.
+            val keepAuto = latestAuto && player.isFileLoaded
+            runCatching { activity.setPictureInPictureParams(pipParams(activity, state.displayAspect, state.paused, autoEnter = keepAuto)) }
         }
     }
 
@@ -109,11 +110,11 @@ actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: 
 }
 
 /** The window's shape (the video's, within Android's limits), whether it opens by itself, and a play/pause button. */
-internal fun pipParams(context: Context, aspect: Double, paused: Boolean, autoEnter: Boolean): PictureInPictureParams {
+fun pipParams(context: Context, aspect: Double, paused: Boolean, autoEnter: Boolean): PictureInPictureParams {
     val toggle = PendingIntent.getBroadcast(
         context,
         0,
-        Intent(ACTION_PLAY_PAUSE).setPackage(context.packageName),
+        Intent(ACTION_PIP_PLAY_PAUSE).setPackage(context.packageName),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
     val label = if (paused) "Play" else "Pause"
@@ -132,13 +133,13 @@ internal fun pipParams(context: Context, aspect: Double, paused: Boolean, autoEn
 }
 
 /** [aspect] as a ratio Android accepts for a PiP window (between 1:2.39 and 2.39:1); 16:9 until the video's is known. */
-internal fun pipAspect(aspect: Double): Rational {
+fun pipAspect(aspect: Double): Rational {
     val shown = if (aspect > 0) aspect.coerceIn(MIN_ASPECT, MAX_ASPECT) else 16.0 / 9.0
     return Rational((shown * ASPECT_SCALE).roundToInt(), ASPECT_SCALE)
 }
 
 private const val TAG = "PictureInPicture"
-private const val ACTION_PLAY_PAUSE = "com.yarmiplaytv.action.PIP_PLAY_PAUSE"
+const val ACTION_PIP_PLAY_PAUSE = "com.yarmiplaytv.action.PIP_PLAY_PAUSE"
 private const val MAX_ASPECT = 2.39
 /** A little over 1:2.39, so rounding to [ASPECT_SCALE] never drops below the limit. */
 private const val MIN_ASPECT = 0.42

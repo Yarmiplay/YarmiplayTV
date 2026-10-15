@@ -2,6 +2,9 @@ package com.yarmiplaytv
 
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -9,12 +12,21 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.toArgb
+import androidx.lifecycle.lifecycleScope
+import com.yarmiplaytv.media.FileNames
+import com.yarmiplaytv.playback.PlaybackService
+import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.TvRoot
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
+import com.yarmiplaytv.ui.mobile.PlayerPictureInPicture
 import com.yarmiplaytv.ui.mobile.appPalette
+import com.yarmiplaytv.ui.mobile.pipParams
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.YarmiplayTvTheme
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val container get() = (application as YarmiplayTvApp).container
@@ -51,6 +63,67 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (savedInstanceState == null) handleIntent(intent)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
+
+        lifecycleScope.launch {
+            combine(container.settings, container.player.state, container.sync.room) { settings, playerState, room ->
+                settings.playback.stayConnectedMinimized &&
+                    (playerState.fileLoaded || room.status == ConnectionStatus.CONNECTED)
+            }.distinctUntilChanged().collect { active ->
+                if (active) {
+                    PlaybackService.start(this@MainActivity)
+                } else {
+                    PlaybackService.stop(this@MainActivity)
+                }
+            }
+        }
+
+        if (deviceKind != DeviceKind.TV && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            lifecycleScope.launch {
+                combine(container.settings, container.player.state) { settings, playerState ->
+                    settings.playback.pictureInPicture to playerState
+                }.collect { (pipEnabled, state) ->
+                    val isVideo = state.fileLoaded && (state.videoWidth > 0 || state.displayAspect > 0 || !FileNames.isAudio(state.url.orEmpty()))
+                    val auto = pipEnabled && isVideo
+                    val params = pipParams(this@MainActivity, state.displayAspect, state.paused, autoEnter = auto)
+                    runCatching { setPictureInPictureParams(params) }
+                }
+            }
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (deviceKind != DeviceKind.TV && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val settings = container.settings.value
+            val player = container.player
+            val state = player.state.value
+            val isVideo = state.fileLoaded && (state.videoWidth > 0 || state.displayAspect > 0 || !FileNames.isAudio(state.url.orEmpty()))
+            if (settings.playback.pictureInPicture && isVideo) {
+                val screens = (application as YarmiplayTvApp).screens
+                if (screens.lastOrNull() != Screen.Player) {
+                    screens.add(Screen.Player)
+                }
+                val params = pipParams(this, state.displayAspect, state.paused, autoEnter = true)
+                runCatching { enterPictureInPictureMode(params) }
+            }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        PlayerPictureInPicture.active = isInPictureInPictureMode
+        if (isInPictureInPictureMode) {
+            val screens = (application as YarmiplayTvApp).screens
+            if (screens.lastOrNull() != Screen.Player) {
+                screens.add(Screen.Player)
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

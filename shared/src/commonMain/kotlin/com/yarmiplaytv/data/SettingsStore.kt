@@ -139,6 +139,8 @@ data class PlaybackPrefs(
     val controlsHideSeconds: Int = 3,
     /** Android: leaving the app while a video plays shrinks it to a picture-in-picture window. */
     val pictureInPicture: Boolean = true,
+    /** Keep playback and room sync running in background with notification controls when minimized. */
+    val stayConnectedMinimized: Boolean = true,
     /** Skip anime openings and endings automatically when watching alone (in a room, the room decides). */
     val autoSkipAlone: Boolean = false,
     /** Offer a Skip button for a few seconds as an opening or ending starts, when it isn't skipped automatically. */
@@ -300,6 +302,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
 
         val hwdec = booleanPreferencesKey("pb_hwdec")
         val pip = booleanPreferencesKey("pb_pip")
+        val stayConnectedMinimized = booleanPreferencesKey("stay_connected_minimized")
         val alang = stringPreferencesKey("pb_alang")
         val slang = stringPreferencesKey("pb_slang")
         val seekStep = intPreferencesKey("pb_seek_step")
@@ -390,6 +393,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             playback = PlaybackPrefs(
                 hardwareDecoding = p[Keys.hwdec] ?: true,
                 pictureInPicture = p[Keys.pip] ?: true,
+                stayConnectedMinimized = p[Keys.stayConnectedMinimized] ?: true,
                 audioLanguages = p[Keys.alang] ?: defaults.playback.audioLanguages,
                 subtitleLanguages = p[Keys.slang] ?: defaults.playback.subtitleLanguages,
                 seekStepSeconds = p[Keys.seekStep] ?: 10,
@@ -654,6 +658,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         dataStore.edit {
             it[Keys.hwdec] = prefs.hardwareDecoding
             it[Keys.pip] = prefs.pictureInPicture
+            it[Keys.stayConnectedMinimized] = prefs.stayConnectedMinimized
             it[Keys.alang] = prefs.audioLanguages
             it[Keys.slang] = prefs.subtitleLanguages
             it[Keys.seekStep] = prefs.seekStepSeconds
@@ -664,6 +669,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             it[Keys.detectAnyNetwork] = prefs.detectOnAnyNetwork
         }
     }
+
+    suspend fun saveStayConnectedMinimized(on: Boolean) = dataStore.edit { it[Keys.stayConnectedMinimized] = on }
 
     /** Saves every signed-in server in one edit, replacing the saved lists (and any single-server keys from older versions). */
     suspend fun saveServers(jellyfin: List<JellyfinSession>, plex: List<PlexSession>) {

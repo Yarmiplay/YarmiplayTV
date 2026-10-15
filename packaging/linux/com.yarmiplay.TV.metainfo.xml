@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.2.1" date="2026-10-15">
+      <description>
+        <p>Auto picture-in-picture when leaving the app on phones and tablets, stay connected when minimized with notification playback controls, and What's New section.</p>
+      </description>
+    </release>
     <release version="2.2.0" date="2026-10-15">
       <description>
         <p>Music library support, persistent mini player, portrait player, and saved playlists.</p>
