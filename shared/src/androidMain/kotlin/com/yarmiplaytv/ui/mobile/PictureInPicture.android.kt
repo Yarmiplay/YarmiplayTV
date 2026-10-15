@@ -85,22 +85,19 @@ actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: 
                 else -> Unit
             }
         }
-        // Android 12 enters by itself (setAutoEnterEnabled); leaveHint also acts as a reliable fallback.
-        val leaveHint = Runnable {
-            if (activity.isFinishing || activity.isChangingConfigurations) return@Runnable
-            if (latestAuto && !activity.isInPictureInPictureMode) runCatching { activity.enterPictureInPictureMode(latestParams) }
-        }
+        // Android 12 enters by itself (setAutoEnterEnabled); older versions get the leave hint.
+        val leaveHint = Runnable { if (latestAuto && !activity.isInPictureInPictureMode) runCatching { activity.enterPictureInPictureMode(latestParams) } }
         val playPause = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) = player.setPaused(!player.isPaused)
         }
         activity.addOnPictureInPictureModeChangedListener(modeListener)
         lifecycle.addObserver(lifecycleObserver)
-        activity.addOnUserLeaveHintListener(leaveHint)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) activity.addOnUserLeaveHintListener(leaveHint)
         ContextCompat.registerReceiver(activity, playPause, IntentFilter(ACTION_PIP_PLAY_PAUSE), ContextCompat.RECEIVER_NOT_EXPORTED)
         onDispose {
             activity.removeOnPictureInPictureModeChangedListener(modeListener)
             lifecycle.removeObserver(lifecycleObserver)
-            activity.removeOnUserLeaveHintListener(leaveHint)
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) activity.removeOnUserLeaveHintListener(leaveHint)
             runCatching { activity.unregisterReceiver(playPause) }
             PlayerPictureInPicture.active = false
             // Off the player screen, keep auto-enter enabled if media is loaded and setting is on.

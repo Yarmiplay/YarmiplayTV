@@ -273,6 +273,7 @@ class LocalPlaybackTest {
             waitFor(5_000) { PlayerPictureInPicture.active }
             assertTrue("still loaded", container.player.state.value.fileLoaded)
         } finally {
+            compose.runOnUiThread { container.playlist.stop() }
             // If full screen doesn't come back, the PiP window still mustn't outlive the test.
             runCatching { leavePictureInPicture(activity) }.onFailure {
                 closePictureInPicture(activity)

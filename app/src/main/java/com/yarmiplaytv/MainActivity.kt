@@ -106,8 +106,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (isFinishing || isChangingConfigurations) return
-        if (deviceKind != DeviceKind.TV && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (deviceKind != DeviceKind.TV && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             val settings = container.settings.value
             val player = container.player
             val state = player.state.value
