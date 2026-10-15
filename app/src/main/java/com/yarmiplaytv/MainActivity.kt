@@ -71,19 +71,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        lifecycleScope.launch {
-            combine(container.settings, container.player.state, container.sync.room) { settings, playerState, room ->
-                settings.playback.stayConnectedMinimized &&
-                    (playerState.fileLoaded || room.status == ConnectionStatus.CONNECTED)
-            }.distinctUntilChanged().collect { active ->
-                if (active) {
-                    PlaybackService.start(this@MainActivity)
-                } else {
-                    PlaybackService.stop(this@MainActivity)
-                }
-            }
-        }
-
         if (deviceKind != DeviceKind.TV && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             lifecycleScope.launch {
                 combine(container.settings, container.player.state) { settings, playerState ->
@@ -94,6 +81,25 @@ class MainActivity : ComponentActivity() {
                     val params = pipParams(this@MainActivity, state.displayAspect, state.paused, autoEnter = auto)
                     runCatching { setPictureInPictureParams(params) }
                 }
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        PlaybackService.stop(this)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        val isTest = System.getProperty("yarmiplaytv.noUpdateCheck") != null
+        if (!isTest && deviceKind != DeviceKind.TV) {
+            val settings = container.settings.value
+            val playerState = container.player.state.value
+            val inRoom = container.sync.room.value.status == ConnectionStatus.CONNECTED
+            val isLoaded = playerState.fileLoaded
+            if (settings.playback.stayConnectedMinimized && (isLoaded || inRoom)) {
+                PlaybackService.start(this)
             }
         }
     }

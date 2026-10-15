@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.2.6" date="2026-10-15">
+      <description>
+        <p>Fix background playback service lifecycle and test stability.</p>
+      </description>
+    </release>
     <release version="2.2.5" date="2026-10-15">
       <description>
         <p>Fix Android picture-in-picture auto-enter transition stability and test isolation.</p>

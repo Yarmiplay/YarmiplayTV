@@ -46,6 +46,9 @@ class PlaybackService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_START -> {
+                startInForeground()
+            }
             ACTION_TOGGLE_PLAY_PAUSE -> {
                 container.player.setPaused(!container.player.isPaused)
             }
@@ -61,7 +64,7 @@ class PlaybackService : Service() {
                 return START_NOT_STICKY
             }
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun acquireWakeLock() {
