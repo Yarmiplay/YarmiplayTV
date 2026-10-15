@@ -18,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -96,15 +97,17 @@ actual fun FullscreenLandscape(pictureInPicture: Boolean, isPortrait: Boolean) {
     }
     // In picture-in-picture the window belongs to the system; the lock and hidden bars come back with full screen.
     if (pictureInPicture) return
-    DisposableEffect(isPortrait) {
-        val activity = context.findActivity()
-        val insets = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
+    val activity = remember(context) { context.findActivity() }
+    val insets = remember(activity, view) { activity?.window?.let { WindowCompat.getInsetsController(it, view) } }
+    SideEffect {
         if (isPortrait) {
             insets?.show(WindowInsetsCompat.Type.systemBars())
         } else {
             insets?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insets?.hide(WindowInsetsCompat.Type.systemBars())
         }
+    }
+    DisposableEffect(Unit) {
         onDispose {
             insets?.show(WindowInsetsCompat.Type.systemBars())
         }

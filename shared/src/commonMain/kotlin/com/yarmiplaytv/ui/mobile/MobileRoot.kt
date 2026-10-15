@@ -2,6 +2,7 @@ package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -142,46 +143,42 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                 kind.isLarge -> SectionNav.RAIL
                 else -> SectionNav.BAR
             }
-            if (screen == Screen.Player && !isPortrait) {
-                // In landscape the player is fullscreen, covering the window
-                CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
-            } else {
-                MobileScaffold(
-                    container = container,
-                    snackbar = snackbar,
-                    selected = selectedTab,
-                    style = style,
-                    screen = screen,
-                    onTab = {
-                        if (it.screen == Screen.Player) {
-                            if (nav.current != Screen.Player) nav.push(Screen.Player)
-                        } else {
-                            nav.switchTab(it.screen)
-                        }
-                    },
-                    onOpenPlayer = { nav.push(Screen.Player) },
-                ) {
-                    if (screen == Screen.Player) {
-                        CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
+            MobileScaffold(
+                container = container,
+                snackbar = snackbar,
+                selected = selectedTab,
+                style = style,
+                screen = screen,
+                isPortrait = isPortrait,
+                onTab = {
+                    if (it.screen == Screen.Player) {
+                        if (nav.current != Screen.Player) nav.push(Screen.Player)
                     } else {
-                        saveable.SaveableStateProvider(screen.key) {
-                            when (screen) {
-                                Screen.Home -> MobileHomeScreen(container, nav, kind)
-                                Screen.SyncplayConnect -> MobileRoomScreen(container, nav)
-                                Screen.JellyfinLogin -> MobileJellyfinScreen(container, nav)
-                                Screen.PlexLogin -> MobilePlexScreen(container, nav)
-                                Screen.Servers -> MobileServersScreen(container, nav)
-                                Screen.Settings -> MobileSettingsScreen(container, nav)
-                                Screen.LocalFiles -> MobileLocalFilesScreen(container, nav)
-                                Screen.Licenses -> MobileLicensesScreen(nav)
-                                Screen.MalLogin -> MobileMalLoginScreen(container, nav)
-                                Screen.Mal -> MobileMalScreen(container, nav)
-                                Screen.WhatsNew -> MobileWhatsNewScreen(container, nav)
-                                is Screen.MalEntry -> MobileMalEntryScreen(container, nav, screen.item)
-                                is Screen.Browse -> MobileBrowseScreen(container, nav, screen.item, kind)
-                                is Screen.Search -> MobileSearchScreen(container, nav, screen.initialQuery, screen.pickFor, kind)
-                                Screen.Player -> Unit
-                            }
+                        nav.switchTab(it.screen)
+                    }
+                },
+                onOpenPlayer = { nav.push(Screen.Player) },
+            ) {
+                if (screen == Screen.Player) {
+                    CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
+                } else {
+                    saveable.SaveableStateProvider(screen.key) {
+                        when (screen) {
+                            Screen.Home -> MobileHomeScreen(container, nav, kind)
+                            Screen.SyncplayConnect -> MobileRoomScreen(container, nav)
+                            Screen.JellyfinLogin -> MobileJellyfinScreen(container, nav)
+                            Screen.PlexLogin -> MobilePlexScreen(container, nav)
+                            Screen.Servers -> MobileServersScreen(container, nav)
+                            Screen.Settings -> MobileSettingsScreen(container, nav)
+                            Screen.LocalFiles -> MobileLocalFilesScreen(container, nav)
+                            Screen.Licenses -> MobileLicensesScreen(nav)
+                            Screen.MalLogin -> MobileMalLoginScreen(container, nav)
+                            Screen.Mal -> MobileMalScreen(container, nav)
+                            Screen.WhatsNew -> MobileWhatsNewScreen(container, nav)
+                            is Screen.MalEntry -> MobileMalEntryScreen(container, nav, screen.item)
+                            is Screen.Browse -> MobileBrowseScreen(container, nav, screen.item, kind)
+                            is Screen.Search -> MobileSearchScreen(container, nav, screen.initialQuery, screen.pickFor, kind)
+                            Screen.Player -> Unit
                         }
                     }
                 }
@@ -204,15 +201,17 @@ private fun MobileScaffold(
     selected: Tab,
     style: SectionNav,
     screen: Screen,
+    isPortrait: Boolean,
     onTab: (Tab) -> Unit,
     onOpenPlayer: () -> Unit,
     content: @Composable () -> Unit,
 ) {
+    val showBottomBar = style == SectionNav.BAR && (screen != Screen.Player || isPortrait)
     Scaffold(
         containerColor = AppColors.Background,
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
-            if (style == SectionNav.BAR) {
+            if (showBottomBar) {
                 Column {
                     if (screen != Screen.Player) {
                         MiniPlayerBar(container, onOpenPlayer)
@@ -232,17 +231,20 @@ private fun MobileScaffold(
             }
         },
     ) { padding ->
-        Row(Modifier.fillMaxSize().padding(padding)) {
+        val contentPadding = if (screen == Screen.Player && !isPortrait) PaddingValues(0.dp) else padding
+        Row(Modifier.fillMaxSize().padding(contentPadding)) {
             when (style) {
-                SectionNav.RAIL -> NavigationRail(containerColor = AppColors.Surface) {
-                    tabs.forEach { tab ->
-                        NavigationRailItem(
-                            selected = tab == selected,
-                            onClick = { onTab(tab) },
-                            icon = { Icon(tab.icon, contentDescription = null) },
-                            label = { Text(tab.label) },
-                            modifier = Modifier.testTag("tab_${tab.label}"),
-                        )
+                SectionNav.RAIL -> if (screen != Screen.Player) {
+                    NavigationRail(containerColor = AppColors.Surface) {
+                        tabs.forEach { tab ->
+                            NavigationRailItem(
+                                selected = tab == selected,
+                                onClick = { onTab(tab) },
+                                icon = { Icon(tab.icon, contentDescription = null) },
+                                label = { Text(tab.label) },
+                                modifier = Modifier.testTag("tab_${tab.label}"),
+                            )
+                        }
                     }
                 }
                 SectionNav.SIDEBAR -> {

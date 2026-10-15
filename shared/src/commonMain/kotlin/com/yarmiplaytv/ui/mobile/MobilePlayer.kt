@@ -79,6 +79,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.player.TrackType
@@ -182,18 +184,12 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val isPortrait = maxWidth < maxHeight
         FullscreenLandscape(pictureInPicture = pip.active, isPortrait = isPortrait)
-        if (isPortrait) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .background(AppColors.Background)
-                    .statusBarsPadding(),
-            ) {
-                // Top video / audio player area
+
+        Layout(
+            content = {
+                // Child 0: The Video Area (ALWAYS kept in composition across orientation changes)
                 Box(
                     Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(16f / 9f)
                         .background(Color.Black)
                         .testTag("player")
                         .playerScreenInput(input),
@@ -203,11 +199,36 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         Box(Modifier.fillMaxSize().testTag("player_gestures").videoGestures(input))
 
                         if (state.fileLoaded && isAudio) {
-                            Box(
-                                Modifier.size(80.dp).clip(RoundedCornerShape(16.dp)).background(AppColors.SurfaceHigh).align(Alignment.Center),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(Icons.Filled.Audiotrack, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(48.dp))
+                            if (isPortrait) {
+                                Box(
+                                    Modifier.size(80.dp).clip(RoundedCornerShape(16.dp)).background(AppColors.SurfaceHigh).align(Alignment.Center),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(Icons.Filled.Audiotrack, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(48.dp))
+                                }
+                            } else {
+                                Column(
+                                    Modifier.align(Alignment.Center),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                                ) {
+                                    Box(
+                                        Modifier.size(120.dp).clip(RoundedCornerShape(20.dp)).background(AppColors.SurfaceHigh),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(Icons.Filled.Audiotrack, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(64.dp))
+                                    }
+                                    Text(
+                                        nowPlaying?.title ?: FileNames.baseName(state.url.orEmpty()),
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    nowPlaying?.episode?.seriesName?.let {
+                                        Text(it, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
                             }
                         }
 
@@ -215,256 +236,246 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         RelayOnPlayer(container, state.fileLoaded, controls)
 
                         if (state.buffering && state.fileLoaded) {
-                            Chip("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(top = 16.dp))
+                            Chip("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(top = if (isPortrait) 16.dp else 24.dp))
                         }
                         seekFlash?.let { Chip(it, AppColors.Accent, Modifier.align(Alignment.Center)) }
-                        PlayerToasts(container, Modifier.align(Alignment.TopStart).padding(8.dp))
+                        PlayerToasts(container, Modifier.align(Alignment.TopStart).padding(if (isPortrait) 8.dp else 16.dp))
+                        if (!isPortrait) {
+                            MalNoticeCard(container, onPick = { openSheet(PlayerSheet.MAL) }, Modifier.align(Alignment.TopEnd).padding(top = 72.dp, start = 16.dp, end = 16.dp))
+                        }
                         SkipSegmentButton(
                             container,
-                            Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 12.dp),
+                            if (isPortrait) {
+                                Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 12.dp)
+                            } else {
+                                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = SkipButtonBottom)
+                            },
                             hint = skipKeyHint,
                         )
 
                         androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
-                            Box(Modifier.fillMaxSize()) {
+                            Box(Modifier.fillMaxSize().testTag("player_controls")) {
                                 Row(
-                                    Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(8.dp),
+                                    Modifier.fillMaxWidth().hoverable(barsHover)
+                                        .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     IconButton(nav::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
-                                    Spacer(Modifier.weight(1f))
+                                    if (isPortrait) {
+                                        Spacer(Modifier.weight(1f))
+                                    } else {
+                                        Text(nowPlaying?.title ?: "Nothing playing", color = OnVideo.Text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                    }
                                     RoomStatusChip(room, playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls })
                                     if (pip.supported && state.fileLoaded) {
                                         IconButton(pip.toggle, Modifier.testTag("pip")) {
                                             Icon(Icons.Filled.PictureInPictureAlt, contentDescription = pictureInPictureLabel, tint = Color.White)
                                         }
                                     }
+                                    if (!isPortrait && hideControlsButton) {
+                                        TextButton(
+                                            { controls = false },
+                                            Modifier.testTag("hide_controls"),
+                                            colors = ButtonDefaults.textButtonColors(containerColor = OnVideo.Background, contentColor = OnVideo.Text),
+                                        ) {
+                                            Icon(Icons.Filled.KeyboardArrowDown, null, tint = OnVideo.Text)
+                                            Text("Hide (H)", color = OnVideo.Text)
+                                        }
+                                    }
+                                }
+
+                                if (!isPortrait) {
+                                    if (state.fileLoaded) {
+                                        val skips = inRoom && room.playlist.isNotEmpty()
+                                        Row(
+                                            Modifier.align(Alignment.Center),
+                                            horizontalArrangement = Arrangement.spacedBy(if (skips) 16.dp else 32.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            if (skips) {
+                                                RoundButton(Icons.Filled.SkipPrevious, "Previous in the playlist", enabled = container.playlist.skipTarget(room, forward = false) != null, modifier = Modifier.testTag("skip_previous")) { input.skip(false) }
+                                            }
+                                            RoundButton(Icons.Filled.FastRewind, "Back ${step.toInt()} seconds") { seekBy(-step) }
+                                            RoundButton(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, if (state.paused) "Play" else "Pause", big = true, modifier = Modifier.testTag("play_pause")) { togglePause() }
+                                            RoundButton(Icons.Filled.FastForward, "Forward ${step.toInt()} seconds") { seekBy(step) }
+                                            if (skips) {
+                                                RoundButton(Icons.Filled.SkipNext, "Next in the playlist", enabled = container.playlist.skipTarget(room, forward = true) != null, modifier = Modifier.testTag("skip_next")) { input.skip(true) }
+                                            }
+                                        }
+                                    }
+                                    BottomControls(
+                                        container = container,
+                                        inRoom = inRoom,
+                                        ready = room.isReady == true,
+                                        onInteract = ::touch,
+                                        onSheet = ::openSheet,
+                                        modifier = Modifier.align(Alignment.BottomCenter).hoverable(barsHover),
+                                    )
                                 }
                             }
                         }
                     }
                 }
 
-                // Portrait middle details section (title, series, room ready chip, MAL notice card)
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                ) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                nowPlaying?.title ?: "Nothing playing",
-                                style = MaterialTheme.typography.titleLarge,
-                                color = AppColors.Text,
-                            )
-                            val subtitle = nowPlaying?.episode?.seriesName ?: if (isAudio) "Music" else ""
-                            if (subtitle.isNotEmpty()) {
-                                Text(
-                                    subtitle,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = AppColors.TextDim,
-                                )
-                            }
-                        }
-                        if (inRoom) {
-                            Spacer(Modifier.width(8.dp))
-                            ReadyChip(ready = room.isReady == true, onClick = { container.sync.toggleReady(); touch() }, modifier = Modifier.testTag("player_ready"))
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-                    MalNoticeCard(container, onPick = { openSheet(PlayerSheet.MAL) }, Modifier.fillMaxWidth())
-                }
-
-                // Portrait bottom player controls section (seek bar, playback buttons, sheet shortcuts)
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .testTag("player_controls"),
-                ) {
-                    val segments by container.skips.segments.collectAsStateWithLifecycle()
-                    var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
-                    LaunchedEffect(Unit) {
-                        while (true) {
-                            position = container.player.currentPosition()
-                            delay(250)
-                        }
-                    }
-                    TvSeekBar(state, position, ::touch, container.seekFrames, segments) { container.player.seek(it) }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        val skips = inRoom && room.playlist.isNotEmpty()
-                        if (skips) {
-                            IconButton(
-                                onClick = { input.skip(false) },
-                                enabled = container.playlist.skipTarget(room, forward = false) != null,
-                                modifier = Modifier.testTag("skip_previous"),
-                            ) {
-                                Icon(Icons.Filled.SkipPrevious, "Previous in the playlist", tint = AppColors.Text)
-                            }
-                        }
-                        IconButton(onClick = { seekBy(-step) }) {
-                            Icon(Icons.Filled.FastRewind, "Back ${step.toInt()} seconds", tint = AppColors.Text)
-                        }
-                        FilledIconButton(
-                            onClick = { togglePause() },
-                            modifier = Modifier.size(56.dp).testTag("play_pause"),
-                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = AppColors.Accent),
-                        ) {
-                            Icon(
-                                if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                                contentDescription = if (state.paused) "Play" else "Pause",
-                                tint = Color.Black,
-                                modifier = Modifier.size(32.dp),
-                            )
-                        }
-                        IconButton(onClick = { seekBy(step) }) {
-                            Icon(Icons.Filled.FastForward, "Forward ${step.toInt()} seconds", tint = AppColors.Text)
-                        }
-                        if (skips) {
-                            IconButton(
-                                onClick = { input.skip(true) },
-                                enabled = container.playlist.skipTarget(room, forward = true) != null,
-                                modifier = Modifier.testTag("skip_next"),
-                            ) {
-                                Icon(Icons.Filled.SkipNext, "Next in the playlist", tint = AppColors.Text)
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceAround,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist", tint = AppColors.Text) { openSheet(PlayerSheet.PLAYLIST) }
-                        SheetButton(Icons.Filled.Groups, "Room", tint = AppColors.Text) { openSheet(PlayerSheet.ROOM) }
-                        SheetButton(Icons.Filled.Forum, "Chat", tint = AppColors.Text) { openSheet(PlayerSheet.CHAT) }
-                        SheetButton(Icons.Filled.Audiotrack, "Audio", tint = AppColors.Text) { openSheet(PlayerSheet.AUDIO) }
-                        SheetButton(Icons.Filled.Subtitles, "Subtitles", tint = AppColors.Text) { openSheet(PlayerSheet.SUBTITLES) }
-                        if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList", tint = AppColors.Text) { openSheet(PlayerSheet.MAL) }
-                    }
-                }
-            }
-        } else {
-            Row(Modifier.fillMaxSize()) {
-                // On the video, text and icons are white whatever the theme; panels and sheets over it take the theme.
-                Box(Modifier.weight(1f).fillMaxHeight().background(Color.Black).testTag("player").playerScreenInput(input)) {
-                  CompositionLocalProvider(LocalContentColor provides OnVideo.Text) {
-                    VideoSurface(player, Modifier.fillMaxSize())
-                    Box(Modifier.fillMaxSize().testTag("player_gestures").videoGestures(input))
-
-                    if (state.fileLoaded && isAudio) {
+                // Child 1: Portrait bottom section (title, details, controls) or Landscape RoomSidePanel
+                if (isPortrait) {
+                    Column(Modifier.fillMaxSize()) {
+                        // Portrait middle details section (title, series, room ready chip, MAL notice card)
                         Column(
-                            Modifier.align(Alignment.Center),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                         ) {
-                            Box(
-                                Modifier.size(120.dp).clip(RoundedCornerShape(20.dp)).background(AppColors.SurfaceHigh),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(Icons.Filled.Audiotrack, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(64.dp))
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        nowPlaying?.title ?: "Nothing playing",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = AppColors.Text,
+                                    )
+                                    val subtitle = nowPlaying?.episode?.seriesName ?: if (isAudio) "Music" else ""
+                                    if (subtitle.isNotEmpty()) {
+                                        Text(
+                                            subtitle,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = AppColors.TextDim,
+                                        )
+                                    }
+                                }
+                                if (inRoom) {
+                                    Spacer(Modifier.width(8.dp))
+                                    ReadyChip(ready = room.isReady == true, onClick = { container.sync.toggleReady(); touch() }, modifier = Modifier.testTag("player_ready"))
+                                }
                             }
-                            Text(
-                                nowPlaying?.title ?: FileNames.baseName(state.url.orEmpty()),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = Color.White,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            nowPlaying?.episode?.seriesName?.let {
-                                Text(it, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
+
+                            Spacer(Modifier.height(16.dp))
+                            MalNoticeCard(container, onPick = { openSheet(PlayerSheet.MAL) }, Modifier.fillMaxWidth())
                         }
-                    }
 
-                    CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom)
-                    RelayOnPlayer(container, state.fileLoaded, controls)
+                        // Portrait bottom player controls section
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .testTag("player_controls"),
+                        ) {
+                            val segments by container.skips.segments.collectAsStateWithLifecycle()
+                            var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
+                            LaunchedEffect(Unit) {
+                                while (true) {
+                                    position = container.player.currentPosition()
+                                    delay(250)
+                                }
+                            }
+                            TvSeekBar(state, position, ::touch, container.seekFrames, segments) { container.player.seek(it) }
 
-                    if (state.buffering && state.fileLoaded) {
-                        Chip("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(top = 24.dp))
-                    }
-                    seekFlash?.let { Chip(it, AppColors.Accent, Modifier.align(Alignment.Center)) }
-                    PlayerToasts(container, Modifier.align(Alignment.TopStart).padding(16.dp))
-                    MalNoticeCard(container, onPick = { openSheet(PlayerSheet.MAL) }, Modifier.align(Alignment.TopEnd).padding(top = 72.dp, start = 16.dp, end = 16.dp))
-                    // One place, controls or not: just above the bottom bar, so it never moves under the pointer.
-                    SkipSegmentButton(
-                        container,
-                        Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = SkipButtonBottom),
-                        hint = skipKeyHint,
-                    )
+                            Spacer(Modifier.height(8.dp))
 
-                    androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
-                        Box(Modifier.fillMaxSize().testTag("player_controls")) {
                             Row(
-                                Modifier.fillMaxWidth().hoverable(barsHover)
-                                    .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(8.dp),
+                                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                IconButton(nav::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
-                                Text(nowPlaying?.title ?: "Nothing playing", color = OnVideo.Text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                RoomStatusChip(room, playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls })
-                                if (pip.supported && state.fileLoaded) {
-                                    IconButton(pip.toggle, Modifier.testTag("pip")) {
-                                        Icon(Icons.Filled.PictureInPictureAlt, contentDescription = pictureInPictureLabel, tint = Color.White)
-                                    }
-                                }
-                                if (hideControlsButton) {
-                                    TextButton(
-                                        { controls = false },
-                                        Modifier.testTag("hide_controls"),
-                                        colors = ButtonDefaults.textButtonColors(containerColor = OnVideo.Background, contentColor = OnVideo.Text),
-                                    ) {
-                                        Icon(Icons.Filled.KeyboardArrowDown, null, tint = OnVideo.Text)
-                                        Text("Hide (H)", color = OnVideo.Text)
-                                    }
-                                }
-                            }
-                            if (state.fileLoaded) {
-                                // Previous and next entry of the room's playlist, on either side of the seek buttons.
                                 val skips = inRoom && room.playlist.isNotEmpty()
-                                Row(
-                                    Modifier.align(Alignment.Center),
-                                    horizontalArrangement = Arrangement.spacedBy(if (skips) 16.dp else 32.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    if (skips) {
-                                        RoundButton(Icons.Filled.SkipPrevious, "Previous in the playlist", enabled = container.playlist.skipTarget(room, forward = false) != null, modifier = Modifier.testTag("skip_previous")) { input.skip(false) }
+                                if (skips) {
+                                    IconButton(
+                                        onClick = { input.skip(false) },
+                                        enabled = container.playlist.skipTarget(room, forward = false) != null,
+                                        modifier = Modifier.testTag("skip_previous"),
+                                    ) {
+                                        Icon(Icons.Filled.SkipPrevious, "Previous in the playlist", tint = AppColors.Text)
                                     }
-                                    RoundButton(Icons.Filled.FastRewind, "Back ${step.toInt()} seconds") { seekBy(-step) }
-                                    RoundButton(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, if (state.paused) "Play" else "Pause", big = true, modifier = Modifier.testTag("play_pause")) { togglePause() }
-                                    RoundButton(Icons.Filled.FastForward, "Forward ${step.toInt()} seconds") { seekBy(step) }
-                                    if (skips) {
-                                        RoundButton(Icons.Filled.SkipNext, "Next in the playlist", enabled = container.playlist.skipTarget(room, forward = true) != null, modifier = Modifier.testTag("skip_next")) { input.skip(true) }
+                                }
+                                IconButton(onClick = { seekBy(-step) }) {
+                                    Icon(Icons.Filled.FastRewind, "Back ${step.toInt()} seconds", tint = AppColors.Text)
+                                }
+                                FilledIconButton(
+                                    onClick = { togglePause() },
+                                    modifier = Modifier.size(56.dp).testTag("play_pause"),
+                                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = AppColors.Accent),
+                                ) {
+                                    Icon(
+                                        if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                        contentDescription = if (state.paused) "Play" else "Pause",
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(32.dp),
+                                    )
+                                }
+                                IconButton(onClick = { seekBy(step) }) {
+                                    Icon(Icons.Filled.FastForward, "Forward ${step.toInt()} seconds", tint = AppColors.Text)
+                                }
+                                if (skips) {
+                                    IconButton(
+                                        onClick = { input.skip(true) },
+                                        enabled = container.playlist.skipTarget(room, forward = true) != null,
+                                        modifier = Modifier.testTag("skip_next"),
+                                    ) {
+                                        Icon(Icons.Filled.SkipNext, "Next in the playlist", tint = AppColors.Text)
                                     }
                                 }
                             }
-                            BottomControls(
-                                container = container,
-                                inRoom = inRoom,
-                                ready = room.isReady == true,
-                                onInteract = ::touch,
-                                onSheet = ::openSheet,
-                                modifier = Modifier.align(Alignment.BottomCenter).hoverable(barsHover),
-                            )
+
+                            Spacer(Modifier.height(8.dp))
+
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceAround,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist", tint = AppColors.Text) { openSheet(PlayerSheet.PLAYLIST) }
+                                SheetButton(Icons.Filled.Groups, "Room", tint = AppColors.Text) { openSheet(PlayerSheet.ROOM) }
+                                SheetButton(Icons.Filled.Forum, "Chat", tint = AppColors.Text) { openSheet(PlayerSheet.CHAT) }
+                                SheetButton(Icons.Filled.Audiotrack, "Audio", tint = AppColors.Text) { openSheet(PlayerSheet.AUDIO) }
+                                SheetButton(Icons.Filled.Subtitles, "Subtitles", tint = AppColors.Text) { openSheet(PlayerSheet.SUBTITLES) }
+                                if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList", tint = AppColors.Text) { openSheet(PlayerSheet.MAL) }
+                            }
                         }
                     }
-                  }
+                } else {
+                    RoomSidePanel(container)
                 }
-                RoomSidePanel(container)
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .background(AppColors.Background)
+                .then(if (isPortrait) Modifier.statusBarsPadding() else Modifier),
+        ) { measurables, constraints ->
+            val videoMeasurable = measurables[0]
+            val secondMeasurable = measurables.getOrNull(1)
+
+            if (isPortrait) {
+                val videoWidth = constraints.maxWidth
+                val videoHeight = (videoWidth * 9 / 16).coerceAtMost(constraints.maxHeight / 2)
+                val videoPlaceable = videoMeasurable.measure(
+                    Constraints.fixed(videoWidth, videoHeight)
+                )
+
+                val bottomHeight = (constraints.maxHeight - videoHeight).coerceAtLeast(0)
+                val bottomPlaceable = secondMeasurable?.measure(
+                    Constraints.fixed(constraints.maxWidth, bottomHeight)
+                )
+
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    videoPlaceable.placeRelative(0, 0)
+                    bottomPlaceable?.placeRelative(0, videoHeight)
+                }
+            } else {
+                // Landscape
+                val sidePanelPlaceable = secondMeasurable?.measure(
+                    constraints.copy(minWidth = 0)
+                )
+                val sidePanelWidth = sidePanelPlaceable?.width ?: 0
+                val videoWidth = (constraints.maxWidth - sidePanelWidth).coerceAtLeast(0)
+                val videoPlaceable = videoMeasurable.measure(
+                    Constraints.fixed(videoWidth, constraints.maxHeight)
+                )
+
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    videoPlaceable.placeRelative(0, 0)
+                    sidePanelPlaceable?.placeRelative(videoWidth, 0)
+                }
             }
         }
     }
