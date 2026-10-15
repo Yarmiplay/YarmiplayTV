@@ -1,3 +1,7 @@
+<script lang="ts" module>
+  let chatDraft = "";
+</script>
+
 <script lang="ts">
   import { changeSettings, session as sessionStore, settings } from "../app/context";
   import type { FeedMessage } from "../lib/sync/room";
@@ -9,8 +13,12 @@
   let feed: FeedMessage[] = $state([]);
   let blocked = $state(new Set<string>());
   let connected = $state(false);
-  let text = $state("");
+  let text = $state(chatDraft);
   let list: HTMLOListElement | undefined = $state();
+
+  $effect(() => {
+    chatDraft = text;
+  });
 
   $effect(() => {
     if (!session) return;
@@ -30,6 +38,7 @@
     if (!text.trim()) return;
     session?.sendChat(text);
     text = "";
+    chatDraft = "";
   }
 
   const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });

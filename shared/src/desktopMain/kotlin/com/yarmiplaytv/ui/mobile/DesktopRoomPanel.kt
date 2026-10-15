@@ -151,6 +151,7 @@ object DesktopRoomPanel {
     internal var chatFocusRequests by mutableIntStateOf(0)
     /** Sent messages, oldest first, for Up/Down in the chat box. */
     internal val sentHistory = mutableStateListOf<String>()
+    var draft by mutableStateOf(TextFieldValue(""))
 
     val showsPlaylist: Boolean get() = open && tab == RoomPanelTab.PLAYLIST
 
@@ -626,7 +627,7 @@ private fun DesktopChat(container: AppContainer, modifier: Modifier) {
     val settings by container.settings.collectAsState()
     val showChat = settings.showRoomChat
     val panel = DesktopRoomPanel
-    var message by remember { mutableStateOf(TextFieldValue("")) }
+    var message by panel::draft
     var recalled by remember { mutableStateOf<Int?>(null) }
     val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current

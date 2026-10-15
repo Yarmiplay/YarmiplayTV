@@ -35,20 +35,28 @@
     timer = setTimeout(() => void search(q), 300);
   });
 
+  let searchId = 0;
+
   async function search(q: string) {
+    const id = ++searchId;
     searching = true;
-    const all = await Promise.all(
-      $sources.map((s) =>
-        s.search(q, 40).then(
-          (items) => ({ items, error: null as string | null }),
-          (e) => ({ items: [] as MediaItem[], error: `${s.displayName}: ${(e as Error).message}` }),
+    try {
+      const all = await Promise.all(
+        $sources.map((s) =>
+          s.search(q, 40).then(
+            (items) => ({ items, error: null as string | null }),
+            (e) => ({ items: [] as MediaItem[], error: `${s.displayName}: ${(e as Error).message}` }),
+          ),
         ),
-      ),
-    );
-    if (q !== query.trim()) return;
-    results = all.flatMap((r) => r.items);
-    errors = all.flatMap((r) => (r.error ? [r.error] : []));
-    searching = false;
+      );
+      if (id !== searchId) return;
+      results = all.flatMap((r) => r.items);
+      errors = all.flatMap((r) => (r.error ? [r.error] : []));
+    } finally {
+      if (id === searchId) {
+        searching = false;
+      }
+    }
   }
 </script>
 

@@ -3,6 +3,7 @@ package com.yarmiplaytv.data
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -286,6 +287,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         fun roomPlaylist(key: String) = stringPreferencesKey(ROOM_PLAYLIST_PREFIX + key)
         const val ROOM_PASSWORD_PREFIX = "room_password:"
         fun roomPassword(key: String) = stringPreferencesKey(ROOM_PASSWORD_PREFIX + key)
+        const val SEEK_POSITION_PREFIX = "seek_pos:"
+        fun seekPosition(fileName: String) = doublePreferencesKey(SEEK_POSITION_PREFIX + fileName.lowercase())
 
         val hwdec = booleanPreferencesKey("pb_hwdec")
         val pip = booleanPreferencesKey("pb_pip")
@@ -592,6 +595,16 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
     /** Saves [key]'s operator password; null forgets it. */
     suspend fun saveRoomPassword(key: String, password: String?) = dataStore.edit {
         if (password.isNullOrEmpty()) it.remove(Keys.roomPassword(key)) else it[Keys.roomPassword(key)] = password
+    }
+
+    suspend fun saveSeekPosition(fileName: String, position: Double) {
+        if (fileName.isBlank() || position <= 0.0) return
+        dataStore.edit { it[Keys.seekPosition(fileName)] = position }
+    }
+
+    suspend fun getSeekPosition(fileName: String): Double {
+        if (fileName.isBlank()) return 0.0
+        return dataStore.data.first()[Keys.seekPosition(fileName)] ?: 0.0
     }
 
     suspend fun savePlayback(prefs: PlaybackPrefs) {

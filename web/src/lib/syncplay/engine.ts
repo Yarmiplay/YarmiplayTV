@@ -284,21 +284,27 @@ export class SyncEngine {
    * Call once the player has loaded a new file. With [resetPosition] playback starts from 0 (a playlist switch);
    * otherwise it jumps to the room's position.
    */
-  onFileLoaded(resetPosition: boolean): void {
+  onFileLoaded(resetPosition: boolean, initialPosition = 0): void {
     this.fileReady = true;
     const now = this.clock();
     // The file opens paused, so playing now means play was pressed while it opened (a slow stream).
     const playPressed = this.player.isFileLoaded && !this.player.isPaused;
     this.lastFileLoadTime = now;
     if (resetPosition) {
+      const target = initialPosition > 0 ? initialPosition : 0;
       this.resetIgnoreUntil = now + Constants.NEWFILE_IGNORE_TIME;
-      this.player.seek(0);
+      this.player.seek(target);
       this.lastRewindTime = now;
-      this.playerPosition = 0;
+      this.playerPosition = target;
       if (this.lastGlobalUpdate !== null) this.setPlayerPaused(this.globalPaused);
     } else if (this.lastGlobalUpdate !== null) {
-      this.player.seek(this.getGlobalPosition());
+      const global = this.getGlobalPosition();
+      const target = global > 0 ? global : initialPosition > 0 ? initialPosition : 0;
+      this.player.seek(target);
       this.setPlayerPaused(this.getGlobalPaused());
+    } else if (initialPosition > 0) {
+      this.player.seek(initialPosition);
+      this.playerPosition = initialPosition;
     }
     if (this.lastPlayerUpdate !== null) this.lastPlayerUpdate = now;
     // The room's pause wins for now; the press counts once the switch can no longer be mistaken for it.

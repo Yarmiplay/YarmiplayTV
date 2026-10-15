@@ -1,6 +1,7 @@
 package com.yarmiplaytv.sync
 
 import com.yarmiplaytv.Logger
+import com.yarmiplaytv.data.SettingsStore
 import com.yarmiplaytv.local.LocalFile
 import com.yarmiplaytv.local.LocalLibrary
 import com.yarmiplaytv.local.LocalMatcher
@@ -82,6 +83,7 @@ class PlaylistController(
     private val local: LocalLibrary,
     private val locator: MediaLocator,
     private val relay: RelayManager? = null,
+    private val settingsStore: SettingsStore? = null,
 ) {
     private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
     val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying.asStateFlow()
@@ -103,6 +105,20 @@ class PlaylistController(
     /** Syncplay-style editing of the room's playlist (multi-select, shuffle, undo). */
     val shared = SharedPlaylist(scope, sync)
 
+    private val seekPositions = java.util.concurrent.ConcurrentHashMap<String, Double>()
+    private var previousMedia: NowPlaying? = null
+    private var autoPlayJob: Job? = null
+
+    fun getSeekPosition(fileName: String): Double = seekPositions[fileName.lowercase()] ?: 0.0
+
+    fun saveSeekPosition(fileName: String, position: Double) {
+        if (fileName.isBlank() || position <= 0.0) return
+        seekPositions[fileName.lowercase()] = position
+        settingsStore?.let { store ->
+            scope.launch { store.saveSeekPosition(fileName, position) }
+        }
+    }
+
     private data class PendingLoad(val media: NowPlaying, val resetPosition: Boolean, val fromRoom: Boolean)
 
     private var pending: PendingLoad? = null
@@ -123,6 +139,14 @@ class PlaylistController(
     init {
         scope.launch { sync.events.collect(::onSyncEvent) }
         scope.launch { player.events.collect(::onPlayerEvent) }
+        scope.launch {
+            player.state.collect { st ->
+                val name = _nowPlaying.value?.fileName
+                if (name != null && st.position > 1.0) {
+                    saveSeekPosition(name, st.position)
+                }
+            }
+        }
         // Once this entry is loading or playing, look up the next one; again when the playlist, the selection or the
         // relay's files change (a viewer who has it may have joined).
         scope.launch {
@@ -165,9 +189,27 @@ class PlaylistController(
                 pending = null
                 val duration = event.duration.takeIf { it > 0 } ?: p.media.durationHint
                 _status.value = PlaylistStatus.Idle
-                sync.reportFile(FileInfo(p.media.fileName, duration, p.media.sizeBytes), p.resetPosition)
+                val savedPos = getSeekPosition(p.media.fileName)
+                sync.reportFile(FileInfo(p.media.fileName, duration, p.media.sizeBytes), p.resetPosition, savedPos)
+                if (savedPos > 0.0 && (!sync.isActive || p.resetPosition || player.currentPosition() == 0.0)) {
+                    player.seek(savedPos)
+                }
                 if (p.fromRoom && autoReady && sync.isActive) sync.setReady(true)
-                if (!sync.isActive) player.setPaused(false)
+                val isEpisodeSwitch = previousMedia != null && (
+                    previousMedia?.episode != null ||
+                    p.media.episode != null ||
+                    previousMedia?.fileName != p.media.fileName
+                )
+                previousMedia = p.media
+                autoPlayJob?.cancel()
+                if (isEpisodeSwitch) {
+                    autoPlayJob = scope.launch {
+                        delay(2000)
+                        player.setPaused(false)
+                    }
+                } else if (!sync.isActive) {
+                    player.setPaused(false)
+                }
             }
             is PlayerEvent.EndFile -> {
                 val p = pending ?: return
@@ -319,7 +361,8 @@ class PlaylistController(
         _nowPlaying.value = media
         _status.value = PlaylistStatus.Loading(media.fileName)
         sync.reportLoading()
-        player.load(media.url, media.title, startPaused = true)
+        val savedPos = getSeekPosition(media.fileName)
+        player.load(media.url, media.title, startPaused = true, startPosition = savedPos)
     }
 
     // --- User actions ------------------------------------------------------------------

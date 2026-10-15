@@ -349,18 +349,21 @@ private fun ManagedRoomActions(container: AppContainer, room: RoomState) {
     }
 }
 
+private var tvChatDraft by mutableStateOf("")
+
 @Composable
 internal fun ChatPanel(container: AppContainer, focus: FocusRequester) {
     val feed by container.sync.feed.collectAsStateWithLifecycle()
     val settings by container.settings.collectAsStateWithLifecycle()
     val showChat = settings.showRoomChat
-    var message by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf(tvChatDraft) }
     val listState = rememberLazyListState()
     LaunchedEffect(feed.size) { if (feed.isNotEmpty()) listState.scrollToItem(feed.lastIndex) }
     fun send() {
         if (message.isNotBlank()) {
             container.sync.sendChat(message)
             message = ""
+            tvChatDraft = ""
         }
     }
     Column(Modifier.fillMaxSize().padding(24.dp)) {
@@ -388,7 +391,7 @@ internal fun ChatPanel(container: AppContainer, focus: FocusRequester) {
         }
         if (showChat) {
             Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TvTextField(message, { message = it.take(500) }, "Message", Modifier.weight(1f).focusRequester(focus), onSubmit = ::send)
+                TvTextField(message, { message = it.take(500); tvChatDraft = message }, "Message", Modifier.weight(1f).focusRequester(focus), onSubmit = ::send)
                 IconAction(Icons.AutoMirrored.Filled.Send, "Send", ::send)
             }
         }

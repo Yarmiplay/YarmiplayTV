@@ -75,11 +75,17 @@ export class JellyfinSource implements MediaSource {
     return this.client.get<T>(this.base, this.token, path, query);
   }
 
+  private librariesCache: { timestamp: number; items: MediaItem[] } | null = null;
+
   private async items(query: Query): Promise<BaseItemDto[]> {
-    return (await this.get<ItemsResult>("Items", [["userId", this.session.userId], ...query])).Items ?? [];
+    return (await this.get<ItemsResult>("Items", [["userId", this.session.userId], ["enableTotalRecordCount", "false"], ...query])).Items ?? [];
   }
 
   async libraries(): Promise<MediaItem[]> {
+    const now = Date.now();
+    if (this.librariesCache && now - this.librariesCache.timestamp < 60_000) {
+      return this.librariesCache.items;
+    }
     let views: ItemsResult;
     try {
       views = await this.get("UserViews", [["userId", this.session.userId]]);
@@ -87,9 +93,11 @@ export class JellyfinSource implements MediaSource {
       if (!(e instanceof MediaSourceError) || e.httpCode !== 404) throw e;
       views = await this.get(`Users/${this.session.userId}/Views`);
     }
-    return (views.Items ?? [])
+    const items = (views.Items ?? [])
       .filter((v) => v.CollectionType == null || VIDEO_COLLECTIONS.has(v.CollectionType))
       .map((v) => this.toMediaItem(v, "LIBRARY"));
+    this.librariesCache = { timestamp: now, items };
+    return items;
   }
 
   async children(parent: MediaItem): Promise<MediaItem[]> {
@@ -127,6 +135,7 @@ export class JellyfinSource implements MediaSource {
       ["includeItemTypes", "Series,Movie,Episode,Video"],
       ["limit", String(limit)],
       ["fields", LIST_FIELDS],
+      ["imageTypeLimit", "1"],
     ]);
     return hits.map((d) => this.toMediaItem(d));
   }

@@ -181,7 +181,7 @@ class SyncplayClient(
      * [resetPosition] should come from [SyncplayEvent.SwitchToPlaylistItem]; for files opened
      * directly by the user pass false so playback jumps to the room position.
      */
-    fun fileLoaded(file: FileInfo?, resetPosition: Boolean = false) {
+    fun fileLoaded(file: FileInfo?, resetPosition: Boolean = false, initialPosition: Double = 0.0) {
         scope.launch {
             currentFile = file
             queuedFilename = null
@@ -190,7 +190,7 @@ class SyncplayClient(
                 publishUsers()
                 return@launch
             }
-            engine.onFileLoaded(resetPosition)
+            engine.onFileLoaded(resetPosition, initialPosition)
             users[state.value.username]?.let { users[it.name] = it.copy(file = file) }
             publishUsers()
             sendFile()

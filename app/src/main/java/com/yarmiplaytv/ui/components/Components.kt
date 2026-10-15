@@ -327,8 +327,10 @@ fun ToastHost(toasts: Flow<FeedMessage>, modifier: Modifier = Modifier) {
         }
     }
     LaunchedEffect(visible.size) {
-        if (visible.isNotEmpty()) {
-            delay(5000)
+        val first = visible.firstOrNull()
+        if (first != null) {
+            val duration = if (first.text.contains("jumped")) 2000L else 5000L
+            delay(duration)
             if (visible.isNotEmpty()) visible.removeAt(0)
         }
     }

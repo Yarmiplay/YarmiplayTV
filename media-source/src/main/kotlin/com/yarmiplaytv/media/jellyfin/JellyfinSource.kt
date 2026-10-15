@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap
 class JellyfinSource(
     private val client: JellyfinClient,
     val session: JellyfinSession,
-    clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : MediaSource {
 
     override val key: String = keyOf(session)
@@ -29,22 +29,32 @@ class JellyfinSource(
     private val base get() = session.serverUrl
     private val token get() = session.accessToken
 
+    @Volatile private var cachedLibraries: Pair<Long, List<MediaItem>>? = null
+
     private suspend fun items(query: HttpUrl.Builder.() -> Unit): List<BaseItemDto> =
         client.get<ItemsResult>(base, token, "Items") {
             addQueryParameter("userId", session.userId)
+            addQueryParameter("enableTotalRecordCount", "false")
             query()
         }.items
 
     override suspend fun libraries(): List<MediaItem> {
+        val cached = cachedLibraries
+        val now = clock()
+        if (cached != null && now - cached.first < 60_000) {
+            return cached.second
+        }
         val views: ItemsResult = try {
             client.get(base, token, "UserViews") { addQueryParameter("userId", session.userId) }
         } catch (e: MediaSourceException) {
             if (e.httpCode != 404) throw e
             client.get(base, token, "Users/${session.userId}/Views") { }
         }
-        return views.items
+        val result = views.items
             .filter { it.collectionType == null || it.collectionType in VIDEO_COLLECTIONS }
             .map { it.toMediaItem(forceType = MediaItemType.LIBRARY) }
+        cachedLibraries = now to result
+        return result
     }
 
     override suspend fun children(parent: MediaItem): List<MediaItem> {
@@ -86,6 +96,7 @@ class JellyfinSource(
             addQueryParameter("includeItemTypes", "Series,Movie,Episode,Video")
             addQueryParameter("limit", limit.toString())
             addQueryParameter("fields", LIST_FIELDS)
+            addQueryParameter("imageTypeLimit", "1")
         }.map { it.toMediaItem() }
     }
 

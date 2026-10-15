@@ -282,14 +282,14 @@ export class SyncplayClient {
    * Reports the file that just finished loading in the player (or null when nothing is loaded). [resetPosition]
    * comes from switchToPlaylistItem; files opened directly pass false so playback jumps to the room position.
    */
-  fileLoaded(file: FileInfo | null, resetPosition = false) {
+  fileLoaded(file: FileInfo | null, resetPosition = false, initialPosition = 0) {
     this.currentFile = file;
     this.queuedFilename = null;
     const me = this.users.get(this._state.username);
     if (me) this.users.set(me.name, { ...me, file });
     this.publishUsers();
     if (!file) return;
-    this.engine.onFileLoaded(resetPosition);
+    this.engine.onFileLoaded(resetPosition, initialPosition);
     this.sendFile();
     this.changeToPlaylistIndexFromFilename(file.name);
   }

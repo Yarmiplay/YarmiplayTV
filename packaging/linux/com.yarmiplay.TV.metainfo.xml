@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.1.8" date="2026-10-15">
+      <description>
+        <p>Faster Jellyfin library browsing and search, chat draft retained across tabs, 2s auto-play after switching episode, 2s seek notifications, and saved seek positions.</p>
+      </description>
+    </release>
     <release version="2.1.7" date="2026-10-15">
       <description>
         <p>Links can be added to the shared playlist on phones and tablets: the link button beside Sort A to Z opens a field for one or several links at once. On the computer, the shared playlist keeps up smoothly when checking for local files, and clicking a row selects it immediately.</p>

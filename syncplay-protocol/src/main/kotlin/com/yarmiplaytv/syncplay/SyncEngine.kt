@@ -269,21 +269,27 @@ class SyncEngine(
      * Call once the player has loaded a new file.
      * With [resetPosition] playback starts from 0 (a playlist switch); otherwise it jumps to the room's position.
      */
-    fun onFileLoaded(resetPosition: Boolean) {
+    fun onFileLoaded(resetPosition: Boolean, initialPosition: Double = 0.0) {
         fileReady = true
         val now = clock.now()
         // The file opens paused, so playing now means play was pressed while it opened (a slow stream).
         val playPressed = player.isFileLoaded && !player.isPaused
         lastFileLoadTime = now
         if (resetPosition) {
+            val target = if (initialPosition > 0.0) initialPosition else 0.0
             resetIgnoreUntil = now + Constants.NEWFILE_IGNORE_TIME
-            player.seek(0.0)
+            player.seek(target)
             lastRewindTime = now
-            playerPosition = 0.0
+            playerPosition = target
             if (lastGlobalUpdate != null) setPlayerPaused(globalPaused)
         } else if (lastGlobalUpdate != null) {
-            player.seek(getGlobalPosition())
+            val global = getGlobalPosition()
+            val target = if (global > 0.0) global else if (initialPosition > 0.0) initialPosition else 0.0
+            player.seek(target)
             setPlayerPaused(getGlobalPaused())
+        } else if (initialPosition > 0.0) {
+            player.seek(initialPosition)
+            playerPosition = initialPosition
         }
         if (lastPlayerUpdate != null) lastPlayerUpdate = now
         // The room's pause wins for now; the press counts once the switch can no longer be mistaken for it.

@@ -249,10 +249,10 @@ class SyncController(
     }
 
     /** Report a file that finished loading in mpv. */
-    fun reportFile(file: FileInfo?, resetPosition: Boolean) {
+    fun reportFile(file: FileInfo?, resetPosition: Boolean, initialPosition: Double = 0.0) {
         loading = false
         reportedFile = file
-        clientFlow.value?.fileLoaded(file, resetPosition)
+        clientFlow.value?.fileLoaded(file, resetPosition, initialPosition)
     }
 
     private fun controllerAuth(event: SyncplayEvent.ControllerAuth) {

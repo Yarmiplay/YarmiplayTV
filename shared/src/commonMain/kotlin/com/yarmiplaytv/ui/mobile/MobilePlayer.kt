@@ -422,8 +422,10 @@ private fun PlayerToasts(container: AppContainer, modifier: Modifier = Modifier)
         }
     }
     LaunchedEffect(shown) {
-        if (shown.isNotEmpty()) {
-            delay(4000)
+        val first = shown.firstOrNull()
+        if (first != null) {
+            val duration = if (first.second.text.contains("jumped")) 2000L else 4000L
+            delay(duration)
             shown = shown.drop(1)
         }
     }

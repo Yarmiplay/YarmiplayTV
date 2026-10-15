@@ -1,5 +1,6 @@
 import * as Settings from "../data/settings";
 import * as SavedRooms from "../data/savedRooms";
+import { getSeekPosition } from "../data/seekPositions";
 import type { LocalFile, LocalLibrary } from "../local/library";
 import { MediaLocator, ownCopy, type EpisodeInfo, type MediaItem, type MediaSource, type PlayableMedia, type RoomLocation, type ServerCopy } from "../media";
 import * as FileNames from "../media/fileNames";
@@ -169,6 +170,8 @@ export class RoomSession {
   private prepared: Prepared | null = null;
   private preparing: { fileName: string; lookup: Promise<RoomLocation<RelayFile>> } | null = null;
   private prepareTimer: ReturnType<typeof setTimeout> | undefined;
+  private previousMedia: NowPlaying | null = null;
+  private autoPlayTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private readonly player: MediaPlayer,
@@ -670,9 +673,11 @@ export class RoomSession {
     this.nowPlaying.set(media);
     this.status.set({ kind: "loading", fileName: media.fileName });
     this.client?.fileLoading();
+    const savedPos = getSeekPosition(media.fileName);
     try {
       const prefs = this.settings.playback;
       await this.player.load(await media.open(), {
+        start: savedPos > 0 ? savedPos : undefined,
         audioLanguages: Settings.languages(prefs.audioLanguages),
         subtitleLanguages: Settings.languages(prefs.subtitleLanguages),
       });
@@ -688,9 +693,23 @@ export class RoomSession {
     this.schedulePrepare();
     const file: FileInfo = { name: media.fileName, duration: this.player.duration || media.durationHint, size: media.size };
     this.reportedFile = file;
-    this.client?.fileLoaded(file, resetPosition);
+    this.client?.fileLoaded(file, resetPosition, savedPos);
+    if (savedPos > 0 && (!this.isActive || resetPosition || this.player.position === 0)) {
+      this.player.seek(savedPos);
+    }
     if (fromRoom && this.settings.autoReady && this.isActive) this.client?.setReady(true, false);
-    if (!this.isActive) this.player.setPaused(false);
+    const isEpisodeSwitch =
+      this.previousMedia !== null &&
+      (this.previousMedia.episode !== null || media.episode !== null || this.previousMedia.fileName !== media.fileName);
+    this.previousMedia = media;
+    clearTimeout(this.autoPlayTimer);
+    if (isEpisodeSwitch) {
+      this.autoPlayTimer = setTimeout(() => {
+        if (this.player.isPaused) this.player.setPaused(false);
+      }, 2000);
+    } else if (!this.isActive) {
+      this.player.setPaused(false);
+    }
   }
 
   /** Plays a file from this device; [inRoom] makes its name the room's selection, so the others load their copy. */

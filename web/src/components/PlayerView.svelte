@@ -10,6 +10,7 @@
   import { formatTime } from "../lib/syncplay/models";
   import { mal, skip } from "../app/watching";
   import { isQuestion, noticeShowMillis, type MalNotice } from "../lib/mal/service";
+  import { saveSeekPosition } from "../lib/data/seekPositions";
   import type { SkipSegment } from "../lib/skip/segment";
   import type { IconName } from "../lib/ui/icons";
   import ChatPanel from "./ChatPanel.svelte";
@@ -84,7 +85,8 @@
         if (!t || (t.from && (panel === "chat" || !$settings.chatOnVideo))) return;
         toast = t;
         clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => (toast = null), t.isError ? 6000 : 3500);
+        const duration = t.isError ? 6000 : t.text.includes("jumped") ? 2000 : 3500;
+        toastTimer = setTimeout(() => (toast = null), duration);
       }),
     ];
     return () => stops.forEach((stop) => stop());
@@ -103,7 +105,16 @@
       ["pause", () => player?.setPaused(true)],
       ["seekbackward", () => seekBy(-seekStep)],
       ["seekforward", () => seekBy(seekStep)],
-      ["seekto", (d) => d.seekTime !== undefined && player?.seek(d.seekTime)],
+      [
+        "seekto",
+        (d) => {
+          if (d.seekTime !== undefined) {
+            player?.seek(d.seekTime);
+            const fileName = session?.nowPlaying.value?.fileName ?? s?.name;
+            if (fileName && d.seekTime > 0) saveSeekPosition(fileName, d.seekTime);
+          }
+        },
+      ],
       ["previoustrack", () => session?.skip(false)],
       ["nexttrack", () => session?.skip(true)],
     ];
@@ -144,11 +155,19 @@
     if (!player || !s?.loaded) return;
     const to = Math.max(0, Math.min(player.position + delta, s.duration));
     player.seek(to);
+    const fileName = session?.nowPlaying.value?.fileName ?? s?.name;
+    if (fileName && to > 0) saveSeekPosition(fileName, to);
     seekNote = `${delta > 0 ? "+" : "−"}${Math.abs(delta)} s · ${formatTime(to)}`;
     clearTimeout(noteTimer);
     noteTimer = setTimeout(() => (seekNote = null), 1200);
     poke();
   }
+
+  $effect(() => {
+    if (!s?.loaded || s.position <= 0) return;
+    const fileName = session?.nowPlaying.value?.fileName ?? s.name;
+    if (fileName) saveSeekPosition(fileName, s.position);
+  });
 
   /** The picture at [time] under the seek bar, for a file on this device (streams show the time only). */
   async function showPreview(time: number) {
@@ -476,7 +495,12 @@
               dragging = trackTime(e, e.currentTarget);
             }}
             onpointerup={(e) => {
-              if (dragging !== null) player?.seek(trackTime(e, e.currentTarget));
+              if (dragging !== null) {
+                const to = trackTime(e, e.currentTarget);
+                player?.seek(to);
+                const fileName = session?.nowPlaying.value?.fileName ?? s?.name;
+                if (fileName && to > 0) saveSeekPosition(fileName, to);
+              }
               dragging = null;
               if (!hover) hidePreview();
             }}

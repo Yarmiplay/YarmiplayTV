@@ -428,6 +428,8 @@ private fun ManagedRoomActions(container: AppContainer, room: RoomState) {
     )
 }
 
+private var mobileChatDraft by mutableStateOf("")
+
 /** The room's chat; with [fill], it takes the whole height it's given, with the message box at the bottom. */
 @Composable
 fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeight: androidx.compose.ui.unit.Dp = 420.dp, fill: Boolean = false) {
@@ -435,13 +437,14 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
     val settings by container.settings.collectAsStateWithLifecycle()
     val room by container.sync.room.collectAsStateWithLifecycle()
     val showChat = settings.showRoomChat
-    var message by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf(mobileChatDraft) }
     val listState = rememberLazyListState()
     LaunchedEffect(feed.size) { if (feed.isNotEmpty()) listState.scrollToItem(feed.lastIndex) }
     fun send() {
         if (message.isNotBlank()) {
             container.sync.sendChat(message)
             message = ""
+            mobileChatDraft = ""
         }
     }
     Column(modifier.fillMaxWidth().then(if (fill) Modifier.fillMaxHeight().padding(bottom = 12.dp) else Modifier).padding(horizontal = 16.dp).imePadding()) {
@@ -479,7 +482,7 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
         }
         if (feed.isEmpty()) Text("No messages yet.", color = AppColors.TextDim)
         if (showChat) OutlinedTextField(
-            message, { message = it.take(container.sync.maxChatLength) },
+            message, { message = it.take(container.sync.maxChatLength); mobileChatDraft = message },
             label = { Text("Message") },
             singleLine = true,
             enabled = room.status == ConnectionStatus.CONNECTED,

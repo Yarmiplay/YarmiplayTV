@@ -156,7 +156,7 @@ class AppContainer(
     /** The YarmiplayServerTV file relay; idle on other servers. */
     val relay: RelayManager? = cacheDir?.let { RelayManager(scope, sync, player, local, it, settings.map { s -> s.shareFiles }) }
     private val locator = MediaLocator(local, servers) { name -> relay?.find(name) }.apply { preferredServer = initial.preferredServer }
-    val playlist = PlaylistController(scope, sync, player, mediaSource, local, locator, relay)
+    val playlist = PlaylistController(scope, sync, player, mediaSource, local, locator, relay, settingsStore)
     val screenshots: Screenshots? = screenshotStore?.let { store ->
         Screenshots(scope, player, store, folder = { settings.value.screenshotDirectory }) { playlist.nowPlaying.value?.title }
     }
