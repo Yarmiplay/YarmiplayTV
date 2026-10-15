@@ -254,7 +254,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         )
 
                         androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
-                            Box(Modifier.fillMaxSize().testTag("player_controls")) {
+                            Box(Modifier.fillMaxSize().then(if (!isPortrait) Modifier.testTag("player_controls") else Modifier)) {
                                 Row(
                                     Modifier.fillMaxWidth().hoverable(barsHover)
                                         .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(8.dp),
@@ -355,81 +355,98 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         }
 
                         // Portrait bottom player controls section
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                                .testTag("player_controls"),
-                        ) {
-                            val segments by container.skips.segments.collectAsStateWithLifecycle()
-                            var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
-                            LaunchedEffect(Unit) {
-                                while (true) {
-                                    position = container.player.currentPosition()
-                                    delay(250)
-                                }
-                            }
-                            TvSeekBar(state, position, ::touch, container.seekFrames, segments) { container.player.seek(it) }
-
-                            Spacer(Modifier.height(8.dp))
-
-                            Row(
-                                Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
-                                verticalAlignment = Alignment.CenterVertically,
+                        androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut()) {
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                                    .testTag("player_controls"),
                             ) {
-                                val skips = inRoom && room.playlist.isNotEmpty()
-                                if (skips) {
-                                    IconButton(
-                                        onClick = { input.skip(false) },
-                                        enabled = container.playlist.skipTarget(room, forward = false) != null,
-                                        modifier = Modifier.testTag("skip_previous"),
-                                    ) {
-                                        Icon(Icons.Filled.SkipPrevious, "Previous in the playlist", tint = AppColors.Text)
+                                val segments by container.skips.segments.collectAsStateWithLifecycle()
+                                var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
+                                LaunchedEffect(Unit) {
+                                    while (true) {
+                                        position = container.player.currentPosition()
+                                        delay(250)
                                     }
                                 }
-                                IconButton(onClick = { seekBy(-step) }) {
-                                    Icon(Icons.Filled.FastRewind, "Back ${step.toInt()} seconds", tint = AppColors.Text)
-                                }
-                                FilledIconButton(
-                                    onClick = { togglePause() },
-                                    modifier = Modifier.size(56.dp).testTag("play_pause"),
-                                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = AppColors.Accent),
+                                TvSeekBar(state, position, ::touch, container.seekFrames, segments) { container.player.seek(it) }
+
+                                Spacer(Modifier.height(8.dp))
+
+                                Row(
+                                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceEvenly,
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Icon(
-                                        if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                                        contentDescription = if (state.paused) "Play" else "Pause",
-                                        tint = Color.Black,
-                                        modifier = Modifier.size(32.dp),
-                                    )
-                                }
-                                IconButton(onClick = { seekBy(step) }) {
-                                    Icon(Icons.Filled.FastForward, "Forward ${step.toInt()} seconds", tint = AppColors.Text)
-                                }
-                                if (skips) {
-                                    IconButton(
-                                        onClick = { input.skip(true) },
-                                        enabled = container.playlist.skipTarget(room, forward = true) != null,
-                                        modifier = Modifier.testTag("skip_next"),
+                                    val skips = inRoom && room.playlist.isNotEmpty()
+                                    if (skips) {
+                                        IconButton(
+                                            onClick = { input.skip(false) },
+                                            enabled = container.playlist.skipTarget(room, forward = false) != null,
+                                            modifier = Modifier.testTag("skip_previous"),
+                                        ) {
+                                            Icon(Icons.Filled.SkipPrevious, "Previous in the playlist", tint = AppColors.Text)
+                                        }
+                                    }
+                                    IconButton(onClick = { seekBy(-step) }) {
+                                        Icon(Icons.Filled.FastRewind, "Back ${step.toInt()} seconds", tint = AppColors.Text)
+                                    }
+                                    FilledIconButton(
+                                        onClick = { togglePause() },
+                                        modifier = Modifier.size(56.dp).testTag("play_pause"),
+                                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = AppColors.Accent),
                                     ) {
-                                        Icon(Icons.Filled.SkipNext, "Next in the playlist", tint = AppColors.Text)
+                                        Icon(
+                                            if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                            contentDescription = if (state.paused) "Play" else "Pause",
+                                            tint = Color.Black,
+                                            modifier = Modifier.size(32.dp),
+                                        )
+                                    }
+                                    IconButton(onClick = { seekBy(step) }) {
+                                        Icon(Icons.Filled.FastForward, "Forward ${step.toInt()} seconds", tint = AppColors.Text)
+                                    }
+                                    if (skips) {
+                                        IconButton(
+                                            onClick = { input.skip(true) },
+                                            enabled = container.playlist.skipTarget(room, forward = true) != null,
+                                            modifier = Modifier.testTag("skip_next"),
+                                        ) {
+                                            Icon(Icons.Filled.SkipNext, "Next in the playlist", tint = AppColors.Text)
+                                        }
                                     }
                                 }
-                            }
 
-                            Spacer(Modifier.height(8.dp))
+                                Spacer(Modifier.height(8.dp))
 
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceAround,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist", tint = AppColors.Text) { openSheet(PlayerSheet.PLAYLIST) }
-                                SheetButton(Icons.Filled.Groups, "Room", tint = AppColors.Text) { openSheet(PlayerSheet.ROOM) }
-                                SheetButton(Icons.Filled.Forum, "Chat", tint = AppColors.Text) { openSheet(PlayerSheet.CHAT) }
-                                SheetButton(Icons.Filled.Audiotrack, "Audio", tint = AppColors.Text) { openSheet(PlayerSheet.AUDIO) }
-                                SheetButton(Icons.Filled.Subtitles, "Subtitles", tint = AppColors.Text) { openSheet(PlayerSheet.SUBTITLES) }
-                                if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList", tint = AppColors.Text) { openSheet(PlayerSheet.MAL) }
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    PlayerVolumeControl(::touch)
+                                    container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
+                                        IconButton({ screenshots.take(); touch() }, Modifier.testTag("screenshot")) {
+                                            Icon(Icons.Filled.PhotoCamera, contentDescription = "Screenshot", tint = AppColors.Text)
+                                        }
+                                    }
+                                }
+
+                                Spacer(Modifier.height(8.dp))
+
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceAround,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist", tint = AppColors.Text) { openSheet(PlayerSheet.PLAYLIST) }
+                                    SheetButton(Icons.Filled.Groups, "Room", tint = AppColors.Text) { openSheet(PlayerSheet.ROOM) }
+                                    SheetButton(Icons.Filled.Forum, "Chat", tint = AppColors.Text) { openSheet(PlayerSheet.CHAT) }
+                                    SheetButton(Icons.Filled.Audiotrack, "Audio", tint = AppColors.Text) { openSheet(PlayerSheet.AUDIO) }
+                                    SheetButton(Icons.Filled.Subtitles, "Subtitles", tint = AppColors.Text) { openSheet(PlayerSheet.SUBTITLES) }
+                                    if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList", tint = AppColors.Text) { openSheet(PlayerSheet.MAL) }
+                                }
                             }
                         }
                     }
