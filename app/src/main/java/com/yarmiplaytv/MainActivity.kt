@@ -106,12 +106,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (deviceKind != DeviceKind.TV && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+        if (deviceKind != DeviceKind.TV && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val settings = container.settings.value
             val player = container.player
             val state = player.state.value
             val isVideo = state.fileLoaded && (state.videoWidth > 0 || state.displayAspect > 0 || !FileNames.isAudio(state.url.orEmpty()))
-            if (settings.playback.pictureInPicture && isVideo) {
+            if (settings.playback.pictureInPicture && isVideo && !isInPictureInPictureMode) {
                 val screens = (application as YarmiplayTvApp).screens
                 if (screens.lastOrNull() != Screen.Player) {
                     screens.add(Screen.Player)

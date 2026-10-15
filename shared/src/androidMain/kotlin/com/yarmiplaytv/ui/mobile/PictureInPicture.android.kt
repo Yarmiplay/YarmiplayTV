@@ -31,6 +31,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.yarmiplaytv.Logger
+import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.player.Player
 import kotlin.math.roundToInt
 
@@ -54,7 +55,8 @@ actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: 
 
     var active by remember { mutableStateOf(activity.isInPictureInPictureMode) }
     val state by player.state.collectAsState()
-    val auto = autoEnter && state.fileLoaded
+    val isVideo = state.fileLoaded && (state.videoWidth > 0 || state.displayAspect > 0 || !FileNames.isAudio(state.url.orEmpty()))
+    val auto = autoEnter && isVideo
     val params = remember(state.displayAspect, state.paused, auto) { pipParams(activity, state.displayAspect, state.paused, auto) }
     val latestParams by rememberUpdatedState(params)
     val latestAuto by rememberUpdatedState(auto)
@@ -83,23 +85,23 @@ actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: 
                 else -> Unit
             }
         }
-        // Android 12 enters by itself (setAutoEnterEnabled); older versions get the leave hint.
-        val leaveHint = Runnable { if (latestAuto) runCatching { activity.enterPictureInPictureMode(latestParams) } }
+        // Android 12 enters by itself (setAutoEnterEnabled); leaveHint also acts as a reliable fallback.
+        val leaveHint = Runnable { if (latestAuto && !activity.isInPictureInPictureMode) runCatching { activity.enterPictureInPictureMode(latestParams) } }
         val playPause = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) = player.setPaused(!player.isPaused)
         }
         activity.addOnPictureInPictureModeChangedListener(modeListener)
         lifecycle.addObserver(lifecycleObserver)
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) activity.addOnUserLeaveHintListener(leaveHint)
+        activity.addOnUserLeaveHintListener(leaveHint)
         ContextCompat.registerReceiver(activity, playPause, IntentFilter(ACTION_PIP_PLAY_PAUSE), ContextCompat.RECEIVER_NOT_EXPORTED)
         onDispose {
             activity.removeOnPictureInPictureModeChangedListener(modeListener)
             lifecycle.removeObserver(lifecycleObserver)
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) activity.removeOnUserLeaveHintListener(leaveHint)
+            activity.removeOnUserLeaveHintListener(leaveHint)
             runCatching { activity.unregisterReceiver(playPause) }
             PlayerPictureInPicture.active = false
             // Off the player screen, keep auto-enter enabled if media is loaded and setting is on.
-            val keepAuto = latestAuto && player.isFileLoaded
+            val keepAuto = latestAuto && player.isFileLoaded && (state.videoWidth > 0 || state.displayAspect > 0 || !FileNames.isAudio(state.url.orEmpty()))
             runCatching { activity.setPictureInPictureParams(pipParams(activity, state.displayAspect, state.paused, autoEnter = keepAuto)) }
         }
     }

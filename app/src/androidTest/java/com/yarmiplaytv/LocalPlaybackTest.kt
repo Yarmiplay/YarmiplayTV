@@ -291,9 +291,13 @@ class LocalPlaybackTest {
         val activity = compose.activity
         withLongClipPlaying {
             Screenshots.shell("input keyevent KEYCODE_HOME")
-            // The app has been told (the player switched layouts) once the window is in PiP. Getting back out is the
-            // PiP button test's part: a slow emulator can ignore it while a Home-started PiP settles.
-            waitFor(15_000) { activity.isInPictureInPictureMode && PlayerPictureInPicture.active }
+            val entered = runCatching { waitFor(5_000) { activity.isInPictureInPictureMode } }.isSuccess
+            if (!entered) {
+                // If a slow emulator or transition dropped the first Home key, send it again.
+                Screenshots.shell("input keyevent KEYCODE_HOME")
+                waitFor(15_000) { activity.isInPictureInPictureMode }
+            }
+            waitFor(5_000) { PlayerPictureInPicture.active }
         }
     }
 

@@ -69,6 +69,8 @@ adb uninstall com.yarmiplaytv.test > /dev/null 2>&1
 adb install -r -t -g app/build/outputs/apk/debug/app-debug.apk || exit 1
 adb install -r -t -g app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || exit 1
 wait_until_idle
+adb shell settings put global hide_error_dialogs 1
+adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS > /dev/null 2>&1
 adb logcat -c
 
 adb shell am instrument -w -r "${filter[@]}" "$runner" 2>&1 | tee "$out/$mode.txt"

@@ -143,18 +143,22 @@ private fun Modifier.moveAndDoubleClick(onMove: (dx: Int, dy: Int) -> Unit, onDo
     awaitEachGesture {
         val down = awaitFirstDown()
         down.consume()
-        val start = screenPointer()
-        var last = start
+        val startScreen = screenPointer()
+        var lastScreen = startScreen
+        val startPos = down.position
         var dragged = false
         while (true) {
             val event = awaitPointerEvent()
             event.changes.forEach { it.consume() }
-            val now = screenPointer()
-            if (now != null && last != null && start != null) {
-                if (!dragged && abs(now.x - start.x) + abs(now.y - start.y) > viewConfiguration.touchSlop) dragged = true
-                if (dragged && (now.x != last.x || now.y != last.y)) {
-                    onMove(now.x - last.x, now.y - last.y)
-                    last = now
+            val change = event.changes.firstOrNull()
+            if (!dragged && change != null && (change.position - startPos).getDistance() > viewConfiguration.touchSlop) {
+                dragged = true
+            }
+            val nowScreen = screenPointer()
+            if (dragged && nowScreen != null && lastScreen != null) {
+                if (nowScreen.x != lastScreen.x || nowScreen.y != lastScreen.y) {
+                    onMove(nowScreen.x - lastScreen.x, nowScreen.y - lastScreen.y)
+                    lastScreen = nowScreen
                 }
             }
             if (event.changes.none { it.pressed }) break
