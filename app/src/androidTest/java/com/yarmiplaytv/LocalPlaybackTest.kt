@@ -25,6 +25,7 @@ import com.yarmiplaytv.local.LocalFile
 import com.yarmiplaytv.support.Screenshots
 import com.yarmiplaytv.sync.PlaylistStatus
 import com.yarmiplaytv.ui.mobile.PlayerPictureInPicture
+import com.yarmiplaytv.ui.nav.Screen
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import org.junit.After
@@ -58,13 +59,27 @@ class LocalPlaybackTest {
     @Before
     fun setUp() {
         restoreRoom = TestSupport.isolateFromRoom()
+        compose.runOnUiThread {
+            if (TestSupport.app.screens.lastOrNull() != Screen.Home) {
+                TestSupport.app.screens.apply {
+                    clear()
+                    add(Screen.Home)
+                }
+            }
+        }
         compose.waitUntilExactlyOneExists(hasTestTag("home"), 10_000)
         clip = TestSupport.insertClip(clipName)
     }
 
     @After
     fun tearDown() {
-        compose.runOnUiThread { container.playlist.stop() }
+        compose.runOnUiThread {
+            container.playlist.stop()
+            TestSupport.app.screens.apply {
+                clear()
+                add(Screen.Home)
+            }
+        }
         clip?.let(TestSupport::delete)
         restoreRoom()
     }
