@@ -9,6 +9,13 @@ import { baseName } from "../syncplay/filenames";
 
 export { baseName, normalize };
 
+export const AUDIO_EXTENSIONS: ReadonlySet<string> = new Set(["mp3", "flac", "aac", "m4a", "ogg", "opus", "wav", "wma", "alac", "aiff"]);
+
+export function isAudio(name: string): boolean {
+  const ext = name.split(".").pop()?.toLowerCase();
+  return ext !== undefined && AUDIO_EXTENSIONS.has(ext);
+}
+
 const episodeRegex = /(?<![a-z0-9])s(\d{1,2})[ ._-]?e(\d{1,4})(?!\d)/i;
 const altEpisodeRegex = /(?<![a-z0-9])(\d{1,2})x(\d{2,4})(?!\d)/i;
 const yearRegex = /(?<![0-9])(19\d{2}|20\d{2})(?![0-9])/g;

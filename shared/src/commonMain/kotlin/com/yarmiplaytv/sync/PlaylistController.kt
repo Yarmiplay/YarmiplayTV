@@ -195,6 +195,7 @@ class PlaylistController(
                     player.seek(savedPos)
                 }
                 if (p.fromRoom && autoReady && sync.isActive) sync.setReady(true)
+                val isAudio = FileNames.isAudio(p.media.fileName)
                 val isEpisodeSwitch = previousMedia != null && (
                     previousMedia?.episode != null ||
                     p.media.episode != null ||
@@ -202,7 +203,9 @@ class PlaylistController(
                 )
                 previousMedia = p.media
                 autoPlayJob?.cancel()
-                if (isEpisodeSwitch) {
+                if (isAudio) {
+                    player.setPaused(false)
+                } else if (isEpisodeSwitch) {
                     autoPlayJob = scope.launch {
                         delay(2000)
                         player.setPaused(false)

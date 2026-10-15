@@ -98,14 +98,11 @@ actual fun FullscreenLandscape(pictureInPicture: Boolean) {
     if (pictureInPicture) return
     DisposableEffect(Unit) {
         val activity = context.findActivity()
-        val previous = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         val insets = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
         insets?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         insets?.hide(WindowInsetsCompat.Type.systemBars())
         onDispose {
             insets?.show(WindowInsetsCompat.Type.systemBars())
-            activity?.requestedOrientation = previous
         }
     }
 }
@@ -129,7 +126,7 @@ actual fun rememberVideoPicker(onPicked: (String) -> Unit): () -> Unit {
             onPicked(uri.toString())
         }
     }
-    return { launcher.launch(arrayOf("video/*")) }
+    return { launcher.launch(arrayOf("video/*", "audio/*")) }
 }
 
 @Composable

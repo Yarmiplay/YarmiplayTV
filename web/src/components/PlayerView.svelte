@@ -13,6 +13,7 @@
   import { saveSeekPosition } from "../lib/data/seekPositions";
   import type { SkipSegment } from "../lib/skip/segment";
   import type { IconName } from "../lib/ui/icons";
+  import * as FileNames from "../lib/media/fileNames";
   import ChatPanel from "./ChatPanel.svelte";
   import Icon from "./Icon.svelte";
   import MalPanel from "./MalPanel.svelte";
@@ -379,12 +380,26 @@
     <canvas bind:this={subtitleCanvas} class="subs"></canvas>
     <canvas bind:this={pictureSubtitleCanvas} class="subs"></canvas>
 
+    {#if s?.loaded && FileNames.isAudio(s.name)}
+      <div class="audio-backdrop">
+        <div class="audio-art">
+          <Icon name="audiotrack" size={72} />
+        </div>
+        <div class="audio-meta">
+          <h2>{s.name}</h2>
+          {#if session?.nowPlaying.value?.episode?.seriesName}
+            <p class="dim">{session.nowPlaying.value.episode.seriesName}</p>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
     {#if !s?.loaded && status.kind === "idle"}
       <div class="empty">
         <p>Nothing playing.</p>
         <label class="button">
-          Open a video
-          <input type="file" accept="video/*,.mkv,.avi,.ts,.m2ts,.webm" onchange={(e) => pickFile(e, false)} hidden />
+          Open a file
+          <input type="file" accept="video/*,audio/*,.mkv,.avi,.ts,.m2ts,.webm,.mp3,.flac,.aac,.m4a,.ogg,.opus,.wav" onchange={(e) => pickFile(e, false)} hidden />
         </label>
         <p class="dim small">Or drop one here. {inRoom ? "It becomes the room's selection." : "Join a room to watch together."}</p>
       </div>
@@ -402,7 +417,7 @@
         <div class="row">
           <label class="button">
             Pick file
-            <input type="file" accept="video/*,.mkv,.avi,.ts,.m2ts,.webm" onchange={(e) => pickFile(e, true)} hidden />
+            <input type="file" accept="video/*,audio/*,.mkv,.avi,.ts,.m2ts,.webm,.mp3,.flac,.aac,.m4a,.ogg,.opus,.wav" onchange={(e) => pickFile(e, true)} hidden />
           </label>
           {#if status.kind === "notFound"}<button class="button quiet" onclick={() => go("#/search")}>Search servers</button>{/if}
           <button class="button quiet" onclick={() => session?.dismissStatus()}>Close</button>
@@ -1001,5 +1016,41 @@
   }
   .operators {
     margin: 4px 16px;
+  }
+  .audio-backdrop {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    background: radial-gradient(circle at center, var(--surface-high) 0%, #000 70%);
+    pointer-events: none;
+    z-index: 1;
+  }
+  .audio-art {
+    width: 140px;
+    height: 140px;
+    border-radius: 20px;
+    background: var(--surface);
+    display: grid;
+    place-items: center;
+    color: var(--accent);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  }
+  .audio-meta {
+    text-align: center;
+    max-width: 80%;
+  }
+  .audio-meta h2 {
+    margin: 0;
+    font-size: 20px;
+    color: var(--text);
+  }
+  .audio-meta p {
+    margin: 4px 0 0;
+    font-size: 14px;
+    color: var(--text-dim);
   }
 </style>

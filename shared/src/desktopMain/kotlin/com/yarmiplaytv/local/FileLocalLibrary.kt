@@ -70,7 +70,7 @@ class FileLocalLibrary(
         val dir = runCatching { pathOf(uri).parent }.getOrNull() ?: return emptyList()
         return runCatching {
             Files.list(dir).use { paths ->
-                paths.filter { Files.isRegularFile(it) && LocalMatcher.isVideo(it.fileName.toString(), null) }.limit(MAX_NEIGHBOURS).toList()
+                paths.filter { Files.isRegularFile(it) && LocalMatcher.isMedia(it.fileName.toString(), null) }.limit(MAX_NEIGHBOURS).toList()
                     .map { LocalFile(it.fileName.toString(), Files.size(it), uriOf(it), modified = Files.getLastModifiedTime(it).toMillis()) }
             }
         }.getOrDefault(emptyList())
@@ -88,7 +88,7 @@ class FileLocalLibrary(
 
             override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
                 val name = file.fileName.toString()
-                if (attrs.isRegularFile && LocalMatcher.isVideo(name, null)) {
+                if (attrs.isRegularFile && LocalMatcher.isMedia(name, null)) {
                     val directory = file.parent?.let { root.relativize(it).joinToString("/") }.orEmpty()
                     out += LocalFile(name, attrs.size(), uriOf(file), folder.name, attrs.lastModifiedTime().toMillis(), directory, folder.uri)
                 }
@@ -145,7 +145,7 @@ class FileLocalLibrary(
             }
             val name = (event.context() as? Path)?.toString() ?: continue
             val child = dir.resolve(name)
-            if (LocalMatcher.isVideo(name, null) || watched.containsKey(child) || Files.isDirectory(child)) relevant = true
+            if (LocalMatcher.isMedia(name, null) || watched.containsKey(child) || Files.isDirectory(child)) relevant = true
         }
         if (!key.reset()) watched.remove(dir)
         return relevant

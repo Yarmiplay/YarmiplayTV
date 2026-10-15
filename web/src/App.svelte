@@ -4,6 +4,7 @@
   import { go, route, settings } from "./app/context";
   import DeviceAccess from "./components/DeviceAccess.svelte";
   import Icon from "./components/Icon.svelte";
+  import MiniPlayer from "./components/MiniPlayer.svelte";
   import PlayerView from "./components/PlayerView.svelte";
   import { applyTheme, followSystem } from "./lib/ui/theme";
   import { newVersion, watchForUpdates } from "./lib/ui/updates";
@@ -92,6 +93,9 @@
         </main>
       {/if}
     </div>
+    {#if section !== "player"}
+      <MiniPlayer />
+    {/if}
   </div>
   <DeviceAccess />
 {/if}

@@ -43,7 +43,9 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -59,8 +61,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -118,7 +122,13 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
         }
         val np = nowPlaying
         val canUndo by container.playlist.shared.canUndo.collectAsStateWithLifecycle()
+        val savedPlaylists by container.settingsStore.savedPlaylists.collectAsStateWithLifecycle(emptyList())
         var addingLinks by rememberSaveable { mutableStateOf(false) }
+        var saving by rememberSaveable { mutableStateOf(false) }
+        var showingSaved by rememberSaveable { mutableStateOf(false) }
+        var saveName by rememberSaveable { mutableStateOf("") }
+        val scope = rememberCoroutineScope()
+
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
             androidx.compose.material3.FilledTonalButton(onBrowse) { Text("Add from library") }
             if (np != null && room.playlist.none { Filenames.same(it, np.fileName) }) {
@@ -127,11 +137,87 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
                 }
             }
             Spacer(Modifier.weight(1f))
+            androidx.compose.material3.OutlinedButton(
+                onClick = {
+                    saveName = if (room.room.isNotEmpty()) "Room ${room.room}" else "My Playlist"
+                    saving = !saving
+                },
+                enabled = room.playlist.isNotEmpty(),
+            ) { Text("Save") }
+            androidx.compose.material3.OutlinedButton(
+                onClick = { showingSaved = !showingSaved },
+            ) { Text("Saved (${savedPlaylists.size})") }
             IconButton({ addingLinks = !addingLinks }, Modifier.testTag("playlist_add_links")) { Icon(Icons.Filled.Link, "Add links") }
             IconButton({ container.playlist.shared.sortAlphabetically() }, enabled = room.playlist.size > 1, modifier = Modifier.testTag("playlist_sort")) {
                 Icon(Icons.Filled.SortByAlpha, "Sort A to Z")
             }
             if (canUndo) IconButton({ container.playlist.shared.undo() }, Modifier.testTag("playlist_undo")) { Icon(Icons.AutoMirrored.Filled.Undo, "Undo") }
+        }
+        if (saving) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = saveName,
+                    onValueChange = { saveName = it },
+                    label = { Text("Playlist name") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    onClick = {
+                        if (saveName.isNotBlank() && room.playlist.isNotEmpty()) {
+                            scope.launch {
+                                container.settingsStore.savePlaylist(saveName, room.playlist)
+                                saving = false
+                                showingSaved = true
+                            }
+                        }
+                    },
+                    enabled = saveName.isNotBlank(),
+                ) { Text("Save") }
+                TextButton(onClick = { saving = false }) { Text("Cancel") }
+            }
+        }
+        if (showingSaved) {
+            Column(
+                Modifier.fillMaxWidth().background(AppColors.SurfaceHigh, RoundedCornerShape(10.dp)).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Saved Playlists", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    TextButton(onClick = { showingSaved = false }) { Text("Close") }
+                }
+                if (savedPlaylists.isEmpty()) {
+                    Text("No saved playlists yet.", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    savedPlaylists.forEach { sp ->
+                        Row(
+                            Modifier.fillMaxWidth().background(AppColors.Surface, RoundedCornerShape(8.dp)).padding(8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(sp.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("${sp.entries.size} items", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                androidx.compose.material3.FilledTonalButton(
+                                    onClick = { container.playlist.shared.add(sp.entries) },
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                ) { Text("Add") }
+                                Button(
+                                    onClick = { container.playlist.shared.replace(sp.entries) },
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                ) { Text("Replace") }
+                                IconButton(
+                                    onClick = { scope.launch { container.settingsStore.deleteSavedPlaylist(sp.id) } },
+                                    modifier = Modifier.size(32.dp),
+                                ) { Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = AppColors.TextDim) }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
         }
         if (addingLinks) LinkField(onAdd = { text -> container.playlist.addUrlsToRoomPlaylist(text.split(Regex("\\s+"))) > 0 }, onClose = { addingLinks = false })
         if (room.playlist.isEmpty()) {

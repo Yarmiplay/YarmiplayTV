@@ -58,7 +58,50 @@ class JellyfinSource(
     }
 
     override suspend fun children(parent: MediaItem): List<MediaItem> {
+        if (parent.type == MediaItemType.LIBRARY && parent.collectionType == "music") {
+            return listOf(
+                MediaItem(id = "${parent.id}:artists", name = "Artists", type = MediaItemType.FOLDER, isFolder = true, collectionType = "music_artists", sourceKey = key),
+                MediaItem(id = "${parent.id}:albums", name = "Albums", type = MediaItemType.FOLDER, isFolder = true, collectionType = "music_albums", sourceKey = key),
+                MediaItem(id = "${parent.id}:tracks", name = "All Tracks", type = MediaItemType.FOLDER, isFolder = true, collectionType = "music_tracks", sourceKey = key),
+            )
+        }
         val dtos = when {
+            parent.collectionType == "music_artists" -> items {
+                addQueryParameter("parentId", parent.id.removeSuffix(":artists"))
+                addQueryParameter("recursive", "true")
+                addQueryParameter("includeItemTypes", "MusicArtist")
+                addQueryParameter("sortBy", "SortName")
+                addQueryParameter("fields", LIST_FIELDS)
+            }
+            parent.collectionType == "music_albums" -> items {
+                addQueryParameter("parentId", parent.id.removeSuffix(":albums"))
+                addQueryParameter("recursive", "true")
+                addQueryParameter("includeItemTypes", "MusicAlbum")
+                addQueryParameter("sortBy", "SortName")
+                addQueryParameter("fields", LIST_FIELDS)
+            }
+            parent.collectionType == "music_tracks" -> items {
+                addQueryParameter("parentId", parent.id.removeSuffix(":tracks"))
+                addQueryParameter("recursive", "true")
+                addQueryParameter("includeItemTypes", "Audio")
+                addQueryParameter("sortBy", "SortName")
+                addQueryParameter("limit", "500")
+                addQueryParameter("fields", LIST_FIELDS)
+            }
+            parent.type == MediaItemType.ARTIST -> items {
+                addQueryParameter("artistIds", parent.id)
+                addQueryParameter("recursive", "true")
+                addQueryParameter("includeItemTypes", "MusicAlbum,Audio")
+                addQueryParameter("sortBy", "IsFolder,ProductionYear,SortName")
+                addQueryParameter("sortOrder", "Descending")
+                addQueryParameter("fields", LIST_FIELDS)
+            }
+            parent.type == MediaItemType.ALBUM -> items {
+                addQueryParameter("parentId", parent.id)
+                addQueryParameter("includeItemTypes", "Audio")
+                addQueryParameter("sortBy", "ParentIndexNumber,IndexNumber,SortName")
+                addQueryParameter("fields", LIST_FIELDS)
+            }
             parent.type == MediaItemType.SEASON && parent.seriesId != null ->
                 client.get<ItemsResult>(base, token, "Shows/${parent.seriesId}/Episodes") {
                     addQueryParameter("userId", session.userId)
@@ -93,7 +136,7 @@ class JellyfinSource(
         return items {
             addQueryParameter("searchTerm", query.trim())
             addQueryParameter("recursive", "true")
-            addQueryParameter("includeItemTypes", "Series,Movie,Episode,Video")
+            addQueryParameter("includeItemTypes", "Series,Movie,Episode,Video,MusicArtist,MusicAlbum,Audio")
             addQueryParameter("limit", limit.toString())
             addQueryParameter("fields", LIST_FIELDS)
             addQueryParameter("imageTypeLimit", "1")
@@ -141,13 +184,20 @@ class JellyfinSource(
         val path = source?.path ?: dto.path ?: throw MediaSourceException("${dto.name} has no file")
         val ticks = source?.runTimeTicks ?: dto.runTimeTicks ?: 0L
         source?.id?.let { mediaSourceIds[dto.id] = it }
+        val isAudio = dto.type == "Audio"
+        val item = dto.toMediaItem()
+        val title = when {
+            item.artistName != null && item.type == MediaItemType.TRACK -> "${item.artistName} · ${item.name}"
+            item.seriesName != null -> "${item.seriesName} · ${item.displayTitle}"
+            else -> item.displayTitle
+        }
         return PlayableMedia(
             itemId = dto.id,
-            url = streamUrl(dto.id, source?.id),
+            url = streamUrl(dto.id, source?.id, isAudio = isAudio),
             fileName = FileNames.baseName(path),
             sizeBytes = source?.size ?: 0L,
             durationSeconds = ticks / TICKS_PER_SECOND,
-            title = dto.toMediaItem().let { m -> m.seriesName?.let { "$it · ${m.displayTitle}" } ?: m.displayTitle },
+            title = title,
             sourceKey = key,
             episode = dto.episodeInfo(),
         )
@@ -223,12 +273,14 @@ class JellyfinSource(
         }
     }
 
-    fun streamUrl(itemId: String, mediaSourceId: String?): String =
-        client.url(base, "Videos/$itemId/stream") {
+    fun streamUrl(itemId: String, mediaSourceId: String?, isAudio: Boolean = false): String {
+        val endpoint = if (isAudio) "Audio/$itemId/stream" else "Videos/$itemId/stream"
+        return client.url(base, endpoint) {
             addQueryParameter("static", "true")
             if (mediaSourceId != null) addQueryParameter("mediaSourceId", mediaSourceId)
             addQueryParameter("api_key", token)
         }.toString()
+    }
 
     override fun imageUrl(item: MediaItem, maxWidth: Int): String? {
         val tag = item.imageTag ?: return null
@@ -251,7 +303,7 @@ class JellyfinSource(
             val page: ItemsResult = client.get(base, token, "Items") {
                 addQueryParameter("userId", session.userId)
                 addQueryParameter("recursive", "true")
-                addQueryParameter("includeItemTypes", "Movie,Episode,Video,MusicVideo")
+                addQueryParameter("includeItemTypes", "Movie,Episode,Video,MusicVideo,Audio")
                 addQueryParameter("fields", "Path")
                 addQueryParameter("enableImages", "false")
                 addQueryParameter("enableUserData", "false")
@@ -361,14 +413,18 @@ class JellyfinSource(
             "Episode" -> MediaItemType.EPISODE
             "Movie" -> MediaItemType.MOVIE
             "Video", "MusicVideo" -> MediaItemType.VIDEO
+            "MusicArtist" -> MediaItemType.ARTIST
+            "MusicAlbum" -> MediaItemType.ALBUM
+            "Audio" -> MediaItemType.TRACK
             "Folder", "BoxSet" -> MediaItemType.FOLDER
             else -> if (isFolder == true) MediaItemType.FOLDER else MediaItemType.OTHER
         }
+        val artist = artists?.firstOrNull() ?: albumArtist ?: seriesName
         return MediaItem(
             id = id,
             name = name ?: "",
             type = t,
-            isFolder = isFolder ?: (t in setOf(MediaItemType.LIBRARY, MediaItemType.FOLDER, MediaItemType.SERIES, MediaItemType.SEASON)),
+            isFolder = isFolder ?: (t in setOf(MediaItemType.LIBRARY, MediaItemType.FOLDER, MediaItemType.SERIES, MediaItemType.SEASON, MediaItemType.ARTIST, MediaItemType.ALBUM)),
             collectionType = collectionType,
             overview = overview,
             year = productionYear,
@@ -376,6 +432,9 @@ class JellyfinSource(
             parentIndexNumber = parentIndexNumber,
             seriesName = seriesName,
             seriesId = seriesId ?: if (t == MediaItemType.SERIES) id else null,
+            artistName = artist,
+            albumName = album,
+            albumId = albumId,
             durationSeconds = runTimeTicks?.let { it / TICKS_PER_SECOND },
             path = path ?: mediaSources?.firstOrNull()?.path,
             imageTag = imageTags?.get("Primary"),
@@ -393,7 +452,7 @@ class JellyfinSource(
         private const val TICKS_PER_SECOND = 10_000_000.0
         private const val PAGE_SIZE = 2000
         private const val MIN_REFRESH_MS = 30_000L
-        private const val LIST_FIELDS = "Overview,Path,ProductionYear,ProviderIds"
-        private val VIDEO_COLLECTIONS = setOf("movies", "tvshows", "homevideos", "musicvideos", "mixed", "folders", "boxsets")
+        private const val LIST_FIELDS = "Overview,Path,ProductionYear,ProviderIds,Album,AlbumId,AlbumArtist,Artists"
+        private val VIDEO_COLLECTIONS = setOf("movies", "tvshows", "homevideos", "musicvideos", "mixed", "folders", "boxsets", "music")
     }
 }

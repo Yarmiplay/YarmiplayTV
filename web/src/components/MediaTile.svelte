@@ -42,17 +42,17 @@
 
 <li class="card tile">
   {#if playable}
-    <div class="thumb">{#if image}<img src={image} alt="" loading="lazy" />{:else}<Icon name="movie" size={36} />{/if}</div>
+    <div class="thumb">{#if image}<img src={image} alt="" loading="lazy" />{:else}<Icon name={item.type === "TRACK" ? "audiotrack" : "movie"} size={36} />{/if}</div>
   {:else}
     <a class="thumb" href="#/library/{encodeURIComponent(item.sourceKey)}/{encodeURIComponent(item.id)}">
-      {#if image}<img src={image} alt="" loading="lazy" />{:else}<Icon name="folder" size={36} />{/if}
+      {#if image}<img src={image} alt="" loading="lazy" />{:else}<Icon name={item.type === "ALBUM" ? "queue_music" : item.type === "ARTIST" ? "groups" : "folder"} size={36} />{/if}
     </a>
   {/if}
   <b class="name">
     {#if playable}{displayTitle(item)}{:else}<a href="#/library/{encodeURIComponent(item.sourceKey)}/{encodeURIComponent(item.id)}">{item.name}</a>{/if}
   </b>
   <span class="dim small">
-    {[item.seriesName, item.year, source?.displayName].filter(Boolean).join(" · ")}
+    {[item.artistName, item.albumName, item.seriesName, item.year, source?.displayName].filter(Boolean).join(" · ")}
   </span>
   {#if playable}
     <div class="row">

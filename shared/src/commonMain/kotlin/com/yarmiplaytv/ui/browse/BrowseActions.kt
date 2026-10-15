@@ -13,6 +13,8 @@ fun openItem(container: AppContainer, nav: Navigator, item: MediaItem) {
 }
 
 fun aspectFor(items: List<MediaItem>): Float {
+    val music = items.count { it.type in setOf(MediaItemType.ARTIST, MediaItemType.ALBUM, MediaItemType.TRACK) }
+    if (music > items.size / 2) return 1f
     val posters = items.count { it.type in setOf(MediaItemType.SERIES, MediaItemType.MOVIE, MediaItemType.SEASON) }
     return if (posters > items.size / 2) 2f / 3f else 16f / 9f
 }
@@ -24,6 +26,9 @@ fun subtitleFor(item: MediaItem, server: String? = null): String? {
         MediaItemType.MOVIE -> item.year?.toString()
         MediaItemType.SERIES -> item.year?.toString()
         MediaItemType.VIDEO -> item.fileName
+        MediaItemType.ARTIST -> "Artist"
+        MediaItemType.ALBUM -> listOfNotNull(item.artistName, item.year?.toString()).joinToString(" · ")
+        MediaItemType.TRACK -> listOfNotNull(item.artistName, item.albumName, item.durationSeconds?.let { "${(it / 60).toInt()}:${((it % 60).toInt()).toString().padStart(2, '0')}" }).joinToString(" · ")
         else -> null
     }
     if (server == null) return detail

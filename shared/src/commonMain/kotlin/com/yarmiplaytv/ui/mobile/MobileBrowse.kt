@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Groups
@@ -116,6 +117,8 @@ private fun MobileItemGrid(container: AppContainer, items: List<MediaItem>, kind
                 placeholder = when (item.type) {
                     MediaItemType.SERIES, MediaItemType.SEASON, MediaItemType.EPISODE -> Icons.Filled.Tv
                     MediaItemType.MOVIE, MediaItemType.VIDEO -> Icons.Filled.Movie
+                    MediaItemType.ARTIST -> Icons.Filled.Groups
+                    MediaItemType.ALBUM, MediaItemType.TRACK -> Icons.Filled.Audiotrack
                     else -> Icons.Filled.Folder
                 },
                 badge = if (item.played) "Watched" else null,

@@ -28,6 +28,12 @@ object LocalMatcher {
     fun isVideo(name: String, mimeType: String?): Boolean =
         mimeType?.startsWith("video/") == true || name.substringAfterLast('.', "").lowercase() in videoExtensions
 
+    fun isAudio(name: String, mimeType: String?): Boolean =
+        mimeType?.startsWith("audio/") == true || FileNames.isAudio(name)
+
+    fun isMedia(name: String, mimeType: String?): Boolean =
+        isVideo(name, mimeType) || isAudio(name, mimeType)
+
     fun find(files: List<LocalFile>, fileName: String): Match? {
         val wanted = FileNames.baseName(fileName)
         files.firstOrNull { it.name == wanted }?.let { return Match(it, MatchKind.EXACT_FILENAME) }

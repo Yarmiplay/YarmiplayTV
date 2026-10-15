@@ -698,12 +698,15 @@ export class RoomSession {
       this.player.seek(savedPos);
     }
     if (fromRoom && this.settings.autoReady && this.isActive) this.client?.setReady(true, false);
+    const isAudio = FileNames.isAudio(media.fileName);
     const isEpisodeSwitch =
       this.previousMedia !== null &&
       (this.previousMedia.episode !== null || media.episode !== null || this.previousMedia.fileName !== media.fileName);
     this.previousMedia = media;
     clearTimeout(this.autoPlayTimer);
-    if (isEpisodeSwitch) {
+    if (isAudio) {
+      if (this.player.isPaused) this.player.setPaused(false);
+    } else if (isEpisodeSwitch) {
       this.autoPlayTimer = setTimeout(() => {
         if (this.player.isPaused) this.player.setPaused(false);
       }, 2000);
@@ -824,6 +827,13 @@ export class RoomSession {
     const valid = urls.map((u) => u.trim()).filter(Filenames.isUrl);
     if (valid.length) this.reportAdded(valid.length, this.add(valid));
     return valid.length;
+  }
+
+  addEntries(entries: string[]): number {
+    const valid = entries.map((e) => e.trim()).filter(Boolean);
+    const added = this.add(valid);
+    this.reportAdded(valid.length, added);
+    return added;
   }
 
   private reportAdded(requested: number, added: number) {

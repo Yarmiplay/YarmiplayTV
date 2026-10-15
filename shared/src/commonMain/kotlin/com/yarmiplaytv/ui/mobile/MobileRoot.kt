@@ -1,4 +1,4 @@
-﻿package com.yarmiplaytv.ui.mobile
+package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +20,19 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Surface
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
@@ -51,6 +64,14 @@ import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.AppColors
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.yarmiplaytv.media.FileNames
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -118,7 +139,14 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                     kind.isLarge -> SectionNav.RAIL
                     else -> SectionNav.BAR
                 }
-                MobileScaffold(snackbar, selectedTab, style, onTab = { if (it.screen == Screen.Player) nav.push(Screen.Player) else nav.switchTab(it.screen) }) {
+                MobileScaffold(
+                    container = container,
+                    snackbar = snackbar,
+                    selected = selectedTab,
+                    style = style,
+                    onTab = { if (it.screen == Screen.Player) nav.push(Screen.Player) else nav.switchTab(it.screen) },
+                    onOpenPlayer = { nav.push(Screen.Player) },
+                ) {
                     saveable.SaveableStateProvider(screen.key) {
                         when (screen) {
                             Screen.Home -> MobileHomeScreen(container, nav, kind)
@@ -152,21 +180,32 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
 }
 
 @Composable
-private fun MobileScaffold(snackbar: SnackbarHostState, selected: Tab, style: SectionNav, onTab: (Tab) -> Unit, content: @Composable () -> Unit) {
+private fun MobileScaffold(
+    container: AppContainer,
+    snackbar: SnackbarHostState,
+    selected: Tab,
+    style: SectionNav,
+    onTab: (Tab) -> Unit,
+    onOpenPlayer: () -> Unit,
+    content: @Composable () -> Unit,
+) {
     Scaffold(
         containerColor = AppColors.Background,
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             if (style == SectionNav.BAR) {
-                NavigationBar(containerColor = AppColors.Surface) {
-                    tabs.forEach { tab ->
-                        NavigationBarItem(
-                            selected = tab == selected,
-                            onClick = { onTab(tab) },
-                            icon = { Icon(tab.icon, contentDescription = null) },
-                            label = { Text(tab.label) },
-                            modifier = Modifier.testTag("tab_${tab.label}"),
-                        )
+                Column {
+                    MiniPlayerBar(container, onOpenPlayer)
+                    NavigationBar(containerColor = AppColors.Surface) {
+                        tabs.forEach { tab ->
+                            NavigationBarItem(
+                                selected = tab == selected,
+                                onClick = { onTab(tab) },
+                                icon = { Icon(tab.icon, contentDescription = null) },
+                                label = { Text(tab.label) },
+                                modifier = Modifier.testTag("tab_${tab.label}"),
+                            )
+                        }
                     }
                 }
             }
@@ -191,7 +230,114 @@ private fun MobileScaffold(snackbar: SnackbarHostState, selected: Tab, style: Se
                 }
                 SectionNav.BAR -> Unit
             }
-            Box(Modifier.weight(1f).fillMaxSize()) { content() }
+            Column(Modifier.weight(1f).fillMaxSize()) {
+                Box(Modifier.weight(1f).fillMaxSize()) { content() }
+                if (style != SectionNav.BAR) {
+                    MiniPlayerBar(container, onOpenPlayer)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
+    val state by container.player.state.collectAsStateWithLifecycle()
+    if (!state.fileLoaded) return
+
+    val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
+    val room by container.sync.room.collectAsStateWithLifecycle()
+    var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
+    LaunchedEffect(state.fileLoaded, state.paused) {
+        while (state.fileLoaded) {
+            position = container.player.currentPosition()
+            delay(500)
+        }
+    }
+
+    val isAudio = FileNames.isAudio(nowPlaying?.fileName ?: state.url.orEmpty())
+    val title = nowPlaying?.title ?: FileNames.baseName(state.url.orEmpty()).ifEmpty { "Playing" }
+    val subtitle = nowPlaying?.episode?.seriesName ?: if (isAudio) "Music" else "Video"
+
+    Surface(
+        color = AppColors.Surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenPlayer)
+            .testTag("mini_player"),
+    ) {
+        Column {
+            val progress = if (state.duration > 0) (position / state.duration).toFloat().coerceIn(0f, 1f) else 0f
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().height(2.dp),
+                color = AppColors.Accent,
+                trackColor = AppColors.SurfaceHigh,
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(AppColors.SurfaceHigh),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (isAudio) Icons.Filled.Audiotrack else Icons.Filled.PlayCircle,
+                        contentDescription = null,
+                        tint = AppColors.Accent,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = AppColors.Text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AppColors.TextDim,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                val inRoom = room.status == ConnectionStatus.CONNECTED
+                val skips = inRoom && room.playlist.isNotEmpty()
+                if (skips) {
+                    IconButton(
+                        onClick = { container.playlist.skip(false) },
+                        enabled = container.playlist.skipTarget(room, forward = false) != null,
+                    ) {
+                        Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous track", tint = AppColors.Text)
+                    }
+                }
+                IconButton(
+                    onClick = { container.player.setPaused(!state.paused) },
+                    modifier = Modifier.testTag("mini_play_pause"),
+                ) {
+                    Icon(
+                        if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                        contentDescription = if (state.paused) "Play" else "Pause",
+                        tint = AppColors.Text,
+                    )
+                }
+                if (skips) {
+                    IconButton(
+                        onClick = { container.playlist.skip(true) },
+                        enabled = container.playlist.skipTarget(room, forward = true) != null,
+                    ) {
+                        Icon(Icons.Filled.SkipNext, contentDescription = "Next track", tint = AppColors.Text)
+                    }
+                }
+            }
         }
     }
 }

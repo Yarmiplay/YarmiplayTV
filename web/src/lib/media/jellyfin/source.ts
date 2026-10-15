@@ -31,17 +31,17 @@ export const jellyfinKeyOf = (session: Pick<JellyfinSession, "serverId" | "serve
 const TICKS_PER_SECOND = 10_000_000;
 const PAGE_SIZE = 2000;
 const MIN_REFRESH_MS = 30_000;
-const LIST_FIELDS = "Overview,Path,ProductionYear,ProviderIds";
-const VIDEO_COLLECTIONS = new Set(["movies", "tvshows", "homevideos", "musicvideos", "mixed", "folders", "boxsets"]);
-const FOLDER_TYPES: ReadonlySet<MediaItemType> = new Set(["LIBRARY", "FOLDER", "SERIES", "SEASON"]);
+const LIST_FIELDS = "Overview,Path,ProductionYear,ProviderIds,Album,AlbumId,AlbumArtist,Artists";
+const VIDEO_COLLECTIONS = new Set(["movies", "tvshows", "homevideos", "musicvideos", "mixed", "folders", "boxsets", "music"]);
+const FOLDER_TYPES: ReadonlySet<MediaItemType> = new Set(["LIBRARY", "FOLDER", "SERIES", "SEASON", "ARTIST", "ALBUM"]);
 
 /** Kotlin's toIntOrNull: a whole number, or null. */
 const toIntOrNull = (s: string | undefined): number | null => (s !== undefined && /^[+-]?\d+$/.test(s) ? Number(s) : null);
 
 /**
  * One Jellyfin server, browsed as the signed-in user (JellyfinSource.kt): libraries, search, playable streams that
- * answer HTTP Range requests (`Videos/{id}/stream?static=true`), playback reports, skip markers, and finding a shared
- * playlist's file by name.
+ * answer HTTP Range requests (`Videos/{id}/stream?static=true` or `Audio/{id}/stream?static=true`), playback reports,
+ * skip markers, and finding a shared playlist's file by name.
  */
 export class JellyfinSource implements MediaSource {
   readonly key: string;
@@ -101,8 +101,56 @@ export class JellyfinSource implements MediaSource {
   }
 
   async children(parent: MediaItem): Promise<MediaItem[]> {
+    if (parent.type === "LIBRARY" && parent.collectionType === "music") {
+      return [
+        mediaItem({ id: `${parent.id}:artists`, name: "Artists", type: "FOLDER", isFolder: true, collectionType: "music_artists", sourceKey: this.key }),
+        mediaItem({ id: `${parent.id}:albums`, name: "Albums", type: "FOLDER", isFolder: true, collectionType: "music_albums", sourceKey: this.key }),
+        mediaItem({ id: `${parent.id}:tracks`, name: "All Tracks", type: "FOLDER", isFolder: true, collectionType: "music_tracks", sourceKey: this.key }),
+      ];
+    }
     let dtos: BaseItemDto[];
-    if (parent.type === "SEASON" && parent.seriesId !== null) {
+    if (parent.collectionType === "music_artists") {
+      dtos = await this.items([
+        ["parentId", parent.id.replace(/:artists$/, "")],
+        ["recursive", "true"],
+        ["includeItemTypes", "MusicArtist"],
+        ["sortBy", "SortName"],
+        ["fields", LIST_FIELDS],
+      ]);
+    } else if (parent.collectionType === "music_albums") {
+      dtos = await this.items([
+        ["parentId", parent.id.replace(/:albums$/, "")],
+        ["recursive", "true"],
+        ["includeItemTypes", "MusicAlbum"],
+        ["sortBy", "SortName"],
+        ["fields", LIST_FIELDS],
+      ]);
+    } else if (parent.collectionType === "music_tracks") {
+      dtos = await this.items([
+        ["parentId", parent.id.replace(/:tracks$/, "")],
+        ["recursive", "true"],
+        ["includeItemTypes", "Audio"],
+        ["sortBy", "SortName"],
+        ["limit", "500"],
+        ["fields", LIST_FIELDS],
+      ]);
+    } else if (parent.type === "ARTIST") {
+      dtos = await this.items([
+        ["artistIds", parent.id],
+        ["recursive", "true"],
+        ["includeItemTypes", "MusicAlbum,Audio"],
+        ["sortBy", "IsFolder,ProductionYear,SortName"],
+        ["sortOrder", "Descending"],
+        ["fields", LIST_FIELDS],
+      ]);
+    } else if (parent.type === "ALBUM") {
+      dtos = await this.items([
+        ["parentId", parent.id],
+        ["includeItemTypes", "Audio"],
+        ["sortBy", "ParentIndexNumber,IndexNumber,SortName"],
+        ["fields", LIST_FIELDS],
+      ]);
+    } else if (parent.type === "SEASON" && parent.seriesId !== null) {
       const episodes = await this.get<ItemsResult>(`Shows/${parent.seriesId}/Episodes`, [
         ["userId", this.session.userId],
         ["seasonId", parent.id],
@@ -132,7 +180,7 @@ export class JellyfinSource implements MediaSource {
     const hits = await this.items([
       ["searchTerm", query.trim()],
       ["recursive", "true"],
-      ["includeItemTypes", "Series,Movie,Episode,Video"],
+      ["includeItemTypes", "Series,Movie,Episode,Video,MusicArtist,MusicAlbum,Audio"],
       ["limit", String(limit)],
       ["fields", LIST_FIELDS],
       ["imageTypeLimit", "1"],
@@ -192,14 +240,16 @@ export class JellyfinSource implements MediaSource {
     if (!path) throw new MediaSourceError(`${dto.Name} has no file`);
     const ticks = source?.RunTimeTicks ?? dto.RunTimeTicks ?? 0;
     if (source?.Id) this.mediaSourceIds.set(dto.Id, source.Id);
+    const isAudio = dto.Type === "Audio";
     const m = this.toMediaItem(dto);
+    const title = m.artistName !== null && m.type === "TRACK" ? `${m.artistName} · ${m.name}` : m.seriesName !== null ? `${m.seriesName} · ${displayTitle(m)}` : displayTitle(m);
     return {
       itemId: dto.Id,
-      url: this.streamUrl(dto.Id, source?.Id ?? null),
+      url: this.streamUrl(dto.Id, source?.Id ?? null, isAudio),
       fileName: FileNames.baseName(path),
       sizeBytes: source?.Size ?? 0,
       durationSeconds: ticks / TICKS_PER_SECOND,
-      title: m.seriesName !== null ? `${m.seriesName} · ${displayTitle(m)}` : displayTitle(m),
+      title,
       sourceKey: this.key,
       episode: this.episodeInfo(dto),
     };
@@ -288,11 +338,12 @@ export class JellyfinSource implements MediaSource {
   }
 
   /** The item's file as it is on the server (no transcoding), with the token in the query so plain Range reads work. */
-  streamUrl(itemId: string, mediaSourceId: string | null): string {
+  streamUrl(itemId: string, mediaSourceId: string | null, isAudio = false): string {
     const query: Query = [["static", "true"]];
     if (mediaSourceId !== null) query.push(["mediaSourceId", mediaSourceId]);
     query.push(["api_key", this.token]);
-    return this.client.url(this.base, `Videos/${itemId}/stream`, query).href;
+    const endpoint = isAudio ? `Audio/${itemId}/stream` : `Videos/${itemId}/stream`;
+    return this.client.url(this.base, endpoint, query).href;
   }
 
   imageUrl(item: MediaItem, maxWidth = 400): string | null {
@@ -315,7 +366,7 @@ export class JellyfinSource implements MediaSource {
         const page = await this.get<ItemsResult>("Items", [
           ["userId", this.session.userId],
           ["recursive", "true"],
-          ["includeItemTypes", "Movie,Episode,Video,MusicVideo"],
+          ["includeItemTypes", "Movie,Episode,Video,MusicVideo,Audio"],
           ["fields", "Path"],
           ["enableImages", "false"],
           ["enableUserData", "false"],
@@ -432,6 +483,7 @@ export class JellyfinSource implements MediaSource {
 
   private toMediaItem(dto: BaseItemDto, forceType?: MediaItemType): MediaItem {
     const t: MediaItemType = forceType ?? typeOf(dto);
+    const artist = dto.Artists?.[0] ?? dto.AlbumArtist ?? dto.SeriesName ?? null;
     return mediaItem({
       id: dto.Id,
       name: dto.Name ?? "",
@@ -444,6 +496,9 @@ export class JellyfinSource implements MediaSource {
       parentIndexNumber: dto.ParentIndexNumber ?? null,
       seriesName: dto.SeriesName ?? null,
       seriesId: dto.SeriesId ?? (t === "SERIES" ? dto.Id : null),
+      artistName: artist,
+      albumName: dto.Album ?? null,
+      albumId: dto.AlbumId ?? null,
       durationSeconds: dto.RunTimeTicks != null ? dto.RunTimeTicks / TICKS_PER_SECOND : null,
       path: dto.Path ?? dto.MediaSources?.[0]?.Path ?? null,
       imageTag: dto.ImageTags?.["Primary"] ?? null,
@@ -470,6 +525,12 @@ function typeOf(dto: BaseItemDto): MediaItemType {
     case "Video":
     case "MusicVideo":
       return "VIDEO";
+    case "MusicArtist":
+      return "ARTIST";
+    case "MusicAlbum":
+      return "ALBUM";
+    case "Audio":
+      return "TRACK";
     case "Folder":
     case "BoxSet":
       return "FOLDER";

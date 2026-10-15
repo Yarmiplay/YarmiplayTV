@@ -19,6 +19,13 @@ object FileNames {
 
     fun baseName(path: String): String = path.substringAfterLast('/').substringAfterLast('\\')
 
+    val AUDIO_EXTENSIONS = setOf("mp3", "flac", "aac", "m4a", "ogg", "opus", "wav", "wma", "alac", "aiff")
+
+    fun isAudio(name: String): Boolean {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        return ext in AUDIO_EXTENSIONS
+    }
+
     fun withoutExtension(name: String): String {
         val dot = name.lastIndexOf('.')
         return if (dot > 0 && name.length - dot <= 5) name.substring(0, dot) else name

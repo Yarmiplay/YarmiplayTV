@@ -81,6 +81,14 @@ data class SavedRoom(
     }
 }
 
+@kotlinx.serialization.Serializable
+data class SavedPlaylist(
+    val id: String,
+    val name: String,
+    val entries: List<String>,
+    val createdAt: Long = 0L,
+)
+
 /**
  * The `sp_saved_rooms` format: one room per line, tab-separated fields (tabs and newlines in values become spaces).
  * Fields added later go at the end, so older lines still read.
@@ -342,6 +350,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         val malIgnoredNames = stringSetPreferencesKey("mal_ignored_names")
         val malQueue = stringPreferencesKey("mal_queue")
         val savedRooms = stringPreferencesKey("sp_saved_rooms")
+        val savedPlaylists = stringPreferencesKey("saved_playlists")
         val malKeys = listOf(malAccount, malAuto, malAsk, malMappings, malIgnored, malIgnoredNames, malQueue)
     }
 
@@ -548,6 +557,40 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
     }
 
     suspend fun saveAutosavePlaylists(on: Boolean) = dataStore.edit { it[Keys.autosavePlaylists] = on }
+
+    val savedPlaylists: Flow<List<SavedPlaylist>> = dataStore.data.map { p ->
+        val raw = p[Keys.savedPlaylists] ?: return@map emptyList()
+        runCatching { json.decodeFromString(ListSerializer(SavedPlaylist.serializer()), raw) }.getOrDefault(emptyList())
+    }
+
+    suspend fun savePlaylist(name: String, entries: List<String>): SavedPlaylist {
+        val cleanEntries = entries.map { it.trim() }.filter { it.isNotEmpty() }
+        val cleanName = name.trim().ifEmpty { "Playlist" }
+        val playlist = SavedPlaylist(
+            id = "pl_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}",
+            name = cleanName,
+            entries = cleanEntries,
+            createdAt = System.currentTimeMillis(),
+        )
+        dataStore.edit { p ->
+            val existing = p[Keys.savedPlaylists]?.let { raw ->
+                runCatching { json.decodeFromString(ListSerializer(SavedPlaylist.serializer()), raw) }.getOrNull()
+            } ?: emptyList()
+            val updated = listOf(playlist) + existing.filter { it.name != cleanName }
+            p[Keys.savedPlaylists] = json.encodeToString(ListSerializer(SavedPlaylist.serializer()), updated)
+        }
+        return playlist
+    }
+
+    suspend fun deleteSavedPlaylist(id: String) {
+        dataStore.edit { p ->
+            val existing = p[Keys.savedPlaylists]?.let { raw ->
+                runCatching { json.decodeFromString(ListSerializer(SavedPlaylist.serializer()), raw) }.getOrNull()
+            } ?: emptyList()
+            val updated = existing.filter { it.id != id }
+            p[Keys.savedPlaylists] = json.encodeToString(ListSerializer(SavedPlaylist.serializer()), updated)
+        }
+    }
 
     suspend fun saveUpdatePrefs(check: Boolean, installOnLaunch: Boolean) = dataStore.edit {
         it[Keys.checkForUpdates] = check

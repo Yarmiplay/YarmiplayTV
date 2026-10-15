@@ -68,7 +68,7 @@ export interface PlaybackReport {
   markWatched: boolean;
 }
 
-export type MediaItemType = "LIBRARY" | "FOLDER" | "SERIES" | "SEASON" | "EPISODE" | "MOVIE" | "VIDEO" | "OTHER";
+export type MediaItemType = "LIBRARY" | "FOLDER" | "SERIES" | "SEASON" | "EPISODE" | "MOVIE" | "VIDEO" | "ARTIST" | "ALBUM" | "TRACK" | "OTHER";
 
 /** A library entry: a plain object, so lists of them can go straight into Svelte state. */
 export interface MediaItem {
@@ -83,6 +83,9 @@ export interface MediaItem {
   parentIndexNumber: number | null;
   seriesName: string | null;
   seriesId: string | null;
+  artistName: string | null;
+  albumName: string | null;
+  albumId: string | null;
   durationSeconds: number | null;
   path: string | null;
   imageTag: string | null;
@@ -100,6 +103,9 @@ export const mediaItem = (m: Partial<MediaItem> & Pick<MediaItem, "id" | "name" 
   parentIndexNumber: null,
   seriesName: null,
   seriesId: null,
+  artistName: null,
+  albumName: null,
+  albumId: null,
   durationSeconds: null,
   path: null,
   imageTag: null,
@@ -112,7 +118,7 @@ export const mediaItem = (m: Partial<MediaItem> & Pick<MediaItem, "id" | "name" 
 /** Unique across servers (ids alone may collide between Jellyfin and Plex). */
 export const uniqueKey = (item: Pick<MediaItem, "sourceKey" | "id">): string => `${item.sourceKey}/${item.id}`;
 
-const PLAYABLE_TYPES: ReadonlySet<MediaItemType> = new Set(["EPISODE", "MOVIE", "VIDEO"]);
+const PLAYABLE_TYPES: ReadonlySet<MediaItemType> = new Set(["EPISODE", "MOVIE", "VIDEO", "TRACK"]);
 
 export const isPlayable = (item: MediaItem): boolean => !item.isFolder && PLAYABLE_TYPES.has(item.type);
 

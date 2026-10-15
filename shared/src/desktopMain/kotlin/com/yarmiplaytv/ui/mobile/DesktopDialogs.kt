@@ -20,10 +20,10 @@ object DesktopDialogs {
         get() = KeyboardFocusManager.getCurrentKeyboardFocusManager().activeWindow as? Frame
 
     fun pickVideo(): Path? {
-        val dialog = FileDialog(owner, "Open a video", FileDialog.LOAD)
-        dialog.setFilenameFilter { _, name -> LocalMatcher.isVideo(name, null) }
+        val dialog = FileDialog(owner, "Open media", FileDialog.LOAD)
+        dialog.setFilenameFilter { _, name -> LocalMatcher.isMedia(name, null) }
         // Windows ignores the filename filter and only understands a pattern in the file name box.
-        if (isWindows) dialog.file = VIDEO_PATTERN
+        if (isWindows) dialog.file = MEDIA_PATTERN
         dialog.isVisible = true
         val dir = dialog.directory ?: return null
         val file = dialog.file ?: return null
@@ -31,10 +31,10 @@ object DesktopDialogs {
     }
 
     fun pickVideos(): List<Path> {
-        val dialog = FileDialog(owner, "Add videos to the playlist", FileDialog.LOAD)
+        val dialog = FileDialog(owner, "Add media to the playlist", FileDialog.LOAD)
         dialog.isMultipleMode = true
-        dialog.setFilenameFilter { _, name -> LocalMatcher.isVideo(name, null) }
-        if (isWindows) dialog.file = VIDEO_PATTERN
+        dialog.setFilenameFilter { _, name -> LocalMatcher.isMedia(name, null) }
+        if (isWindows) dialog.file = MEDIA_PATTERN
         dialog.isVisible = true
         return dialog.files.orEmpty().map { it.toPath() }
     }
@@ -107,11 +107,11 @@ object DesktopDialogs {
      */
     fun videosIn(folder: Path): List<Path> {
         val file = folder.toFile()
-        if (file.isFile) return if (LocalMatcher.isVideo(file.name, null)) listOf(folder) else emptyList()
+        if (file.isFile) return if (LocalMatcher.isMedia(file.name, null)) listOf(folder) else emptyList()
         val out = ArrayList<Path>()
         fun walk(dir: File) {
             val children = dir.listFiles().orEmpty()
-            children.filter { it.isFile && LocalMatcher.isVideo(it.name, null) }
+            children.filter { it.isFile && LocalMatcher.isMedia(it.name, null) }
                 .sortedWith(compareBy(LocalBrowse.naturalOrder) { it.name })
                 .forEach { if (out.size < LocalLibrary.MAX_FILES) out.add(it.toPath()) }
             children.filter { it.isDirectory && !it.name.startsWith(".") }
@@ -123,4 +123,5 @@ object DesktopDialogs {
     }
 
     private const val VIDEO_PATTERN = "*.mkv;*.mp4;*.m4v;*.avi;*.mov;*.webm;*.wmv;*.flv;*.ts;*.m2ts;*.mts;*.mpg;*.mpeg;*.ogv;*.3gp;*.vob"
+    private const val MEDIA_PATTERN = "$VIDEO_PATTERN;*.mp3;*.flac;*.aac;*.m4a;*.ogg;*.opus;*.wav;*.wma;*.alac;*.aiff"
 }

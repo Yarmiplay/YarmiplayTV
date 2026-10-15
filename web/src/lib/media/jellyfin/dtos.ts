@@ -58,6 +58,10 @@ export interface BaseItemDto {
   SeriesName?: string | null;
   SeriesId?: string | null;
   SeasonId?: string | null;
+  Album?: string | null;
+  AlbumId?: string | null;
+  AlbumArtist?: string | null;
+  Artists?: string[] | null;
   RunTimeTicks?: number | null;
   Path?: string | null;
   MediaSources?: MediaSourceInfo[] | null;

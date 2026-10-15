@@ -68,7 +68,7 @@ data class PlaybackReport(
     val markWatched: Boolean = false,
 )
 
-enum class MediaItemType { LIBRARY, FOLDER, SERIES, SEASON, EPISODE, MOVIE, VIDEO, OTHER }
+enum class MediaItemType { LIBRARY, FOLDER, SERIES, SEASON, EPISODE, MOVIE, VIDEO, ARTIST, ALBUM, TRACK, OTHER }
 
 data class MediaItem(
     val id: String,
@@ -82,6 +82,9 @@ data class MediaItem(
     val parentIndexNumber: Int? = null,
     val seriesName: String? = null,
     val seriesId: String? = null,
+    val artistName: String? = null,
+    val albumName: String? = null,
+    val albumId: String? = null,
     val durationSeconds: Double? = null,
     val path: String? = null,
     val imageTag: String? = null,
@@ -92,7 +95,7 @@ data class MediaItem(
     /** Unique across servers (ids alone may collide between Jellyfin and Plex). */
     val uniqueKey: String get() = "$sourceKey/$id"
 
-    val isPlayable: Boolean get() = !isFolder && type in setOf(MediaItemType.EPISODE, MediaItemType.MOVIE, MediaItemType.VIDEO)
+    val isPlayable: Boolean get() = !isFolder && type in setOf(MediaItemType.EPISODE, MediaItemType.MOVIE, MediaItemType.VIDEO, MediaItemType.TRACK)
 
     /** Display title, e.g. "S01E01 · The Goddess (Neptune) Of Planeptune". */
     val displayTitle: String

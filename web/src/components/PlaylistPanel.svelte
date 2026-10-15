@@ -3,6 +3,7 @@
   import type { RoomState } from "../lib/syncplay/client";
   import { followsOperators } from "../lib/syncplay/client";
   import * as Filenames from "../lib/syncplay/filenames";
+  import { deleteSavedPlaylist, savePlaylist, savedPlaylistsStore, type SavedPlaylist } from "../lib/data/savedPlaylists";
   import Icon from "./Icon.svelte";
 
   /**
@@ -17,12 +18,43 @@
   let dragFrom = $state<number | null>(null);
   let link = $state("");
   let menu = $state(false);
+  let savedPlaylists = $state<SavedPlaylist[]>([]);
+  let showSaved = $state(false);
+  let savePrompt = $state(false);
+  let playlistNameInput = $state("");
 
   $effect(() => {
     if (!session) return;
-    const stops = [session.room.subscribe((r) => (room = r)), session.canUndo.subscribe((u) => (canUndo = u))];
+    const stops = [
+      session.room.subscribe((r) => (room = r)),
+      session.canUndo.subscribe((u) => (canUndo = u)),
+      savedPlaylistsStore.subscribe((list) => (savedPlaylists = list)),
+    ];
     return () => stops.forEach((s) => s());
   });
+
+  function handleSaveCurrent() {
+    if (!playlist.length) return;
+    playlistNameInput = room?.room ? `Room ${room.room}` : "My Playlist";
+    savePrompt = true;
+  }
+
+  function confirmSave() {
+    if (playlistNameInput.trim() && playlist.length) {
+      savePlaylist(playlistNameInput.trim(), playlist);
+      savePrompt = false;
+      showSaved = true;
+    }
+  }
+
+  function loadSaved(sp: SavedPlaylist, mode: "add" | "replace") {
+    if (!session) return;
+    if (mode === "add") {
+      session.addEntries(sp.entries);
+    } else {
+      session.replacePlaylist(sp.entries);
+    }
+  }
 
   const playlist = $derived(room?.playlist ?? []);
   const connected = $derived(room?.status === "CONNECTED");
@@ -79,9 +111,11 @@
     <div class="actions">
       <label class="button quiet small" class:disabled={locked}>
         <Icon name="playlist_add" size={18} />Add files
-        <input type="file" multiple accept="video/*,.mkv,.avi,.ts,.m2ts,.webm" onchange={addFiles} hidden disabled={locked} />
+        <input type="file" multiple accept="video/*,audio/*,.mkv,.avi,.ts,.m2ts,.webm,.mp3,.flac,.aac,.m4a,.ogg,.opus,.wav" onchange={addFiles} hidden disabled={locked} />
       </label>
       <button class="button quiet small" onclick={() => session?.sortAlphabetically()} disabled={locked || playlist.length < 2}><Icon name="sort_by_alpha" size={18} />Sort A to Z</button>
+      <button class="button quiet small" onclick={handleSaveCurrent} disabled={playlist.length === 0}><Icon name="bookmarks" size={18} />Save</button>
+      <button class="button quiet small" onclick={() => (showSaved = !showSaved)}><Icon name="queue_music" size={18} />Saved ({savedPlaylists.length})</button>
       <button class="button quiet small" onclick={() => session?.undo()} disabled={locked || !canUndo}><Icon name="undo" size={18} />Undo</button>
       <button class="button quiet small" onclick={() => (menu = !menu)} disabled={locked} aria-expanded={menu}><Icon name="more_vert" size={18} />More</button>
     </div>
@@ -98,6 +132,40 @@
             menu = false;
           }}><Icon name="delete" size={18} />Remove selected</button
         >
+      </div>
+    {/if}
+    {#if savePrompt}
+      <form class="link" onsubmit={(e) => { e.preventDefault(); confirmSave(); }}>
+        <input type="text" placeholder="Playlist name" bind:value={playlistNameInput} aria-label="Playlist name" />
+        <button class="button small" type="submit" disabled={!playlistNameInput.trim()}><Icon name="check" size={18} />Save</button>
+        <button class="button quiet small" type="button" onclick={() => (savePrompt = false)}>Cancel</button>
+      </form>
+    {/if}
+    {#if showSaved}
+      <div class="saved-box">
+        <div class="saved-header">
+          <b>Saved Playlists</b>
+          <button class="button quiet small" onclick={() => (showSaved = false)} aria-label="Close saved playlists"><Icon name="close" size={16} /></button>
+        </div>
+        {#if savedPlaylists.length === 0}
+          <p class="dim small pad">No saved playlists yet.</p>
+        {:else}
+          <ul class="saved-items">
+            {#each savedPlaylists as sp (sp.id)}
+              <li class="saved-row">
+                <div class="saved-info">
+                  <span class="name">{sp.name}</span>
+                  <span class="dim small">{sp.entries.length} {sp.entries.length === 1 ? 'item' : 'items'}</span>
+                </div>
+                <div class="saved-actions">
+                  <button class="button quiet small" onclick={() => loadSaved(sp, "add")} disabled={locked} title="Add to current playlist"><Icon name="playlist_add" size={16} />Add</button>
+                  <button class="button quiet small" onclick={() => loadSaved(sp, "replace")} disabled={locked} title="Replace current playlist"><Icon name="play_arrow" size={16} />Replace</button>
+                  <button class="button quiet small icon-btn" onclick={() => deleteSavedPlaylist(sp.id)} title="Delete saved playlist" aria-label="Delete saved playlist"><Icon name="delete" size={16} /></button>
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {/if}
       </div>
     {/if}
     <form class="link" onsubmit={addLink}>
@@ -230,5 +298,51 @@
   }
   .play.now {
     color: var(--accent);
+  }
+  .saved-box {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--surface-high);
+    border-radius: 10px;
+    padding: 8px 12px;
+  }
+  .saved-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .saved-items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .saved-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: var(--surface);
+  }
+  .saved-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+  .saved-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .icon-btn {
+    padding: 4px 6px;
   }
 </style>

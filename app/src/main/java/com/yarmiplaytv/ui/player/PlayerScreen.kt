@@ -91,6 +91,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.media.SkipSegment
 import com.yarmiplaytv.player.SurfacePlayer
 import com.yarmiplaytv.player.TrackType
@@ -283,6 +284,25 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
         )
         // Picture-in-picture shows only the video; the system draws the window's controls.
         if (pip.active) return@Box
+
+        if (state.fileLoaded && FileNames.isAudio(nowPlaying?.fileName ?: state.url.orEmpty())) {
+            Column(
+                Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Box(
+                    Modifier.size(140.dp).clip(RoundedCornerShape(24.dp)).background(AppColors.SurfaceHigh),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.Audiotrack, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(72.dp))
+                }
+                Text(nowPlaying?.title ?: FileNames.baseName(state.url.orEmpty()), style = MaterialTheme.typography.headlineMedium, color = Color.White)
+                nowPlaying?.episode?.seriesName?.let {
+                    Text(it, style = MaterialTheme.typography.titleMedium, color = Color.White.copy(alpha = 0.7f))
+                }
+            }
+        }
 
         // Status in the middle of the screen (resolving/loading/nothing playing).
         CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom, overlay == Overlay.Hidden)

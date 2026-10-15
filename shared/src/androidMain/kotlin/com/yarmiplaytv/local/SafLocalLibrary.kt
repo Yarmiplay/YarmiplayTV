@@ -87,7 +87,7 @@ class SafLocalLibrary(
                     val mime = c.getString(2)
                     if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                         if (!name.startsWith(".")) pending.add(id to if (directory.isEmpty()) name else "$directory/$name")
-                    } else if (LocalMatcher.isVideo(name, mime)) {
+                    } else if (LocalMatcher.isMedia(name, mime)) {
                         val size = if (c.isNull(3)) 0L else c.getLong(3)
                         val modified = if (c.isNull(4)) 0L else c.getLong(4)
                         val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id).toString()
