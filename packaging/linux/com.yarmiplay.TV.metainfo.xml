@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.2.8" date="2026-10-16">
+      <description>
+        <p>Improved Save and Saved Playlists layout on mobile portrait. Added exit action to playback notification and in-app quit option to allow shutting down the background service.</p>
+      </description>
+    </release>
     <release version="2.2.7" date="2026-10-15">
       <description>
         <p>Fix desktop player sidebar visibility and Android picture-in-picture transition stability.</p>

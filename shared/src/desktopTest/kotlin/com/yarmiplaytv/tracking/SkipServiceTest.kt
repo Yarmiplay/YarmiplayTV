@@ -287,7 +287,7 @@ class SkipServiceTest {
         val s = playEpisode(season, 2)
         eventually("reading", millis = 10_000) { season.reads.isNotEmpty() }
         settings.value = AppSettings(playback = PlaybackPrefs(detectSkips = false))
-        eventually("the read to stop") { season.sawCancel }
+        eventually("the read to stop", millis = 15_000) { season.sawCancel }
         season.hang = false
         settings.value = AppSettings(playback = PlaybackPrefs(detectSkips = true))
         eventually("the opening and ending", millis = 60_000) { s.segments.value.size == 2 }

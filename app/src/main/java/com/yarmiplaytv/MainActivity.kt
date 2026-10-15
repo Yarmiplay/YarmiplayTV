@@ -1,5 +1,6 @@
 package com.yarmiplaytv
 
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -36,6 +37,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        activeActivity = this
+        isExiting = false
+        container.onExitApp = { exit(this) }
+        container.updates.exitApp = { exit(this) }
         deviceKind = DeviceUi.kind(this, intent)
         container.deviceKind = deviceKind
         // Like saved instance state: a recreated activity carries on where it was, a new one starts at Home.
@@ -93,7 +98,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         val isTest = System.getProperty("yarmiplaytv.noUpdateCheck") != null
-        if (!isTest && deviceKind != DeviceKind.TV) {
+        if (!isExiting && !isTest && deviceKind != DeviceKind.TV) {
             val settings = container.settings.value
             val playerState = container.player.state.value
             val inRoom = container.sync.room.value.status == ConnectionStatus.CONNECTED
@@ -101,6 +106,13 @@ class MainActivity : ComponentActivity() {
             if (settings.playback.stayConnectedMinimized && (isLoaded || inRoom)) {
                 PlaybackService.start(this)
             }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (activeActivity == this) {
+            activeActivity = null
         }
     }
 
@@ -150,5 +162,25 @@ class MainActivity : ComponentActivity() {
         }
         val url = intent?.getStringExtra("url") ?: data?.toString()
         if (!url.isNullOrBlank()) container.playlist.playUrl(url)
+    }
+
+    companion object {
+        var activeActivity: MainActivity? = null
+        var isExiting: Boolean = false
+
+        fun exit(context: Context? = null) {
+            isExiting = true
+            val act = activeActivity
+            act?.container?.playlist?.stop()
+            act?.container?.sync?.disconnect()
+            val ctx = context ?: act
+            if (ctx != null) {
+                PlaybackService.stop(ctx)
+            }
+            if (act != null) {
+                act.finishAffinity()
+                act.finishAndRemoveTask()
+            }
+        }
     }
 }

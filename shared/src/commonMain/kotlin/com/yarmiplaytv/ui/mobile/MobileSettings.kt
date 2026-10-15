@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Sync
@@ -120,7 +122,16 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
         PlatformBackHandler(enabled = open != null) { page = null }
         Column(Modifier.fillMaxSize()) {
             if (open != null) MobileTopBar(open.title, nav, showBack = true, onBack = { page = null })
-            else MobileTopBar("Settings", nav, showBack = false)
+            else MobileTopBar(
+                "Settings",
+                nav,
+                showBack = false,
+                actions = {
+                    IconButton(onClick = { container.exitApp() }, modifier = Modifier.testTag("settings_exit_app")) {
+                        Icon(Icons.Filled.Logout, contentDescription = "Exit YarmiplayTV", tint = AppColors.TextDim)
+                    }
+                },
+            )
             if (wide) {
                 val category = categories.firstOrNull { it.name == selected } ?: categories.first()
                 Row(Modifier.fillMaxSize().testTag("settings_two_panes")) {
@@ -128,6 +139,8 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                         categories.forEach { c ->
                             SideNavItem(c.title, c.icon, c == category, { selected = c.name }, Modifier.testTag("settings_category_${c.name.lowercase()}"))
                         }
+                        Spacer(Modifier.height(16.dp))
+                        ExitAppRow(container)
                     }
                     VerticalDivider(color = AppColors.SurfaceHigh)
                     Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
@@ -151,6 +164,8 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
             } else {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp).testTag("settings")) {
                     categories.forEach { c -> CategoryRow(c, { page = c.name }, Modifier.testTag("settings_category_${c.name.lowercase()}")) }
+                    Spacer(Modifier.height(16.dp))
+                    ExitAppRow(container)
                 }
             }
         }
@@ -169,6 +184,25 @@ private fun CategoryRow(category: SettingsCategory, onClick: () -> Unit, modifie
                 Text(category.summary, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = AppColors.TextDim)
+        }
+    }
+}
+
+@Composable
+private fun ExitAppRow(container: AppContainer, modifier: Modifier = Modifier) {
+    Surface(
+        onClick = { container.exitApp() },
+        color = Color.Transparent,
+        shape = RoundedCornerShape(16.dp),
+        modifier = modifier.fillMaxWidth().testTag("settings_exit_app_button"),
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Logout, contentDescription = null, tint = AppColors.NotReady)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Exit YarmiplayTV", style = MaterialTheme.typography.titleMedium, color = AppColors.NotReady)
+                Text("Stop background playback and close app", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
@@ -415,6 +449,7 @@ private fun AboutSettings(container: AppContainer, nav: Navigator) {
         LinkSetting(link.title, link.subtitle, Modifier.testTag(link.tag)) { uriHandler.openUri(link.url) }
     }
     ValueSetting("Open-source licenses", "mpv, FFmpeg and the other parts this app is built on") { nav.push(Screen.Licenses) }
+    ValueSetting("Exit YarmiplayTV", "Close the app and stop background playback", Modifier.testTag("about_exit_app")) { container.exitApp() }
 }
 
 /**

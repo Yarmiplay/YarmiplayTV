@@ -6,6 +6,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -110,6 +113,7 @@ private fun SheetTitle(title: String, subtitle: String? = null) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Modifier = Modifier, maxHeight: androidx.compose.ui.unit.Dp = 480.dp) {
     val room by container.sync.room.collectAsStateWithLifecycle()
@@ -129,29 +133,53 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
         var saveName by rememberSaveable { mutableStateOf("") }
         val scope = rememberCoroutineScope()
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-            androidx.compose.material3.FilledTonalButton(onBrowse) { Text("Add from library") }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        ) {
+            androidx.compose.material3.FilledTonalButton(
+                onClick = onBrowse,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text("Add from library")
+            }
             if (np != null && room.playlist.none { Filenames.same(it, np.fileName) }) {
-                androidx.compose.material3.OutlinedButton({ container.sync.client?.addToPlaylist(np.fileName) }) {
-                    Icon(Icons.Filled.Add, contentDescription = null); Text(" Add current")
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { container.sync.client?.addToPlaylist(np.fileName) },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add current")
                 }
             }
-            Spacer(Modifier.weight(1f))
             androidx.compose.material3.OutlinedButton(
                 onClick = {
                     saveName = if (room.room.isNotEmpty()) "Room ${room.room}" else "My Playlist"
                     saving = !saving
                 },
                 enabled = room.playlist.isNotEmpty(),
-            ) { Text("Save") }
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text("Save")
+            }
             androidx.compose.material3.OutlinedButton(
                 onClick = { showingSaved = !showingSaved },
-            ) { Text("Saved (${savedPlaylists.size})") }
-            IconButton({ addingLinks = !addingLinks }, Modifier.testTag("playlist_add_links")) { Icon(Icons.Filled.Link, "Add links") }
-            IconButton({ container.playlist.shared.sortAlphabetically() }, enabled = room.playlist.size > 1, modifier = Modifier.testTag("playlist_sort")) {
-                Icon(Icons.Filled.SortByAlpha, "Sort A to Z")
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text("Saved (${savedPlaylists.size})")
             }
-            if (canUndo) IconButton({ container.playlist.shared.undo() }, Modifier.testTag("playlist_undo")) { Icon(Icons.AutoMirrored.Filled.Undo, "Undo") }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton({ addingLinks = !addingLinks }, Modifier.testTag("playlist_add_links")) { Icon(Icons.Filled.Link, "Add links") }
+                IconButton({ container.playlist.shared.sortAlphabetically() }, enabled = room.playlist.size > 1, modifier = Modifier.testTag("playlist_sort")) {
+                    Icon(Icons.Filled.SortByAlpha, "Sort A to Z")
+                }
+                if (canUndo) IconButton({ container.playlist.shared.undo() }, Modifier.testTag("playlist_undo")) { Icon(Icons.AutoMirrored.Filled.Undo, "Undo") }
+            }
         }
         if (saving) {
             Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {

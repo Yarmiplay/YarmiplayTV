@@ -63,6 +63,16 @@ class PlaybackService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
+            ACTION_EXIT -> {
+                MainActivity.isExiting = true
+                container.playlist.stop()
+                container.sync.disconnect()
+                releaseWakeLock()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                MainActivity.exit(this)
+                return START_NOT_STICKY
+            }
         }
         return START_NOT_STICKY
     }
@@ -175,12 +185,20 @@ class PlaybackService : Service() {
         val playPauseIcon = if (playerState.paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
         val playPauseLabel = if (playerState.paused) "Play" else "Pause"
 
+        val exitIntent = PendingIntent.getService(
+            this,
+            4,
+            Intent(this, PlaybackService::class.java).setAction(ACTION_EXIT),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(subtitle)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(contentIntent)
-            .setOngoing(true)
+            .setOngoing(!playerState.paused)
+            .setDeleteIntent(exitIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .addAction(playPauseIcon, playPauseLabel, togglePlayIntent)
@@ -202,8 +220,20 @@ class PlaybackService : Service() {
             builder.addAction(android.R.drawable.ic_media_previous, "Previous", prevIntent)
             builder.addAction(android.R.drawable.ic_media_next, "Next", nextIntent)
         }
+        builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Exit", exitIntent)
 
         return builder.build()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        if (!container.settings.value.playback.stayConnectedMinimized) {
+            container.playlist.stop()
+            container.sync.disconnect()
+            releaseWakeLock()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     override fun onDestroy() {
@@ -218,6 +248,7 @@ class PlaybackService : Service() {
 
         const val ACTION_START = "com.yarmiplaytv.action.PLAYBACK_START"
         const val ACTION_STOP = "com.yarmiplaytv.action.PLAYBACK_STOP"
+        const val ACTION_EXIT = "com.yarmiplaytv.action.PLAYBACK_EXIT"
         const val ACTION_TOGGLE_PLAY_PAUSE = "com.yarmiplaytv.action.PLAYBACK_PLAY_PAUSE"
         const val ACTION_PREVIOUS = "com.yarmiplaytv.action.PLAYBACK_PREVIOUS"
         const val ACTION_NEXT = "com.yarmiplaytv.action.PLAYBACK_NEXT"

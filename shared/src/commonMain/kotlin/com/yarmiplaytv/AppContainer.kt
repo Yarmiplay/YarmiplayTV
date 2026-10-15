@@ -189,6 +189,15 @@ class AppContainer(
     /** Starts checking only when the host calls [Updates.checkOnLaunch]. */
     val updates = Updates(scope, settingsStore, appVersion)
 
+    /** Called when the person or platform requests shutting down the application. */
+    var onExitApp: (() -> Unit)? = null
+
+    fun exitApp() {
+        playlist.stop()
+        sync.disconnect()
+        onExitApp?.invoke()
+    }
+
     init {
         scope.launch { WhatsNew.onLaunch(settingsStore, appVersion) }
         scope.launch {

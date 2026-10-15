@@ -248,6 +248,7 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
         WindowBounds.save(boundsFile, state, pipBounds)
         exitApplication()
     }
+    container.onExitApp = close
     container.updates.exitApp = close
     Window(
         onCloseRequest = close,
