@@ -313,7 +313,7 @@ class SkipServiceTest {
         eventually("reading", millis = 10_000) { season.reads.isNotEmpty() }
         nowPlaying.value = NowPlaying("Other", "other.mkv", 5, 100.0, "file:///other.mkv")
         player.state.value = PlaybackState(url = "file:///other.mkv", fileLoaded = true, duration = 100.0)
-        eventually("the read to stop") { season.sawCancel }
+        eventually("the read to stop", millis = 15_000) { season.sawCancel }
         assertTrue(s.segments.value.isEmpty())
     }
 

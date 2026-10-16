@@ -175,6 +175,11 @@ class LocalPlaybackTest {
     @Test
     fun screenshotButtonSavesTheFrameToPictures() {
         playClipAndWaitLoaded()
+        compose.runOnUiThread {
+            container.player.seek(0.5)
+            container.player.setPaused(false)
+        }
+        compose.waitUntil(10_000) { container.player.currentPosition() >= 0.5 }
         compose.runOnUiThread { container.player.setPaused(true) }
         val before = savedScreenshots()
         compose.waitUntilExactlyOneExists(hasTestTag("screenshot"), 5_000)

@@ -594,6 +594,8 @@ class PlaylistController(
 
     fun stop() {
         resolveJob?.cancel()
+        autoPlayJob?.cancel()
+        previousMedia = null
         pending = null
         _nowPlaying.value = null
         _status.value = PlaylistStatus.Idle
