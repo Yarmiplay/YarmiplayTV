@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.3.1" date="2026-10-16">
+      <description>
+        <p>Fix playback position resetting to 0 when disconnected and reconnecting, and restore unloaded media streams automatically upon reconnection.</p>
+      </description>
+    </release>
     <release version="2.3.0" date="2026-10-16">
       <description>
         <p>Add exit option on the home menu for all devices. Add full exit button on PiP and player on TV. Add toggles for auto PiP and staying connected in background on Android (off by default on TV, on by default on phones and tablets). Add exit button to playback notification on mobile.</p>

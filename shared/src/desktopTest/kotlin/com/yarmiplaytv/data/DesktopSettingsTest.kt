@@ -170,4 +170,17 @@ class DesktopSettingsTest {
         assertTrue("TV PiP override persisted", tvStore.current().playback.pictureInPicture)
         assertTrue("TV stay connected override persisted", tvStore.current().playback.stayConnectedMinimized)
     }
+
+    @Test
+    fun `persisted seek positions can be retrieved with allSeekPositions`() = runBlocking {
+        val folder = tmp.newFolder("seek_positions")
+        val store = desktopSettingsStore(folder)
+
+        store.saveSeekPosition("ep1.mkv", 123.4)
+        store.saveSeekPosition("ep2.mkv", 456.7)
+
+        val positions = store.allSeekPositions()
+        assertEquals(123.4, positions["ep1.mkv"] ?: 0.0, 0.01)
+        assertEquals(456.7, positions["ep2.mkv"] ?: 0.0, 0.01)
+    }
 }

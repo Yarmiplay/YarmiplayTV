@@ -197,12 +197,14 @@ class SyncEngine(
         var madeChange = false
         val pauseChanged = paused != getGlobalPaused() || paused != getPlayerPaused()
         val diff = getPlayerPosition() - position
-        if (lastGlobalUpdate == null) madeChange = initPlayerState(position, paused)
+        val current = getPlayerPosition()
+        val emptyRoomDefault = position == 0.0 && (setBy == null || setBy == host.username)
+        if (lastGlobalUpdate == null) madeChange = initPlayerState(position, paused, setBy)
         globalPaused = paused
-        globalPosition = position
+        globalPosition = if (emptyRoomDefault && current > 0.0) current else position
         lastGlobalUpdate = clock.now()
         if (doSeek) madeChange = serverSeeked(position, setBy) || madeChange
-        if (diff > settings.rewindThreshold && !doSeek && settings.rewindOnDesync) {
+        if (diff > settings.rewindThreshold && !doSeek && settings.rewindOnDesync && !(emptyRoomDefault && current > 0.0)) {
             madeChange = rewindDueToTimeDifference(position, setBy) || madeChange
         }
         if (!doSeek && !paused && settings.slowOnDesync) madeChange = slowDownToCoverTimeDifference(diff, setBy) || madeChange
@@ -211,8 +213,14 @@ class SyncEngine(
         return madeChange
     }
 
-    private fun initPlayerState(position: Double, paused: Boolean): Boolean {
+    private fun initPlayerState(position: Double, paused: Boolean, setBy: String? = null): Boolean {
         if (!playerReady) return false
+        val current = getPlayerPosition()
+        if (position == 0.0 && (setBy == null || setBy == host.username) && current > 0.0) {
+            globalPosition = current
+            setPlayerPaused(paused)
+            return true
+        }
         setPosition(position)
         setPlayerPaused(paused)
         return true
@@ -231,6 +239,7 @@ class SyncEngine(
 
     private fun rewindDueToTimeDifference(position: Double, setBy: String?): Boolean {
         if (host.username == setBy) return false
+        if (position == 0.0 && (setBy == null || setBy == host.username)) return false
         setPosition(position)
         host.notify("Rewinded due to time difference with ${setBy ?: "the room"}")
         return true
@@ -257,7 +266,9 @@ class SyncEngine(
     }
 
     private fun serverPaused(setBy: String?): Boolean {
-        if (host.username != setBy) setPosition(getGlobalPosition())
+        if (host.username != setBy && !(getGlobalPosition() == 0.0 && setBy == null)) {
+            setPosition(getGlobalPosition())
+        }
         setPlayerPaused(true)
         if (setBy != null && setBy != host.username) host.notify("$setBy paused at ${formatTime(getGlobalPosition())}")
         return true
@@ -275,6 +286,8 @@ class SyncEngine(
         // The file opens paused, so playing now means play was pressed while it opened (a slow stream).
         val playPressed = player.isFileLoaded && !player.isPaused
         lastFileLoadTime = now
+        val current = if (player.isFileLoaded) max(player.position, 0.0) else 0.0
+        val pos = if (initialPosition > 0.0) initialPosition else if (current > 0.0) current else 0.0
         if (resetPosition) {
             val target = if (initialPosition > 0.0) initialPosition else 0.0
             resetIgnoreUntil = now + Constants.NEWFILE_IGNORE_TIME
@@ -284,12 +297,12 @@ class SyncEngine(
             if (lastGlobalUpdate != null) setPlayerPaused(globalPaused)
         } else if (lastGlobalUpdate != null) {
             val global = getGlobalPosition()
-            val target = if (global > 0.0) global else if (initialPosition > 0.0) initialPosition else 0.0
+            val target = if (global > 0.0) global else pos
             player.seek(target)
             setPlayerPaused(getGlobalPaused())
-        } else if (initialPosition > 0.0) {
-            player.seek(initialPosition)
-            playerPosition = initialPosition
+        } else if (pos > 0.0) {
+            player.seek(pos)
+            playerPosition = pos
         }
         if (lastPlayerUpdate != null) lastPlayerUpdate = now
         // The room's pause wins for now; the press counts once the switch can no longer be mistaken for it.
@@ -344,14 +357,14 @@ class SyncEngine(
     }
 
     fun getPlayerPosition(): Double {
-        val lpu = lastPlayerUpdate ?: return if (lastGlobalUpdate != null) getGlobalPosition() else 0.0
+        val lpu = lastPlayerUpdate ?: return if (playerReady) max(player.position, 0.0) else if (lastGlobalUpdate != null) getGlobalPosition() else 0.0
         var position = playerPosition
         if (!playerPaused) position += clock.now() - lpu
         return position
     }
 
     fun getPlayerPaused(): Boolean {
-        if (lastPlayerUpdate == null) return if (lastGlobalUpdate != null) getGlobalPaused() else true
+        if (lastPlayerUpdate == null) return if (playerReady) player.isPaused else if (lastGlobalUpdate != null) getGlobalPaused() else true
         return playerPaused
     }
 

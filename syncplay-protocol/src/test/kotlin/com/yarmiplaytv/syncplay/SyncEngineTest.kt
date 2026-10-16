@@ -293,4 +293,41 @@ class SyncEngineTest {
         step(1.0)
         assertTrue(host.sent.none { it.stateChange })
     }
+
+    @Test
+    fun `reconnecting to an empty room does not reset the player position to 0`() {
+        player.isFileLoaded = true
+        serverState(120.0, paused = false)
+        step(2.0)
+        assertEquals(122.0, player.position, 0.2)
+
+        // Disconnect
+        engine.onDisconnected()
+
+        // Reconnect: empty room sends default 0.0 with no user (setBy = null)
+        serverState(0.0, paused = true, setBy = null)
+        step(1.0)
+
+        // Player position must NOT be reset to 0
+        assertEquals(122.0, player.position, 0.2)
+        // Global position should report our current position
+        assertEquals(122.0, engine.getGlobalPosition(), 0.2)
+    }
+
+    @Test
+    fun `reconnecting when another user is at a position syncs to their position`() {
+        player.isFileLoaded = true
+        serverState(120.0, paused = false)
+        step(2.0)
+        assertEquals(122.0, player.position, 0.2)
+
+        // Disconnect
+        engine.onDisconnected()
+
+        // Reconnect: Bob in the room is at 300.0
+        serverState(300.0, paused = false, setBy = "bob")
+        step(1.0)
+
+        assertEquals(301.0, player.position, 0.5)
+    }
 }

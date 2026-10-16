@@ -137,6 +137,14 @@ class PlaylistController(
     private var preparing: Pair<String, Deferred<RoomLocation>>? = null
 
     init {
+        settingsStore?.let { store ->
+            scope.launch {
+                val stored = store.allSeekPositions()
+                stored.forEach { (name, pos) ->
+                    seekPositions.putIfAbsent(name, pos)
+                }
+            }
+        }
         scope.launch { sync.events.collect(::onSyncEvent) }
         scope.launch { player.events.collect(::onPlayerEvent) }
         scope.launch {
@@ -175,6 +183,14 @@ class PlaylistController(
 
     private fun onSyncEvent(event: SyncplayEvent) {
         when (event) {
+            is SyncplayEvent.Connected -> {
+                val current = _nowPlaying.value
+                if (current != null && !player.isFileLoaded) {
+                    val savedPos = getSeekPosition(current.fileName)
+                    Logger.i(TAG, "Reconnected with unloaded media '${current.fileName}'; restoring at $savedPos")
+                    loadFromRoom(current.fileName, resetPosition = false)
+                }
+            }
             is SyncplayEvent.SwitchToPlaylistItem -> loadFromRoom(event.filename, event.resetPosition)
             is SyncplayEvent.AdvancePlaylist -> loadFromRoom(event.filename, resetPosition = true)
             else -> Unit
@@ -358,9 +374,16 @@ class PlaylistController(
         val media = knownPlayables[picked.fileName]?.takeIf { it.playable.url == picked.url && it.copies.size > picked.copies.size }
             ?.let { picked.copy(copies = it.copies) } ?: picked
         val alreadyLoading = pending?.media?.url == media.url
+        val alreadyLoaded = player.isFileLoaded && Filenames.same(_nowPlaying.value?.fileName.orEmpty(), media.fileName)
         pending = PendingLoad(media, resetPosition, fromRoom)
-        // E.g. a reconnect replays the room's selection while a manual pick of the same file is opening.
-        if (alreadyLoading) return
+        // E.g. a reconnect replays the room's selection while a manual pick of the same file is opening,
+        // or the exact same file is already playing.
+        if (alreadyLoading || alreadyLoaded) {
+            if (alreadyLoaded && !fromRoom && resetPosition) {
+                player.seek(0.0)
+            }
+            return
+        }
         _nowPlaying.value = media
         _status.value = PlaylistStatus.Loading(media.fileName)
         sync.reportLoading()

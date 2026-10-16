@@ -658,6 +658,18 @@ class SettingsStore(
         return dataStore.data.first()[Keys.seekPosition(fileName)] ?: 0.0
     }
 
+    suspend fun allSeekPositions(): Map<String, Double> {
+        val p = dataStore.data.first()
+        val result = mutableMapOf<String, Double>()
+        for ((key, value) in p.asMap()) {
+            if (key.name.startsWith(Keys.SEEK_POSITION_PREFIX) && value is Double) {
+                val name = key.name.removePrefix(Keys.SEEK_POSITION_PREFIX)
+                result[name] = value
+            }
+        }
+        return result
+    }
+
     suspend fun savePlayback(prefs: PlaybackPrefs) {
         dataStore.edit {
             it[Keys.hwdec] = prefs.hardwareDecoding

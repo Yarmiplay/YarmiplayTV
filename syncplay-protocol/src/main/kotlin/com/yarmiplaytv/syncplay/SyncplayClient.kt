@@ -1054,18 +1054,19 @@ class SyncplayClient(
 
     private fun handlePlaylistIndex(indexObj: JsonObject) {
         val user = indexObj.str("user")
-        val resetPosition = hadFirstPlaylistIndex
-        hadFirstPlaylistIndex = true
         val index = indexObj["index"]?.jsonPrimitive?.intOrNull ?: return
         val files = state.value.playlist
         if (files.isEmpty()) return
+        val filename = files.getOrNull(index) ?: return
+        val isSameFile = currentFile != null && Filenames.same(filename, currentFile?.name.orEmpty())
+        val resetPosition = hadFirstPlaylistIndex && !isSameFile
+        hadFirstPlaylistIndex = true
         lastPlaylistIndexChange = clock.now()
         _state.update { it.copy(playlistIndex = index) }
         if (!engine.settings.sharedPlaylists) return
-        val filename = files.getOrNull(index) ?: return
         val current = currentFile
         val queued = queuedFilename
-        if (current != null && Filenames.same(filename, current.name) && (queued == null || Filenames.same(queued, filename))) {
+        if (current != null && player.isFileLoaded && Filenames.same(filename, current.name) && (queued == null || Filenames.same(queued, filename))) {
             return
         }
         if (user != null && user != state.value.username) notify("$user selected '$filename'")

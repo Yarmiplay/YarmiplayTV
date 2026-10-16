@@ -210,7 +210,7 @@ class SyncController(
         }
         newClient.start()
         if (loading) newClient.fileLoading()
-        else reportedFile?.let { newClient.fileLoaded(it, resetPosition = false) }
+        else reportedFile?.let { newClient.fileLoaded(it, resetPosition = false, initialPosition = player.currentPosition()) }
     }
 
     /** Connects again with the last [connect]'s settings, e.g. to ask a YarmiplayServerTV host for access. */
@@ -252,7 +252,8 @@ class SyncController(
     fun reportFile(file: FileInfo?, resetPosition: Boolean, initialPosition: Double = 0.0) {
         loading = false
         reportedFile = file
-        clientFlow.value?.fileLoaded(file, resetPosition, initialPosition)
+        val pos = if (initialPosition > 0.0) initialPosition else player.currentPosition()
+        clientFlow.value?.fileLoaded(file, resetPosition, pos)
     }
 
     private fun controllerAuth(event: SyncplayEvent.ControllerAuth) {
