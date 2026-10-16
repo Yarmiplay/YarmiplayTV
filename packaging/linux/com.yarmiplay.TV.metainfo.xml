@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.3.2" date="2026-10-16">
+      <description>
+        <p>Prevent seeker resetting to 0 on reconnection, restore dropped media streams, and test stability fixes.</p>
+      </description>
+    </release>
     <release version="2.3.1" date="2026-10-16">
       <description>
         <p>Fix playback position resetting to 0 when disconnected and reconnecting, and restore unloaded media streams automatically upon reconnection.</p>
