@@ -294,6 +294,7 @@ class LocalPlaybackTest {
     @Test
     fun leavingTheAppWhilePlayingGoesIntoPictureInPicture() {
         assumeTrue("no picture-in-picture on this device", pipSupported)
+        waitFor(5_000) { container.settings.value.playback.pictureInPicture }
         val activity = compose.activity
         withLongClipPlaying {
             Screenshots.shell("input keyevent KEYCODE_HOME")
@@ -323,6 +324,7 @@ class LocalPlaybackTest {
             }
         } finally {
             runBlocking { container.settingsStore.savePlayback(saved) }
+            waitFor(5_000) { container.settings.value.playback.pictureInPicture == saved.pictureInPicture }
         }
     }
 
@@ -349,9 +351,10 @@ class LocalPlaybackTest {
     private fun play() {
         compose.runOnUiThread { container.player.setPaused(false) }
         waitFor(5_000) { !container.player.state.value.paused }
+        compose.waitUntil(5_000) { container.player.currentPosition() > 0.1 }
         // A few frames for the parameters (auto-enter on) to be set from the new state.
         repeat(5) { compose.mainClock.advanceTimeByFrame() }
-        Thread.sleep(300)
+        Thread.sleep(500)
     }
 
     /**

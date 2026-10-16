@@ -74,7 +74,10 @@ class ManagedRoomUiTest {
         compose.onNodeWithText("🔒 movie night").assertExists()
         assertTrue(container.sync.room.value.followsOperators)
 
-        compose.onNodeWithTag("operator_password_field").performScrollTo().performTextInput("ab-123-456")
+        compose.waitUntilExactlyOneExists(hasTestTag("operator_password_field"), 10_000)
+        compose.waitForIdle()
+        runCatching { compose.onNodeWithTag("operator_password_field").performScrollTo() }
+        compose.onNodeWithTag("operator_password_field").performTextInput("ab-123-456")
         compose.onNodeWithTag("identify_operator").performClick()
         waitUntil(10_000) { container.sync.room.value.isOperator }
         compose.waitUntilAtLeastOneExists(hasText("Operator password: AB-123-456"), 10_000)
@@ -93,7 +96,9 @@ class ManagedRoomUiTest {
         state.joinRoom(syncplay, managed)
         openRoomSheet()
         compose.waitUntilExactlyOneExists(hasTestTag("operator_password_field"), 10_000)
-        compose.onNodeWithTag("operator_password_field").performScrollTo().performTextInput("ZZ-000-000")
+        compose.waitForIdle()
+        runCatching { compose.onNodeWithTag("operator_password_field").performScrollTo() }
+        compose.onNodeWithTag("operator_password_field").performTextInput("ZZ-000-000")
         compose.onNodeWithTag("identify_operator").performClick()
         waitUntil(10_000) { container.sync.feed.value.any { it.text == "Wrong room password" } }
         assertTrue(!container.sync.room.value.isOperator)
@@ -104,7 +109,9 @@ class ManagedRoomUiTest {
         state.joinRoom(syncplay)
         openRoomSheet()
         compose.waitUntilExactlyOneExists(hasTestTag("managed_create_field"), 10_000)
-        compose.onNodeWithTag("managed_create_field").performScrollTo().performTextInput("film club")
+        compose.waitForIdle()
+        runCatching { compose.onNodeWithTag("managed_create_field").performScrollTo() }
+        compose.onNodeWithTag("managed_create_field").performTextInput("film club")
         compose.onNodeWithTag("managed_create").performClick()
 
         val room = "+film club:${FakeSyncplayServer.MANAGED_HASH}"
@@ -126,7 +133,9 @@ class ManagedRoomUiTest {
         compose.onNodeWithTag("field_port").performTextReplacement(syncplay.port.toString())
         compose.onNodeWithTag("field_name").performTextReplacement("Sam")
         compose.onNodeWithTag("field_room").performTextReplacement("film club")
-        compose.onNodeWithTag("connect_create_managed").performScrollTo().performClick()
+        compose.waitForIdle()
+        runCatching { compose.onNodeWithTag("connect_create_managed").performScrollTo() }
+        compose.onNodeWithTag("connect_create_managed").performClick()
 
         val room = "+film club:${FakeSyncplayServer.MANAGED_HASH}"
         created += room
