@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
 import com.yarmiplaytv.media.jellyfin.JellyfinSource
 import com.yarmiplaytv.media.mal.MalAccount
@@ -138,9 +139,9 @@ data class PlaybackPrefs(
     /** TV: how long the player's controls stay up while a video plays; 0 keeps them up. */
     val controlsHideSeconds: Int = 3,
     /** Android: leaving the app while a video plays shrinks it to a picture-in-picture window. */
-    val pictureInPicture: Boolean = true,
+    val pictureInPicture: Boolean = !DevicePlatform.isTv,
     /** Keep playback and room sync running in background with notification controls when minimized. */
-    val stayConnectedMinimized: Boolean = true,
+    val stayConnectedMinimized: Boolean = !DevicePlatform.isTv,
     /** Skip anime openings and endings automatically when watching alone (in a room, the room decides). */
     val autoSkipAlone: Boolean = false,
     /** Offer a Skip button for a few seconds as an opening or ending starts, when it isn't skipped automatically. */
@@ -263,7 +264,10 @@ internal object KnownServers {
 private val malMappingsSerializer = MapSerializer(String.serializer(), MalMapping.serializer())
 private val malQueueSerializer = ListSerializer(MalQueued.serializer())
 
-class SettingsStore(private val dataStore: DataStore<Preferences>) {
+class SettingsStore(
+    private val dataStore: DataStore<Preferences>,
+    val isTv: Boolean = DevicePlatform.isTv,
+) {
     private object Keys {
         val host = stringPreferencesKey("sp_host")
         val port = intPreferencesKey("sp_port")
@@ -362,7 +366,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
     suspend fun current(): AppSettings = settings.first()
 
     private fun read(p: Preferences): AppSettings {
-        val defaults = AppSettings()
+        val defaults = AppSettings(playback = PlaybackPrefs(pictureInPicture = !isTv, stayConnectedMinimized = !isTv))
         val jellyfinServers = p[Keys.jfServers]?.let { decode(it, jellyfinList) } ?: listOfNotNull(legacyJellyfin(p))
         val plexServers = p[Keys.pxServers]?.let { decode(it, plexList) } ?: listOfNotNull(legacyPlex(p))
         val preferred = when (val saved = p[Keys.preferredServer] ?: "") {
@@ -392,8 +396,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
             autoReadyOnLoad = p[Keys.autoReady] ?: true,
             playback = PlaybackPrefs(
                 hardwareDecoding = p[Keys.hwdec] ?: true,
-                pictureInPicture = p[Keys.pip] ?: true,
-                stayConnectedMinimized = p[Keys.stayConnectedMinimized] ?: true,
+                pictureInPicture = p[Keys.pip] ?: !isTv,
+                stayConnectedMinimized = p[Keys.stayConnectedMinimized] ?: !isTv,
                 audioLanguages = p[Keys.alang] ?: defaults.playback.audioLanguages,
                 subtitleLanguages = p[Keys.slang] ?: defaults.playback.subtitleLanguages,
                 seekStepSeconds = p[Keys.seekStep] ?: 10,

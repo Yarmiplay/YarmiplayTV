@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Folder
@@ -133,6 +134,8 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                 if (source != null) IconAction(Icons.Filled.Search, "Search", { nav.push(Screen.Search()) }, toNotice)
                 Spacer(Modifier.width(8.dp))
                 IconAction(Icons.Filled.Settings, "Settings", { nav.push(Screen.Settings) }, toNotice)
+                Spacer(Modifier.width(8.dp))
+                IconAction(Icons.AutoMirrored.Filled.Logout, "Exit", { container.exitApp() }, toNotice)
             }
         }
         update?.let { u ->
@@ -198,6 +201,13 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                         Modifier.testTag("card_mal"),
                     ) { nav.push(if (user == null) Screen.MalLogin else Screen.Mal) }
                 }
+                StatusTile(
+                    Icons.AutoMirrored.Filled.Logout,
+                    "Exit YarmiplayTV",
+                    "Close the app completely",
+                    AppColors.NotReady,
+                    Modifier.testTag("card_exit"),
+                ) { container.exitApp() }
             }
         }
         if (loadError != null) {

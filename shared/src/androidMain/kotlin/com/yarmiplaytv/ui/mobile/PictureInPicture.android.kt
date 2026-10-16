@@ -121,9 +121,20 @@ fun pipParams(context: Context, aspect: Double, paused: Boolean, autoEnter: Bool
     )
     val label = if (paused) "Play" else "Pause"
     val icon = Icon.createWithResource(context, if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause)
+    val exitIntent = PendingIntent.getBroadcast(
+        context,
+        1,
+        Intent(ACTION_PIP_EXIT).setPackage(context.packageName),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+    val exitIcon = Icon.createWithResource(context, android.R.drawable.ic_menu_close_clear_cancel)
+    val actions = listOf(
+        RemoteAction(icon, label, label, toggle),
+        RemoteAction(exitIcon, "Exit", "Exit YarmiplayTV", exitIntent),
+    )
     return PictureInPictureParams.Builder()
         .setAspectRatio(pipAspect(aspect))
-        .setActions(listOf(RemoteAction(icon, label, label, toggle)))
+        .setActions(actions)
         .apply {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 setAutoEnterEnabled(autoEnter)
@@ -142,6 +153,7 @@ fun pipAspect(aspect: Double): Rational {
 
 private const val TAG = "PictureInPicture"
 const val ACTION_PIP_PLAY_PAUSE = "com.yarmiplaytv.action.PIP_PLAY_PAUSE"
+const val ACTION_PIP_EXIT = "com.yarmiplaytv.action.PIP_EXIT"
 private const val MAX_ASPECT = 2.39
 /** A little over 1:2.39, so rounding to [ASPECT_SCALE] never drops below the limit. */
 private const val MIN_ASPECT = 0.42

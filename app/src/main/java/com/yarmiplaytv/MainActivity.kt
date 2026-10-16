@@ -1,7 +1,9 @@
 package com.yarmiplaytv
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -13,11 +15,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.toArgb
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.playback.PlaybackService
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.TvRoot
+import com.yarmiplaytv.ui.mobile.ACTION_PIP_EXIT
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
 import com.yarmiplaytv.ui.mobile.PlayerPictureInPicture
@@ -31,6 +35,12 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val container get() = (application as YarmiplayTvApp).container
+
+    private val pipExitReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            exit(context ?: this@MainActivity)
+        }
+    }
 
     lateinit var deviceKind: DeviceKind
         private set
@@ -76,7 +86,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        if (deviceKind != DeviceKind.TV && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val hasPip = packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+        if (hasPip) {
+            ContextCompat.registerReceiver(this, pipExitReceiver, IntentFilter(ACTION_PIP_EXIT), ContextCompat.RECEIVER_NOT_EXPORTED)
+        }
+
+        if (hasPip && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             lifecycleScope.launch {
                 combine(container.settings, container.player.state) { settings, playerState ->
                     settings.playback.pictureInPicture to playerState
@@ -98,7 +113,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         val isTest = System.getProperty("yarmiplaytv.noUpdateCheck") != null
-        if (!isExiting && !isTest && deviceKind != DeviceKind.TV) {
+        if (!isExiting && !isTest) {
             val settings = container.settings.value
             val playerState = container.player.state.value
             val inRoom = container.sync.room.value.status == ConnectionStatus.CONNECTED
@@ -111,6 +126,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        runCatching { unregisterReceiver(pipExitReceiver) }
         if (activeActivity == this) {
             activeActivity = null
         }
@@ -118,7 +134,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (deviceKind != DeviceKind.TV && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+        val hasPip = packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+        if (hasPip && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             val settings = container.settings.value
             val player = container.player
             val state = player.state.value
@@ -174,6 +191,10 @@ class MainActivity : ComponentActivity() {
             act?.container?.playlist?.stop()
             act?.container?.sync?.disconnect()
             val ctx = context ?: act
+            (ctx?.applicationContext as? YarmiplayTvApp)?.container?.let { c ->
+                c.playlist.stop()
+                c.sync.disconnect()
+            }
             if (ctx != null) {
                 PlaybackService.stop(ctx)
             }

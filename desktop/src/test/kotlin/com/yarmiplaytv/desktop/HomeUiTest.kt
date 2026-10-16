@@ -57,6 +57,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.job
+
 /** The home screen on desktop: every card's text shows in full, from the smallest window to a large one. */
 @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
 class HomeUiTest {
@@ -72,7 +75,7 @@ class HomeUiTest {
         main = Executors.newSingleThreadExecutor { Thread(it, "main") }.asCoroutineDispatcher()
         Dispatchers.setMain(main)
         storeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-        store = desktopSettingsStore(tmp.root.resolve("app"), storeScope)
+        store = desktopSettingsStore(tmp.newFolder(), storeScope)
         runBlocking { store.saveRoomVisit(SavedRoom("syncplay.example-friends-server.net", 8999, false, "desk", "Saturday anime night")) }
         app = AppContainer(
             settingsStore = store,
@@ -87,7 +90,7 @@ class HomeUiTest {
     @After
     fun tearDown() {
         app.scope.cancel()
-        storeScope.cancel()
+        runBlocking { storeScope.coroutineContext.job.cancelAndJoin() }
         Dispatchers.resetMain()
         main.close()
     }
@@ -168,6 +171,24 @@ class HomeUiTest {
         val corner = image.getRGB(card.left.toInt() + 1, card.top.toInt() + 1)
         val page = image.getRGB(card.left.toInt() - 4, card.top.toInt() + 1)
         assertEquals("corner outside the rounding", page, corner)
+    }
+
+    @Test
+    fun `exit option on home triggers exitApp`() = runDesktopComposeUiTest(1280, 800) {
+        var exited = false
+        app.onExitApp = { exited = true }
+        show(1280, 800)
+        onNodeWithTag("home_exit_app").performClick()
+        assertTrue("Exit option on home should trigger exitApp", exited)
+    }
+
+    @Test
+    fun `exit option on sidebar triggers exitApp`() = runDesktopComposeUiTest(1280, 800) {
+        var exited = false
+        app.onExitApp = { exited = true }
+        show(1280, 800)
+        onNodeWithTag("sidebar_exit").performClick()
+        assertTrue("Exit option on sidebar should trigger exitApp", exited)
     }
 
     private fun ComposeUiTest.screenshot(name: String) {

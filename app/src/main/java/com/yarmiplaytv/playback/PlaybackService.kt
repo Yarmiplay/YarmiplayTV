@@ -202,6 +202,7 @@ class PlaybackService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .addAction(playPauseIcon, playPauseLabel, togglePlayIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Exit", exitIntent)
 
         val skips = inRoom && room.playlist.isNotEmpty()
         if (skips) {
@@ -220,7 +221,6 @@ class PlaybackService : Service() {
             builder.addAction(android.R.drawable.ic_media_previous, "Previous", prevIntent)
             builder.addAction(android.R.drawable.ic_media_next, "Next", nextIntent)
         }
-        builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Exit", exitIntent)
 
         return builder.build()
     }

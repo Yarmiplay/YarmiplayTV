@@ -33,8 +33,9 @@ class YarmiplayTvApp : Application() {
     override fun onCreate() {
         super.onCreate()
         DevicePlatform.init(this)
+        val isTv = DeviceUi.kind(this) == DeviceKind.TV
         container = AppContainer(
-            settingsStore = SettingsStore(dataStore),
+            settingsStore = SettingsStore(dataStore, isTv = isTv),
             deviceName = listOf(Build.MANUFACTURER, Build.MODEL).joinToString(" ").trim().ifEmpty { "Android TV" },
             appVersion = BuildConfig.VERSION_NAME,
             createPlayer = { initial ->

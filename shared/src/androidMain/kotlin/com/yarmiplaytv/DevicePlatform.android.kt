@@ -1,6 +1,9 @@
 package com.yarmiplaytv
 
+import android.app.UiModeManager
 import android.content.Context
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
@@ -14,6 +17,14 @@ actual object DevicePlatform {
     fun init(context: Context) {
         appContext = context.applicationContext
     }
+
+    actual val isTv: Boolean
+        get() {
+            val ctx = appContext ?: return false
+            val uiMode = ctx.getSystemService(UiModeManager::class.java)?.currentModeType
+            return uiMode == Configuration.UI_MODE_TYPE_TELEVISION ||
+                ctx.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+        }
 
     actual val deviceModel: String get() = Build.MODEL.orEmpty()
 

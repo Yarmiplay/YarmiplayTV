@@ -248,18 +248,14 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                     }
                     TvSettingsCategory.PLAYBACK -> {
                 ToggleRow("Hardware decoding", pb.hardwareDecoding, { savePlayback(pb.copy(hardwareDecoding = !pb.hardwareDecoding)) }, subtitle = "MediaCodec with software fallback. Takes effect after restarting the app")
-                // Many TVs have no picture-in-picture.
-                val context = LocalContext.current
-                if (remember(context) { context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) }) {
-                    ToggleRow(
-                        "Picture-in-picture when leaving the app",
-                        pb.pictureInPicture,
-                        { savePlayback(pb.copy(pictureInPicture = !pb.pictureInPicture)) },
-                        subtitle = "A playing video keeps going, in sync, in a small window over other apps",
-                    )
-                }
                 ToggleRow(
-                    "Stay connected when minimized",
+                    "Picture-in-picture when leaving the app",
+                    pb.pictureInPicture,
+                    { savePlayback(pb.copy(pictureInPicture = !pb.pictureInPicture)) },
+                    subtitle = "A playing video keeps going, in sync, in a small window over other apps",
+                )
+                ToggleRow(
+                    "Stay connected when in background",
                     pb.stayConnectedMinimized,
                     { savePlayback(pb.copy(stayConnectedMinimized = !pb.stayConnectedMinimized)) },
                     subtitle = "Keep room sync and playback active in background with playback controls",

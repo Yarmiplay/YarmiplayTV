@@ -27,6 +27,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -250,10 +251,18 @@ private fun MobileScaffold(
                                 modifier = Modifier.testTag("tab_${tab.label}"),
                             )
                         }
+                        Spacer(Modifier.weight(1f))
+                        NavigationRailItem(
+                            selected = false,
+                            onClick = { container.exitApp() },
+                            icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Exit YarmiplayTV") },
+                            label = { Text("Exit") },
+                            modifier = Modifier.testTag("rail_exit"),
+                        )
                     }
                 }
                 SectionNav.SIDEBAR -> if (screen != Screen.Player) {
-                    Sidebar(selected, onTab)
+                    Sidebar(container, selected, onTab)
                     VerticalDivider(color = AppColors.SurfaceHigh)
                 }
                 SectionNav.BAR -> Unit
@@ -372,7 +381,7 @@ private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
 
 /** Desktop: the app's name, then the sections as a list like the Settings categories. */
 @Composable
-private fun Sidebar(selected: Tab, onTab: (Tab) -> Unit) {
+private fun Sidebar(container: AppContainer, selected: Tab, onTab: (Tab) -> Unit) {
     Column(Modifier.width(SIDEBAR_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState()).padding(12.dp).testTag("sidebar")) {
         Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(appLogoPainter(), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(32.dp))
@@ -380,6 +389,8 @@ private fun Sidebar(selected: Tab, onTab: (Tab) -> Unit) {
             Text("YarmiplayTV", style = MaterialTheme.typography.titleLarge)
         }
         tabs.forEach { tab -> SideNavItem(tab.label, tab.icon, tab == selected, { onTab(tab) }, Modifier.testTag("tab_${tab.label}")) }
+        Spacer(Modifier.weight(1f))
+        SideNavItem("Exit", Icons.AutoMirrored.Filled.Logout, false, { container.exitApp() }, Modifier.testTag("sidebar_exit"))
     }
 }
 

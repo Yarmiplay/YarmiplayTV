@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Bookmarks
@@ -496,7 +497,10 @@ private fun CenterStatus(
                         color = OnVideo.Text,
                         modifier = Modifier.onVideoLabel(),
                     )
-                    ActionButton("Browse", { nav.popTo(Screen.Home) }, Modifier.focusRequester(focus), icon = Icons.Filled.Home, primary = true)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ActionButton("Browse", { nav.popTo(Screen.Home) }, Modifier.focusRequester(focus), icon = Icons.Filled.Home, primary = true)
+                        ActionButton("Exit", { container.exitApp() }, icon = Icons.AutoMirrored.Filled.Logout)
+                    }
                 }
             }
         }
@@ -610,6 +614,7 @@ private fun ControlsBar(
             }
             ActionButton("Menus", onOpenMenus, Modifier.testTag("menus"), icon = Icons.Filled.Menu, container = ON_VIDEO_BUTTON)
             IconAction(Icons.Filled.Home, "Browse", onHome, tint = OnVideo.Text)
+            IconAction(Icons.AutoMirrored.Filled.Logout, "Exit", { container.exitApp() }, Modifier.testTag("player_exit"), tint = OnVideo.Text)
         })
     }
 }

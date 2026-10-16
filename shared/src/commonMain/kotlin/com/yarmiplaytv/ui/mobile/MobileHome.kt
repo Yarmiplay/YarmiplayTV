@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Folder
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.SdStorage
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -92,12 +94,20 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
         item {
             // Desktop has the app's name at the top of its side list; there Home is titled like the other sections.
             if (kind == DeviceKind.DESKTOP) {
-                MobileTopBar("Home", nav, showBack = false)
+                MobileTopBar("Home", nav, showBack = false, actions = {
+                    IconButton(onClick = { container.exitApp() }, modifier = Modifier.testTag("home_exit_app")) {
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Exit YarmiplayTV", tint = AppColors.TextDim)
+                    }
+                })
             } else {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(appLogoPainter(), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(36.dp))
                     Spacer(Modifier.width(12.dp))
                     Text("YarmiplayTV", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { container.exitApp() }, modifier = Modifier.testTag("home_exit_app")) {
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Exit YarmiplayTV", tint = AppColors.TextDim)
+                    }
                 }
             }
         }

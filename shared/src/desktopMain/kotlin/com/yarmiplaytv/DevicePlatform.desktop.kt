@@ -3,6 +3,7 @@ package com.yarmiplaytv
 import java.net.InetAddress
 
 actual object DevicePlatform {
+    actual val isTv: Boolean get() = false
     actual val deviceModel: String by lazy {
         System.getenv("COMPUTERNAME")?.takeIf { it.isNotBlank() }
             ?: System.getenv("HOSTNAME")?.takeIf { it.isNotBlank() }

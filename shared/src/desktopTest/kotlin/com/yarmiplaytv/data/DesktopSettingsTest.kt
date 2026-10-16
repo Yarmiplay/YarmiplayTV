@@ -148,4 +148,26 @@ class DesktopSettingsTest {
         val store = desktopSettingsStore(tmp.newFolder("ids"))
         assertEquals(store.deviceId(), store.deviceId())
     }
+
+    @Test
+    fun `defaults for TV vs phone and tablet`() = runBlocking {
+        val tvFile = tmp.newFolder("tv").resolve("settings.preferences_pb")
+        val tvStore = SettingsStore(PreferenceDataStoreFactory.createWithPath(produceFile = { tvFile.toOkioPath() }), isTv = true)
+
+        val phoneFile = tmp.newFolder("phone").resolve("settings.preferences_pb")
+        val phoneStore = SettingsStore(PreferenceDataStoreFactory.createWithPath(produceFile = { phoneFile.toOkioPath() }), isTv = false)
+
+        val tvSettings = tvStore.current()
+        assertFalse("TV PiP should be off by default", tvSettings.playback.pictureInPicture)
+        assertFalse("TV stay connected should be off by default", tvSettings.playback.stayConnectedMinimized)
+
+        val phoneSettings = phoneStore.current()
+        assertTrue("Phone/tablet PiP should be on by default", phoneSettings.playback.pictureInPicture)
+        assertTrue("Phone/tablet stay connected should be on by default", phoneSettings.playback.stayConnectedMinimized)
+
+        // Overrides persist
+        tvStore.savePlayback(tvSettings.playback.copy(pictureInPicture = true, stayConnectedMinimized = true))
+        assertTrue("TV PiP override persisted", tvStore.current().playback.pictureInPicture)
+        assertTrue("TV stay connected override persisted", tvStore.current().playback.stayConnectedMinimized)
+    }
 }

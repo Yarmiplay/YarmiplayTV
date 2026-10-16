@@ -79,5 +79,5 @@ fun desktopSettingsStore(
 ): SettingsStore {
     dir.mkdirs()
     val file = File(dir, "settings.preferences_pb")
-    return SettingsStore(PreferenceDataStoreFactory.createWithPath(scope = scope, produceFile = { file.toOkioPath() }))
+    return SettingsStore(PreferenceDataStoreFactory.createWithPath(scope = scope, produceFile = { file.toOkioPath() }), isTv = false)
 }

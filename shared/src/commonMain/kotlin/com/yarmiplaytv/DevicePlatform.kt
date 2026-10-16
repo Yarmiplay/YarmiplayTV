@@ -2,6 +2,9 @@ package com.yarmiplaytv
 
 /** Facts about the device the shared code needs to ask the platform for. */
 expect object DevicePlatform {
+    /** True on Google TV / Android TV (Leanback / TV UI mode). */
+    val isTv: Boolean
+
     /** Device model on Android, host name on desktop; part of the default Syncplay name. */
     val deviceModel: String
 
