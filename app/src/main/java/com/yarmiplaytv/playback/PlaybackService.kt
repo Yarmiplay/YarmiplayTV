@@ -8,14 +8,17 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.drawable.Icon
+import android.media.MediaMetadata
+import android.media.session.MediaSession
+import android.media.session.PlaybackState as SessionPlaybackState
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import androidx.core.app.NotificationCompat
+import android.os.SystemClock
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.yarmiplaytv.MainActivity
-import com.yarmiplaytv.R
 import com.yarmiplaytv.YarmiplayTvApp
 import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.player.PlaybackState
@@ -32,6 +35,7 @@ import kotlinx.coroutines.launch
 class PlaybackService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var wakeLock: PowerManager.WakeLock? = null
+    private var mediaSession: MediaSession? = null
     private val container get() = (application as YarmiplayTvApp).container
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -39,6 +43,7 @@ class PlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        initMediaSession()
         acquireWakeLock()
         startInForeground()
         observePlayback()
@@ -50,13 +55,13 @@ class PlaybackService : Service() {
                 startInForeground()
             }
             ACTION_TOGGLE_PLAY_PAUSE -> {
-                container.player.setPaused(!container.player.isPaused)
+                handleTogglePlayPause()
             }
             ACTION_PREVIOUS -> {
-                container.playlist.skip(forward = false)
+                handlePrevious()
             }
             ACTION_NEXT -> {
-                container.playlist.skip(forward = true)
+                handleNext()
             }
             ACTION_STOP -> {
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -64,17 +69,88 @@ class PlaybackService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_EXIT -> {
-                MainActivity.isExiting = true
-                container.playlist.stop()
-                container.sync.disconnect()
-                releaseWakeLock()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                MainActivity.exit(this)
+                handleExit()
                 return START_NOT_STICKY
             }
         }
         return START_NOT_STICKY
+    }
+
+    private fun initMediaSession() {
+        mediaSession = MediaSession(this, "YarmiplayTV").apply {
+            setCallback(object : MediaSession.Callback() {
+                override fun onPlay() {
+                    handleTogglePlayPause()
+                }
+
+                override fun onPause() {
+                    handleTogglePlayPause()
+                }
+
+                override fun onSkipToPrevious() {
+                    handlePrevious()
+                }
+
+                override fun onSkipToNext() {
+                    handleNext()
+                }
+
+                override fun onSeekTo(pos: Long) {
+                    val targetSeconds = (pos / 1000.0).coerceAtLeast(0.0)
+                    container.player.seek(targetSeconds)
+                    updatePlaybackState(container.player.state.value, targetPosition = targetSeconds)
+                }
+
+                override fun onStop() {
+                    handleExit()
+                }
+            })
+            isActive = true
+        }
+    }
+
+    private fun handleTogglePlayPause() {
+        container.player.setPaused(!container.player.isPaused)
+    }
+
+    private fun handlePrevious() {
+        val inRoom = container.sync.room.value.status == ConnectionStatus.CONNECTED
+        if (inRoom && container.playlist.skipTarget(container.sync.room.value, forward = false) != null) {
+            container.playlist.skip(forward = false)
+        } else if (container.player.currentPosition() > 3.0) {
+            container.player.seek(0.0)
+            updatePlaybackState(container.player.state.value, targetPosition = 0.0)
+        } else {
+            container.player.seekRelative(-10.0)
+            updatePlaybackState(container.player.state.value, targetPosition = (container.player.currentPosition() - 10.0).coerceAtLeast(0.0))
+        }
+    }
+
+    private fun handleNext() {
+        val inRoom = container.sync.room.value.status == ConnectionStatus.CONNECTED
+        if (inRoom && container.playlist.skipTarget(container.sync.room.value, forward = true) != null) {
+            container.playlist.skip(forward = true)
+        } else {
+            container.player.seekRelative(10.0)
+            val dur = container.player.state.value.duration
+            val target = (container.player.currentPosition() + 10.0).let { if (dur > 0) it.coerceAtMost(dur) else it }
+            updatePlaybackState(container.player.state.value, targetPosition = target)
+        }
+    }
+
+    private fun handleExit() {
+        MainActivity.isExiting = true
+        container.playlist.stop()
+        container.sync.disconnect()
+        releaseWakeLock()
+        mediaSession?.apply {
+            isActive = false
+            release()
+        }
+        mediaSession = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+        MainActivity.exit(this)
     }
 
     private fun acquireWakeLock() {
@@ -109,11 +185,11 @@ class PlaybackService : Service() {
     }
 
     private fun startInForeground() {
-        val notification = buildNotification(
-            container.player.state.value,
-            container.sync.room.value,
-            container.playlist.nowPlaying.value,
-        )
+        val playerState = container.player.state.value
+        val room = container.sync.room.value
+        val nowPlaying = container.playlist.nowPlaying.value
+        updateSession(playerState, room, nowPlaying)
+        val notification = buildNotification(playerState, room, nowPlaying)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         } else {
@@ -143,10 +219,60 @@ class PlaybackService : Service() {
                         wakeLock?.acquire(10 * 60 * 1000L)
                     }
                 }
+                updateSession(update.playerState, update.room, update.nowPlaying)
                 val notification = buildNotification(update.playerState, update.room, update.nowPlaying)
                 NotificationManagerCompat.from(this@PlaybackService).notify(NOTIFICATION_ID, notification)
             }
         }
+    }
+
+    private fun updateSession(playerState: PlaybackState, room: RoomState, nowPlaying: NowPlaying?) {
+        val inRoom = room.status == ConnectionStatus.CONNECTED
+        val isAudio = FileNames.isAudio(nowPlaying?.fileName ?: playerState.url.orEmpty())
+        val title = nowPlaying?.title
+            ?: FileNames.baseName(playerState.url.orEmpty()).ifEmpty {
+                if (inRoom) "Room: ${room.room}" else "YarmiplayTV"
+            }
+        val series = nowPlaying?.episode?.seriesName
+        val roomInfo = if (inRoom) "Room: ${room.room} (${room.users.size} viewers)" else null
+        val subtitle = listOfNotNull(series, roomInfo).joinToString(" · ").ifEmpty {
+            if (isAudio) "Music" else "Playback active"
+        }
+
+        val durationMs = (playerState.duration * 1000).toLong().coerceAtLeast(0L)
+        val metadata = MediaMetadata.Builder()
+            .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, subtitle)
+            .putString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST, subtitle)
+            .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, title)
+            .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, subtitle)
+            .putLong(MediaMetadata.METADATA_KEY_DURATION, durationMs)
+            .build()
+        mediaSession?.setMetadata(metadata)
+
+        updatePlaybackState(playerState)
+    }
+
+    private fun updatePlaybackState(playerState: PlaybackState, targetPosition: Double? = null) {
+        val posSeconds = targetPosition ?: container.player.currentPosition()
+        val posMs = (posSeconds * 1000).toLong().coerceAtLeast(0L)
+        val isPaused = playerState.paused
+        val state = if (isPaused) SessionPlaybackState.STATE_PAUSED else SessionPlaybackState.STATE_PLAYING
+        val speed = if (isPaused) 0f else (playerState.speed.toFloat().takeIf { it > 0f } ?: 1f)
+
+        val actions = SessionPlaybackState.ACTION_PLAY or
+            SessionPlaybackState.ACTION_PAUSE or
+            SessionPlaybackState.ACTION_PLAY_PAUSE or
+            SessionPlaybackState.ACTION_STOP or
+            SessionPlaybackState.ACTION_SKIP_TO_PREVIOUS or
+            SessionPlaybackState.ACTION_SKIP_TO_NEXT or
+            SessionPlaybackState.ACTION_SEEK_TO
+
+        val playbackState = SessionPlaybackState.Builder()
+            .setActions(actions)
+            .setState(state, posMs, speed, SystemClock.elapsedRealtime())
+            .build()
+        mediaSession?.setPlaybackState(playbackState)
     }
 
     private fun buildNotification(
@@ -175,6 +301,13 @@ class PlaybackService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
+        val prevIntent = PendingIntent.getService(
+            this,
+            2,
+            Intent(this, PlaybackService::class.java).setAction(ACTION_PREVIOUS),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
         val togglePlayIntent = PendingIntent.getService(
             this,
             1,
@@ -182,8 +315,12 @@ class PlaybackService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        val playPauseIcon = if (playerState.paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
-        val playPauseLabel = if (playerState.paused) "Play" else "Pause"
+        val nextIntent = PendingIntent.getService(
+            this,
+            3,
+            Intent(this, PlaybackService::class.java).setAction(ACTION_NEXT),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
 
         val exitIntent = PendingIntent.getService(
             this,
@@ -192,53 +329,69 @@ class PlaybackService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+        val playPauseIcon = if (playerState.paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
+        val playPauseLabel = if (playerState.paused) "Play" else "Pause"
+
+        val mediaStyle = Notification.MediaStyle()
+        mediaSession?.let { mediaStyle.setMediaSession(it.sessionToken) }
+        mediaStyle.setShowActionsInCompactView(0, 1, 2)
+
+        return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(subtitle)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(contentIntent)
             .setOngoing(!playerState.paused)
             .setDeleteIntent(exitIntent)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
-            .addAction(playPauseIcon, playPauseLabel, togglePlayIntent)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Exit", exitIntent)
-
-        val skips = inRoom && room.playlist.isNotEmpty()
-        if (skips) {
-            val prevIntent = PendingIntent.getService(
-                this,
-                2,
-                Intent(this, PlaybackService::class.java).setAction(ACTION_PREVIOUS),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setCategory(Notification.CATEGORY_TRANSPORT)
+            .setStyle(mediaStyle)
+            .addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(this, android.R.drawable.ic_media_previous),
+                    "Previous",
+                    prevIntent,
+                ).build(),
             )
-            val nextIntent = PendingIntent.getService(
-                this,
-                3,
-                Intent(this, PlaybackService::class.java).setAction(ACTION_NEXT),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            .addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(this, playPauseIcon),
+                    playPauseLabel,
+                    togglePlayIntent,
+                ).build(),
             )
-            builder.addAction(android.R.drawable.ic_media_previous, "Previous", prevIntent)
-            builder.addAction(android.R.drawable.ic_media_next, "Next", nextIntent)
-        }
-
-        return builder.build()
+            .addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(this, android.R.drawable.ic_media_next),
+                    "Next",
+                    nextIntent,
+                ).build(),
+            )
+            .addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
+                    "Exit",
+                    exitIntent,
+                ).build(),
+            )
+            .build()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         if (!container.settings.value.playback.stayConnectedMinimized) {
-            container.playlist.stop()
-            container.sync.disconnect()
-            releaseWakeLock()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            handleExit()
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         releaseWakeLock()
+        mediaSession?.apply {
+            isActive = false
+            release()
+        }
+        mediaSession = null
         scope.cancel()
     }
 
