@@ -53,6 +53,9 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     @Volatile private var cachedPositionAt = 0L
     @Volatile private var cachedPaused = true
     @Volatile private var cachedSpeed = 1.0
+    @Volatile private var userSeekedFlag = false
+    @Volatile private var lastSeekAt = 0L
+    @Volatile private var lastSeekTarget = 0.0
     @Volatile private var surfaceAttached = false
     @Volatile private var surface: Surface? = null
     @Volatile private var surfaceWidth = 0
@@ -171,11 +174,15 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     // --- Commands ----------------------------------------------------------------
 
     override fun load(url: String, mediaTitle: String?, startPaused: Boolean, startPosition: Double) {
+        val now = SystemClock.elapsedRealtime()
         currentUrl = url
         pendingStartPaused = startPaused
         cachedPaused = startPaused
         cachedPosition = startPosition
-        cachedPositionAt = SystemClock.elapsedRealtime()
+        cachedPositionAt = now
+        userSeekedFlag = false
+        lastSeekTarget = startPosition
+        lastSeekAt = now
         _state.update { PlaybackState(url = url, paused = startPaused, position = startPosition) }
         _tracks.value = emptyList()
         mpv.setPropertyBoolean("pause", startPaused)
@@ -210,6 +217,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     override fun stop() {
         currentUrl = null
         latestLoad = -1
+        userSeekedFlag = false
         mpv.command(arrayOf("stop"))
         _state.value = PlaybackState()
         _tracks.value = emptyList()
@@ -222,10 +230,18 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         mpv.setPropertyBoolean("pause", paused)
     }
 
-    override fun seek(position: Double) {
+    override fun seek(position: Double) = performSeek(position, userInitiated = true)
+
+    override fun seekFromSync(position: Double) = performSeek(position, userInitiated = false)
+
+    private fun performSeek(position: Double, userInitiated: Boolean) {
         val target = position.coerceAtLeast(0.0)
+        val now = SystemClock.elapsedRealtime()
+        userSeekedFlag = userInitiated
+        lastSeekTarget = target
+        lastSeekAt = now
         cachedPosition = target
-        cachedPositionAt = SystemClock.elapsedRealtime()
+        cachedPositionAt = now
         _state.update { it.copy(position = target, seeking = true) }
         mpv.command(arrayOf("seek", target.toString(), "absolute+exact"))
     }
@@ -282,6 +298,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     override val isFileLoaded: Boolean get() = _state.value.fileLoaded
     override val isPaused: Boolean get() = cachedPaused
     override val duration: Double get() = _state.value.duration
+    override val userSeeked: Boolean get() = userSeekedFlag
 
     override fun currentPosition(): Double {
         val base = cachedPosition
@@ -312,11 +329,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
     override fun eventProperty(property: String, value: Double) {
         when (property) {
-            "time-pos" -> {
-                cachedPosition = value
-                cachedPositionAt = SystemClock.elapsedRealtime()
-                _state.update { it.copy(position = value) }
-            }
+            "time-pos" -> onTimePos(value)
             "duration" -> _state.update { it.copy(duration = value) }
             "video-params/aspect" -> _state.update { it.copy(displayAspect = value) }
             "speed" -> {
@@ -325,6 +338,26 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             }
             "demuxer-cache-duration" -> _state.update { it.copy(cacheSeconds = value) }
         }
+    }
+
+    private fun onTimePos(value: Double) {
+        val now = SystemClock.elapsedRealtime()
+        if (_state.value.seeking && now - lastSeekAt < SEEK_SETTLE_MS && kotlin.math.abs(value - lastSeekTarget) > UNINITIATED_JUMP_THRESHOLD) {
+            return
+        }
+        if (_state.value.fileLoaded && !openingLatest && !_state.value.seeking) {
+            val elapsed = ((now - cachedPositionAt) / 1000.0).coerceAtLeast(0.0)
+            val expectedMax = cachedPosition + (if (cachedPaused) 0.0 else elapsed * cachedSpeed)
+            val nearRecentSeek = now - lastSeekAt < SEEK_SETTLE_MS && kotlin.math.abs(value - lastSeekTarget) <= UNINITIATED_JUMP_THRESHOLD
+            if (!nearRecentSeek && (value < cachedPosition - UNINITIATED_JUMP_THRESHOLD || value > expectedMax + UNINITIATED_JUMP_THRESHOLD)) {
+                val from = currentPosition()
+                userSeekedFlag = false
+                _events.tryEmit(PlayerEvent.UninitiatedJump(currentUrl, from, value))
+            }
+        }
+        cachedPosition = value
+        cachedPositionAt = now
+        _state.update { it.copy(position = value) }
     }
 
     override fun eventProperty(property: String, value: Boolean) {
@@ -358,10 +391,13 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             MpvEvent.MPV_EVENT_START_FILE -> openingLatest = ++filesStarted == latestLoad
             MpvEvent.MPV_EVENT_FILE_LOADED -> {
                 openingLatest = false
+                val now = SystemClock.elapsedRealtime()
                 val duration = mpv.getPropertyDouble("duration") ?: 0.0
                 val position = mpv.getPropertyDouble("time-pos") ?: cachedPosition
                 cachedPosition = position
-                cachedPositionAt = SystemClock.elapsedRealtime()
+                cachedPositionAt = now
+                lastSeekTarget = position
+                lastSeekAt = now
                 _state.update { it.copy(fileLoaded = true, duration = duration, position = position, eofReached = false) }
                 loadTracks()
                 currentUrl?.let { _events.tryEmit(PlayerEvent.FileLoaded(it, duration)) }
@@ -438,5 +474,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         private const val TAG = "mpv"
         /** Long enough for mpv to draw a frame without the message it was showing. */
         private const val OSD_CLEAR_MS = 150L
+        private const val SEEK_SETTLE_MS = 1_500L
+        private const val UNINITIATED_JUMP_THRESHOLD = 1.0
     }
 }

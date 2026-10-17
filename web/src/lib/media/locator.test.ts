@@ -141,4 +141,12 @@ describe("MediaLocator", () => {
     expect(locator.hasRelay(movie)).toBe(true);
     expect(locator.hasRelay("Other.mkv")).toBe(false);
   });
+
+  it("prefers a larger relay file over a smaller incomplete local or server copy", async () => {
+    const files: LocalFile[] = [{ name: movie, size: 10, modified: 0, directory: "", folder: "Movies", open: async () => new File([], movie) }];
+    const local: LocalFiles = { find: (name) => find(files, name) };
+    const fullRelay = { id: "relay-full", size: 20 };
+    const locator = new MediaLocator<{ id: string; size: number }>(local, () => [], (name) => (name === movie ? fullRelay : null));
+    expect(await locator.locateForRoom(movie)).toEqual({ kind: "relay", file: fullRelay });
+  });
 });

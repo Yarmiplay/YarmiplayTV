@@ -271,6 +271,9 @@ class RelayManager(
 
     fun isRelayUrl(url: String?): Boolean = proxy.isProxyUrl(url)
 
+    /** Withdraws a broken/incomplete local file from our relay offers. */
+    fun markLocalUnreliable(uri: String) = offers.markUnreliable(uri)
+
     /**
      * Saves a copy of [fileName], the file that's playing, to [target]: downloads the rest of it, then copies it out
      * of the cache. Says in the room's feed how it went. Stops when another file starts playing.
@@ -403,7 +406,10 @@ class RelayManager(
         val have = t.cache.cachedBytes
         _status.value = RelayStatus(
             fileName = entry.name,
-            seeders = room.users.filter { it.yarmiplay && it.name != room.username && it.file?.name == entry.name }.map { it.name },
+            seeders = room.users.filter {
+                it.yarmiplay && it.name != room.username &&
+                    it.file?.let { f -> com.yarmiplaytv.syncplay.Filenames.same(f.name, entry.name) && (f.size <= 0 || f.size == entry.size) } == true
+            }.map { it.name },
             downloading = t.downloading,
             haveBytes = have,
             size = entry.size,
@@ -441,8 +447,12 @@ class RelayManager(
         fun find(room: RoomState, fileName: String): RelayFile? {
             if (!room.yarmiplay.relayActive) return null
             val name = FileNames.baseName(fileName)
-            val reportedSize = room.users.firstNotNullOfOrNull { u -> u.file?.takeIf { it.name == name && it.size > 0 }?.size }
-            return room.yarmiplay.relayFiles.firstOrNull { it.name == name && it.readable && (reportedSize == null || it.size == reportedSize) }
+            val reportedSize = room.users.mapNotNull { u ->
+                u.file?.takeIf { com.yarmiplaytv.syncplay.Filenames.same(it.name, name) && it.size > 0 }?.size
+            }.maxOrNull()
+            return room.yarmiplay.relayFiles
+                .filter { com.yarmiplaytv.syncplay.Filenames.same(it.name, name) && it.readable && (reportedSize == null || it.size >= reportedSize) }
+                .maxByOrNull { it.size }
         }
     }
 }

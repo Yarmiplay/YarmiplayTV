@@ -149,6 +149,7 @@ class PlaylistController(
         scope.launch { player.events.collect(::onPlayerEvent) }
         scope.launch {
             player.state.collect { st ->
+                if (pending != null || !st.fileLoaded) return@collect
                 val name = _nowPlaying.value?.fileName
                 if (name != null && st.position > 1.0) {
                     saveSeekPosition(name, st.position)
@@ -161,24 +162,52 @@ class PlaylistController(
             combine(
                 sync.room.map { Triple(it.status == ConnectionStatus.CONNECTED, it.playlist, it.playlistIndex) }.distinctUntilChanged(),
                 _status.map { it is PlaylistStatus.Resolving }.distinctUntilChanged(),
-                relay?.files ?: flowOf(emptyList()),
+                relay?.files ?: sync.room.map { it.yarmiplay.relayFiles }.distinctUntilChanged(),
             ) { room, busy, _ -> room to busy }.collectLatest { (_, busy) ->
                 if (busy) return@collectLatest
                 delay(PREPARE_DELAY_MS)
                 prepareNext()
             }
         }
-        // A viewer who has the room's file joining (or seeding it) makes "not found" playable.
-        relay?.let { r ->
-            scope.launch {
-                r.files.collect {
-                    val missing = _status.value as? PlaylistStatus.NotFound ?: return@collect
-                    if (missing.fileName == sync.room.value.currentPlaylistFile && r.find(missing.fileName) != null) {
-                        loadFromRoom(missing.fileName, resetPosition = false)
+        // A viewer who has the room's file joining (or seeding it) makes "not found" playable,
+        // and a larger (complete) relayed copy replaces a smaller (incomplete) local/server copy.
+        scope.launch {
+            sync.room.collect { room ->
+                val missing = _status.value as? PlaylistStatus.NotFound
+                if (missing != null && missing.fileName == room.currentPlaylistFile && findRelay(missing.fileName) != null) {
+                    loadFromRoom(missing.fileName, resetPosition = false)
+                    return@collect
+                }
+                val current = pending?.media ?: _nowPlaying.value ?: return@collect
+                if (isRelayCopy(current)) return@collect
+                if (isOutdatedByRelay(current.fileName, current.sizeBytes)) {
+                    Logger.i(TAG, "Switching '${current.fileName}' from smaller copy (${current.sizeBytes} B) to larger relay copy")
+                    if (player.isFileLoaded && player.currentPosition() > 1.0) {
+                        saveSeekPosition(current.fileName, player.currentPosition())
                     }
+                    knownPlayables.entries.removeAll { Filenames.same(it.key, current.fileName) && isOutdatedByRelay(current.fileName, it.value.playable.sizeBytes) }
+                    loadFromRoom(current.fileName, resetPosition = false)
                 }
             }
         }
+    }
+
+    private fun findRelay(fileName: String) = relay?.find(fileName) ?: locator.findRelay(fileName)
+
+    private fun isRelayCopy(media: NowPlaying): Boolean =
+        relay?.isRelayUrl(media.url) == true || media.url.startsWith("relay://")
+
+    private fun RoomLocation.sizeBytes(): Long = when (this) {
+        is RoomLocation.Local -> match.file.sizeBytes
+        is RoomLocation.Server -> playable.sizeBytes
+        is RoomLocation.Relay -> file.size
+        is RoomLocation.Missing -> 0L
+    }
+
+    private fun isOutdatedByRelay(fileName: String, sizeBytes: Long): Boolean {
+        if (sizeBytes <= 0) return false
+        val relayed = findRelay(fileName) ?: return false
+        return relayed.size > sizeBytes
     }
 
     private fun onSyncEvent(event: SyncplayEvent) {
@@ -237,6 +266,19 @@ class PlaylistController(
                 _status.value = PlaylistStatus.Failed(p.media.fileName, event.error ?: "Playback failed")
                 sync.postLocal("Could not play ${p.media.fileName}: ${event.error}", isError = true)
             }
+            is PlayerEvent.UninitiatedJump -> {
+                val now = _nowPlaying.value ?: return
+                if (event.url != null && event.url != now.url) return
+                if (isRelayCopy(now)) return
+                Logger.w(TAG, "Uninitiated jump in '${now.fileName}' (${event.from}s -> ${event.to}s)")
+                locator.markLocalUntrusted(now.url)
+                relay?.markLocalUnreliable(now.url)
+                findRelay(now.fileName) ?: return
+                if (event.from > 1.0) saveSeekPosition(now.fileName, event.from)
+                knownPlayables.entries.removeAll { Filenames.same(it.key, now.fileName) }
+                Logger.i(TAG, "Switching '${now.fileName}' to relay copy after uninitiated jump")
+                loadFromRoom(now.fileName, resetPosition = false)
+            }
             else -> Unit
         }
     }
@@ -257,10 +299,14 @@ class PlaylistController(
      */
     private suspend fun prepareNext() {
         val name = nextEntry(sync.room.value) ?: return
-        if (knownPlayables.keys.any { Filenames.same(it, name) }) return
+        if (knownPlayables.entries.any { Filenames.same(it.key, name) && !isOutdatedByRelay(name, it.value.playable.sizeBytes) }) return
         if (!locator.hasServers && !local.hasFolders && !locator.hasRelay(name)) return
-        val fresh = prepared?.takeIf { Filenames.same(it.fileName, name) && System.currentTimeMillis() - it.atMillis < PREPARED_MAX_AGE_MS }
-        // A relay entry can show up later (a viewer who has the file joins); found elsewhere it won't get better.
+        val fresh = prepared?.takeIf {
+            Filenames.same(it.fileName, name) &&
+                System.currentTimeMillis() - it.atMillis < PREPARED_MAX_AGE_MS &&
+                !isOutdatedByRelay(name, it.location.sizeBytes())
+        }
+        // A relay entry can show up later (a viewer who has the file joins); found elsewhere (and not smaller) it won't get better.
         val location = if (fresh != null && fresh.location !is RoomLocation.Relay) {
             fresh.location
         } else {
@@ -289,7 +335,9 @@ class PlaylistController(
     private fun takePrepared(filename: String): Deferred<RoomLocation>? {
         prepared?.takeIf { Filenames.same(it.fileName, filename) }?.let { p ->
             prepared = null
-            if (System.currentTimeMillis() - p.atMillis < PREPARED_MAX_AGE_MS) return CompletableDeferred(p.location)
+            if (System.currentTimeMillis() - p.atMillis < PREPARED_MAX_AGE_MS && !isOutdatedByRelay(filename, p.location.sizeBytes())) {
+                return CompletableDeferred(p.location)
+            }
         }
         return preparing?.takeIf { Filenames.same(it.first, filename) }?.second
     }
@@ -313,10 +361,12 @@ class PlaylistController(
             load(urlNowPlaying(filename), resetPosition, fromRoom = true)
             return
         }
-        knownPlayables.entries.firstOrNull { Filenames.same(it.key, filename) }?.value?.let {
-            load(it.playable.toNowPlaying(it.copies), resetPosition, fromRoom = true)
-            return
-        }
+        knownPlayables.entries.firstOrNull { Filenames.same(it.key, filename) }?.value
+            ?.takeUnless { isOutdatedByRelay(filename, it.playable.sizeBytes) }
+            ?.let {
+                load(it.playable.toNowPlaying(it.copies), resetPosition, fromRoom = true)
+                return
+            }
         takePrepared(filename)?.let { ahead ->
             _status.value = PlaylistStatus.Resolving(filename)
             resolveJob = scope.launch {
@@ -354,9 +404,8 @@ class PlaylistController(
                 load(found.playable.toNowPlaying(found.copies), resetPosition, fromRoom = true)
             }
             is RoomLocation.Relay -> {
-                val r = relay ?: return
                 Logger.i(TAG, "Resolved '$filename' via the room's file relay (${found.file.sources} source(s))")
-                val url = r.open(found.file)
+                val url = relay?.open(found.file) ?: "relay://${found.file.id}/${found.file.name}"
                 val name = found.file.name
                 load(NowPlaying(name, name, found.file.size, found.file.duration, url, episode = episodeFromFile(name)), resetPosition, fromRoom = true)
             }
@@ -373,8 +422,11 @@ class PlaylistController(
         // Copies may have been found since the caller took its snapshot.
         val media = knownPlayables[picked.fileName]?.takeIf { it.playable.url == picked.url && it.copies.size > picked.copies.size }
             ?.let { picked.copy(copies = it.copies) } ?: picked
-        val alreadyLoading = pending?.media?.url == media.url
-        val alreadyLoaded = player.isFileLoaded && Filenames.same(_nowPlaying.value?.fileName.orEmpty(), media.fileName)
+        val alreadyLoading = pending?.media?.url == media.url && pending?.media?.sizeBytes == media.sizeBytes
+        val alreadyLoaded = player.isFileLoaded &&
+            _nowPlaying.value?.url == media.url &&
+            _nowPlaying.value?.sizeBytes == media.sizeBytes &&
+            Filenames.same(_nowPlaying.value?.fileName.orEmpty(), media.fileName)
         pending = PendingLoad(media, resetPosition, fromRoom)
         // E.g. a reconnect replays the room's selection while a manual pick of the same file is opening,
         // or the exact same file is already playing.

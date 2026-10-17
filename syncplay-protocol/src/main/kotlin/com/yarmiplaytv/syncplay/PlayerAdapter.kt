@@ -14,6 +14,11 @@ interface PlayerAdapter {
     /** Seconds. */
     val position: Double
     val isPaused: Boolean
+    /**
+     * Whether a jump in [position] was initiated by a user/skip seek rather than the demuxer jumping on its own
+     * across a corrupt or incomplete local file.
+     */
+    val userSeeked: Boolean get() = true
 
     fun setPaused(paused: Boolean)
     fun seek(position: Double)

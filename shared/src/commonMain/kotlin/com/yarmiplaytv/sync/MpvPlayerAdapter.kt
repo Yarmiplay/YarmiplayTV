@@ -9,8 +9,9 @@ class MpvPlayerAdapter(private val player: Player) : PlayerAdapter {
     override val duration: Double get() = player.duration
     override val position: Double get() = player.currentPosition()
     override val isPaused: Boolean get() = player.isPaused
+    override val userSeeked: Boolean get() = player.userSeeked
 
     override fun setPaused(paused: Boolean) = player.setPaused(paused)
-    override fun seek(position: Double) = player.seek(position)
+    override fun seek(position: Double) = player.seekFromSync(position)
     override fun setSpeed(speed: Double) = player.setSpeed(speed)
 }

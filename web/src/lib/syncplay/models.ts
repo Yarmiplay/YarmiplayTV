@@ -87,6 +87,11 @@ export interface PlayerAdapter {
   /** Seconds. */
   readonly position: number;
   readonly isPaused: boolean;
+  /**
+   * True when the most recent position jump was initiated by the user (or app skip button), false when the player's
+   * demuxer jumped on its own (e.g. skipping over a zero-filled gap in a partial local file). Defaults to true.
+   */
+  readonly userSeeked?: boolean;
   setPaused(paused: boolean): void;
   seek(position: number): void;
   setSpeed(speed: number): void;

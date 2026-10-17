@@ -358,4 +358,20 @@ describe("SyncEngine", () => {
     step(1);
     expect(host.sent.some((s) => s.stateChange)).toBe(false);
   });
+
+  it("uninitiated player jump from a partial file does not seek the room or report jumped position", () => {
+    serverState(42, false);
+    step(1);
+    host.sent.length = 0;
+    host.notifications.length = 0;
+
+    (player as FakePlayer & { userSeeked?: boolean }).userSeeked = false;
+    player.seek(48);
+    step(0.2);
+
+    expect(host.sent.some((s) => s.doSeek)).toBe(false);
+    expect(host.notifications.some((n) => n.startsWith("You jumped"))).toBe(false);
+    expect(Math.abs(engine.getPlayerPosition() - engine.getGlobalPosition())).toBeLessThan(0.3);
+    expect(engine.getLocalState()?.doSeek).toBe(false);
+  });
 });

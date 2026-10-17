@@ -304,6 +304,47 @@ class RelayTest {
         assertEquals(100L, RelayManager.find(relayRoom(listOf(entry("a.mkv", size = 100)), listOf(ana.copy(file = FileInfo("a.mkv", 10.0, 100)))), "a.mkv")?.size)
     }
 
+    @Test
+    fun `prefers the larger relayed file when peers have a size mismatch and does not offer smaller partial local copy`() {
+        val ep = "[SubsPlease] Tensei Shitara Ken Deshita S2 - 03 (1080p) [B64C5650].mkv"
+        val partialSize = 963_117_056L
+        val fullSize = 967_550_980L
+        val partialPeer = RoomUser("partial", "r", FileInfo(ep, 1420.0, partialSize))
+        val fullPeer = RoomUser("full", "r", FileInfo(ep, 1420.0, fullSize))
+        val room = relayRoom(
+            files = listOf(
+                entry(ep, size = partialSize),
+                entry(ep, size = fullSize),
+            ),
+            users = listOf(partialPeer, fullPeer),
+        )
+        assertEquals(fullSize, RelayManager.find(room, ep)?.size)
+
+        // A client with the smaller partial local file does not offer it when a larger copy is in the room.
+        val partialLocal = LocalFile(ep, partialSize, "file:///partial/$ep")
+        val offersWithPeer = RelayOffers.offersFor(listOf(ep), listOf(partialLocal), listOf(fullPeer), null) { "h-partial" }
+        assertTrue(offersWithPeer.isEmpty())
+
+        val offersWithRelay = RelayOffers.offersFor(
+            listOf(ep),
+            listOf(partialLocal),
+            emptyList(),
+            null,
+            relayFiles = listOf(entry(ep, size = fullSize)),
+        ) { "h-partial" }
+        assertTrue(offersWithRelay.isEmpty())
+
+        // Nor when the local file was marked unreliable after an uninitiated jump.
+        val unreliableOffers = RelayOffers.offersFor(
+            listOf(ep),
+            listOf(partialLocal),
+            emptyList(),
+            null,
+            unreliableUris = setOf(partialLocal.uri),
+        ) { "h-partial" }
+        assertTrue(unreliableOffers.isEmpty())
+    }
+
     // --- Jellyfin candidates ------------------------------------------------------------------
 
     @Test

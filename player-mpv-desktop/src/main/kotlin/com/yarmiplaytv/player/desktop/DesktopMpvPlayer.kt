@@ -84,6 +84,9 @@ class DesktopMpvPlayer(
     @Volatile private var cachedPositionAt = 0L
     @Volatile private var cachedPaused = true
     @Volatile private var cachedSpeed = 1.0
+    @Volatile private var userSeekedFlag = false
+    @Volatile private var lastSeekAt = 0L
+    @Volatile private var lastSeekTarget = 0.0
     @Volatile private var currentUrl: String? = null
     /** See MpvPlayer: counting loadfiles and START_FILEs tells whether the file mpv is opening is the latest load. */
     @Volatile private var loadsIssued = 0
@@ -119,10 +122,14 @@ class DesktopMpvPlayer(
     // --- Commands ----------------------------------------------------------------
 
     override fun load(url: String, mediaTitle: String?, startPaused: Boolean, startPosition: Double) {
+        val now = System.nanoTime()
         currentUrl = url
         cachedPaused = startPaused
         cachedPosition = startPosition
-        cachedPositionAt = System.nanoTime()
+        cachedPositionAt = now
+        userSeekedFlag = false
+        lastSeekTarget = startPosition
+        lastSeekAt = now
         _state.update { PlaybackState(url = url, paused = startPaused, position = startPosition) }
         _tracks.value = emptyList()
         core.setFlag("pause", startPaused)
@@ -146,6 +153,7 @@ class DesktopMpvPlayer(
     override fun stop() {
         currentUrl = null
         latestLoad = -1
+        userSeekedFlag = false
         core.command("stop")
         _state.value = PlaybackState()
         _tracks.value = emptyList()
@@ -158,10 +166,18 @@ class DesktopMpvPlayer(
         core.setFlag("pause", paused)
     }
 
-    override fun seek(position: Double) {
+    override fun seek(position: Double) = performSeek(position, userInitiated = true)
+
+    override fun seekFromSync(position: Double) = performSeek(position, userInitiated = false)
+
+    private fun performSeek(position: Double, userInitiated: Boolean) {
         val target = position.coerceAtLeast(0.0)
+        val now = System.nanoTime()
+        userSeekedFlag = userInitiated
+        lastSeekTarget = target
+        lastSeekAt = now
         cachedPosition = target
-        cachedPositionAt = System.nanoTime()
+        cachedPositionAt = now
         _state.update { it.copy(position = target, seeking = true) }
         core.command("seek", target.toString(), "absolute+exact")
     }
@@ -215,6 +231,7 @@ class DesktopMpvPlayer(
     override val isFileLoaded: Boolean get() = _state.value.fileLoaded
     override val isPaused: Boolean get() = cachedPaused
     override val duration: Double get() = _state.value.duration
+    override val userSeeked: Boolean get() = userSeekedFlag
 
     override fun currentPosition(): Double {
         val base = cachedPosition
@@ -237,10 +254,13 @@ class DesktopMpvPlayer(
             MpvEvent.StartFile -> openingLatest = ++filesStarted == latestLoad
             MpvEvent.FileLoaded -> {
                 openingLatest = false
+                val now = System.nanoTime()
                 val duration = core.getDouble("duration") ?: 0.0
                 val position = core.getDouble("time-pos") ?: cachedPosition
                 cachedPosition = position
-                cachedPositionAt = System.nanoTime()
+                cachedPositionAt = now
+                lastSeekTarget = position
+                lastSeekAt = now
                 _state.update { it.copy(fileLoaded = true, duration = duration, position = position, eofReached = false) }
                 loadTracks()
                 currentUrl?.let { _events.tryEmit(PlayerEvent.FileLoaded(it, duration)) }
@@ -271,11 +291,7 @@ class DesktopMpvPlayer(
             "chapter-list" -> loadChapters()
             "width" -> (value as? Long)?.let { v -> _state.update { it.copy(videoWidth = v.toInt()) } }
             "height" -> (value as? Long)?.let { v -> _state.update { it.copy(videoHeight = v.toInt()) } }
-            "time-pos" -> (value as? Double)?.let { v ->
-                cachedPosition = v
-                cachedPositionAt = System.nanoTime()
-                _state.update { it.copy(position = v) }
-            }
+            "time-pos" -> (value as? Double)?.let(::onTimePos)
             "duration" -> (value as? Double)?.let { v -> _state.update { it.copy(duration = v) } }
             "video-params/aspect" -> _state.update { it.copy(displayAspect = (value as? Double) ?: 0.0) }
             "speed" -> (value as? Double)?.let { v ->
@@ -302,6 +318,26 @@ class DesktopMpvPlayer(
             "video-codec" -> _state.update { it.copy(videoCodec = value as? String) }
             "hwdec-current" -> _state.update { it.copy(hwdec = value as? String) }
         }
+    }
+
+    private fun onTimePos(value: Double) {
+        val now = System.nanoTime()
+        if (_state.value.seeking && now - lastSeekAt < SEEK_SETTLE_NS && kotlin.math.abs(value - lastSeekTarget) > UNINITIATED_JUMP_THRESHOLD) {
+            return
+        }
+        if (_state.value.fileLoaded && !openingLatest && !_state.value.seeking) {
+            val elapsed = ((now - cachedPositionAt) / 1e9).coerceAtLeast(0.0)
+            val expectedMax = cachedPosition + (if (cachedPaused) 0.0 else elapsed * cachedSpeed)
+            val nearRecentSeek = now - lastSeekAt < SEEK_SETTLE_NS && kotlin.math.abs(value - lastSeekTarget) <= UNINITIATED_JUMP_THRESHOLD
+            if (!nearRecentSeek && (value < cachedPosition - UNINITIATED_JUMP_THRESHOLD || value > expectedMax + UNINITIATED_JUMP_THRESHOLD)) {
+                val from = currentPosition()
+                userSeekedFlag = false
+                _events.tryEmit(PlayerEvent.UninitiatedJump(currentUrl, from, value))
+            }
+        }
+        cachedPosition = value
+        cachedPositionAt = now
+        _state.update { it.copy(position = value) }
     }
 
     private fun onLog(event: MpvEvent.Log) {
@@ -351,6 +387,8 @@ class DesktopMpvPlayer(
 
     companion object {
         const val MAX_VOLUME = 130.0
+        private const val SEEK_SETTLE_NS = 1_500_000_000L
+        private const val UNINITIATED_JUMP_THRESHOLD = 1.0
 
         // Same numbering as libmpv's mpv_log_level (and the Android player's PlayerEvent.Log levels).
         private const val LOG_ERROR = 20

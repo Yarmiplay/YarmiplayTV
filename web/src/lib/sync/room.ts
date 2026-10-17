@@ -301,6 +301,20 @@ export class RoomSession {
       const current = state.playlistIndex === null ? null : state.playlist[state.playlistIndex];
       if (current === missing.fileName && findRelayFile(state, current)) void this.loadFromRoom(current, false);
     }
+    // If we are playing a smaller (incomplete) local or server copy and a peer offers a larger completed copy on the relay,
+    // switch to streaming the completed copy from the relay.
+    if (state.yarmiplay.relayFiles !== before.yarmiplay.relayFiles || state.users !== before.users) {
+      const playing = this.nowPlaying.value;
+      if (playing && !playing.key.startsWith("relay:") && !Filenames.isUrl(playing.fileName) && playing.size > 0) {
+        const relayed = findRelayFile(state, playing.fileName);
+        if (relayed && relayed.size > playing.size) {
+          for (const k of [...this.known.keys()]) {
+            if (Filenames.same(k, playing.fileName)) this.known.delete(k);
+          }
+          void this.loadFromRoom(playing.fileName, false);
+        }
+      }
+    }
   }
 
   private onEvent(event: SyncplayEvent) {
@@ -555,10 +569,16 @@ export class RoomSession {
       await this.load(urlNowPlaying(filename), resetPosition, true);
       return;
     }
-    const known = [...this.known.entries()].find(([k]) => Filenames.same(k, filename))?.[1];
-    if (known) {
-      await this.load(known, resetPosition, true);
-      return;
+    const knownEntry = [...this.known.entries()].find(([k]) => Filenames.same(k, filename));
+    const relayedNow = findRelayFile(this.room.value, filename);
+    if (knownEntry) {
+      const [knownKey, known] = knownEntry;
+      if (relayedNow && known.size > 0 && relayedNow.size > known.size) {
+        this.known.delete(knownKey);
+      } else {
+        await this.load(known, resetPosition, true);
+        return;
+      }
     }
     // Found ahead of time, or looked up now in the apps' order (MediaLocator): this device, the media servers, the relay.
     this.status.set({ kind: "resolving", fileName: filename });
@@ -649,8 +669,11 @@ export class RoomSession {
     if (!this.locator.hasServers && !this.library.hasFolders && !this.locator.hasRelay(name)) return;
     const prepared = this.prepared;
     const fresh = prepared && Filenames.same(prepared.fileName, name) && Date.now() - prepared.at < PREPARED_MAX_AGE_MS ? prepared : null;
-    // A relay entry can show up later (a viewer who has the file joins); found elsewhere it won't get better.
-    if (fresh && fresh.location.kind !== "relay") return;
+    const relaySize = findRelayFile(this.room.value, name)?.size ?? 0;
+    const freshSize =
+      fresh?.location.kind === "local" ? fresh.location.file.size : fresh?.location.kind === "server" ? fresh.location.playable.sizeBytes : 0;
+    // A relay entry can show up later (a viewer who has the file joins); found elsewhere it won't get better unless a larger relay copy arrived.
+    if (fresh && fresh.location.kind !== "relay" && (freshSize <= 0 || relaySize <= freshSize)) return;
     const lookup = this.preparing && Filenames.same(this.preparing.fileName, name) ? this.preparing.lookup : this.locate(name);
     this.preparing = { fileName: name, lookup };
     const location = await lookup;
@@ -663,7 +686,12 @@ export class RoomSession {
     const p = this.prepared;
     if (p && Filenames.same(p.fileName, filename)) {
       this.prepared = null;
-      if (Date.now() - p.at < PREPARED_MAX_AGE_MS) return Promise.resolve(p.location);
+      if (Date.now() - p.at < PREPARED_MAX_AGE_MS) {
+        const relaySize = findRelayFile(this.room.value, filename)?.size ?? 0;
+        const preparedSize =
+          p.location.kind === "local" ? p.location.file.size : p.location.kind === "server" ? p.location.playable.sizeBytes : 0;
+        if (preparedSize <= 0 || relaySize <= preparedSize) return Promise.resolve(p.location);
+      }
     }
     return this.preparing && Filenames.same(this.preparing.fileName, filename) ? this.preparing.lookup : null;
   }

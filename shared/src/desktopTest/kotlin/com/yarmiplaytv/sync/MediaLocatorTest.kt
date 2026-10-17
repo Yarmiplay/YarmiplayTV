@@ -157,4 +157,26 @@ class MediaLocatorTest {
         servers.value = listOf(FakeMediaSource(JF), FakeMediaSource(PX))
         assertEquals(RoomLocation.Missing("Not in Living; Not in Den"), locate())
     }
+
+    @Test
+    fun `prefers a larger relay file over a smaller incomplete local file or an untrusted local file`() = runBlocking {
+        val media = tmp.newFolder("Partial")
+        val partialFile = File(media, movie).apply { writeBytes(ByteArray(10)) }
+        local.addFolder(FileLocalLibrary.uriOf(media.toPath()))
+        withTimeout(10_000) { while (local.files.value.isEmpty()) delay(20) }
+
+        var relayed = com.yarmiplaytv.syncplay.RelayFile("relay-full", movie, 20L, 1420.0, "h", 1, 0, 0)
+        val withRelay = MediaLocator(local, servers) { name -> if (name == movie) relayed else null }
+
+        // Relay copy is larger (20 > 10): distrust the smaller local file and stream from the relay.
+        val location = withRelay.locateForRoom(movie)
+        assertTrue("expected Relay, got $location", location is RoomLocation.Relay)
+        assertEquals(20L, (location as RoomLocation.Relay).file.size)
+
+        // When sizes match (10 == 10), local file wins unless marked untrusted after an uninitiated jump.
+        relayed = relayed.copy(size = 10L)
+        assertTrue(withRelay.locateForRoom(movie) is RoomLocation.Local)
+        withRelay.markLocalUntrusted(FileLocalLibrary.uriOf(partialFile.toPath()))
+        assertTrue(withRelay.locateForRoom(movie) is RoomLocation.Relay)
+    }
 }

@@ -26,6 +26,7 @@ export async function offersFor(
   users: RoomUser[],
   reported: FileInfo | null,
   hash: (file: LocalFile) => Promise<string | null>,
+  relayFiles: RelayFile[] = [],
 ): Promise<[RelayOffer, LocalFile][]> {
   const out: [RelayOffer, LocalFile][] = [];
   const seen = new Set<string>();
@@ -37,6 +38,11 @@ export async function offersFor(
     seen.add(name);
     const file = find(files, entry)?.file;
     if (!file || file.size <= 0) continue;
+    // Distrust our local file if another peer in the room has a strictly larger copy of the same file.
+    const largerInRoom =
+      users.some((u) => u.file && Filenames.same(u.file.name, name) && u.file.size > file.size) ||
+      relayFiles.some((r) => Filenames.same(r.name, name) && r.size > file.size);
+    if (largerInRoom) continue;
     const quickHash = await hash(file);
     if (!quickHash) continue;
     const duration =
@@ -48,12 +54,21 @@ export async function offersFor(
   return out;
 }
 
-/** The room's relay entry for a playlist entry: the same name exactly, readable, and the size a peer reported, if any. */
+/**
+ * The room's relay entry for a playlist entry: the same name, readable, and at least as large as the largest copy
+ * reported in the room (so an incomplete smaller copy is ignored when a completed copy is in the room).
+ */
 export function findRelayFile(room: RoomState, fileName: string): RelayFile | null {
   if (!relayActive(room.yarmiplay)) return null;
   const name = Filenames.baseName(fileName);
-  const reported = room.users.find((u) => u.file && Filenames.same(u.file.name, name) && u.file.size > 0)?.file?.size;
-  return room.yarmiplay.relayFiles.find((f) => f.name === name && isReadable(f) && (!reported || f.size === reported)) ?? null;
+  const reportedSize = Math.max(
+    0,
+    ...room.users.filter((u) => u.file && Filenames.same(u.file.name, name) && u.file.size > 0).map((u) => u.file!.size),
+  );
+  const candidates = room.yarmiplay.relayFiles.filter(
+    (f) => f.name === name && isReadable(f) && (reportedSize <= 0 || f.size >= reportedSize),
+  );
+  return candidates.reduce<RelayFile | null>((best, f) => (!best || f.size > best.size ? f : best), null);
 }
 
 /** Opens a relay file for the player: Range requests with the session in a header. */
@@ -102,7 +117,14 @@ export class RelaySharing {
       if (relayActive(room.yarmiplay)) client.offerFiles([]);
       return;
     }
-    const list = await offersFor(room.playlist, this.library.files, room.users, this.reported(), (f) => this.hashOf(f));
+    const list = await offersFor(
+      room.playlist,
+      this.library.files,
+      room.users,
+      this.reported(),
+      (f) => this.hashOf(f),
+      room.yarmiplay.relayFiles,
+    );
     if (generation !== this.generation || client !== this.client()) return;
     this.offered = new Map(list.map(([offer, file]) => [`${offer.size}:${offer.quickHash}`, file]));
     client.offerFiles(list.map(([offer]) => offer));

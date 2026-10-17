@@ -98,20 +98,22 @@ class SyncEngine(
         val pauseChange = getPlayerPaused() != paused && getGlobalPaused() != paused
         val playerDiff = abs(getPlayerPosition() - position)
         val globalDiff = abs(getGlobalPosition() - position)
-        val seeked = playerDiff > Constants.SEEK_THRESHOLD && globalDiff > Constants.SEEK_THRESHOLD
+        val seeked = playerDiff > Constants.SEEK_THRESHOLD && globalDiff > Constants.SEEK_THRESHOLD && player.userSeeked
         return pauseChange to seeked
     }
 
     private fun updatePlayerStatus(paused: Boolean, position: Double) {
+        val rawJump = abs(getPlayerPosition() - position) > Constants.SEEK_THRESHOLD &&
+            abs(getGlobalPosition() - position) > Constants.SEEK_THRESHOLD
         var (pauseChange, seeked) = determinePlayerStateChange(paused, position)
         if ((pauseChange || seeked) && lastGlobalUpdate != null && !host.controlsPlayback) {
             followOperators(pauseChange, seeked)
             return
         }
-        playerPosition = position
+        playerPosition = if (rawJump && !seeked && lastGlobalUpdate != null) getGlobalPosition() else position
         playerPaused = paused
         val length = host.currentFileDuration
-        val nearEnd = abs(position - length) < Constants.PLAYLIST_LOAD_NEXT_FILE_TIME_FROM_END_THRESHOLD
+        val nearEnd = abs(playerPosition - length) < Constants.PLAYLIST_LOAD_NEXT_FILE_TIME_FROM_END_THRESHOLD
         if (pauseChange && paused && length > Constants.PLAYLIST_LOAD_NEXT_FILE_MINIMUM_LENGTH && nearEnd) {
             host.advancePlaylistCheck()
         } else if (pauseChange && host.readinessSupported) {

@@ -18,6 +18,8 @@ interface Player {
 
     fun setPaused(paused: Boolean)
     fun seek(position: Double)
+    /** Seek triggered by Syncplay room synchronization rather than the local user or skip button. */
+    fun seekFromSync(position: Double) = seek(position)
     fun seekRelative(offset: Double)
     fun setSpeed(speed: Double)
 
@@ -37,6 +39,8 @@ interface Player {
     val isFileLoaded: Boolean
     val isPaused: Boolean
     val duration: Double
+    /** Whether the current position reflects an intentional user/skip seek rather than an uninitiated demuxer jump. */
+    val userSeeked: Boolean get() = true
 
     /** Position extrapolated from the last update, so polling between mpv updates stays smooth. */
     fun currentPosition(): Double
@@ -94,4 +98,6 @@ sealed interface PlayerEvent {
     data class FileLoaded(val url: String, val duration: Double) : PlayerEvent
     data class EndFile(val url: String?, val error: String?) : PlayerEvent
     data class Log(val prefix: String, val level: Int, val text: String) : PlayerEvent
+    /** The demuxer jumped [from] -> [to] on its own without a seek command (e.g. across a hole in a partial file). */
+    data class UninitiatedJump(val url: String?, val from: Double, val to: Double) : PlayerEvent
 }

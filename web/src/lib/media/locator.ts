@@ -26,6 +26,11 @@ export interface LocalFiles {
 /** Sizes match when both are known and equal, or when either is unknown. */
 const sameSize = (a: number, b: number) => a <= 0 || b <= 0 || a === b;
 
+const sizeOf = (file: unknown): number =>
+  typeof file === "object" && file !== null && "size" in file && typeof (file as { size: unknown }).size === "number"
+    ? (file as { size: number }).size
+    : 0;
+
 /**
  * Decides which single copy of a file is opened, and finds the same file on the other servers (exact name and size
  * only) so playback can be reported to all of them (MediaLocator.kt).
@@ -47,22 +52,32 @@ export class MediaLocator<R = RelayFile> {
   }
 
   /**
-   * A file someone in the room picked: local media folders first; then an exact filename on any server (the
-   * preferred one breaks ties); only when no server has it exactly, a looser match (normalized name, then title
-   * search) on the preferred server, then the others; last, another viewer's copy through the Syncplay server's file
-   * relay.
+   * A file someone in the room picked: local media folders first (unless a peer on the relay has a larger completed
+   * copy of the same file); then an exact filename on any server (the preferred one breaks ties); only when no server
+   * has it exactly, a looser match (normalized name, then title search) on the preferred server, then the others;
+   * last, another viewer's copy through the Syncplay server's file relay.
    */
   async locateForRoom(fileName: string): Promise<RoomLocation<R>> {
     const local = this.local.find(fileName);
-    if (local) return { kind: "local", file: local.file, matchedBy: local.kind };
+    const relayed = this.relay(fileName);
+    const relaySize = sizeOf(relayed);
+    if (local) {
+      if (relayed !== null && local.file.size > 0 && relaySize > local.file.size) {
+        return { kind: "relay", file: relayed };
+      }
+      return { kind: "local", file: local.file, matchedBy: local.kind };
+    }
     const servers = this.ordered();
-    if (servers.length === 0) return this.relayOr(fileName, "Not in your media folders");
+    if (servers.length === 0) return relayed !== null ? { kind: "relay", file: relayed } : { kind: "missing", reason: "Not in your media folders" };
 
     const exact = (
       await Promise.all(servers.map(async (s) => ({ source: s, found: await s.findExact(fileName).catch((): Found | null => null) })))
     ).filter((r): r is { source: MediaSource; found: Found } => r.found !== null);
     if (exact.length > 0) {
       const primary = exact[0].found.playable;
+      if (relayed !== null && primary.sizeBytes > 0 && relaySize > primary.sizeBytes) {
+        return { kind: "relay", file: relayed };
+      }
       const copies = exact
         .filter(({ found }) => found.playable === primary || sameSize(found.playable.sizeBytes, primary.sizeBytes))
         .map(({ source, found }) => ({ sourceKey: source.key, itemId: found.playable.itemId }));
@@ -73,21 +88,19 @@ export class MediaLocator<R = RelayFile> {
     for (const s of servers) {
       const r = await s.resolveByFilename(fileName).catch((e: unknown) => ({ kind: "notFound" as const, fileName, reason: messageOf(e) || "Lookup failed" }));
       if (r.kind === "found") {
+        if (relayed !== null && r.playable.sizeBytes > 0 && relaySize > r.playable.sizeBytes) {
+          return { kind: "relay", file: relayed };
+        }
         return { kind: "server", playable: r.playable, matchedBy: r.matchedBy, copies: [{ sourceKey: s.key, itemId: r.playable.itemId }] };
       }
       reasons.push(r.reason);
     }
-    return this.relayOr(fileName, reasons.join("; "));
+    return relayed !== null ? { kind: "relay", file: relayed } : { kind: "missing", reason: reasons.join("; ") };
   }
 
   /** Whether another viewer's copy of [fileName] can be played through the file relay. */
   hasRelay(fileName: string): boolean {
     return this.relay(fileName) !== null;
-  }
-
-  private relayOr(fileName: string, reason: string): RoomLocation<R> {
-    const file = this.relay(fileName);
-    return file !== null ? { kind: "relay", file } : { kind: "missing", reason };
   }
 
   /**

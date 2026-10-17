@@ -10,6 +10,7 @@ class FakeClock(var time: Double = 1_000.0) : Clock {
 /** A player whose position advances with [clock] while playing. */
 class FakePlayer(private val clock: Clock, override var duration: Double = 1440.0) : PlayerAdapter {
     override var isFileLoaded: Boolean = true
+    override var userSeeked: Boolean = true
     private var basePosition = 0.0
     private var baseTime = clock.now()
     private var paused = true

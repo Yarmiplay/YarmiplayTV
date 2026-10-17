@@ -112,20 +112,27 @@ export class SyncEngine {
     const pauseChange = this.getPlayerPaused() !== paused && this.getGlobalPaused() !== paused;
     const playerDiff = Math.abs(this.getPlayerPosition() - position);
     const globalDiff = Math.abs(this.getGlobalPosition() - position);
-    const seeked = playerDiff > Constants.SEEK_THRESHOLD && globalDiff > Constants.SEEK_THRESHOLD;
+    const seeked = playerDiff > Constants.SEEK_THRESHOLD && globalDiff > Constants.SEEK_THRESHOLD && (this.player.userSeeked ?? true);
     return [pauseChange, seeked];
   }
 
   private updatePlayerStatus(paused: boolean, position: number): void {
+    const rawJump =
+      Math.abs(this.getPlayerPosition() - position) > Constants.SEEK_THRESHOLD &&
+      Math.abs(this.getGlobalPosition() - position) > Constants.SEEK_THRESHOLD;
     let [pauseChange, seeked] = this.determinePlayerStateChange(paused, position);
     if ((pauseChange || seeked) && this.lastGlobalUpdate !== null && !this.host.controlsPlayback) {
       this.followOperators(pauseChange, seeked);
       return;
     }
-    this.playerPosition = position;
+    // If the player jumped on its own without user initiation (e.g. a partial local file skipping over missing bytes),
+    // do not adopt the jumped position as our room position or let it trigger near-end playlist advancement.
+    const uninitiatedJump = rawJump && !seeked && this.lastGlobalUpdate !== null;
+    const effectivePosition = uninitiatedJump ? this.getGlobalPosition() : position;
+    this.playerPosition = effectivePosition;
     this.playerPaused = paused;
     const length = this.host.currentFileDuration;
-    const nearEnd = Math.abs(position - length) < Constants.PLAYLIST_LOAD_NEXT_FILE_TIME_FROM_END_THRESHOLD;
+    const nearEnd = !uninitiatedJump && Math.abs(effectivePosition - length) < Constants.PLAYLIST_LOAD_NEXT_FILE_TIME_FROM_END_THRESHOLD;
     if (pauseChange && paused && length > Constants.PLAYLIST_LOAD_NEXT_FILE_MINIMUM_LENGTH && nearEnd) {
       this.host.advancePlaylistCheck();
     } else if (pauseChange && this.host.readinessSupported) {

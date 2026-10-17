@@ -330,4 +330,22 @@ class SyncEngineTest {
 
         assertEquals(301.0, player.position, 0.5)
     }
+
+    @Test
+    fun `uninitiated player jump from a partial file does not seek the room or report jumped position`() {
+        serverState(42.0, paused = false)
+        step(1.0)
+        host.sent.clear()
+        host.notifications.clear()
+
+        // Simulate demuxer jumping on its own over a missing hole (43s -> 48s) without user initiation.
+        player.userSeeked = false
+        player.seek(48.0)
+        step(0.2)
+
+        assertTrue("uninitiated jump must not send doSeek: ${host.sent}", host.sent.none { it.doSeek })
+        assertTrue("uninitiated jump must not notify 'You jumped': ${host.notifications}", host.notifications.none { it.startsWith("You jumped") })
+        assertEquals("engine keeps room position instead of adopting jumped position", engine.getGlobalPosition(), engine.getPlayerPosition(), 0.3)
+        assertEquals(false, engine.getLocalState()?.doSeek)
+    }
 }

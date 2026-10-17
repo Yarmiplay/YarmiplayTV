@@ -8,6 +8,7 @@ import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.syncplay.Filenames
 import com.yarmiplaytv.syncplay.QuickHash
+import com.yarmiplaytv.syncplay.RelayFile
 import com.yarmiplaytv.syncplay.RelayOffer
 import com.yarmiplaytv.syncplay.RoomUser
 import com.yarmiplaytv.syncplay.Yarmiplay
@@ -15,10 +16,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
@@ -37,29 +40,60 @@ class RelayOffers(
     private val sharing: Flow<Boolean>,
 ) {
     private val hashes = ConcurrentHashMap<String, String>()
+    private val unreliableUris = MutableStateFlow<Set<String>>(emptySet())
     @Volatile private var offered: Map<String, LocalFile> = emptyMap()
 
-    private data class Inputs(val room: String, val playlist: List<String>, val active: Boolean, val files: List<LocalFile>, val sharing: Boolean)
+    private data class Inputs(
+        val room: String,
+        val playlist: List<String>,
+        val active: Boolean,
+        val files: List<LocalFile>,
+        val sharing: Boolean,
+        val users: List<RoomUser>,
+        val relayFiles: List<RelayFile>,
+        val unreliable: Set<String>,
+    )
 
     fun start() {
         scope.launch {
-            combine(sync.room, local.files, local.opened, sharing) { room, files, opened, sharing ->
-                Inputs(room.room, room.playlist, room.yarmiplay.relayActive, candidates(files, opened), sharing)
+            combine(sync.room, local.files, local.opened, sharing, unreliableUris) { room, files, opened, sharing, unreliable ->
+                Inputs(
+                    room.room,
+                    room.playlist,
+                    room.yarmiplay.relayActive,
+                    candidates(files, opened),
+                    sharing,
+                    room.users,
+                    room.yarmiplay.relayFiles,
+                    unreliable,
+                )
             }.distinctUntilChanged().debounce(300).collectLatest { inputs ->
                 if (!inputs.active || !inputs.sharing) {
                     offered = emptyMap()
                     if (inputs.active) sync.offerFiles(emptyList())
                     return@collectLatest
                 }
-                val users = sync.room.value.users
                 val reported = sync.currentFile
                 val list = withContext(Dispatchers.IO) {
-                    offersFor(inputs.playlist, inputs.files, users, reported?.let { it.name to it.duration }, ::hashOf)
+                    offersFor(
+                        inputs.playlist,
+                        inputs.files,
+                        inputs.users,
+                        reported?.let { it.name to it.duration },
+                        inputs.relayFiles,
+                        inputs.unreliable,
+                        ::hashOf,
+                    )
                 }
                 offered = list.associate { (offer, file) -> key(offer.size, offer.quickHash) to file }
                 sync.offerFiles(list.map { it.first })
             }
         }
+    }
+
+    /** Withdraws [uri] from relay offers (e.g. after an uninitiated demuxer jump showed it is incomplete). */
+    fun markUnreliable(uri: String) {
+        unreliableUris.update { it + uri }
     }
 
     /** The offered local file with [size] and [quickHash], for an upload request. */
@@ -100,14 +134,18 @@ class RelayOffers(
         /**
          * The playlist entries this device has, as relay offers named like the playlist entry (so viewers match
          * them by name), with the local file each one reads. Durations come from what we or the room reported.
+         * A local file smaller than a peer's copy of the same file in the room is treated as incomplete and not offered.
          */
         fun offersFor(
             playlist: List<String>,
             files: List<LocalFile>,
             users: List<RoomUser>,
             reported: Pair<String, Double>?,
+            relayFiles: List<RelayFile> = emptyList(),
+            unreliableUris: Set<String> = emptySet(),
             hash: (LocalFile) -> String?,
         ): List<Pair<RelayOffer, LocalFile>> {
+            val available = if (unreliableUris.isEmpty()) files else files.filterNot { it.uri in unreliableUris }
             val out = ArrayList<Pair<RelayOffer, LocalFile>>()
             val seen = HashSet<String>()
             for (entry in playlist) {
@@ -115,11 +153,14 @@ class RelayOffers(
                 if (Filenames.isUrl(entry)) continue
                 val name = FileNames.baseName(entry)
                 if (!seen.add(name)) continue
-                val file = LocalMatcher.find(files, entry)?.file ?: continue
+                val file = LocalMatcher.find(available, entry)?.file ?: continue
                 if (file.sizeBytes <= 0) continue
+                val largerInRoom = users.any { u -> u.file?.let { Filenames.same(it.name, name) && it.size > file.sizeBytes } == true } ||
+                    relayFiles.any { Filenames.same(it.name, name) && it.size > file.sizeBytes }
+                if (largerInRoom) continue
                 val quickHash = hash(file) ?: continue
                 val duration = reported?.takeIf { it.first == name || it.first == file.name }?.second?.takeIf { it > 0 }
-                    ?: users.firstNotNullOfOrNull { u -> u.file?.takeIf { it.name == name && it.duration > 0 }?.duration }
+                    ?: users.firstNotNullOfOrNull { u -> u.file?.takeIf { Filenames.same(it.name, name) && it.duration > 0 }?.duration }
                     ?: 0.0
                 out += RelayOffer(name, file.sizeBytes, duration, quickHash) to file
             }
