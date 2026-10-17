@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.3.7" date="2026-10-17">
+      <description>
+        <p>Improve portrait player: clean video overlay, dedicated room status card with repositioned ready button, and expandable full video title.</p>
+      </description>
+    </release>
     <release version="2.3.6" date="2026-10-17">
       <description>
         <p>Improve the portrait video player layout, controls, and fullscreen toggle on Android phones and tablets.</p>

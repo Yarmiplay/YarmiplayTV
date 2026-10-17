@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledIconButton
@@ -36,6 +38,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Forum
@@ -95,6 +99,7 @@ import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.player.formatClock
+import com.yarmiplaytv.ui.player.playbackInfo
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.OnVideo
 import com.yarmiplaytv.ui.theme.onVideoLabel
@@ -236,7 +241,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         }
 
                         CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom, compact = isPortrait)
-                        RelayOnPlayer(container, state.fileLoaded, controls)
+                        RelayOnPlayer(container, state.fileLoaded, controls, isPortrait = isPortrait)
 
                         if (state.buffering && state.fileLoaded) {
                             Chip("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(top = if (isPortrait) 16.dp else 24.dp))
@@ -269,7 +274,9 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                     } else {
                                         Text(nowPlaying?.title ?: "Nothing playing", color = OnVideo.Text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                                     }
-                                    RoomStatusChip(room, playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls })
+                                    if (!isPortrait) {
+                                        RoomStatusChip(room, playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls })
+                                    }
                                     if (pip.supported && state.fileLoaded) {
                                         IconButton(pip.toggle, Modifier.testTag("pip")) {
                                             Icon(Icons.Filled.PictureInPictureAlt, contentDescription = pictureInPictureLabel, tint = Color.White)
@@ -340,41 +347,153 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(
-                                        nowPlaying?.title ?: "No media loaded",
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = AppColors.Text,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    val subtitle = nowPlaying?.episode?.seriesName ?: if (isAudio) "Music" else ""
-                                    if (subtitle.isNotEmpty()) {
-                                        Text(
-                                            subtitle,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = AppColors.TextDim,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
+                            // Media Info Card with expandable full title and media details
+                            var titleExpanded by remember(nowPlaying?.url) { mutableStateOf(false) }
+                            Surface(
+                                color = AppColors.Surface,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("title_card")
+                                    .clickable { titleExpanded = !titleExpanded },
+                            ) {
+                                Column(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.Top,
+                                    ) {
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text(
+                                                nowPlaying?.title ?: "No media loaded",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = AppColors.Text,
+                                                maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.testTag("full_title"),
+                                            )
+                                            val subtitle = nowPlaying?.episode?.seriesName ?: if (isAudio) "Music" else ""
+                                            if (subtitle.isNotEmpty()) {
+                                                Text(
+                                                    subtitle,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = AppColors.TextDim,
+                                                    maxLines = if (titleExpanded) Int.MAX_VALUE else 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = { titleExpanded = !titleExpanded },
+                                            modifier = Modifier.size(32.dp).testTag("title_expand"),
+                                        ) {
+                                            Icon(
+                                                if (titleExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                                contentDescription = if (titleExpanded) "Collapse title" else "Expand title",
+                                                tint = AppColors.TextDim,
+                                            )
+                                        }
                                     }
-                                    if (inRoom) {
-                                        val readyCount = room.users.count { it.isReady == true }
-                                        val via = playerStreamingLabel(container, controlsVisible = true, state.fileLoaded)
-                                            ?.let { " · ${it.withPing(room.rttMillis)}" }.orEmpty()
-                                        Text(
-                                            "${ManagedRooms.label(room.room)} · ${room.users.size} in room · $readyCount ready$via",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = AppColors.TextDim,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
+                                    if (titleExpanded) {
+                                        val fileName = nowPlaying?.fileName
+                                        if (!fileName.isNullOrBlank() && fileName != nowPlaying?.title) {
+                                            Text(
+                                                fileName,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = AppColors.TextDim,
+                                                modifier = Modifier.testTag("full_filename"),
+                                            )
+                                        }
+                                        val specs = listOfNotNull(
+                                            if (state.duration > 0) formatClock(state.duration) else nowPlaying?.durationHint?.takeIf { it > 0 }?.let { formatClock(it) },
+                                            nowPlaying?.sizeBytes?.takeIf { it > 0 }?.let { formatSize(it) },
+                                            playbackInfo(state).takeIf { it.isNotBlank() },
+                                        ).joinToString(" · ")
+                                        if (specs.isNotBlank()) {
+                                            Text(
+                                                specs,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = AppColors.TextDim.copy(alpha = 0.8f),
+                                                modifier = Modifier.testTag("full_specs"),
+                                            )
+                                        }
                                     }
                                 }
-                                if (inRoom) {
-                                    Spacer(Modifier.width(8.dp))
-                                    ReadyChip(ready = room.isReady == true, onClick = { container.sync.toggleReady(); touch() }, modifier = Modifier.testTag("player_ready"))
+                            }
+
+                            // Dedicated Room Status & Ready Card (always visible when connected to a room, no need to tap the video)
+                            if (room.status != ConnectionStatus.DISCONNECTED) {
+                                Surface(
+                                    color = AppColors.Surface,
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier.fillMaxWidth().testTag("portrait_room_card"),
+                                ) {
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        Column(
+                                            Modifier
+                                                .weight(1f)
+                                                .clickable { openSheet(PlayerSheet.ROOM) },
+                                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            ) {
+                                                Box(
+                                                    Modifier
+                                                        .size(8.dp)
+                                                        .clip(CircleShape)
+                                                        .background(if (inRoom) AppColors.Ready else AppColors.NotReady)
+                                                )
+                                                Text(
+                                                    ManagedRooms.label(room.room),
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    color = AppColors.Text,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                                if (inRoom && room.rttMillis > 0) {
+                                                    Text(
+                                                        "%.0f ms".format(room.rttMillis),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = AppColors.TextDim,
+                                                    )
+                                                }
+                                            }
+                                            val subtitleText = if (inRoom) {
+                                                val readyCount = room.users.count { it.isReady == true }
+                                                val streamingPeer = playerStreamingLabel(container, controlsVisible = true, state.fileLoaded)
+                                                val memberSummary = "${room.users.size} in room · $readyCount ready"
+                                                if (streamingPeer != null) "$memberSummary · $streamingPeer" else memberSummary
+                                            } else {
+                                                "Connecting…"
+                                            }
+                                            Text(
+                                                subtitleText,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = AppColors.TextDim,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                        if (inRoom) {
+                                            ReadyChip(
+                                                ready = room.isReady == true,
+                                                onClick = { container.sync.toggleReady(); touch() },
+                                                modifier = Modifier.testTag("player_ready"),
+                                            )
+                                        }
+                                    }
                                 }
                             }
 
@@ -736,13 +855,18 @@ private fun PlayerToasts(container: AppContainer, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean, controlsVisible: Boolean) {
+private fun BoxScope.RelayOnPlayer(
+    container: AppContainer,
+    fileLoaded: Boolean,
+    controlsVisible: Boolean,
+    isPortrait: Boolean = false,
+) {
     val relay = container.relay ?: return
     val relayStatus by relay.status.collectAsStateWithLifecycle()
     val room by container.sync.room.collectAsStateWithLifecycle()
     val status = relayStatus ?: return
     when {
-        status.streamingLineVisible(controlsVisible, fileLoaded) && !controlsVisible -> Chip(
+        !isPortrait && status.streamingLineVisible(controlsVisible, fileLoaded) && !controlsVisible -> Chip(
             status.text.withPing(room.rttMillis),
             AppColors.Ready,
             Modifier.align(Alignment.TopCenter).padding(top = 24.dp).widthIn(max = 280.dp).testTag("relay_streaming"),

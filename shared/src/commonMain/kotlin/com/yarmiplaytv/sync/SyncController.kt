@@ -58,6 +58,7 @@ class SyncController(
 ) {
     private val adapter = MpvPlayerAdapter(player)
     private val clientFlow = MutableStateFlow<SyncplayClient?>(null)
+    private val testRoom = MutableStateFlow<RoomState?>(null)
     private var eventsJob: Job? = null
 
     val client: SyncplayClient? get() = clientFlow.value
@@ -67,9 +68,14 @@ class SyncController(
         private set
     private var lastConfig: SyncplayConfig? = null
 
-    val room: StateFlow<RoomState> = clientFlow
-        .flatMapLatest { it?.state ?: flowOf(RoomState()) }
-        .stateIn(scope, SharingStarted.Eagerly, RoomState())
+    val room: StateFlow<RoomState> = testRoom.flatMapLatest { test ->
+        if (test != null) flowOf(test)
+        else clientFlow.flatMapLatest { it?.state ?: flowOf(RoomState()) }
+    }.stateIn(scope, SharingStarted.Eagerly, RoomState())
+
+    fun setTestRoom(room: RoomState?) {
+        testRoom.value = room
+    }
 
     /** The YarmiplayServerTV extension session of the current connection; null on other servers. */
     val session: StateFlow<YarmiplaySession?> = clientFlow
@@ -296,7 +302,14 @@ class SyncController(
     /** "host:port/+name:HASH": where [room]'s operator password is kept, like room playlists. */
     private fun passwordKey(room: String): String? = server?.let { "$it/$room" }
 
-    fun toggleReady() = clientFlow.value?.toggleReady()
+    fun toggleReady() {
+        val current = testRoom.value
+        if (current != null) {
+            testRoom.value = current.copy(isReady = current.isReady != true)
+            return
+        }
+        clientFlow.value?.toggleReady()
+    }
     fun setReady(ready: Boolean, manuallyInitiated: Boolean = true) = clientFlow.value?.setReady(ready, manuallyInitiated)
     fun sendChat(text: String) = clientFlow.value?.sendChat(text.trim().take(maxChatLength))
 

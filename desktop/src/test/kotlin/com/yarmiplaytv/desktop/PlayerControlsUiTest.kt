@@ -35,6 +35,9 @@ import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.local.SeekFrames
 import com.yarmiplaytv.player.PlaybackState
+import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.syncplay.RoomState
+import com.yarmiplaytv.syncplay.RoomUser
 import com.yarmiplaytv.ui.mobile.DesktopBack
 import com.yarmiplaytv.ui.mobile.DesktopPip
 import com.yarmiplaytv.ui.mobile.DesktopPlayerInput
@@ -364,4 +367,84 @@ class PlayerControlsUiTest {
         onNodeWithTag("play_pause").assertExists()
         onNodeWithTag("seek_slider").assertExists()
     }
+
+    @Test
+    fun `portrait player title expands to show full details and collapses on toggle`() = runComposeUiTest {
+        val testFile = File(tmp.root, "Attack on Titan Final Season - The Rumbling (1080p HEVC Dual-Audio AAC).mkv").apply {
+            writeBytes(ByteArray(1024))
+        }
+        app.playlist.playLocal(testFile.toURI().toString(), inRoom = false)
+
+        val lifecycle = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
+        }
+        val nav = Navigator(mutableStateListOf(Screen.Home, Screen.Player))
+        mainClock.autoAdvance = false
+        setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
+                MobileTheme { Box(Modifier.size(412.dp, 892.dp)) { MobilePlayerScreen(app, nav) } }
+            }
+        }
+        settle()
+
+        onNodeWithTag("title_card").assertExists()
+        onNodeWithTag("full_title", useUnmergedTree = true).assertExists()
+        onNodeWithTag("title_expand").assertExists()
+        assertTrue("initially collapsed", onAllNodesWithTag("full_specs", useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
+
+        // Expand title
+        onNodeWithTag("title_expand").performMouseInput { click() }
+        settle()
+        assertTrue("expanded shows full specs", onAllNodesWithTag("full_specs", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+
+        // Collapse title
+        onNodeWithTag("title_expand").performMouseInput { click() }
+        settle()
+        assertTrue("collapsed hides specs again", onAllNodesWithTag("full_specs", useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun `portrait player displays room details and ready button in dedicated room card without tapping video`() = runComposeUiTest {
+        app.sync.setTestRoom(
+            RoomState(
+                status = ConnectionStatus.CONNECTED,
+                room = "AnimeNight",
+                username = "Alice",
+                isReady = false,
+                users = listOf(RoomUser(name = "Alice", room = "AnimeNight", isReady = false), RoomUser(name = "Bob", room = "AnimeNight", isReady = true)),
+                rttMillis = 42.0,
+            )
+        )
+
+        val lifecycle = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
+        }
+        val nav = Navigator(mutableStateListOf(Screen.Home, Screen.Player))
+        mainClock.autoAdvance = false
+        setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
+                MobileTheme { Box(Modifier.size(412.dp, 892.dp)) { MobilePlayerScreen(app, nav) } }
+            }
+        }
+        settle()
+
+        // Room card and ready button exist in the portrait bottom section
+        onNodeWithTag("portrait_room_card").assertExists()
+        onNodeWithTag("player_ready").assertExists()
+
+        // Toggling ready works from this dedicated position
+        onNodeWithTag("player_ready").performMouseInput { click() }
+        settle()
+        assertTrue("ready toggled to true", app.sync.room.value.isReady == true)
+
+        // Video overlay auto-hides after timeout
+        mainClock.advanceTimeBy(3_000)
+        waitForIdle()
+        assertFalse("video overlay auto-hided", onAllNodesWithTag("video_overlay").fetchSemanticsNodes().isNotEmpty())
+
+        // Room card and ready button stay visible even when video overlay is hidden
+        onNodeWithTag("portrait_room_card").assertExists()
+        onNodeWithTag("player_ready").assertExists()
+    }
 }
+
