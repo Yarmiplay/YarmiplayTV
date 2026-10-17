@@ -18,14 +18,14 @@ import kotlin.math.roundToInt
 
 /** The device's media volume, which the volume buttons change too. Not on devices with a fixed volume. */
 @Composable
-actual fun PlayerVolumeControl(onInteract: () -> Unit, modifier: Modifier) {
+actual fun PlayerVolumeControl(onInteract: () -> Unit, modifier: Modifier, onVideo: Boolean) {
     val context = LocalContext.current
     val control = remember(context) { MediaVolume.createOrNull(context) } ?: return
     DisposableEffect(control) {
         control.listen()
         onDispose { control.stopListening() }
     }
-    PlayerVolumeBar(control, onInteract, modifier)
+    PlayerVolumeBar(control, onInteract, modifier, onVideo = onVideo)
 }
 
 /** [AudioManager.STREAM_MUSIC] in percent of its steps; follows changes from the volume buttons while listening. */

@@ -179,6 +179,9 @@ actual fun VideoSurface(player: Player, modifier: Modifier) = DesktopVideo.surfa
 @Composable
 actual fun FullscreenLandscape(pictureInPicture: Boolean, isPortrait: Boolean) = Unit
 
+@Composable
+actual fun rememberFullscreenToggle(isPortrait: Boolean): (() -> Unit)? = null
+
 actual val autoPictureInPictureSetting = true
 actual val autoPictureInPictureTitle = "Picture-in-picture when minimized"
 actual val autoPictureInPictureSubtitle = "A playing video keeps going in a small window on top when you minimize YarmiplayTV"

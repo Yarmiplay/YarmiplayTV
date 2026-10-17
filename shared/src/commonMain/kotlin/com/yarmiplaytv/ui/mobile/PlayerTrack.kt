@@ -89,6 +89,7 @@ internal fun TvSeekBar(
     frames: SeekFrames? = null,
     /** The opening and ending, marked on the track. */
     segments: List<SkipSegment> = emptyList(),
+    onVideo: Boolean = true,
     onSeek: (Double) -> Unit,
 ) {
     var dragging by remember { mutableStateOf<Float?>(null) }
@@ -99,6 +100,8 @@ internal fun TvSeekBar(
     val pointing = (dragging ?: hovering)?.toDouble()?.takeIf { duration > 0 }
     val previewWidth = with(LocalDensity.current) { PREVIEW_WIDTH.roundToPx() }.coerceAtMost(MAX_PREVIEW_PIXELS)
     val frame = rememberSeekFrame(frames, state.url, duration, pointing, previewWidth)
+    val labelColor = if (onVideo) OnVideo.Text else AppColors.TextDim
+    val labelModifier = if (onVideo) Modifier.onVideoLabel() else Modifier
     Column(Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().onSizeChanged { width = it.width }, contentAlignment = Alignment.CenterStart) {
             PlayerTrack(
@@ -112,18 +115,19 @@ internal fun TvSeekBar(
                 buffered = (position + state.cacheSeconds).toFloat(),
                 enabled = duration > 0,
                 onHover = { hovering = it; if (it != null) onInteract() },
+                onVideo = onVideo,
                 modifier = Modifier.fillMaxWidth().testTag("seek_slider"),
             ) { SkipMarks(segments, duration, Modifier.matchParentSize()) }
             pointing?.let { at -> SeekBubble(formatClock(at), frame, (at / duration).toFloat(), width) }
         }
         Row(Modifier.fillMaxWidth()) {
-            Text(formatClock(shown), color = OnVideo.Text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.onVideoLabel())
+            Text(formatClock(shown), color = labelColor, style = MaterialTheme.typography.bodyMedium, modifier = labelModifier)
             Spacer(Modifier.weight(1f))
             playbackInfo(state).takeIf { it.isNotEmpty() }?.let {
-                Text(it, color = OnVideo.Text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.onVideoLabel())
+                Text(it, color = labelColor, style = MaterialTheme.typography.bodyMedium, modifier = labelModifier)
             }
             Spacer(Modifier.width(24.dp))
-            Text(formatClock(duration), color = OnVideo.Text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.onVideoLabel())
+            Text(formatClock(duration), color = labelColor, style = MaterialTheme.typography.bodyMedium, modifier = labelModifier)
         }
     }
 }
@@ -212,6 +216,7 @@ internal fun PlayerTrack(
     buffered: Float? = null,
     enabled: Boolean = true,
     onHover: ((Float?) -> Unit)? = null,
+    onVideo: Boolean = true,
     /** Drawn on the track, over the played part (e.g. [SkipMarks]). */
     marks: @Composable BoxScope.() -> Unit = {},
 ) {
@@ -227,6 +232,7 @@ internal fun PlayerTrack(
     var width by remember { mutableIntStateOf(0) }
     val knob = with(LocalDensity.current) { KNOB.toPx() }
     val fraction = fractionOf(value)
+    val trackBaseColor = if (onVideo) Color.White else AppColors.Text
 
     Box(
         modifier
@@ -278,8 +284,8 @@ internal fun PlayerTrack(
             },
         contentAlignment = Alignment.CenterStart,
     ) {
-        Box(Modifier.fillMaxWidth().height(TRACK).clip(RoundedCornerShape(TRACK / 2)).background(Color.White.copy(alpha = 0.2f))) {
-            buffered?.let { Box(Modifier.fillMaxWidth(fractionOf(it)).fillMaxHeight().background(Color.White.copy(alpha = 0.25f))) }
+        Box(Modifier.fillMaxWidth().height(TRACK).clip(RoundedCornerShape(TRACK / 2)).background(trackBaseColor.copy(alpha = 0.2f))) {
+            buffered?.let { Box(Modifier.fillMaxWidth(fractionOf(it)).fillMaxHeight().background(trackBaseColor.copy(alpha = 0.25f))) }
             Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(AppColors.Accent))
             marks()
         }

@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.OnVideo
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.roundToInt
@@ -40,7 +41,13 @@ interface PlayerVolume {
  * named in the mute button's description, where there is one.
  */
 @Composable
-internal fun PlayerVolumeBar(control: PlayerVolume, onInteract: () -> Unit, modifier: Modifier = Modifier, muteShortcut: String? = null) {
+internal fun PlayerVolumeBar(
+    control: PlayerVolume,
+    onInteract: () -> Unit,
+    modifier: Modifier = Modifier,
+    muteShortcut: String? = null,
+    onVideo: Boolean = true,
+) {
     val volume by control.volume.collectAsState()
     val muted by control.muted.collectAsState()
     val shortcut = muteShortcut?.let { " ($it)" }.orEmpty()
@@ -53,18 +60,19 @@ internal fun PlayerVolumeBar(control: PlayerVolume, onInteract: () -> Unit, modi
                     else -> Icons.AutoMirrored.Filled.VolumeUp
                 },
                 contentDescription = if (muted) "Unmute$shortcut" else "Mute$shortcut",
-                tint = Color.White,
+                tint = if (onVideo) Color.White else AppColors.Text,
             )
         }
         PlayerTrack(
             value = if (muted) 0f else volume.toFloat(),
             valueRange = 0f..control.max.toFloat(),
             onValueChange = { control.setVolume(it.roundToInt().toDouble()); onInteract() },
+            onVideo = onVideo,
             modifier = Modifier.width(120.dp).testTag("volume_slider"),
         )
         Text(
             if (muted) "Muted" else "${volume.roundToInt()}%",
-            color = OnVideo.Text,
+            color = if (onVideo) OnVideo.Text else AppColors.TextDim,
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.widthIn(min = 48.dp).padding(start = 8.dp).testTag("volume_label"),
         )

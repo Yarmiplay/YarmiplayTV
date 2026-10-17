@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.3.6" date="2026-10-17">
+      <description>
+        <p>Improve the portrait video player layout, controls, and fullscreen toggle on Android phones and tablets.</p>
+      </description>
+    </release>
     <release version="2.3.5" date="2026-10-17">
       <description>
         <p>Return the desktop main window to menus when entering picture-in-picture so you can browse freely while watching.</p>

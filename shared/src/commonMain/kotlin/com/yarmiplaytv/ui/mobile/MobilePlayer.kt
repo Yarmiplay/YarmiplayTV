@@ -39,6 +39,8 @@ import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.OpenInFull
@@ -183,6 +185,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     val isAudio = FileNames.isAudio(nowPlaying?.fileName ?: state.url.orEmpty())
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val isPortrait = maxWidth < maxHeight
+        val fullscreenToggle = rememberFullscreenToggle(isPortrait)
         FullscreenLandscape(pictureInPicture = pip.active, isPortrait = isPortrait)
 
         Layout(
@@ -232,7 +235,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                             }
                         }
 
-                        CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom)
+                        CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom, compact = isPortrait)
                         RelayOnPlayer(container, state.fileLoaded, controls)
 
                         if (state.buffering && state.fileLoaded) {
@@ -254,7 +257,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         )
 
                         androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
-                            Box(Modifier.fillMaxSize().then(if (!isPortrait) Modifier.testTag("player_controls") else Modifier)) {
+                            Box(Modifier.fillMaxSize().testTag(if (isPortrait) "video_overlay" else "player_controls")) {
                                 Row(
                                     Modifier.fillMaxWidth().hoverable(barsHover)
                                         .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(8.dp),
@@ -270,6 +273,15 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                     if (pip.supported && state.fileLoaded) {
                                         IconButton(pip.toggle, Modifier.testTag("pip")) {
                                             Icon(Icons.Filled.PictureInPictureAlt, contentDescription = pictureInPictureLabel, tint = Color.White)
+                                        }
+                                    }
+                                    fullscreenToggle?.let { toggle ->
+                                        IconButton({ toggle(); touch() }, Modifier.testTag("fullscreen")) {
+                                            Icon(
+                                                if (isPortrait) Icons.Filled.Fullscreen else Icons.Filled.FullscreenExit,
+                                                contentDescription = if (isPortrait) "Full screen" else "Exit full screen",
+                                                tint = Color.White,
+                                            )
                                         }
                                     }
                                     if (!isPortrait && hideControlsButton) {
@@ -319,21 +331,23 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
 
                 // Child 1: Portrait bottom section (title, details, controls) or Landscape RoomSidePanel
                 if (isPortrait) {
-                    Column(Modifier.fillMaxSize()) {
-                        // Portrait middle details section (title, series, room ready chip, MAL notice card)
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                         Column(
                             Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
+                                .widthIn(max = 640.dp)
+                                .fillMaxSize()
                                 .verticalScroll(rememberScrollState())
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(
-                                        nowPlaying?.title ?: "Nothing playing",
+                                        nowPlaying?.title ?: "No media loaded",
                                         style = MaterialTheme.typography.titleLarge,
                                         color = AppColors.Text,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                     val subtitle = nowPlaying?.episode?.seriesName ?: if (isAudio) "Music" else ""
                                     if (subtitle.isNotEmpty()) {
@@ -341,6 +355,20 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                             subtitle,
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = AppColors.TextDim,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    if (inRoom) {
+                                        val readyCount = room.users.count { it.isReady == true }
+                                        val via = playerStreamingLabel(container, controlsVisible = true, state.fileLoaded)
+                                            ?.let { " · ${it.withPing(room.rttMillis)}" }.orEmpty()
+                                        Text(
+                                            "${ManagedRooms.label(room.room)} · ${room.users.size} in room · $readyCount ready$via",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = AppColors.TextDim,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                         )
                                     }
                                 }
@@ -350,93 +378,113 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                 }
                             }
 
-                            Spacer(Modifier.height(16.dp))
                             MalNoticeCard(container, onPick = { openSheet(PlayerSheet.MAL) }, Modifier.fillMaxWidth())
-                        }
 
-                        // Portrait bottom player controls section
-                        androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut()) {
-                            Column(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                                    .testTag("player_controls"),
+                            // Portrait player controls card (stays visible so controls never vanish in portrait)
+                            Surface(
+                                color = AppColors.Surface,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth().testTag("player_controls"),
                             ) {
-                                val segments by container.skips.segments.collectAsStateWithLifecycle()
-                                var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
-                                LaunchedEffect(Unit) {
-                                    while (true) {
-                                        position = container.player.currentPosition()
-                                        delay(250)
-                                    }
-                                }
-                                TvSeekBar(state, position, ::touch, container.seekFrames, segments) { container.player.seek(it) }
-
-                                Spacer(Modifier.height(8.dp))
-
-                                Row(
-                                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceEvenly,
-                                    verticalAlignment = Alignment.CenterVertically,
+                                Column(
+                                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                                 ) {
-                                    val skips = inRoom && room.playlist.isNotEmpty()
-                                    if (skips) {
-                                        IconButton(
-                                            onClick = { input.skip(false) },
-                                            enabled = container.playlist.skipTarget(room, forward = false) != null,
-                                            modifier = Modifier.testTag("skip_previous"),
-                                        ) {
-                                            Icon(Icons.Filled.SkipPrevious, "Previous in the playlist", tint = AppColors.Text)
+                                    val segments by container.skips.segments.collectAsStateWithLifecycle()
+                                    var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
+                                    LaunchedEffect(Unit) {
+                                        while (true) {
+                                            position = container.player.currentPosition()
+                                            delay(250)
                                         }
                                     }
-                                    IconButton(onClick = { seekBy(-step) }) {
-                                        Icon(Icons.Filled.FastRewind, "Back ${step.toInt()} seconds", tint = AppColors.Text)
-                                    }
-                                    FilledIconButton(
-                                        onClick = { togglePause() },
-                                        modifier = Modifier.size(56.dp).testTag("play_pause"),
-                                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = AppColors.Accent),
+                                    TvSeekBar(state, position, ::touch, container.seekFrames, segments, onVideo = false) { container.player.seek(it) }
+
+                                    Spacer(Modifier.height(8.dp))
+
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceEvenly,
+                                        verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Icon(
-                                            if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                                            contentDescription = if (state.paused) "Play" else "Pause",
-                                            tint = Color.Black,
-                                            modifier = Modifier.size(32.dp),
-                                        )
-                                    }
-                                    IconButton(onClick = { seekBy(step) }) {
-                                        Icon(Icons.Filled.FastForward, "Forward ${step.toInt()} seconds", tint = AppColors.Text)
-                                    }
-                                    if (skips) {
-                                        IconButton(
-                                            onClick = { input.skip(true) },
-                                            enabled = container.playlist.skipTarget(room, forward = true) != null,
-                                            modifier = Modifier.testTag("skip_next"),
+                                        val skips = inRoom && room.playlist.isNotEmpty()
+                                        if (skips) {
+                                            IconButton(
+                                                onClick = { input.skip(false) },
+                                                enabled = container.playlist.skipTarget(room, forward = false) != null,
+                                                modifier = Modifier.testTag("skip_previous"),
+                                            ) {
+                                                Icon(Icons.Filled.SkipPrevious, "Previous in the playlist", tint = AppColors.Text)
+                                            }
+                                        }
+                                        Surface(
+                                            onClick = { seekBy(-step) },
+                                            shape = RoundedCornerShape(50),
+                                            color = AppColors.SurfaceHigh,
+                                            modifier = Modifier.size(48.dp),
                                         ) {
-                                            Icon(Icons.Filled.SkipNext, "Next in the playlist", tint = AppColors.Text)
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(Icons.Filled.FastRewind, "Back ${step.toInt()} seconds", tint = AppColors.Text)
+                                            }
+                                        }
+                                        FilledIconButton(
+                                            onClick = { togglePause() },
+                                            modifier = Modifier.size(60.dp).testTag("play_pause"),
+                                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = AppColors.Accent),
+                                        ) {
+                                            Icon(
+                                                if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                                contentDescription = if (state.paused) "Play" else "Pause",
+                                                tint = Color.Black,
+                                                modifier = Modifier.size(32.dp),
+                                            )
+                                        }
+                                        Surface(
+                                            onClick = { seekBy(step) },
+                                            shape = RoundedCornerShape(50),
+                                            color = AppColors.SurfaceHigh,
+                                            modifier = Modifier.size(48.dp),
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(Icons.Filled.FastForward, "Forward ${step.toInt()} seconds", tint = AppColors.Text)
+                                            }
+                                        }
+                                        if (skips) {
+                                            IconButton(
+                                                onClick = { input.skip(true) },
+                                                enabled = container.playlist.skipTarget(room, forward = true) != null,
+                                                modifier = Modifier.testTag("skip_next"),
+                                            ) {
+                                                Icon(Icons.Filled.SkipNext, "Next in the playlist", tint = AppColors.Text)
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(Modifier.height(4.dp))
+
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        PlayerVolumeControl(::touch, onVideo = false)
+                                        Spacer(Modifier.weight(1f))
+                                        rememberRelaySave(container)?.let { RelaySaveButton(it, ::touch, tint = AppColors.Text) }
+                                        container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
+                                            IconButton({ screenshots.take(); touch() }, Modifier.testTag("screenshot")) {
+                                                Icon(Icons.Filled.PhotoCamera, contentDescription = "Screenshot", tint = AppColors.Text)
+                                            }
                                         }
                                     }
                                 }
+                            }
 
-                                Spacer(Modifier.height(8.dp))
-
+                            // Portrait sheet buttons bar
+                            Surface(
+                                color = AppColors.Surface,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
                                 Row(
-                                    Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    PlayerVolumeControl(::touch)
-                                    container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
-                                        IconButton({ screenshots.take(); touch() }, Modifier.testTag("screenshot")) {
-                                            Icon(Icons.Filled.PhotoCamera, contentDescription = "Screenshot", tint = AppColors.Text)
-                                        }
-                                    }
-                                }
-
-                                Spacer(Modifier.height(8.dp))
-
-                                Row(
-                                    Modifier.fillMaxWidth(),
+                                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                                     horizontalArrangement = Arrangement.SpaceAround,
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
@@ -456,8 +504,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
             },
             modifier = Modifier
                 .fillMaxSize()
-                .background(AppColors.Background)
-                .then(if (isPortrait) Modifier.statusBarsPadding() else Modifier),
+                .background(AppColors.Background),
         ) { measurables, constraints ->
             val videoMeasurable = measurables[0]
             val secondMeasurable = measurables.getOrNull(1)
@@ -715,14 +762,25 @@ private fun BoxScope.RelayOnPlayer(container: AppContainer, fileLoaded: Boolean,
 }
 
 @Composable
-private fun CenterStatus(container: AppContainer, nav: Navigator, status: PlaylistStatus, nothingLoaded: Boolean, fileLoaded: Boolean, inRoom: Boolean) {
+private fun CenterStatus(
+    container: AppContainer,
+    nav: Navigator,
+    status: PlaylistStatus,
+    nothingLoaded: Boolean,
+    fileLoaded: Boolean,
+    inRoom: Boolean,
+    compact: Boolean = false,
+) {
     val hideLoading = container.relay?.let { relay ->
         val relayStatus by relay.status.collectAsStateWithLifecycle()
         relayStatus.let { it != null && it.playbackHint(fileLoaded) != RelayHint.None }
     } == true
     val pickFile = rememberVideoPicker { uri -> container.playlist.resolveManuallyLocal(uri) }
     val playFile = rememberVideoPicker { uri -> container.playlist.playLocal(uri, inRoom) }
-    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+    val titleStyle = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge
+    val innerPadding = if (compact) 14.dp else 20.dp
+    val itemSpacing = if (compact) 6.dp else 8.dp
+    Box(Modifier.fillMaxSize().padding(if (compact) 12.dp else 24.dp), contentAlignment = Alignment.Center) {
         when (status) {
             is PlaylistStatus.Resolving -> StatusBox("Looking for the file…", status.fileName)
             is PlaylistStatus.Loading -> if (!fileLoaded && !hideLoading) StatusBox("Loading…", status.fileName)
@@ -733,11 +791,11 @@ private fun CenterStatus(container: AppContainer, nav: Navigator, status: Playli
                     else -> "" to ""
                 }
                 Surface(color = AppColors.Surface.copy(alpha = 0.95f), contentColor = AppColors.Text, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp).testTag("not_found")) {
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(if (status is PlaylistStatus.NotFound) "Couldn't find this file" else "Couldn't play this file", style = MaterialTheme.typography.titleLarge)
-                        Text(file, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text(reason, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    Column(Modifier.verticalScroll(rememberScrollState()).padding(innerPadding), verticalArrangement = Arrangement.spacedBy(itemSpacing)) {
+                        Text(if (status is PlaylistStatus.NotFound) "Couldn't find this file" else "Couldn't play this file", style = titleStyle)
+                        Text(file, style = MaterialTheme.typography.titleSmall, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
+                        Text(reason, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = if (compact) 2 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 2.dp)) {
                             if (status is PlaylistStatus.NotFound) {
                                 Button(pickFile, Modifier.testTag("pick_file")) { Text("Pick file") }
                                 if (container.mediaSource.value != null) {
@@ -751,11 +809,11 @@ private fun CenterStatus(container: AppContainer, nav: Navigator, status: Playli
             }
             is PlaylistStatus.Untrusted -> {
                 Surface(color = AppColors.Surface.copy(alpha = 0.95f), contentColor = AppColors.Text, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp).testTag("untrusted_url")) {
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Open this link?", style = MaterialTheme.typography.titleLarge)
-                        Text(status.url, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Column(Modifier.verticalScroll(rememberScrollState()).padding(innerPadding), verticalArrangement = Arrangement.spacedBy(itemSpacing)) {
+                        Text("Open this link?", style = titleStyle)
+                        Text(status.url, style = MaterialTheme.typography.titleSmall, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
                         Text("The room picked it, but it isn't on one of your trusted domains.", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 2.dp)) {
                             Button({ container.playlist.playUntrusted() }) { Text("Open") }
                             status.domain?.let { domain ->
                                 FilledTonalButton({
@@ -770,11 +828,12 @@ private fun CenterStatus(container: AppContainer, nav: Navigator, status: Playli
                 }
             }
             PlaylistStatus.Idle -> if (nothingLoaded) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Nothing playing", color = OnVideo.Text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.onVideoLabel())
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp)) {
+                    Text("Nothing playing", color = OnVideo.Text, style = titleStyle, modifier = Modifier.onVideoLabel())
                     Text(
                         if (inRoom) "Pick something, or wait for someone in the room to choose a file." else "Pick a video to watch.",
                         color = OnVideo.Text,
+                        style = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.onVideoLabel(),
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

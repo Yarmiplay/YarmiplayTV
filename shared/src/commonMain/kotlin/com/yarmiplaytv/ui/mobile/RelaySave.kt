@@ -37,7 +37,7 @@ fun rememberRelaySave(container: AppContainer): RelaySaveAction? {
 }
 
 @Composable
-internal fun RelaySaveButton(action: RelaySaveAction, onInteract: () -> Unit) {
+internal fun RelaySaveButton(action: RelaySaveAction, onInteract: () -> Unit, tint: Color = Color.White) {
     IconButton({ action.onClick(); onInteract() }, Modifier.testTag("relay_save")) {
         if (action.saving) {
             Box(contentAlignment = Alignment.Center) {
@@ -46,12 +46,12 @@ internal fun RelaySaveButton(action: RelaySaveAction, onInteract: () -> Unit) {
                     modifier = Modifier.size(28.dp),
                     color = AppColors.Accent,
                     strokeWidth = 2.5.dp,
-                    trackColor = Color.White.copy(alpha = 0.2f),
+                    trackColor = tint.copy(alpha = 0.2f),
                 )
-                Icon(Icons.Filled.Close, contentDescription = action.label, tint = Color.White, modifier = Modifier.size(16.dp))
+                Icon(Icons.Filled.Close, contentDescription = action.label, tint = tint, modifier = Modifier.size(16.dp))
             }
         } else {
-            Icon(Icons.Filled.Download, contentDescription = action.label, tint = Color.White)
+            Icon(Icons.Filled.Download, contentDescription = action.label, tint = tint)
         }
     }
 }

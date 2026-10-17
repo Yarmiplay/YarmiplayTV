@@ -114,6 +114,29 @@ actual fun FullscreenLandscape(pictureInPicture: Boolean, isPortrait: Boolean) {
     }
 }
 
+@Composable
+actual fun rememberFullscreenToggle(isPortrait: Boolean): (() -> Unit)? {
+    val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() } ?: return null
+    val portrait by rememberUpdatedState(isPortrait)
+    DisposableEffect(activity) {
+        onDispose {
+            if (!activity.isChangingConfigurations && activity.requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED) {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+        }
+    }
+    return remember(activity) {
+        {
+            activity.requestedOrientation = if (portrait) {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
+        }
+    }
+}
+
 internal fun Context.findActivity(): Activity? {
     var c: Context? = this
     while (c is ContextWrapper) {

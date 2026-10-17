@@ -15,6 +15,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.yarmiplaytv.media.FileNames
@@ -65,8 +66,9 @@ class MainActivity : ComponentActivity() {
         } else {
             setContent {
                 val palette = appPalette(container)
-                // The player is dark whatever the theme, and so are the bars over it.
-                val lightBars = palette.isLight && screens.lastOrNull() != Screen.Player
+                val isPortrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
+                // The landscape player is dark whatever the theme; portrait player uses the theme background.
+                val lightBars = palette.isLight && (screens.lastOrNull() != Screen.Player || isPortrait)
                 LaunchedEffect(lightBars, palette) {
                     val transparent = android.graphics.Color.TRANSPARENT
                     val style = if (lightBars) SystemBarStyle.light(transparent, transparent) else SystemBarStyle.dark(transparent)

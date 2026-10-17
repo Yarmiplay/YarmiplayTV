@@ -45,7 +45,7 @@ expect val playerTrackTouchHeight: Dp
 
 /** Mute button and volume slider in the player's bar: mpv's volume on desktop, the device's media volume on Android. */
 @Composable
-expect fun PlayerVolumeControl(onInteract: () -> Unit, modifier: Modifier = Modifier)
+expect fun PlayerVolumeControl(onInteract: () -> Unit, modifier: Modifier = Modifier, onVideo: Boolean = true)
 
 /** On the whole player screen: desktop mouse movement, scroll wheel and keyboard shortcuts. Nothing on Android. */
 @Composable
@@ -76,6 +76,13 @@ expect fun RoomSidePanel(container: AppContainer)
  */
 @Composable
 expect fun FullscreenLandscape(pictureInPicture: Boolean = false, isPortrait: Boolean = false)
+
+/**
+ * Toggles the player between portrait and full-screen landscape on Android phones and tablets, or null on desktop
+ * (where double-click and F toggle the window's full screen).
+ */
+@Composable
+expect fun rememberFullscreenToggle(isPortrait: Boolean): (() -> Unit)?
 
 /**
  * Picture-in-picture for the player: Android's PiP window, the desktop's mini player. [active] while the video is

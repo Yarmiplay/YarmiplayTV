@@ -143,14 +143,15 @@ class LocalPlaybackTest {
 
         // Taps go to an empty spot, away from the centre buttons and the top/bottom bars.
         compose.waitUntilExactlyOneExists(hasTestTag("play_pause"), 5_000)
+        compose.waitUntilExactlyOneExists(hasTestTag("fullscreen"), 5_000)
         // A single tap only counts once the double-tap timeout has passed on the test clock.
         compose.onNodeWithTag("player_gestures").performTouchInput { click(Offset(width * 0.15f, height * 0.4f)) }
         compose.mainClock.advanceTimeBy(DOUBLE_TAP_GAP_MS)
-        compose.waitUntilDoesNotExist(hasTestTag("play_pause"), 5_000)
+        compose.waitUntilDoesNotExist(hasTestTag("fullscreen"), 5_000)
         assertTrue("tap must not unpause", container.player.state.value.paused)
         compose.onNodeWithTag("player_gestures").performTouchInput { click(Offset(width * 0.15f, height * 0.4f)) }
         compose.mainClock.advanceTimeBy(DOUBLE_TAP_GAP_MS)
-        compose.waitUntilExactlyOneExists(hasTestTag("play_pause"), 5_000)
+        compose.waitUntilExactlyOneExists(hasTestTag("fullscreen"), 5_000)
 
         compose.onNodeWithTag("player_gestures").performTouchInput { doubleClick(Offset(width * 0.1f, height * 0.4f)) }
         compose.waitUntil(5_000) { container.player.currentPosition() < 1.0 }

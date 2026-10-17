@@ -339,4 +339,29 @@ class PlayerControlsUiTest {
         settle()
         assertTrue("H shows them again", controlsShowing())
     }
+
+    @Test
+    fun `portrait player keeps bottom controls visible while video overlay auto-hides`() = runComposeUiTest {
+        val lifecycle = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
+        }
+        val nav = Navigator(mutableStateListOf(Screen.Home, Screen.Player))
+        mainClock.autoAdvance = false
+        setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
+                MobileTheme { Box(Modifier.size(412.dp, 892.dp)) { MobilePlayerScreen(app, nav) } }
+            }
+        }
+        settle()
+        assertTrue(controlsShowing())
+        assertTrue(onAllNodesWithTag("video_overlay").fetchSemanticsNodes().isNotEmpty())
+
+        // After the auto-hide timeout, the top video overlay fades out, while the bottom portrait controls remain visible.
+        mainClock.advanceTimeBy(3_000)
+        waitForIdle()
+        assertFalse("video overlay auto-hides while playing", onAllNodesWithTag("video_overlay").fetchSemanticsNodes().isNotEmpty())
+        assertTrue("portrait bottom controls stay visible", controlsShowing())
+        onNodeWithTag("play_pause").assertExists()
+        onNodeWithTag("seek_slider").assertExists()
+    }
 }
