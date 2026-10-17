@@ -1,5 +1,6 @@
 package com.yarmiplaytv
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertTextEquals
@@ -10,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ActivityScenario
@@ -78,13 +80,13 @@ class ManagedRoomUiTest {
         compose.waitForIdle()
         runCatching { compose.onNodeWithTag("operator_password_field").performScrollTo() }
         compose.onNodeWithTag("operator_password_field").performTextInput("ab-123-456")
-        compose.onNodeWithTag("identify_operator").performClick()
+        compose.onNodeWithTag("identify_operator").performSemanticsAction(SemanticsActions.OnClick)
         waitUntil(10_000) { container.sync.room.value.isOperator }
         compose.waitUntilAtLeastOneExists(hasText("Operator password: AB-123-456"), 10_000)
         assertTrue("Sam" in syncplay.operatorNames)
         assertTrue(container.sync.feed.value.any { it.text == "You are now a room operator" })
 
-        compose.onNodeWithTag("mark_ready_Alex").performClick()
+        compose.onNodeWithTag("mark_ready_Alex").performSemanticsAction(SemanticsActions.OnClick)
         waitUntil(10_000) { container.sync.feed.value.any { it.text == "Sam marked Alex not ready" } }
         waitUntil(5_000) { container.sync.room.value.users.first { it.name == "Alex" }.isReady == false }
     }
@@ -99,7 +101,7 @@ class ManagedRoomUiTest {
         compose.waitForIdle()
         runCatching { compose.onNodeWithTag("operator_password_field").performScrollTo() }
         compose.onNodeWithTag("operator_password_field").performTextInput("ZZ-000-000")
-        compose.onNodeWithTag("identify_operator").performClick()
+        compose.onNodeWithTag("identify_operator").performSemanticsAction(SemanticsActions.OnClick)
         waitUntil(10_000) { container.sync.feed.value.any { it.text == "Wrong room password" } }
         assertTrue(!container.sync.room.value.isOperator)
     }
@@ -112,7 +114,7 @@ class ManagedRoomUiTest {
         compose.waitForIdle()
         runCatching { compose.onNodeWithTag("managed_create_field").performScrollTo() }
         compose.onNodeWithTag("managed_create_field").performTextInput("film club")
-        compose.onNodeWithTag("managed_create").performClick()
+        compose.onNodeWithTag("managed_create").performSemanticsAction(SemanticsActions.OnClick)
 
         val room = "+film club:${FakeSyncplayServer.MANAGED_HASH}"
         created += room
@@ -135,7 +137,7 @@ class ManagedRoomUiTest {
         compose.onNodeWithTag("field_room").performTextReplacement("film club")
         compose.waitForIdle()
         runCatching { compose.onNodeWithTag("connect_create_managed").performScrollTo() }
-        compose.onNodeWithTag("connect_create_managed").performClick()
+        compose.onNodeWithTag("connect_create_managed").performSemanticsAction(SemanticsActions.OnClick)
 
         val room = "+film club:${FakeSyncplayServer.MANAGED_HASH}"
         created += room

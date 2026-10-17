@@ -179,7 +179,11 @@ class LocalPlaybackTest {
             container.player.seek(0.5)
             container.player.setPaused(false)
         }
-        compose.waitUntil(10_000) { container.player.currentPosition() >= 0.5 }
+        compose.waitUntil(10_000) {
+            !container.player.state.value.seeking &&
+                container.player.state.value.videoWidth > 0 &&
+                container.player.currentPosition() >= 0.7
+        }
         compose.runOnUiThread { container.player.setPaused(true) }
         val before = savedScreenshots()
         compose.waitUntilExactlyOneExists(hasTestTag("screenshot"), 5_000)
@@ -295,14 +299,14 @@ class LocalPlaybackTest {
     fun leavingTheAppWhilePlayingGoesIntoPictureInPicture() {
         assumeTrue("no picture-in-picture on this device", pipSupported)
         waitFor(5_000) { container.settings.value.playback.pictureInPicture }
-        val activity = compose.activity
         withLongClipPlaying {
             Screenshots.shell("input keyevent KEYCODE_HOME")
-            val entered = runCatching { waitFor(5_000) { activity.isInPictureInPictureMode } }.isSuccess
+            val entered = runCatching { waitFor(5_000) { compose.activity.isInPictureInPictureMode } }.isSuccess
             if (!entered) {
                 // If a slow emulator or transition dropped the first Home key, send it again.
+                play()
                 Screenshots.shell("input keyevent KEYCODE_HOME")
-                waitFor(15_000) { activity.isInPictureInPictureMode }
+                waitFor(15_000) { compose.activity.isInPictureInPictureMode }
             }
             waitFor(5_000) { PlayerPictureInPicture.active }
         }
@@ -312,14 +316,13 @@ class LocalPlaybackTest {
     fun leavingTheAppDoesNotGoIntoPictureInPictureWhenTurnedOff() {
         assumeTrue("no picture-in-picture on this device", pipSupported)
         val saved = container.settings.value.playback
-        val activity = compose.activity
         try {
             runBlocking { container.settingsStore.savePlayback(saved.copy(pictureInPicture = false)) }
             waitFor(5_000) { !container.settings.value.playback.pictureInPicture }
             withLongClipPlaying {
                 Screenshots.shell("input keyevent KEYCODE_HOME")
                 Thread.sleep(3_000)
-                assertFalse("the setting is off", activity.isInPictureInPictureMode)
+                assertFalse("the setting is off", compose.activity.isInPictureInPictureMode)
                 assertFalse(PlayerPictureInPicture.active)
             }
         } finally {
