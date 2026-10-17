@@ -183,4 +183,19 @@ class DesktopSettingsTest {
         assertEquals(123.4, positions["ep1.mkv"] ?: 0.0, 0.01)
         assertEquals(456.7, positions["ep2.mkv"] ?: 0.0, 0.01)
     }
+
+    @Test
+    fun `tv player scale default and persistence`() = runBlocking {
+        val folder = tmp.newFolder("player_scale")
+        val store = desktopSettingsStore(folder)
+
+        assertEquals(0.85f, store.current().playback.tvPlayerScale, 0.001f)
+
+        store.saveTvPlayerScale(0.75f)
+        assertEquals(0.75f, store.current().playback.tvPlayerScale, 0.001f)
+
+        val updated = store.current().playback.copy(tvPlayerScale = 1.0f)
+        store.savePlayback(updated)
+        assertEquals(1.0f, store.current().playback.tvPlayerScale, 0.001f)
+    }
 }

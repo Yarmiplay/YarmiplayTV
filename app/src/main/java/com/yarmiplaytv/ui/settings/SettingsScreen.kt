@@ -276,6 +276,7 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                     savePlayback(pb.copy(seekStepSeconds = steps[(steps.indexOf(pb.seekStepSeconds) + 1) % steps.size]))
                 }, subtitle = "D-pad left/right while the controls are hidden")
                 ControlsHideSetting(pb, ::savePlayback)
+                PlayerScaleSetting(pb, ::savePlayback)
                 var audio by rememberSavedText(pb.audioLanguages) { text ->
                     container.scope.launch { container.settingsStore.savePlayback(container.settings.value.playback.copy(audioLanguages = text)) }
                 }
@@ -296,6 +297,7 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                             )
                         }
                         Text(THEME_NOTE, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                        PlayerScaleSetting(pb, ::savePlayback)
                     }
                     TvSettingsCategory.UPDATES -> UpdatesSection(container) { qr = it }
                     TvSettingsCategory.ABOUT -> {
@@ -439,3 +441,27 @@ private fun ControlsHideSetting(pb: PlaybackPrefs, save: (PlaybackPrefs) -> Unit
         )
     }
 }
+
+private val tvPlayerScalePresets = listOf(0.70f, 0.75f, 0.80f, 0.85f, 0.90f, 1.0f)
+
+@Composable
+private fun PlayerScaleSetting(pb: PlaybackPrefs, save: (PlaybackPrefs) -> Unit) {
+    val scale = pb.tvPlayerScale
+    val label = when {
+        scale == 0.85f -> "85% (Default)"
+        scale == 1.0f -> "100% (Full size)"
+        else -> "${(scale * 100).toInt()}%"
+    }
+    ValueRow(
+        "In-player menu scale",
+        label,
+        {
+            val idx = tvPlayerScalePresets.indexOfFirst { kotlin.math.abs(it - scale) < 0.01f }
+            val nextIdx = if (idx == -1) 0 else (idx + 1) % tvPlayerScalePresets.size
+            save(pb.copy(tvPlayerScale = tvPlayerScalePresets[nextIdx]))
+        },
+        Modifier.testTag("player_scale"),
+        subtitle = "Size of menus, controls, and overlays inside the player",
+    )
+}
+

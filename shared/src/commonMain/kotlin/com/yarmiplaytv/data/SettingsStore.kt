@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -131,6 +132,8 @@ internal object SavedRooms {
     }
 }
 
+const val DEFAULT_TV_PLAYER_SCALE: Float = 0.85f
+
 data class PlaybackPrefs(
     val hardwareDecoding: Boolean = true,
     val audioLanguages: String = "jpn,ja",
@@ -138,6 +141,8 @@ data class PlaybackPrefs(
     val seekStepSeconds: Int = 10,
     /** TV: how long the player's controls stay up while a video plays; 0 keeps them up. */
     val controlsHideSeconds: Int = 3,
+    /** TV: scale of menus, controls, and overlays inside the player. */
+    val tvPlayerScale: Float = DEFAULT_TV_PLAYER_SCALE,
     /** Android: leaving the app while a video plays shrinks it to a picture-in-picture window. */
     val pictureInPicture: Boolean = !DevicePlatform.isTv,
     /** Keep playback and room sync running in background with notification controls when minimized. */
@@ -311,6 +316,7 @@ class SettingsStore(
         val slang = stringPreferencesKey("pb_slang")
         val seekStep = intPreferencesKey("pb_seek_step")
         val controlsHide = intPreferencesKey("pb_controls_hide")
+        val tvPlayerScale = floatPreferencesKey("tv_player_scale")
         val autoSkipAlone = booleanPreferencesKey("pb_auto_skip")
         val skipButton = booleanPreferencesKey("pb_skip_button")
         val detectSkips = booleanPreferencesKey("pb_detect_skips")
@@ -402,6 +408,7 @@ class SettingsStore(
                 subtitleLanguages = p[Keys.slang] ?: defaults.playback.subtitleLanguages,
                 seekStepSeconds = p[Keys.seekStep] ?: 10,
                 controlsHideSeconds = p[Keys.controlsHide] ?: defaults.playback.controlsHideSeconds,
+                tvPlayerScale = p[Keys.tvPlayerScale] ?: defaults.playback.tvPlayerScale,
                 autoSkipAlone = p[Keys.autoSkipAlone] ?: defaults.playback.autoSkipAlone,
                 showSkipButton = p[Keys.skipButton] ?: defaults.playback.showSkipButton,
                 detectSkips = p[Keys.detectSkips] ?: defaults.playback.detectSkips,
@@ -679,12 +686,15 @@ class SettingsStore(
             it[Keys.slang] = prefs.subtitleLanguages
             it[Keys.seekStep] = prefs.seekStepSeconds
             it[Keys.controlsHide] = prefs.controlsHideSeconds
+            it[Keys.tvPlayerScale] = prefs.tvPlayerScale
             it[Keys.autoSkipAlone] = prefs.autoSkipAlone
             it[Keys.skipButton] = prefs.showSkipButton
             it[Keys.detectSkips] = prefs.detectSkips
             it[Keys.detectAnyNetwork] = prefs.detectOnAnyNetwork
         }
     }
+
+    suspend fun saveTvPlayerScale(scale: Float) = dataStore.edit { it[Keys.tvPlayerScale] = scale }
 
     suspend fun saveStayConnectedMinimized(on: Boolean) = dataStore.edit { it[Keys.stayConnectedMinimized] = on }
 

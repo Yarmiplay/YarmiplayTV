@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.3.8" date="2026-10-17">
+      <description>
+        <p>Add a setting on TV to control in-player menu scaling with a smaller default size.</p>
+      </description>
+    </release>
     <release version="2.3.7" date="2026-10-17">
       <description>
         <p>Improve portrait player: clean video overlay, dedicated room status card with repositioned ready button, and expandable full video title.</p>

@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -82,6 +83,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -146,10 +148,14 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
     val room by container.sync.room.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     val skipPrompt by container.skips.prompt.collectAsStateWithLifecycle()
-    val density = LocalDensity.current
     val skipSegments by container.skips.segments.collectAsStateWithLifecycle()
     val status by container.playlist.status.collectAsStateWithLifecycle()
     val settings by container.settings.collectAsStateWithLifecycle()
+    val baseDensity = LocalDensity.current
+    val playerScale = settings.playback.tvPlayerScale.coerceIn(0.5f, 1.5f)
+    val scaledDensity = remember(baseDensity, playerScale) {
+        Density(density = baseDensity.density * playerScale, fontScale = baseDensity.fontScale)
+    }
 
     var overlay by remember { mutableStateOf<Overlay>(Overlay.Hidden) }
     var interaction by remember { mutableLongStateOf(0L) }
@@ -286,95 +292,99 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
         // Picture-in-picture shows only the video; the system draws the window's controls.
         if (pip.active) return@Box
 
-        if (state.fileLoaded && FileNames.isAudio(nowPlaying?.fileName ?: state.url.orEmpty())) {
-            Column(
-                Modifier.align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Box(
-                    Modifier.size(140.dp).clip(RoundedCornerShape(24.dp)).background(AppColors.SurfaceHigh),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Filled.Audiotrack, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(72.dp))
+        CompositionLocalProvider(LocalDensity provides scaledDensity) {
+            Box(Modifier.fillMaxSize()) {
+                if (state.fileLoaded && FileNames.isAudio(nowPlaying?.fileName ?: state.url.orEmpty())) {
+                    Column(
+                        Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Box(
+                            Modifier.size(140.dp).clip(RoundedCornerShape(24.dp)).background(AppColors.SurfaceHigh),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Filled.Audiotrack, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(72.dp))
+                        }
+                        Text(nowPlaying?.title ?: FileNames.baseName(state.url.orEmpty()), style = MaterialTheme.typography.headlineMedium, color = Color.White)
+                        nowPlaying?.episode?.seriesName?.let {
+                            Text(it, style = MaterialTheme.typography.titleMedium, color = Color.White.copy(alpha = 0.7f))
+                        }
+                    }
                 }
-                Text(nowPlaying?.title ?: FileNames.baseName(state.url.orEmpty()), style = MaterialTheme.typography.headlineMedium, color = Color.White)
-                nowPlaying?.episode?.seriesName?.let {
-                    Text(it, style = MaterialTheme.typography.titleMedium, color = Color.White.copy(alpha = 0.7f))
+
+                // Status in the middle of the screen (resolving/loading/nothing playing).
+                CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom, overlay == Overlay.Hidden)
+                RelayOnPlayer(container, state.fileLoaded, overlay != Overlay.Hidden)
+
+                if (state.buffering && state.fileLoaded) {
+                    VideoChip("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(24.dp))
                 }
-            }
-        }
 
-        // Status in the middle of the screen (resolving/loading/nothing playing).
-        CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom, overlay == Overlay.Hidden)
-        RelayOnPlayer(container, state.fileLoaded, overlay != Overlay.Hidden)
+                val toasts = remember(container) { container.sync.toasts.filter { it.showsOnVideo(container.settings.value.chatOnVideo) } }
+                ToastHost(toasts, Modifier.align(Alignment.TopStart).padding(32.dp))
+                TvMalNotice(container, Modifier.align(Alignment.TopEnd).padding(32.dp))
+                // One place, controls or not: just above the controls bar, so it never jumps. OK presses it while the
+                // controls are hidden; with them open, OK belongs to the focused control.
+                if (overlay == Overlay.Hidden || overlay == Overlay.Controls) {
+                    skipPrompt?.let {
+                        SkipChip(
+                            it.label,
+                            key = it,
+                            hint = if (overlay == Overlay.Hidden) "OK" else null,
+                            large = true,
+                            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 56.dp, bottom = tvSkipBottom()).testTag("skip_segment"),
+                        )
+                    }
+                }
 
-        if (state.buffering && state.fileLoaded) {
-            VideoChip("Buffering… %.0fs cached".format(state.cacheSeconds), AppColors.NotReady, Modifier.align(Alignment.TopCenter).padding(24.dp))
-        }
+                val flashVisible = remember(seekFlash) { mutableStateOf(seekFlash != 0L) }
+                LaunchedEffect(seekFlash) { delay(1800); flashVisible.value = false }
+                if (overlay == Overlay.Hidden && flashVisible.value && state.duration > 0) {
+                    Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 64.dp, vertical = 40.dp)) {
+                        ProgressBar(player.currentPosition(), state.duration, state.cacheSeconds, segments = skipSegments)
+                        Text("${formatClock(player.currentPosition())} / ${formatClock(state.duration)}", color = OnVideo.Text, modifier = Modifier.padding(top = 8.dp).onVideoLabel())
+                    }
+                }
 
-        val toasts = remember(container) { container.sync.toasts.filter { it.showsOnVideo(container.settings.value.chatOnVideo) } }
-        ToastHost(toasts, Modifier.align(Alignment.TopStart).padding(32.dp))
-        TvMalNotice(container, Modifier.align(Alignment.TopEnd).padding(32.dp))
-        // One place, controls or not: just above the controls bar, so it never jumps. OK presses it while the
-        // controls are hidden; with them open, OK belongs to the focused control.
-        if (overlay == Overlay.Hidden || overlay == Overlay.Controls) {
-            skipPrompt?.let {
-                SkipChip(
-                    it.label,
-                    key = it,
-                    hint = if (overlay == Overlay.Hidden) "OK" else null,
-                    large = true,
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 56.dp, bottom = tvSkipBottom()).testTag("skip_segment"),
-                )
-            }
-        }
+                if (overlay == Overlay.Controls) {
+                    ControlsBar(
+                        container = container,
+                        title = nowPlaying?.title ?: "Nothing playing",
+                        controlsFocus = controlsFocus,
+                        pip = pip,
+                        onTogglePause = ::togglePause,
+                        onSeek = ::seekBy,
+                        onOpenMenus = { openPanel(lastPanel) },
+                        onHome = { nav.popTo(Screen.Home) },
+                        modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { tvControlsHeight = with(scaledDensity) { it.height.toDp() } },
+                    )
+                    RoomChip(
+                        room,
+                        playerStreamingLabel(container, controlsVisible = true, state.fileLoaded),
+                        Modifier.align(Alignment.TopEnd).padding(32.dp),
+                    )
+                }
 
-        val flashVisible = remember(seekFlash) { mutableStateOf(seekFlash != 0L) }
-        LaunchedEffect(seekFlash) { delay(1800); flashVisible.value = false }
-        if (overlay == Overlay.Hidden && flashVisible.value && state.duration > 0) {
-            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 64.dp, vertical = 40.dp)) {
-                ProgressBar(player.currentPosition(), state.duration, state.cacheSeconds, segments = skipSegments)
-                Text("${formatClock(player.currentPosition())} / ${formatClock(state.duration)}", color = OnVideo.Text, modifier = Modifier.padding(top = 8.dp).onVideoLabel())
-            }
-        }
-
-        if (overlay == Overlay.Controls) {
-            ControlsBar(
-                container = container,
-                title = nowPlaying?.title ?: "Nothing playing",
-                controlsFocus = controlsFocus,
-                pip = pip,
-                onTogglePause = ::togglePause,
-                onSeek = ::seekBy,
-                onOpenMenus = { openPanel(lastPanel) },
-                onHome = { nav.popTo(Screen.Home) },
-                modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { tvControlsHeight = with(density) { it.height.toDp() } },
-            )
-            RoomChip(
-                room,
-                playerStreamingLabel(container, controlsVisible = true, state.fileLoaded),
-                Modifier.align(Alignment.TopEnd).padding(32.dp),
-            )
-        }
-
-        (overlay as? Overlay.Side)?.let { side ->
-            // The panel keeps the focus, so nothing behind it can be reached by mistake.
-            Panel(
-                Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(560.dp).padding(vertical = 24.dp, horizontal = 24.dp)
-                    .focusProperties { onExit = { cancelFocusChange() } }
-                    .focusGroup(),
-            ) {
-                Column {
-                    PanelTabs(panels, side.kind, tabFocus, onFocusTab = { if (it != side.kind) openPanel(it, focusContent = false) }, onClickTab = { openPanel(it) })
-                    Box(Modifier.weight(1f)) {
-                        when (side.kind) {
-                            PanelKind.PLAYLIST -> PlaylistPanel(container, nav, panelFocus)
-                            PanelKind.ROOM -> RoomPanel(container, nav, panelFocus)
-                            PanelKind.CHAT -> ChatPanel(container, panelFocus)
-                            PanelKind.AUDIO -> TracksPanel(container, TrackType.AUDIO, panelFocus)
-                            PanelKind.SUBTITLES -> TracksPanel(container, TrackType.SUBTITLE, panelFocus)
-                            PanelKind.MAL -> MalPanel(container, panelFocus)
+                (overlay as? Overlay.Side)?.let { side ->
+                    // The panel keeps the focus, so nothing behind it can be reached by mistake.
+                    Panel(
+                        Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(560.dp).padding(vertical = 24.dp, horizontal = 24.dp)
+                            .focusProperties { onExit = { cancelFocusChange() } }
+                            .focusGroup(),
+                    ) {
+                        Column {
+                            PanelTabs(panels, side.kind, tabFocus, onFocusTab = { if (it != side.kind) openPanel(it, focusContent = false) }, onClickTab = { openPanel(it) })
+                            Box(Modifier.weight(1f)) {
+                                when (side.kind) {
+                                    PanelKind.PLAYLIST -> PlaylistPanel(container, nav, panelFocus)
+                                    PanelKind.ROOM -> RoomPanel(container, nav, panelFocus)
+                                    PanelKind.CHAT -> ChatPanel(container, panelFocus)
+                                    PanelKind.AUDIO -> TracksPanel(container, TrackType.AUDIO, panelFocus)
+                                    PanelKind.SUBTITLES -> TracksPanel(container, TrackType.SUBTITLE, panelFocus)
+                                    PanelKind.MAL -> MalPanel(container, panelFocus)
+                                }
+                            }
                         }
                     }
                 }
