@@ -22,6 +22,7 @@ import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.ui.mobile.DesktopBack
+import com.yarmiplaytv.ui.mobile.DesktopPip
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
 import kotlinx.coroutines.CoroutineScope
@@ -30,10 +31,13 @@ import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.job
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -52,6 +56,8 @@ class PlayerTabUiTest {
 
     @Before
     fun setUp() {
+        DesktopPip.open = false
+        DesktopPip.toggle = { DesktopPip.open = !DesktopPip.open }
         main = Executors.newSingleThreadExecutor { Thread(it, "main") }.asCoroutineDispatcher()
         Dispatchers.setMain(main)
         storeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -66,10 +72,11 @@ class PlayerTabUiTest {
 
     @After
     fun tearDown() {
-        app.scope.cancel()
-        storeScope.cancel()
+        DesktopPip.open = false
+        if (::app.isInitialized) runBlocking { app.scope.coroutineContext.job.cancelAndJoin() }
+        if (::storeScope.isInitialized) runBlocking { storeScope.coroutineContext.job.cancelAndJoin() }
         Dispatchers.resetMain()
-        main.close()
+        if (::main.isInitialized) main.close()
     }
 
     private fun ComposeUiTest.showApp() {
@@ -117,5 +124,35 @@ class PlayerTabUiTest {
         waitUntil(timeoutMillis = 5_000) { showing("home") }
         // Back from Home has nowhere to go.
         runOnUiThread { assertTrue(!DesktopBack.dispatch()) }
+    }
+
+    @Test
+    fun `going picture-in-picture returns the main window to menus so tabs can be browsed`() = runComposeUiTest {
+        showApp()
+        onNodeWithTag("tab_Settings").performClick()
+        waitUntil(timeoutMillis = 5_000) { showing("settings") }
+        onNodeWithTag("tab_Player").performClick()
+        waitUntil(timeoutMillis = 5_000) { showing("player") }
+
+        // Entering picture-in-picture leaves the fullscreen player back to the previous menu screen.
+        runOnUiThread { DesktopPip.toggle() }
+        waitUntil(timeoutMillis = 5_000) { showing("settings") }
+        assertFalse(showing("player_pip_elsewhere"))
+        listOf("Home", "Player", "Search", "Room", "Settings").forEach { onNodeWithTag("tab_$it").assertIsDisplayed() }
+
+        // Other menus can be browsed freely while picture-in-picture is active.
+        onNodeWithTag("tab_Search").performClick()
+        waitUntil(timeoutMillis = 5_000) { showing("search_field") }
+        onNodeWithTag("tab_Room").performClick()
+        waitUntil(timeoutMillis = 5_000) { showing("public_8996") }
+        onNodeWithTag("tab_Home").performClick()
+        waitUntil(timeoutMillis = 5_000) { showing("home") }
+
+        // Even if the user clicks the Player tab while in PiP, the sidebar remains visible so they aren't stuck.
+        onNodeWithTag("tab_Player").performClick()
+        waitUntil(timeoutMillis = 5_000) { showing("player_pip_elsewhere") }
+        listOf("Home", "Player", "Search", "Room", "Settings").forEach { onNodeWithTag("tab_$it").assertIsDisplayed() }
+        onNodeWithTag("pip_back_here").performClick()
+        waitUntil(timeoutMillis = 5_000) { !DesktopPip.open && showing("player") }
     }
 }

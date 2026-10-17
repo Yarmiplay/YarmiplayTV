@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.3.5" date="2026-10-17">
+      <description>
+        <p>Return the desktop main window to menus when entering picture-in-picture so you can browse freely while watching.</p>
+      </description>
+    </release>
     <release version="2.3.4" date="2026-10-17">
       <description>
         <p>Prefer streaming larger complete files from peers when a local copy is smaller or incomplete, and prevent uninitiated player jumps from skipping the room.</p>

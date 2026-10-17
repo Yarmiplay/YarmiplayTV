@@ -89,7 +89,13 @@ object DesktopPlayerInput {
  * window stays usable. The desktop app shows the window and sets [toggle].
  */
 object DesktopPip {
-    var open: Boolean by mutableStateOf(false)
+    private var _open: Boolean by mutableStateOf(false)
+    var open: Boolean
+        get() = _open
+        set(value) {
+            _open = value
+            PlayerPictureInPicture.active = value
+        }
     var toggle: () -> Unit = { open = !open }
 }
 

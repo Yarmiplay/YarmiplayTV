@@ -276,13 +276,17 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
         LaunchedEffect(Unit) { showPlaybackOnTaskbar(window, container.player) }
         LaunchedEffect(Unit) {
             // Minimizing while a video plays goes on in picture-in-picture (a setting); restoring comes back.
+            var playerBeforeMinimize = false
             snapshotFlow { state.isMinimized }.collect { minimized ->
                 val playing = container.player.state.value.let { it.fileLoaded && !it.paused }
                 if (minimized && !DesktopPip.open && playing && container.settings.value.playback.pictureInPicture) {
+                    playerBeforeMinimize = DesktopPlayerInput.input != null
                     setPip(true)
                     pipFromMinimize = true
                 } else if (!minimized && pipFromMinimize) {
                     setPip(false)
+                    if (playerBeforeMinimize) container.playlist.showPlayer()
+                    playerBeforeMinimize = false
                 }
             }
         }

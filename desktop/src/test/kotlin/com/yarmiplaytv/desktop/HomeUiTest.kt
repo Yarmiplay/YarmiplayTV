@@ -89,10 +89,10 @@ class HomeUiTest {
 
     @After
     fun tearDown() {
-        app.scope.cancel()
-        runBlocking { storeScope.coroutineContext.job.cancelAndJoin() }
+        if (::app.isInitialized) runBlocking { app.scope.coroutineContext.job.cancelAndJoin() }
+        if (::storeScope.isInitialized) runBlocking { storeScope.coroutineContext.job.cancelAndJoin() }
         Dispatchers.resetMain()
-        main.close()
+        if (::main.isInitialized) main.close()
     }
 
     private fun ComposeUiTest.show(width: Int, height: Int) {

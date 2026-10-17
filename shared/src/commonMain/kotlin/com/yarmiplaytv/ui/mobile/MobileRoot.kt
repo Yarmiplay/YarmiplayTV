@@ -103,11 +103,22 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
     val nav = remember { Navigator(stack) { saveable.removeState(it.key) } }
     val snackbar = remember { SnackbarHostState() }
 
+    val pip = rememberPictureInPicture(container.player, false, false)
+    val desktopPip = pictureInPictureWindow && pip.active
+
+    LaunchedEffect(desktopPip) {
+        if (desktopPip && nav.current == Screen.Player) {
+            if (nav.canGoBack) nav.back() else nav.switchTab(Screen.Home)
+        }
+    }
+
     LaunchedEffect(Unit) {
         container.playlist.openPlayerRequests.collect { request ->
             if (request <= container.playlist.handledPlayerRequests) return@collect
             container.playlist.handledPlayerRequests = request
-            if (nav.current != Screen.Player && nav.current !is Screen.Search) nav.push(Screen.Player)
+            if (nav.current != Screen.Player && nav.current !is Screen.Search && !(pictureInPictureWindow && PlayerPictureInPicture.active)) {
+                nav.push(Screen.Player)
+            }
         }
     }
     LaunchedEffect(Unit) {
@@ -144,7 +155,7 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                 kind.isLarge -> SectionNav.RAIL
                 else -> SectionNav.BAR
             }
-            if (screen == Screen.Player && kind == DeviceKind.DESKTOP) {
+            if (screen == Screen.Player && kind == DeviceKind.DESKTOP && !desktopPip) {
                 // On desktop the player is fullscreen, covering the window
                 CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
             } else {
@@ -155,6 +166,7 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                     style = style,
                     screen = screen,
                     isPortrait = isPortrait,
+                    desktopPip = desktopPip,
                     onTab = {
                         if (it.screen == Screen.Player) {
                             if (nav.current != Screen.Player) nav.push(Screen.Player)
@@ -162,7 +174,10 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                             nav.switchTab(it.screen)
                         }
                     },
-                    onOpenPlayer = { nav.push(Screen.Player) },
+                    onOpenPlayer = {
+                        if (desktopPip) pip.toggle()
+                        nav.push(Screen.Player)
+                    },
                 ) {
                     if (screen == Screen.Player) {
                         CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
@@ -190,7 +205,7 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
             }
         }
             // A dialog would fill the small picture-in-picture window.
-            if (!PlayerPictureInPicture.active) {
+            if (!PlayerPictureInPicture.active || pictureInPictureWindow) {
                 nav.actionItem?.let { item ->
                     MobileItemActionsSheet(container, item, onDismiss = { nav.actionItem = null }, onMal = { nav.push(Screen.MalEntry(item)) })
                 }
@@ -208,6 +223,7 @@ private fun MobileScaffold(
     style: SectionNav,
     screen: Screen,
     isPortrait: Boolean,
+    desktopPip: Boolean = false,
     onTab: (Tab) -> Unit,
     onOpenPlayer: () -> Unit,
     content: @Composable () -> Unit,
@@ -261,7 +277,7 @@ private fun MobileScaffold(
                         )
                     }
                 }
-                SectionNav.SIDEBAR -> if (screen != Screen.Player) {
+                SectionNav.SIDEBAR -> if (screen != Screen.Player || desktopPip) {
                     Sidebar(container, selected, onTab)
                     VerticalDivider(color = AppColors.SurfaceHigh)
                 }
