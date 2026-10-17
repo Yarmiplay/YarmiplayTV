@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.3.3" date="2026-10-17">
+      <description>
+        <p>Keep relayed files downloading in the background until complete (including while paused) and move relay download status to the controls bar once the video is open</p>
+      </description>
+    </release>
     <release version="2.3.2" date="2026-10-16">
       <description>
         <p>Prevent seeker resetting to 0 on reconnection, restore dropped media streams, and test stability fixes.</p>

@@ -54,14 +54,13 @@ data class RelayStatus(
 
     /**
      * What to put on the player. Streaming replaces the loading card immediately, including before the file
-     * opens, so a relayed file is not stuck on "Loading…". The download bar shows while this viewer is held,
-     * or until the file opens, and then goes away.
+     * opens, so a relayed file is not stuck on "Loading…". The download bar only shows until the file opens,
+     * and once the video is loaded the status shares the controls bar instead of covering the video.
      */
     fun playbackHint(fileLoaded: Boolean): RelayHint = when {
         complete -> RelayHint.None
-        downloading && (waitingToPlay || !fileLoaded) -> RelayHint.Downloading
-        !downloading -> RelayHint.Streaming
-        else -> RelayHint.None
+        downloading && !fileLoaded -> RelayHint.Downloading
+        else -> RelayHint.Streaming
     }
 
     /**
@@ -255,7 +254,7 @@ class RelayManager(
 
     private suspend fun transferFor(entry: RelayFile): RelayTransfer {
         val key = "${entry.quickHash}-${entry.size}"
-        return transfers[key] ?: withContext(Dispatchers.IO) {
+        return transfers[key]?.takeIf { !it.cache.isDeleted } ?: withContext(Dispatchers.IO) {
             RelayTransfer(key, entry.name, entry.size, cache.open(key, entry.size), http, scope) { sourceFor(entry.quickHash, entry.size) }
         }.also { transfers[key] = it }
     }
@@ -265,7 +264,7 @@ class RelayManager(
         progressJob?.cancel()
         progressJob = scope.launch {
             transfer.cache.version.collect {
-                if (current === transfer && transfer.downloading) update()
+                if (current === transfer) update()
             }
         }
     }
@@ -366,7 +365,8 @@ class RelayManager(
         } else if (!t.downloading) {
             if (RelayPolicy.shouldDownload(own, entry.size, duration)) {
                 t.setDownload(true)
-                if (room.isReady == true) {
+                val rate = own ?: listRate(t)
+                if (room.isReady == true && !RelayPolicy.canPlayThrough(entry.size, t.cache.cachedBytes, rate, duration, player.currentPosition())) {
                     sync.setReady(false, manuallyInitiated = false)
                     notReadyByUs = true
                 }

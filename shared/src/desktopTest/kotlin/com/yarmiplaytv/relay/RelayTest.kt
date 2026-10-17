@@ -171,9 +171,12 @@ class RelayTest {
         assertEquals(0.25, status.fraction.toDouble(), 0.0001)
         assertEquals(0.0, status.copy(size = 0).fraction.toDouble(), 0.0)
         assertEquals(1.0, status.copy(haveBytes = 1_000).fraction.toDouble(), 0.0001)
-        assertEquals(RelayHint.Downloading, status.playbackHint(fileLoaded = true))
+        assertEquals(RelayHint.Streaming, status.playbackHint(fileLoaded = true))
+        assertEquals(RelayHint.Downloading, status.playbackHint(fileLoaded = false))
         assertEquals(RelayHint.Downloading, status.copy(waitingToPlay = false).playbackHint(fileLoaded = false))
-        assertEquals(RelayHint.None, status.copy(waitingToPlay = false).playbackHint(fileLoaded = true))
+        assertEquals(RelayHint.Streaming, status.copy(waitingToPlay = false).playbackHint(fileLoaded = true))
+        assertTrue(status.streamingLineVisible(controlsVisible = true, fileLoaded = true))
+        assertFalse(status.streamingLineVisible(controlsVisible = false, fileLoaded = true))
         val streaming = status.copy(downloading = false, waitingToPlay = false)
         assertEquals(RelayHint.Streaming, streaming.playbackHint(fileLoaded = true))
         assertEquals(RelayHint.Streaming, streaming.playbackHint(fileLoaded = false))
@@ -525,6 +528,38 @@ class RelayTest {
             assertNull(cached.firstMissing(32))
             assertTrue(requests.any { it.startsWith("bytes=$hole-") })
             assertTrue("cancelled the read-ahead ${requests.size} times", requests.size <= 3)
+        } finally {
+            scope.cancel()
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `continues downloading past the read-ahead window until the whole file is cached`() {
+        val size = RelayTransfer.READ_AHEAD + 8 * RelayCache.BLOCK
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val (start, end) = RelayProxy.parseRange(request.getHeader("Range"), size) ?: return MockResponse().setResponseCode(416)
+                return MockResponse().setResponseCode(206)
+                    .setHeader("Content-Range", "bytes $start-$end/$size")
+                    .setBody(Buffer().write(ByteArray((end - start + 1).toInt())))
+            }
+        }
+        server.start()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val session = YarmiplaySession("secret-token", 1, server.url("/").toString().trimEnd('/'))
+            val cached = RelayCache(tmp.newFolder("relay")).open("k", size)
+            val rttBlocks = (RelayTransfer.READ_AHEAD / RelayCache.BLOCK).toInt()
+            repeat(rttBlocks) { cached.markComplete(it) }
+            val transfer = RelayTransfer("k", "full.mp4", size, cached, relayHttpClient(), scope) { RelaySource(session, "file1") }
+            transfer.demand(0)
+            transfer.start()
+            val deadline = System.nanoTime() + 20_000_000_000L
+            while (!cached.complete && System.nanoTime() < deadline) Thread.sleep(50)
+            transfer.stop()
+            assertTrue("expected the whole file to be cached while paused at 0", cached.complete)
         } finally {
             scope.cancel()
             server.shutdown()

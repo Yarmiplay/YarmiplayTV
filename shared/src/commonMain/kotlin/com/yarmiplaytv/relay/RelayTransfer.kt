@@ -44,7 +44,6 @@ class RelayTransfer(
     private val readers = ConcurrentHashMap<Int, Long>()
     private val readerIds = AtomicInteger()
     private var streamJob: Job? = null
-    private var downloadJob: Job? = null
     private var prefetchJob: Job? = null
     private val samples = ArrayDeque<Sample>()
 
@@ -54,7 +53,7 @@ class RelayTransfer(
     @Volatile var lastError: String? = null
         private set
 
-    private class Sample(val atNanos: Long, val bytes: Int, val busyNanos: Long, val download: Boolean)
+    private class Sample(val atNanos: Long, val bytes: Int, val busyNanos: Long)
 
     fun start() {
         if (streamJob?.isActive == true) return
@@ -62,21 +61,14 @@ class RelayTransfer(
     }
 
     fun setDownload(on: Boolean) {
-        downloading = on
-        if (on && downloadJob?.isActive != true && !cache.complete) {
-            downloadJob = scope.launch(Dispatchers.IO) { downloadLoop() }
-        } else if (!on) {
-            downloadJob?.cancel()
-            downloadJob = null
-        }
+        downloading = on && !cache.complete
+        if (downloading) start()
     }
 
     fun stop() {
         streamJob?.cancel()
-        downloadJob?.cancel()
         stopPrefetch()
         streamJob = null
-        downloadJob = null
         downloading = false
     }
 
@@ -141,25 +133,20 @@ class RelayTransfer(
 
     /**
      * Bytes per second over the last [WINDOW_MS], counting only the time spent waiting on the network, or null when
-     * the fetches were mostly idle (the read-ahead was full, so the network keeps up).
+     * the fetches were mostly idle.
      */
     @Synchronized
     fun rate(nowNanos: Long = System.nanoTime()): Double? {
         prune(nowNanos)
-        if (samples.isEmpty()) return null
-        var total = 0.0
-        for (download in listOf(false, true)) {
-            val s = samples.filter { it.download == download }
-            val busy = s.sumOf { it.busyNanos }
-            if (busy >= MIN_BUSY_NANOS) total += s.sumOf { it.bytes.toLong() } / (busy / 1e9)
-        }
-        return total.takeIf { it > 0 }
+        val busy = samples.sumOf { it.busyNanos }
+        if (busy < MIN_BUSY_NANOS) return null
+        return (samples.sumOf { it.bytes.toLong() } / (busy / 1e9)).takeIf { it > 0 }
     }
 
     @Synchronized
-    private fun record(bytes: Int, busyNanos: Long, download: Boolean) {
+    private fun record(bytes: Int, busyNanos: Long) {
         val now = System.nanoTime()
-        samples.addLast(Sample(now, bytes, busyNanos, download))
+        samples.addLast(Sample(now, bytes, busyNanos))
         prune(now)
     }
 
@@ -171,31 +158,31 @@ class RelayTransfer(
         var failures = 0
         while (currentCoroutineContext().isActive && !cache.isDeleted) {
             val pos = focus()
-            val first = cache.firstMissing(cache.blockOf(pos))
+            val from = cache.blockOf(pos)
+            // Fill the read-ahead window from the play position first, then the rest of the file to the end and from 0.
+            val first = cache.firstMissing(from) ?: cache.firstMissing(0) ?: break
             val limit = pos + READ_AHEAD
-            if (first == null || cache.blockStart(first) >= limit) {
-                withTimeoutOrNull(1_000) { readerPos.first { it != pos } }
-                continue
+            val inWindow = first >= from && cache.blockStart(first) < limit
+            val end = if (inWindow) {
+                runEnd(first, cache.blockOf(minOf(limit, size - 1)) + 1)
+            } else {
+                runEnd(first, first + MAX_REQUEST_BLOCKS)
             }
-            val end = runEnd(first, cache.blockOf(minOf(limit, size - 1)) + 1)
-            val ok = fetch(first, end, "stream") { !wanted(first, end) }
+            val mode = if (inWindow && !downloading) "stream" else "download"
+            val ok = fetch(first, end, mode) {
+                if (inWindow) !wanted(first, end) else urgentMissing()?.let { it != cache.firstMissing(first) } == true
+            }
             failures = if (ok) 0 else failures + 1
             if (!ok) delay(minOf(5_000L, 500L * failures))
         }
+        downloading = false
     }
 
-    private suspend fun downloadLoop() {
-        var failures = 0
-        while (currentCoroutineContext().isActive && !cache.isDeleted) {
-            // The rest of the file from the play position on, then what's left before it.
-            val from = cache.blockOf(readerPos.value)
-            val first = cache.firstMissing(from) ?: cache.firstMissing(0) ?: break
-            val end = runEnd(first, first + MAX_REQUEST_BLOCKS)
-            val ok = fetch(first, end, "download") { false }
-            failures = if (ok) 0 else failures + 1
-            if (!ok) delay(minOf(10_000L, 1_000L * failures))
-        }
-        downloading = downloading && !cache.complete
+    /** The first missing block within [READ_AHEAD] of [focus], if any. */
+    private fun urgentMissing(): Int? {
+        val pos = focus()
+        val first = cache.firstMissing(cache.blockOf(pos)) ?: return null
+        return first.takeIf { cache.blockStart(it) < pos + READ_AHEAD }
     }
 
     /** The earliest player connection that still needs bytes, else the last single demand. */
@@ -232,7 +219,6 @@ class RelayTransfer(
      * player moved away. Only [measure]d fetches count toward [rate].
      */
     private suspend fun fetch(first: Int, end: Int, mode: String, measure: Boolean = true, abandon: () -> Boolean): Boolean {
-        val download = mode != "stream"
         val src = source() ?: run {
             fail("No viewer is sharing this file right now")
             return false
@@ -270,7 +256,7 @@ class RelayTransfer(
                     val t0 = System.nanoTime()
                     val n = stream.read(buffer, 0, minOf(BUFFER.toLong(), last + 1 - pos).toInt())
                     if (n < 0) break
-                    if (measure) record(n, System.nanoTime() - t0, download)
+                    if (measure) record(n, System.nanoTime() - t0)
                     cache.write(pos, buffer, n)
                     pos += n
                     while (block < end && pos >= cache.blockStart(block) + cache.blockLength(block)) {
