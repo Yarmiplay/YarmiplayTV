@@ -26,6 +26,7 @@ import com.yarmiplaytv.ui.components.ToastHost
 import com.yarmiplaytv.ui.connect.DeviceAccessDialog
 import com.yarmiplaytv.ui.connect.JellyfinLoginScreen
 import com.yarmiplaytv.ui.connect.PlexLoginScreen
+import com.yarmiplaytv.ui.connect.RoomScreen
 import com.yarmiplaytv.ui.connect.ServersScreen
 import com.yarmiplaytv.ui.connect.SyncplayConnectScreen
 import com.yarmiplaytv.ui.home.HomeScreen
@@ -69,6 +70,7 @@ fun TvRoot(container: AppContainer, stack: SnapshotStateList<Screen> = remember 
                 when (screen) {
                     Screen.Home -> HomeScreen(container, nav)
                     Screen.SyncplayConnect -> SyncplayConnectScreen(container, nav)
+                    Screen.Room -> RoomScreen(container, nav)
                     Screen.JellyfinLogin -> JellyfinLoginScreen(container, nav)
                     Screen.PlexLogin -> PlexLoginScreen(container, nav)
                     Screen.Servers -> ServersScreen(container, nav)

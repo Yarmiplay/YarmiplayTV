@@ -185,7 +185,7 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                     saveable.SaveableStateProvider(screen.key) {
                         when (screen) {
                             Screen.Home -> MobileHomeScreen(container, nav, kind)
-                            Screen.SyncplayConnect -> MobileRoomScreen(container, nav)
+                            Screen.SyncplayConnect, Screen.Room -> MobileRoomScreen(container, nav)
                             Screen.JellyfinLogin -> MobileJellyfinScreen(container, nav)
                             Screen.PlexLogin -> MobilePlexScreen(container, nav)
                             Screen.Servers -> MobileServersScreen(container, nav)

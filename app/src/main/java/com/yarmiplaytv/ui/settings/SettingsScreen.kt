@@ -346,7 +346,7 @@ private fun UpdatesSection(container: AppContainer, showLink: (AboutLink) -> Uni
                 when (result.available) {
                     true -> "A new version is available in ${result.store.name}."
                     false -> "You're up to date."
-                    null -> "Updates come from ${result.store.name}."
+                    null -> "Couldn't check for updates in ${result.store.name}."
                 },
             )
             else -> Unit
@@ -364,8 +364,8 @@ private fun UpdatesSection(container: AppContainer, showLink: (AboutLink) -> Uni
             if (available == true) {
                 ActionButton("Update", { if (!store.update()) store.pageUrl?.let(::openStore) }, primary = true)
             }
-            store.pageUrl?.takeIf { it.startsWith("http") }?.let { url ->
-                ActionButton("Open ${store.name}", { openStore(url) }, Modifier.testTag("open_store"))
+            store.pageUrl?.takeIf { it.startsWith("http") || it.startsWith("market") }?.let { url ->
+                ActionButton(if (available == true) "Open ${store.name}" else "Check in ${store.name}", { openStore(url) }, Modifier.testTag("open_store"))
             }
         }
     }

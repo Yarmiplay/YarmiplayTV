@@ -135,6 +135,34 @@ fun ActionButton(
 }
 
 @Composable
+fun CompactActionButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+    primary: Boolean = false,
+    tint: Color? = null,
+) {
+    TvTile(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier,
+        container = if (primary) AppColors.Accent.copy(alpha = 0.25f) else AppColors.SurfaceHigh,
+        focusedScale = 1.05f,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (icon != null) Icon(icon, contentDescription = null, tint = tint ?: LocalContentColor.current, modifier = Modifier.size(18.dp))
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = if (enabled) AppColors.Text else AppColors.TextDim)
+        }
+    }
+}
+
+@Composable
 fun IconAction(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = AppColors.Text, enabled: Boolean = true) {
     Surface(
         onClick = onClick,

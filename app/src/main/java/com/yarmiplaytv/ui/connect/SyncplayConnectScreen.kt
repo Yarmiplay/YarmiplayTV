@@ -43,11 +43,13 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.ui.components.ActionButton
+import com.yarmiplaytv.ui.components.CompactActionButton
 import com.yarmiplaytv.ui.components.IconAction
 import com.yarmiplaytv.ui.components.Pill
 import com.yarmiplaytv.ui.components.ToggleRow
 import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.nav.Navigator
+import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.ROOM_PRIVACY_HINT
 import com.yarmiplaytv.ui.shared.ROOM_RULES
 import com.yarmiplaytv.ui.shared.ROOM_RULES_URL
@@ -142,14 +144,17 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
         connectionStatusLine(room.status, connectionError)?.let {
             Text(it, color = if (room.status == ConnectionStatus.DISCONNECTED) AppColors.Error else AppColors.TextDim)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            ActionButton(if (connected) "Reconnect" else "Connect", ::connect, icon = Icons.Filled.Link, primary = true)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            ActionButton(if (connected) "Reconnect" else "Connect", ::connect, icon = Icons.Filled.Link, primary = !connected)
+            if (connected) {
+                ActionButton("Room", { nav.push(Screen.Room) }, icon = Icons.Filled.Groups, primary = true)
+            }
             if (!model.showsOperatorPassword) {
                 ActionButton("Create managed room", { if (model.createManaged()) nav.back() }, icon = Icons.Filled.Lock)
             }
             if (connected) ActionButton("Disconnect", model::disconnect, icon = Icons.Filled.LinkOff)
             model.serverKey?.takeIf(container::hasDeviceKey)?.let { server ->
-                ActionButton("Forget this device's key", { container.forgetDeviceKey(server) }, icon = Icons.Filled.Key)
+                CompactActionButton("Forget key", { container.forgetDeviceKey(server) }, icon = Icons.Filled.Key)
             }
         }
         if (connected && room.motd != null) {

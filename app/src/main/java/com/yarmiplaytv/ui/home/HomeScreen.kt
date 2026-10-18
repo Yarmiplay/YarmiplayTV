@@ -82,6 +82,7 @@ import com.yarmiplaytv.ui.shared.serversDetail
 import com.yarmiplaytv.ui.shared.serversTitle
 import com.yarmiplaytv.ui.shared.updateStateLine
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.update.PlayStore
 import com.yarmiplaytv.update.StoreUpdates
 import com.yarmiplaytv.update.UpdateState
 import com.yarmiplaytv.update.openStoreApp
@@ -174,7 +175,9 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                         AppColors.TextDim,
                     )
                 }
-                StatusTile(Icons.Filled.Groups, title, detail, color, Modifier.focusRequester(firstFocus)) { nav.push(Screen.SyncplayConnect) }
+                StatusTile(Icons.Filled.Groups, title, detail, color, Modifier.focusRequester(firstFocus)) {
+                    nav.push(if (room.status == ConnectionStatus.CONNECTED) Screen.Room else Screen.SyncplayConnect)
+                }
                 nowPlaying?.let { np ->
                     StatusTile(Icons.Filled.PlayCircle, "Now playing", np.title, AppColors.Accent) { nav.push(Screen.Player) }
                 }
@@ -190,6 +193,14 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                     if (plex.isNotEmpty()) serversDetail(plex) else "Browse your Plex server",
                     if (plex.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
                 ) { nav.push(if (plex.isEmpty()) Screen.PlexLogin else Screen.Servers) }
+                if (nowPlaying == null) {
+                    StatusTile(
+                        Icons.Filled.PlayCircle,
+                        "Player",
+                        "Open player",
+                        AppColors.TextDim,
+                    ) { nav.push(Screen.Player) }
+                }
                 if (container.mal.client.configured) {
                     val malAccount by container.settings.map { it.mal?.userName }.collectAsStateWithLifecycle(container.settings.value.mal?.userName)
                     val user = malAccount
@@ -287,6 +298,8 @@ private fun RecentRow(container: AppContainer, nav: Navigator, title: String, it
 private fun UpdateNotice(container: AppContainer, state: UpdateState, onDismiss: () -> Unit, modifier: Modifier = Modifier, tileModifier: Modifier = Modifier) {
     val updates = container.updates
     val canInstall = updates.installer != null
+    val context = LocalContext.current
+    val hasStore = remember(context) { PlayStore.canLaunchStore(context) }
     val shortLink = state.update.pageUrl.substringAfter("://").trimEnd('/') + "/a"
     // Coming back from Android's "install unknown apps" setting changes what the notice says.
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
@@ -295,7 +308,7 @@ private fun UpdateNotice(container: AppContainer, state: UpdateState, onDismiss:
             TvTile(
                 onClick = {
                     when {
-                        !canInstall -> onDismiss()
+                        !canInstall -> if (hasStore) PlayStore.launchStore(context) else onDismiss()
                         state is UpdateState.Ready -> updates.restartToInstall()
                         state is UpdateState.Downloading -> Unit
                         else -> updates.download(thenRestart = true)
@@ -310,14 +323,16 @@ private fun UpdateNotice(container: AppContainer, state: UpdateState, onDismiss:
                     Column(Modifier.weight(1f)) {
                         Text("YarmiplayTV ${state.update.version} is available", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            if (canInstall) updateStateLine(updates, state) else "To install it, open Downloader and enter $shortLink",
+                            if (canInstall) updateStateLine(updates, state)
+                            else if (hasStore) "Select to update in Google Play Store"
+                            else "To install it, open Downloader and enter $shortLink",
                             style = MaterialTheme.typography.bodySmall,
                             color = AppColors.TextDim,
                         )
                     }
                     Spacer(Modifier.width(16.dp))
                     when {
-                        !canInstall -> Pill("Not now", AppColors.TextDim)
+                        !canInstall -> if (hasStore) Pill("Update", AppColors.Accent) else Pill("Not now", AppColors.TextDim)
                         state is UpdateState.Ready -> Pill(readyButtonLabel(updates), AppColors.Accent)
                         state is UpdateState.Downloading -> Pill("${(state.progress * 100).toInt()}%", AppColors.TextDim)
                         else -> Pill(if (state is UpdateState.Failed) "Try again" else "Install", AppColors.Accent)
@@ -328,6 +343,8 @@ private fun UpdateNotice(container: AppContainer, state: UpdateState, onDismiss:
                 ActionButton(if (state is UpdateState.Downloading) "Cancel" else "Not now", {
                     if (state is UpdateState.Downloading) updates.dismiss(remember = false) else onDismiss()
                 })
+            } else if (hasStore) {
+                ActionButton("Not now", onDismiss)
             }
         }
     }
@@ -345,7 +362,9 @@ private fun StoreUpdateNotice(container: AppContainer, store: StoreUpdates, onDi
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
         TvTile(
             onClick = {
-                if (store.pageUrl?.let { openStoreApp(context, it) } != true) container.updates.updateFromStore(uriHandler::openUri)
+                if (!store.update()) {
+                    if (store.pageUrl?.let { openStoreApp(context, it) } != true) container.updates.updateFromStore(uriHandler::openUri)
+                }
             },
             modifier = tileModifier.weight(1f).testTag("update_banner"),
             focusedScale = 1.02f,
@@ -355,7 +374,7 @@ private fun StoreUpdateNotice(container: AppContainer, store: StoreUpdates, onDi
                 Spacer(Modifier.width(16.dp))
                 Text("A new version of YarmiplayTV is available in ${store.name}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 Spacer(Modifier.width(16.dp))
-                Pill("Open ${store.name}", AppColors.Accent)
+                Pill("Update", AppColors.Accent)
             }
         }
         ActionButton("Not now", onDismiss)

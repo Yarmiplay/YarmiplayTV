@@ -64,21 +64,33 @@ internal class PlayUpdater(
         }.getOrDefault(false)
 
     override suspend fun check(): Boolean? {
-        if (!fromPlay) return null
-        val found = suspendCancellableCoroutine<AppUpdateInfo?> { cont ->
-            manager.appUpdateInfo
-                .addOnSuccessListener { cont.resume(it) }
-                .addOnFailureListener {
-                    Logger.w(TAG, "Couldn't ask Google Play for updates: ${it.message}")
-                    cont.resume(null)
-                }
-        } ?: return null
-        info = found
-        return when (found.updateAvailability()) {
-            UpdateAvailability.UPDATE_AVAILABLE, UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS -> true
-            UpdateAvailability.UPDATE_NOT_AVAILABLE -> false
-            else -> null
+        val found = runCatching {
+            suspendCancellableCoroutine<AppUpdateInfo?> { cont ->
+                manager.appUpdateInfo
+                    .addOnSuccessListener { cont.resume(it) }
+                    .addOnFailureListener {
+                        Logger.w(TAG, "Couldn't ask Google Play for updates: ${it.message}")
+                        cont.resume(null)
+                    }
+            }
+        }.getOrNull()
+
+        if (found != null) {
+            info = found
+            when (found.updateAvailability()) {
+                UpdateAvailability.UPDATE_AVAILABLE, UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS -> return true
+                UpdateAvailability.UPDATE_NOT_AVAILABLE -> return false
+            }
         }
+
+        val manifestCheck = UpdateChecker().fetch("android", com.yarmiplaytv.BuildConfig.VERSION_NAME)
+        return manifestCheck.fold(
+            onSuccess = { update -> update != null },
+            onFailure = {
+                Logger.w(TAG, "Couldn't check update manifest: ${it.message}")
+                null
+            },
+        )
     }
 
     override fun update(): Boolean {

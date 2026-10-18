@@ -10,14 +10,21 @@ import android.net.Uri
  * too, where no browser would take it). False when it isn't a store page or no store app can show it.
  */
 internal fun openStoreApp(context: Context, url: String): Boolean {
-    val id = Uri.parse(url).takeIf { it.host == "play.google.com" }?.getQueryParameter("id") ?: return false
+    val uri = Uri.parse(url)
+    val id = if (uri.scheme == "market") {
+        uri.getQueryParameter("id")
+    } else if (uri.host == "play.google.com") {
+        uri.getQueryParameter("id")
+    } else {
+        null
+    } ?: return false
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$id"))
         .setPackage(PLAY_STORE)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     return try {
         context.startActivity(intent)
         true
-    } catch (_: ActivityNotFoundException) {
+    } catch (_: Exception) {
         false
     }
 }

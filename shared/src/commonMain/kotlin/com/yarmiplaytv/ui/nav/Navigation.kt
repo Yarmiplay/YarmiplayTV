@@ -11,6 +11,7 @@ sealed interface Screen {
 
     data object Home : Screen { override val key = "home" }
     data object SyncplayConnect : Screen { override val key = "syncplay" }
+    data object Room : Screen { override val key = "room" }
     data object JellyfinLogin : Screen { override val key = "jellyfin" }
     data object PlexLogin : Screen { override val key = "plex" }
     data object Servers : Screen { override val key = "servers" }
