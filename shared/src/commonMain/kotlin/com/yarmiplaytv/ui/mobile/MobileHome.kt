@@ -1,6 +1,8 @@
 package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -201,11 +204,11 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
             }
         }
         if (recent.isNotEmpty()) {
-            item { RecentRow(container, nav, "Continue watching & recently added", recent, source, cardWidth) }
+            item { RecentRow(container, nav, "Continue watching & recently added", recent, source, cardWidth, wrap = kind == DeviceKind.DESKTOP) }
         }
         serverRecents.forEach { row ->
             if (row.items.isNotEmpty()) {
-                item(key = "recent_${row.server.key}") { RecentRow(container, nav, row.title, row.items, row.server, cardWidth) }
+                item(key = "recent_${row.server.key}") { RecentRow(container, nav, row.title, row.items, row.server, cardWidth, wrap = kind == DeviceKind.DESKTOP) }
             } else if (row.error != null) {
                 item(key = "recent_${row.server.key}") {
                     Text("Couldn't load ${row.server.displayName}: ${row.error}", color = AppColors.Error, modifier = Modifier.padding(16.dp))
@@ -215,22 +218,55 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun RecentRow(container: AppContainer, nav: Navigator, title: String, items: List<MediaItem>, source: MediaSource?, cardWidth: Dp) {
+fun RecentRow(
+    container: AppContainer,
+    nav: Navigator,
+    title: String,
+    items: List<MediaItem>,
+    source: MediaSource?,
+    cardWidth: Dp,
+    wrap: Boolean = false,
+) {
     SectionHeader(title, Modifier.padding(top = 12.dp))
-    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(items, key = { it.uniqueKey }) { item ->
-            PosterTile(
-                title = item.seriesName ?: item.name,
-                subtitle = if (item.type == MediaItemType.EPISODE) item.displayTitle else item.year?.toString(),
-                imageUrl = source?.imageUrl(item, 480),
-                aspectRatio = 16f / 9f,
-                placeholder = Icons.Filled.Movie,
-                onClick = { openItem(container, nav, item) },
-                modifier = Modifier.width(cardWidth),
-                titleLines = Int.MAX_VALUE,
-                subtitleLines = Int.MAX_VALUE,
-            )
+    if (wrap) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            items.forEach { item ->
+                key(item.uniqueKey) {
+                    PosterTile(
+                        title = item.seriesName ?: item.name,
+                        subtitle = if (item.type == MediaItemType.EPISODE) item.displayTitle else item.year?.toString(),
+                        imageUrl = source?.imageUrl(item, 480),
+                        aspectRatio = 16f / 9f,
+                        placeholder = Icons.Filled.Movie,
+                        onClick = { openItem(container, nav, item) },
+                        modifier = Modifier.width(cardWidth),
+                        titleLines = Int.MAX_VALUE,
+                        subtitleLines = Int.MAX_VALUE,
+                    )
+                }
+            }
+        }
+    } else {
+        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(items, key = { it.uniqueKey }) { item ->
+                PosterTile(
+                    title = item.seriesName ?: item.name,
+                    subtitle = if (item.type == MediaItemType.EPISODE) item.displayTitle else item.year?.toString(),
+                    imageUrl = source?.imageUrl(item, 480),
+                    aspectRatio = 16f / 9f,
+                    placeholder = Icons.Filled.Movie,
+                    onClick = { openItem(container, nav, item) },
+                    modifier = Modifier.width(cardWidth),
+                    titleLines = Int.MAX_VALUE,
+                    subtitleLines = Int.MAX_VALUE,
+                )
+            }
         }
     }
 }

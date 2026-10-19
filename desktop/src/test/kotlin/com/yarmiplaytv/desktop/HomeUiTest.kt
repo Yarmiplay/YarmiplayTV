@@ -22,6 +22,7 @@ import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.runDesktopComposeUiTest
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -33,9 +34,14 @@ import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.data.SavedRoom
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
+import com.yarmiplaytv.media.MediaItem
+import com.yarmiplaytv.media.MediaItemType
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
+import com.yarmiplaytv.ui.mobile.RecentRow
 import com.yarmiplaytv.ui.mobile.appPalette
+import com.yarmiplaytv.ui.nav.Navigator
+import com.yarmiplaytv.ui.nav.Screen
 import java.io.File
 import java.util.concurrent.Executors
 import javax.imageio.ImageIO
@@ -189,6 +195,27 @@ class HomeUiTest {
         show(1280, 800)
         onNodeWithTag("sidebar_exit").performClick()
         assertTrue("Exit option on sidebar should trigger exitApp", exited)
+    }
+
+    @Test
+    fun `continue watching wraps onto new rows on desktop rather than scrolling right`() = runDesktopComposeUiTest(600, 800) {
+        val nav = Navigator(mutableStateListOf(Screen.Home))
+        val items = (1..6).map { i ->
+            MediaItem("id_$i", "Episode $i", MediaItemType.EPISODE, isFolder = false, played = false, seriesName = "Series $i")
+        }
+        setContent {
+            MobileTheme {
+                Box(Modifier.size(600.dp, 800.dp)) {
+                    RecentRow(app, nav, "Continue watching & recently added", items, null, 260.dp, wrap = true)
+                }
+            }
+        }
+        waitForIdle()
+        val top1 = onNodeWithText("Episode 1").fetchSemanticsNode().boundsInRoot.top
+        val top2 = onNodeWithText("Episode 2").fetchSemanticsNode().boundsInRoot.top
+        val top3 = onNodeWithText("Episode 3").fetchSemanticsNode().boundsInRoot.top
+        assertEquals("Episode 1 and 2 should be on the first row", top1, top2, 1.0f)
+        assertTrue("Episode 3 should wrap to a new row below row 1", top3 > top1 + 100f)
     }
 
     private fun ComposeUiTest.screenshot(name: String) {
