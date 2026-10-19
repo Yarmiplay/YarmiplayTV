@@ -88,12 +88,12 @@ class RoomScreenUiTest {
 
     @After
     fun tearDown() {
-        runBlocking(main) { app.sync.disconnect() }
+        if (::app.isInitialized) runBlocking(main) { app.sync.disconnect() }
         server?.close()
-        app.scope.cancel()
-        storeScope.cancel()
-        Dispatchers.resetMain()
-        main.close()
+        if (::app.isInitialized) app.scope.cancel()
+        if (::storeScope.isInitialized) storeScope.cancel()
+        runCatching { Dispatchers.resetMain() }
+        if (::main.isInitialized) main.close()
     }
 
     private fun ComposeUiTest.show(width: Int, height: Int) {

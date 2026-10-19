@@ -97,7 +97,7 @@ class HomeUiTest {
     fun tearDown() {
         if (::app.isInitialized) runBlocking { app.scope.coroutineContext.job.cancelAndJoin() }
         if (::storeScope.isInitialized) runBlocking { storeScope.coroutineContext.job.cancelAndJoin() }
-        Dispatchers.resetMain()
+        runCatching { Dispatchers.resetMain() }
         if (::main.isInitialized) main.close()
     }
 

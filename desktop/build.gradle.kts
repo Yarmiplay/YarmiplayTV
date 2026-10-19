@@ -39,6 +39,7 @@ dependencies {
 
 tasks.test {
     dependsOn(":player-mpv-desktop:prepareLibmpv")
+    maxParallelForks = 1
     val screenshots = layout.buildDirectory.dir("desktop-screenshots")
     outputs.dir(screenshots).withPropertyName("screenshots")
     systemProperty("yarmiplaytv.screenshotDir", screenshots.get().asFile.absolutePath)
