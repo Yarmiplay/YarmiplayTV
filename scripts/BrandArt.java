@@ -33,6 +33,12 @@ public class BrandArt {
         write(banner(2), new File(play, "tv-banner-1280x720.png"));
         write(featureGraphic(), new File(play, "feature-graphic-1024x500.png"));
 
+        File store = new File(root, "docs/store");
+        write(icon(300), new File(store, "icon-300x300.png"));
+        write(icon(512), new File(store, "icon-512x512.png"));
+        write(storeBanner(), new File(store, "banner-1920x1080.png"));
+        write(wideBanner(), new File(store, "wide-banner-310x150.png"));
+
         File shots = new File(root, "app/src/androidTest/screenshots");
         String[] touch = {"home_full", "room_chat", "player_sheet_chat", "browse_series", "local_files", "search_results"};
         storeScreenshots(new File(shots, "phone-1080x2400"), touch, 1920, new File(play, "screenshots/phone"));
@@ -68,22 +74,35 @@ public class BrandArt {
         BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = start(image);
         background(g, w, h);
-        logo(g, 125.0 * scale, h / 2.0, 2.7 * scale);
+        double iconSize = 190.0 * scale;
+        logo(g, 140.0 * scale, h / 2.0, iconSize);
         g.setFont(font(true, 50f * scale));
         g.setColor(TEXT);
-        g.drawString("Yarmiplay", 228 * scale, 170 * scale);
+        g.drawString("Yarmiplay", 270 * scale, 170 * scale);
         g.setColor(ACCENT);
-        g.drawString("TV", 228 * scale, 236 * scale);
+        g.drawString("TV", 270 * scale, 236 * scale);
         g.dispose();
         return image;
     }
 
     /** The Play Store icon: full square, Play applies its own corner mask. */
     static BufferedImage icon(int size) {
+        File masterFile = new File("packaging/app_icon.png");
+        if (masterFile.exists()) {
+            try {
+                BufferedImage master = ImageIO.read(masterFile);
+                BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+                Graphics2D g = start(image);
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                g.drawImage(master, 0, 0, size, size, null);
+                g.dispose();
+                return image;
+            } catch (Exception ignored) {}
+        }
         BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = start(image);
         background(g, size, size);
-        logo(g, size / 2.0, size / 2.0, size / 108.0 * 1.3);
+        logo(g, size / 2.0, size / 2.0, size * 0.85);
         g.dispose();
         return image;
     }
@@ -93,17 +112,57 @@ public class BrandArt {
         BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = start(image);
         background(g, w, h);
-        logo(g, 230, h / 2.0, 4.2);
-        g.setFont(font(true, 84f));
+        double iconSize = 280.0;
+        logo(g, 200.0, h / 2.0, iconSize);
+        g.setFont(font(true, 76f));
         g.setColor(TEXT);
-        g.drawString("Yarmiplay", 410, 238);
-        int tvX = 410 + g.getFontMetrics().stringWidth("Yarmiplay ");
+        g.drawString("Yarmiplay", 390, 225);
+        int tvX = 390 + g.getFontMetrics().stringWidth("Yarmiplay ");
         g.setColor(ACCENT);
-        g.drawString("TV", tvX, 238);
-        g.setFont(font(false, 38f));
+        g.drawString("TV", tvX, 225);
+        g.setFont(font(false, 34f));
         g.setColor(TEXT_DIM);
-        g.drawString("Watch together, in sync.", 414, 300);
-        g.drawString("TV, phone, tablet and desktop.", 414, 348);
+        g.drawString("Watch together, in sync.", 394, 290);
+        g.drawString("TV, phone, tablet and desktop.", 394, 340);
+        g.dispose();
+        return image;
+    }
+
+    /** The Microsoft Store hero banner / display art (1920x1080). */
+    static BufferedImage storeBanner() {
+        int w = 1920, h = 1080;
+        BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = start(image);
+        background(g, w, h);
+        double iconSize = 600.0;
+        logo(g, 440.0, h / 2.0, iconSize);
+        g.setFont(font(true, 130f));
+        g.setColor(TEXT);
+        g.drawString("Yarmiplay", 800, 480);
+        int tvX = 800 + g.getFontMetrics().stringWidth("Yarmiplay ");
+        g.setColor(ACCENT);
+        g.drawString("TV", tvX, 480);
+        g.setFont(font(false, 54f));
+        g.setColor(TEXT_DIM);
+        g.drawString("Watch together, in sync.", 806, 580);
+        g.drawString("TV, phone, tablet and desktop.", 806, 660);
+        g.dispose();
+        return image;
+    }
+
+    /** The Microsoft Store wide tile banner (310x150). */
+    static BufferedImage wideBanner() {
+        int w = 310, h = 150;
+        BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = start(image);
+        background(g, w, h);
+        double iconSize = 110.0;
+        logo(g, 75.0, h / 2.0, iconSize);
+        g.setFont(font(true, 28f));
+        g.setColor(TEXT);
+        g.drawString("Yarmiplay", 145, 75);
+        g.setColor(ACCENT);
+        g.drawString("TV", 145, 108);
         g.dispose();
         return image;
     }
@@ -123,10 +182,21 @@ public class BrandArt {
         g.fillRect(0, 0, w, h);
     }
 
-    /** ic_logo.xml (108-unit viewport centred on 54, 54) centred on (cx, cy). */
-    static void logo(Graphics2D g, double cx, double cy, double scale) {
+    /** Draws the master logo centered on (cx, cy) with diameter targetSize. */
+    static void logo(Graphics2D g, double cx, double cy, double targetSize) {
+        File masterFile = new File("packaging/app_icon.png");
+        if (masterFile.exists()) {
+            try {
+                BufferedImage master = ImageIO.read(masterFile);
+                int s = (int) Math.round(targetSize);
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                g.drawImage(master, (int) Math.round(cx - s / 2.0), (int) Math.round(cy - s / 2.0), s, s, null);
+                return;
+            } catch (Exception ignored) {}
+        }
         Graphics2D l = (Graphics2D) g.create();
         l.translate(cx, cy);
+        double scale = targetSize / 108.0;
         l.scale(scale, scale);
         l.translate(-54.0, -54.0);
         l.setColor(ACCENT);

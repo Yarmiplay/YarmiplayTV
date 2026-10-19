@@ -49,14 +49,53 @@ DESCRIPTION = ("Watch videos together with friends, wherever they are. A Syncpla
 PREVIEW_IMAGE = os.path.join("docs", "play", "feature-graphic-1024x500.png")
 # The app icon as desktop/build.gradle.kts draws it: ic_logo.xml's triangles on the rounded gradient tile.
 LOGO_SVG = (
-    '<svg viewBox="0 0 108 108" aria-hidden="true">'
-    '<defs><linearGradient id="logo-bg" x1="0" y1="0" x2="108" y2="108" gradientUnits="userSpaceOnUse">'
-    '<stop offset="0" stop-color="#1B2A41"/><stop offset="1" stop-color="#0E1116"/></linearGradient></defs>'
-    '<rect x="6.48" y="6.48" width="95.04" height="95.04" rx="20.9" fill="url(#logo-bg)" '
-    'stroke="#fff" stroke-opacity=".11" stroke-width=".84"/>'
-    '<g transform="translate(54 54) scale(1.3) translate(-54 -54)">'
-    '<path d="M30 28V80L70 54Z" fill="#3DA5F4"/><path d="M46 34V74L78 54Z" fill="#fff" fill-opacity=".8"/></g>'
-    '</svg>'
+    """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" aria-hidden="true">
+  <defs>
+    <linearGradient id="logo-bg" x1="0" y1="0" x2="108" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1B2A41"/>
+      <stop offset="100%" stop-color="#0E1116"/>
+    </linearGradient>
+    <linearGradient id="tv-frame" x1="17.5" y1="30.5" x2="90.5" y2="77.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#70C4FF" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#1E68B8" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="prism-top" x1="36" y1="26" x2="84" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#99DEFF"/>
+      <stop offset="100%" stop-color="#3DA5F4"/>
+    </linearGradient>
+    <linearGradient id="prism-bottom" x1="52" y1="54" x2="36" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1E68B8"/>
+      <stop offset="100%" stop-color="#0D2E55"/>
+    </linearGradient>
+    <linearGradient id="prism-spine" x1="36" y1="26" x2="36" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#54B4FF"/>
+      <stop offset="45%" stop-color="#3DA5F4"/>
+      <stop offset="100%" stop-color="#1A5FA8"/>
+    </linearGradient>
+    <linearGradient id="orbit-front" x1="26.5" y1="64.5" x2="81.5" y2="41.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#70C4FF"/>
+      <stop offset="75%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#A6E1FF"/>
+    </linearGradient>
+  </defs>
+  <rect x="6.48" y="6.48" width="95.04" height="95.04" rx="20.9" fill="url(#logo-bg)" stroke="#fff" stroke-opacity=".12" stroke-width=".84"/>
+  <rect x="17.5" y="30.5" width="73" height="47" rx="8" fill="none" stroke="url(#tv-frame)" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="44" y1="82" x2="64" y2="82" stroke="#70C4FF" stroke-opacity="0.5" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M81.5 41.5 A36 21 -24 0 0 26.5 64.5" fill="none" stroke="#3DA5F4" stroke-opacity="0.55" stroke-width="2.2" stroke-linecap="round"/>
+  <polygon points="36,27.5 84,55.5 36,83.5" fill="#000" fill-opacity="0.35"/>
+  <polygon points="52,54 84,54 36,82" fill="url(#prism-bottom)"/>
+  <polygon points="36,26 52,54 36,82" fill="url(#prism-spine)"/>
+  <polygon points="36,26 84,54 52,54" fill="url(#prism-top)"/>
+  <line x1="52" y1="54" x2="84" y2="54" stroke="#FFF" stroke-opacity="0.9" stroke-width="1.0" stroke-linecap="round"/>
+  <line x1="36" y1="26" x2="52" y2="54" stroke="#FFF" stroke-opacity="0.65" stroke-width="0.8" stroke-linecap="round"/>
+  <line x1="36" y1="82" x2="52" y2="54" stroke="#70C4FF" stroke-opacity="0.65" stroke-width="0.8" stroke-linecap="round"/>
+  <polygon points="36,26 84,54 36,82" fill="none" stroke="#FFF" stroke-opacity="0.85" stroke-width="1.2" stroke-linejoin="round"/>
+  <path d="M26.5 64.5 A36 21 -24 0 0 81.5 41.5" fill="none" stroke="url(#orbit-front)" stroke-width="2.8" stroke-linecap="round"/>
+  <circle cx="29" cy="61.5" r="2.2" fill="#FFF"/>
+  <circle cx="56.5" cy="74.5" r="2.0" fill="#FFF"/>
+  <circle cx="81" cy="41.5" r="2.2" fill="#FFF"/>
+</svg>"""
 )
 # Markdown docs published as pages: file in docs/, folder on the site, footer link, search description.
 DOCS = (

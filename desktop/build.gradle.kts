@@ -2,6 +2,7 @@ import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
 import java.awt.BasicStroke
 import java.awt.Color
+import java.awt.Font
 import java.awt.GradientPaint
 import java.awt.RenderingHints
 import java.awt.geom.Path2D
@@ -48,11 +49,15 @@ tasks.test {
     testLogging { events("passed", "skipped", "failed") }
 }
 
-val appVersion = "2.4.0"
+val appVersion = "2.4.1"
 val libmpvDir = project(":player-mpv-desktop").layout.buildDirectory.dir("libmpv")
 
 /** Draws the app logo (the two play triangles of ic_logo.xml on the banner gradient) as png, ico and icns. */
 abstract class GenerateAppIcons : DefaultTask() {
+    @get:InputFile
+    @get:Optional
+    abstract val masterIcon: RegularFileProperty
+
     @get:OutputDirectory abstract val outputDir: DirectoryProperty
 
     @TaskAction
@@ -81,11 +86,38 @@ abstract class GenerateAppIcons : DefaultTask() {
             }
         }
         val wide = BufferedImage(310, 150, BufferedImage.TYPE_INT_ARGB)
-        wide.createGraphics().apply { drawImage(render(150), 80, 0, null); dispose() }
+        wide.createGraphics().apply {
+            setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+            setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+            setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+            paint = GradientPaint(0f, 0f, Color(0x1B2A41), 310f, 150f, Color(0x0E1116))
+            fillRect(0, 0, 310, 150)
+            drawImage(render(110), 20, 20, null)
+            val f = Font("Segoe UI", Font.BOLD, 28)
+            font = f
+            paint = Color(0xE8, 0xEA, 0xED)
+            drawString("Yarmiplay", 145, 75)
+            paint = Color(0x3D, 0xA5, 0xF4)
+            drawString("TV", 145, 108)
+            dispose()
+        }
         msix.resolve("Wide310x150Logo.png").writeBytes(ByteArrayOutputStream().also { ImageIO.write(wide, "png", it) }.toByteArray())
     }
 
     private fun render(size: Int): BufferedImage {
+        val masterFile = masterIcon.orNull?.asFile
+        if (masterFile != null && masterFile.exists()) {
+            val master = ImageIO.read(masterFile)
+            val image = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
+            val g = image.createGraphics()
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g.drawImage(master, 0, 0, size, size, null)
+            g.dispose()
+            return image
+        }
         val image = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
         val g = image.createGraphics()
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
@@ -147,6 +179,7 @@ abstract class GenerateAppIcons : DefaultTask() {
 }
 
 val generateAppIcons = tasks.register<GenerateAppIcons>("generateAppIcons") {
+    masterIcon.set(rootProject.layout.projectDirectory.file("packaging/app_icon.png"))
     outputDir.set(layout.buildDirectory.dir("icons"))
 }
 

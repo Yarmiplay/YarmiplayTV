@@ -48,3 +48,5 @@ flatpak_app/
 *.log
 
 __pycache__/
+/_site/
+/scratch/

@@ -12,6 +12,8 @@ Product identity.
 | Partner Center field | File |
 |---|---|
 | Package | `desktop/build/msix/YarmiplayTV-<version>.msix` |
+| Store display art / Hero banner (1920x1080) | `banner-1920x1080.png` |
+| App tile icon (300x300 or 512x512) | `icon-300x300.png` / `icon-512x512.png` |
 | Desktop screenshots (1366x768 or larger) | `screenshots/` |
 | Privacy policy URL | `https://tv.yarmiplay.com/privacy/` (from `docs/privacy.md`) |
 
