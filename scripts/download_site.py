@@ -49,7 +49,7 @@ DESCRIPTION = ("Watch videos together with friends, wherever they are. A Syncpla
 PREVIEW_IMAGE = os.path.join("docs", "play", "feature-graphic-1024x500.png")
 # The app icon as desktop/build.gradle.kts draws it: ic_logo.xml's triangles on the rounded gradient tile.
 LOGO_SVG = (
-    """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" aria-hidden="true">
+    """<svg xmlns="http://www.w3.org/2000/svg" viewBox="7 7 94 94" aria-hidden="true">
   <defs>
     <!-- Background Dark Midnight Gradient -->
     <linearGradient id="logo-bg" x1="20%" y1="0%" x2="80%" y2="100%">
