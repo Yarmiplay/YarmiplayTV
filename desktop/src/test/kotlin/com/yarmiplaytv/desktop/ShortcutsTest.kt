@@ -26,6 +26,7 @@ class ShortcutsTest {
             if (skipOffered) log += "skip"
             return skipOffered
         }
+        override fun changeSubtitleScale(delta: Double) { log += "subtitles $delta" }
     }
 
     private val input = PlayerInput(
@@ -67,6 +68,16 @@ class ShortcutsTest {
         assertTrue(handleShortcut(Key.MediaPrevious, false, t))
         assertFalse(handleShortcut(Key.N, true, t))
         assertEquals(listOf("next", "show", "previous", "show", "next", "show", "previous", "show"), log)
+    }
+
+    @Test
+    fun zAndShiftZChangeTheSubtitleSizeLikeMpv() {
+        val t = Target()
+        assertTrue(handleShortcut(Key.Z, false, t, shift = false))
+        assertTrue(handleShortcut(Key.Z, false, t, shift = true))
+        assertFalse(handleShortcut(Key.Z, true, t, shift = true))
+        assertFalse(handleShortcut(Key.Z, false, Target(playerShowing = false)))
+        assertEquals(listOf("subtitles -0.1", "subtitles 0.1"), log)
     }
 
     @Test

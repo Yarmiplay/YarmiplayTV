@@ -200,8 +200,8 @@ remote. In a room the whole room jumps, as when anyone seeks. To skip them by th
 openings and endings** in the room (see [In the room](#in-the-room)), or, watching alone, in Settings > Playback.
 Settings > Playback can also stop showing the button.
 
-- **Audio and subtitles:** pick a track in the player. Settings > Playback sets the languages chosen
-  automatically.
+- **Audio and subtitles:** pick a track in the player. The subtitles menu also makes the text smaller or
+  larger, and that size is remembered. Settings > Playback sets the languages chosen automatically.
 - **Screenshots:** the camera button in the player's bottom bar saves the current frame, subtitles included, to
   Pictures/YarmiplayTV (or a folder you pick in Settings > Media). On a computer **F5** does the same, and **F6**
   saves the frame without the subtitles.
@@ -226,6 +226,7 @@ Settings > Playback can also stop showing the button.
 - **F** or **F11**: full screen; **Esc**: leave full screen or go back
 - **F5**: screenshot; **F6**: screenshot without the subtitles
 - **S**: skip the opening or ending while its Skip button shows
+- **z** / **Z**: smaller or larger subtitles, as in mpv
 - **H**: hide or show the controls
 - **P**: picture-in-picture
 - **Enter**: open the chat

@@ -27,6 +27,7 @@ import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.StreamRoutes
+import com.yarmiplaytv.player.SubtitleScale
 import com.yarmiplaytv.relay.RelayManager
 import com.yarmiplaytv.relay.SessionDns
 import com.yarmiplaytv.screenshot.ScreenshotStore
@@ -116,7 +117,20 @@ class AppContainer(
     val jellyfinClient = JellyfinClient(clientInfo, dns = SessionDns)
     val plexClient = PlexClient(clientInfo)
 
-    val player: Player = createPlayer(initial)
+    val player: Player = createPlayer(initial).also { it.setSubtitleScale(initial.playback.subtitleScale) }
+
+    private val _subtitleScale = MutableStateFlow(initial.playback.subtitleScale)
+    /** mpv's subtitle scale (1 is normal). z and Z, and the subtitle menu, change it. */
+    val subtitleScale: StateFlow<Double> = _subtitleScale.asStateFlow()
+
+    /** Steps [subtitleScale] by [delta] (mpv uses ±0.1), shows the new size, and remembers it. */
+    fun changeSubtitleScale(delta: Double) {
+        val next = SubtitleScale.adjust(_subtitleScale.value, delta)
+        _subtitleScale.value = next
+        player.setSubtitleScale(next)
+        player.showText(SubtitleScale.label(next))
+        scope.launch { settingsStore.saveSubtitleScale(next) }
+    }
 
     /** Server-list saves run in the order the changes were made, so an older list never overwrites a newer one. */
     private val saveLock = Mutex()

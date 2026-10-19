@@ -17,6 +17,7 @@ import com.yarmiplaytv.media.mal.MalMapping
 import com.yarmiplaytv.media.mal.MalQueued
 import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
+import com.yarmiplaytv.player.SubtitleScale
 import com.yarmiplaytv.sync.TrustedDomains
 import com.yarmiplaytv.syncplay.Constants
 import com.yarmiplaytv.syncplay.SyncSettings
@@ -155,6 +156,8 @@ data class PlaybackPrefs(
     val detectSkips: Boolean = true,
     /** Also read Jellyfin and Plex episodes for that on mobile data (a metered network), not only on Wi-Fi or Ethernet. */
     val detectOnAnyNetwork: Boolean = false,
+    /** mpv `sub-scale`. 1 is the normal size; z and Z change it by a tenth. */
+    val subtitleScale: Double = SubtitleScale.DEFAULT,
 )
 
 data class AppSettings(
@@ -321,6 +324,7 @@ class SettingsStore(
         val skipButton = booleanPreferencesKey("pb_skip_button")
         val detectSkips = booleanPreferencesKey("pb_detect_skips")
         val detectAnyNetwork = booleanPreferencesKey("pb_detect_any_network")
+        val subScale = doublePreferencesKey("pb_sub_scale")
 
         /** JSON lists of [JellyfinSession] and [PlexSession]. */
         val jfServers = stringPreferencesKey("jf_servers")
@@ -413,6 +417,7 @@ class SettingsStore(
                 showSkipButton = p[Keys.skipButton] ?: defaults.playback.showSkipButton,
                 detectSkips = p[Keys.detectSkips] ?: defaults.playback.detectSkips,
                 detectOnAnyNetwork = p[Keys.detectAnyNetwork] ?: defaults.playback.detectOnAnyNetwork,
+                subtitleScale = p[Keys.subScale] ?: defaults.playback.subtitleScale,
             ),
             jellyfinServers = jellyfinServers,
             lastJellyfinUrl = p[Keys.jfLastUrl] ?: "",
@@ -691,8 +696,11 @@ class SettingsStore(
             it[Keys.skipButton] = prefs.showSkipButton
             it[Keys.detectSkips] = prefs.detectSkips
             it[Keys.detectAnyNetwork] = prefs.detectOnAnyNetwork
+            it[Keys.subScale] = prefs.subtitleScale
         }
     }
+
+    suspend fun saveSubtitleScale(scale: Double) = dataStore.edit { it[Keys.subScale] = scale }
 
     suspend fun saveTvPlayerScale(scale: Float) = dataStore.edit { it[Keys.tvPlayerScale] = scale }
 

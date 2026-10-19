@@ -7,8 +7,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import com.yarmiplaytv.player.SubtitleScale
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -56,7 +61,16 @@ internal fun PipWindow(
         undecorated = true,
         alwaysOnTop = true,
         resizable = false,
-        onKeyEvent = { event -> event.type == KeyEventType.KeyDown && pipKey(container, event.key, onBack, onClose) },
+        onKeyEvent = { event ->
+            event.type == KeyEventType.KeyDown && pipKey(
+                container,
+                event.key,
+                event.isShiftPressed,
+                event.isCtrlPressed || event.isAltPressed || event.isMetaPressed,
+                onBack,
+                onClose,
+            )
+        },
     ) {
         val awt = window
         fun keepBounds() = onBounds(MiniBounds(awt.x, awt.y, awt.width))
@@ -81,10 +95,21 @@ internal fun PipWindow(
     }
 }
 
-/** The picture-in-picture window's keys: Space, ←/→, ↑/↓ and M as in the player; Esc goes back to the app, P closes it. */
-private fun pipKey(container: AppContainer, key: Key, onBack: () -> Unit, onClose: () -> Unit): Boolean {
+/** The picture-in-picture window's keys: Space, ←/→, ↑/↓ and M as in the player; z and Z resize subtitles; Esc goes back to the app, P closes it. */
+private fun pipKey(
+    container: AppContainer,
+    key: Key,
+    shift: Boolean,
+    modified: Boolean,
+    onBack: () -> Unit,
+    onClose: () -> Unit,
+): Boolean {
     val player = container.player
     val step = container.settings.value.playback.seekStepSeconds.toDouble()
+    if (!modified && key == Key.Z) {
+        container.changeSubtitleScale(if (shift) SubtitleScale.STEP else -SubtitleScale.STEP)
+        return true
+    }
     when (key) {
         Key.Spacebar, Key.K -> player.setPaused(!player.isPaused)
         Key.DirectionLeft, Key.J -> player.seekRelative(-step)

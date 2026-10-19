@@ -21,6 +21,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerButton
@@ -230,6 +231,7 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
                 container.skips.skip()
                 return true
             }
+            override fun changeSubtitleScale(delta: Double) = container.changeSubtitleScale(delta)
         }
     }
     val drop = remember {
@@ -257,7 +259,12 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
         icon = appLogoPainter(),
         onKeyEvent = { event ->
             event.type == KeyEventType.KeyDown &&
-                handleShortcut(event.key, event.isCtrlPressed || event.isAltPressed || event.isMetaPressed, shortcuts)
+                handleShortcut(
+                    event.key,
+                    event.isCtrlPressed || event.isAltPressed || event.isMetaPressed,
+                    shortcuts,
+                    event.isShiftPressed,
+                )
         },
     ) {
         LaunchedEffect(Unit) {

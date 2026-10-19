@@ -5,6 +5,7 @@ import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.PlayerEvent
 import com.yarmiplaytv.player.StreamRoutes
+import com.yarmiplaytv.player.SubtitleScale
 import com.yarmiplaytv.player.Track
 import com.yarmiplaytv.player.TrackType
 import kotlinx.coroutines.CoroutineScope
@@ -192,6 +193,15 @@ class DesktopMpvPlayer(
         snapshotPosition()
         cachedSpeed = speed
         core.setDouble("speed", speed)
+    }
+
+    @Volatile private var appliedSubtitleScale = SubtitleScale.DEFAULT
+
+    override fun subtitleScale(): Double = appliedSubtitleScale
+
+    override fun setSubtitleScale(scale: Double) {
+        appliedSubtitleScale = scale
+        core.setDouble("sub-scale", scale)
     }
 
     override fun selectTrack(type: TrackType, id: Int?) {

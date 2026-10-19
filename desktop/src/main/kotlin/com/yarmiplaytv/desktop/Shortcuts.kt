@@ -1,6 +1,7 @@
 package com.yarmiplaytv.desktop
 
 import androidx.compose.ui.input.key.Key
+import com.yarmiplaytv.player.SubtitleScale
 import com.yarmiplaytv.ui.mobile.PlayerInput
 import com.yarmiplaytv.ui.mobile.VOLUME_STEP
 
@@ -22,6 +23,8 @@ internal interface ShortcutTarget {
     fun togglePictureInPicture()
     /** Skips the opening or ending the Skip button offers; false when none is offered. */
     fun skipSegment(): Boolean
+    /** mpv's z and Z: [delta] is added to the subtitle scale. */
+    fun changeSubtitleScale(delta: Double)
 }
 
 /**
@@ -29,10 +32,10 @@ internal interface ShortcutTarget {
  * keys to itself, so typing in a text field never triggers them. Esc leaves full screen, else goes back; the
  * rest only work on the player screen, and all but H (which hides or shows the controls), F5 (screenshot; F6 without the subtitles) and
  * P (picture-in-picture) show the controls. N and B (or the media keys) go to the room playlist's next and previous entry. S
- * skips the opening or ending while its Skip button shows. Esc brings the video back from picture-in-picture (the
- * player's back handler).
+ * skips the opening or ending while its Skip button shows. z and Z (shift) make subtitles smaller and larger, as in
+ * mpv, without opening the controls. Esc brings the video back from picture-in-picture (the player's back handler).
  */
-internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget): Boolean {
+internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget, shift: Boolean = false): Boolean {
     if (key == Key.Escape) {
         if (target.isFullscreen) {
             target.setFullscreen(false)
@@ -55,6 +58,10 @@ internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget)
         return true
     }
     if (key == Key.S) return target.skipSegment()
+    if (key == Key.Z) {
+        target.changeSubtitleScale(if (shift) SubtitleScale.STEP else -SubtitleScale.STEP)
+        return true
+    }
     when (key) {
         Key.Spacebar, Key.K -> input.togglePause()
         Key.DirectionLeft, Key.J -> input.seekBy(-input.seekStep)

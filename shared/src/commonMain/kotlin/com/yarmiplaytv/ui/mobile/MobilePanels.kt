@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
@@ -84,6 +85,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.player.SubtitleScale
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.sync.RoomSkip
 import com.yarmiplaytv.syncplay.ConnectionStatus
@@ -608,6 +610,30 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
     }
 }
 
+/** Smaller and larger subtitle text. z and Z do the same, matching mpv. */
+@Composable
+fun SubtitleSizeControls(container: AppContainer, modifier: Modifier = Modifier) {
+    val scale by container.subtitleScale.collectAsStateWithLifecycle()
+    Row(modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Size ${SubtitleScale.percent(scale)}%")
+            Text("z smaller, Z larger", style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
+        }
+        IconButton(
+            onClick = { container.changeSubtitleScale(-SubtitleScale.STEP) },
+            modifier = Modifier.testTag("subtitle_smaller"),
+        ) {
+            Icon(Icons.Filled.Remove, contentDescription = "Smaller subtitles")
+        }
+        IconButton(
+            onClick = { container.changeSubtitleScale(SubtitleScale.STEP) },
+            modifier = Modifier.testTag("subtitle_larger"),
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "Larger subtitles")
+        }
+    }
+}
+
 @Composable
 fun TracksContent(container: AppContainer, type: TrackType, onPicked: () -> Unit, modifier: Modifier = Modifier) {
     val tracks by container.player.tracks.collectAsStateWithLifecycle()
@@ -615,6 +641,7 @@ fun TracksContent(container: AppContainer, type: TrackType, onPicked: () -> Unit
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         SheetTitle(if (type == TrackType.AUDIO) "Audio" else "Subtitles")
         if (type == TrackType.SUBTITLE) {
+            SubtitleSizeControls(container)
             TrackRow("Off", list.none { it.selected }) { container.player.selectTrack(type, null); onPicked() }
         }
         list.forEach { track ->

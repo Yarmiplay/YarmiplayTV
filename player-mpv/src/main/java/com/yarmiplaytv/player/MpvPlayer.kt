@@ -258,6 +258,15 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         mpv.setPropertyDouble("speed", speed)
     }
 
+    @Volatile private var appliedSubtitleScale = SubtitleScale.DEFAULT
+
+    override fun subtitleScale(): Double = appliedSubtitleScale
+
+    override fun setSubtitleScale(scale: Double) {
+        appliedSubtitleScale = scale
+        mpv.setPropertyDouble("sub-scale", scale)
+    }
+
     override fun selectTrack(type: TrackType, id: Int?) {
         mpv.setPropertyString(type.property, id?.toString() ?: "no")
         loadTracks()

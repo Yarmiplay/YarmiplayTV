@@ -26,6 +26,15 @@ interface Player {
     /** null disables the track. */
     fun selectTrack(type: TrackType, id: Int?)
 
+    /**
+     * mpv's `sub-scale`: 1 is the normal size. Players that don't draw subtitles leave this unchanged.
+     * The value last passed here is what [subtitleScale] reports.
+     */
+    fun setSubtitleScale(scale: Double) {}
+
+    /** The scale last applied with [setSubtitleScale], or [SubtitleScale.DEFAULT] when none has been. */
+    fun subtitleScale(): Double = SubtitleScale.DEFAULT
+
     /** Short text shown by mpv's on-screen display. */
     fun showText(text: String, durationMs: Int = 3000)
 

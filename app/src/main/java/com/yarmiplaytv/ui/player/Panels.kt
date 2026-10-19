@@ -80,6 +80,7 @@ import com.yarmiplaytv.ui.shared.roomSkipSubtitle
 import com.yarmiplaytv.ui.shared.roomsOnServer
 import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serverStatusLine
+import com.yarmiplaytv.ui.mobile.SubtitleSizeControls
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
@@ -404,7 +405,8 @@ internal fun TracksPanel(container: AppContainer, type: TrackType, focus: FocusR
     val list = tracks.filter { it.type == type }
     Column(Modifier.fillMaxSize().padding(24.dp)) {
         PanelHeader(if (type == TrackType.AUDIO) "Audio" else "Subtitles")
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (type == TrackType.SUBTITLE) SubtitleSizeControls(container)
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (type == TrackType.SUBTITLE) {
                 item {
                     TrackRow("Off", list.none { it.selected }, { container.player.selectTrack(type, null) }, if (list.none { it.selected }) Modifier.focusRequester(focus) else Modifier)

@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.4.5" date="2026-10-19">
+      <description>
+        <p>Make subtitles smaller or larger from the subtitle menu, or with z and Z, the same keys mpv uses.</p>
+      </description>
+    </release>
     <release version="2.4.4" date="2026-10-19">
       <description>
         <p>The app icon fills its slot. A transparent margin around the tile made it look smaller than other icons.</p>

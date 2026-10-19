@@ -73,6 +73,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -112,6 +113,7 @@ import com.yarmiplaytv.ui.mal.MalPanel
 import com.yarmiplaytv.ui.mobile.PictureInPicture
 import com.yarmiplaytv.ui.mobile.RelayDownloadBar
 import com.yarmiplaytv.ui.mobile.SkipChip
+import com.yarmiplaytv.player.SubtitleScale
 import com.yarmiplaytv.ui.mobile.SkipMarks
 import com.yarmiplaytv.ui.mobile.pictureInPictureLabel
 import com.yarmiplaytv.ui.mobile.rememberPictureInPicture
@@ -246,6 +248,11 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                     else -> false
                 }
                 if (global) return@onPreviewKeyEvent true
+                // mpv's z / Z. A panel may be typing, so only the video and its controls take these.
+                if (code == AndroidKeyEvent.KEYCODE_Z && (overlay == Overlay.Hidden || overlay == Overlay.Controls)) {
+                    if (down) container.changeSubtitleScale(if (ev.isShiftPressed) SubtitleScale.STEP else -SubtitleScale.STEP)
+                    return@onPreviewKeyEvent true
+                }
                 // Held keys repeat; only the first press toggles, or the bar would flicker.
                 val firstPress = down && ev.nativeKeyEvent.repeatCount == 0
                 // Menu shows and hides the controls, and closes a panel.
