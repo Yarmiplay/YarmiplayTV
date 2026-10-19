@@ -245,11 +245,17 @@ class RelayManager(
         if (transfer === current || transfer === prefetching) return
         prefetching?.stopPrefetch()
         prefetching = transfer
+        val isLive = entry.name.startsWith("🔴 Live:") || entry.name.startsWith("Live:")
         val head = RelayPolicy.prefetchBytes(entry.size, entry.duration)
-        val tail = maxOf(head, entry.size - RelayPolicy.PREFETCH_TAIL)
+        val ranges = if (isLive) {
+            listOf(0L until head)
+        } else {
+            val tail = maxOf(head, entry.size - RelayPolicy.PREFETCH_TAIL)
+            listOf(0L until head, tail until entry.size)
+        }
         val mode = if (sync.room.value.yarmiplay.capabilities.prefetch) "prefetch" else "download"
-        Logger.i(TAG, "Prefetching ${entry.name}: the first $head bytes and from $tail on ($mode)")
-        transfer.prefetch(listOf(0L until head, tail until entry.size), mode)
+        Logger.i(TAG, "Prefetching ${entry.name}: $ranges ($mode)")
+        transfer.prefetch(ranges, mode)
     }
 
     private suspend fun transferFor(entry: RelayFile): RelayTransfer {

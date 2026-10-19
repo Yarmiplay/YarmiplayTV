@@ -5,113 +5,149 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Orbital Sync Loop (Back Arc) -->
-    <path
-        android:pathData="M85,38 A38,24 -24 0,0 23,70"
-        android:strokeColor="#993DA5F4"
-        android:strokeWidth="3.2"
-        android:strokeLineCap="round" />
+    <!-- Orbital Sync Ring (Rotated Ellipse: cx=54.77, cy=57.85, rx=41.41, ry=23.85, rot=-37.46deg) -->
+    <group
+        android:pivotX="54.77"
+        android:pivotY="57.85"
+        android:rotation="-37.46">
+        <!-- Outer Bloom Halo -->
+        <path
+            android:pathData="M 96.18,57.85 A 41.41,23.85 0 1,1 13.36,57.85 A 41.41,23.85 0 1,1 96.18,57.85"
+            android:strokeColor="#3300DFFF"
+            android:strokeWidth="5.5"
+            android:strokeLineCap="round" />
+        <!-- Mid Neon Glow -->
+        <path
+            android:pathData="M 96.18,57.85 A 41.41,23.85 0 1,1 13.36,57.85 A 41.41,23.85 0 1,1 96.18,57.85"
+            android:strokeColor="#7700F0FF"
+            android:strokeWidth="3.4"
+            android:strokeLineCap="round" />
+        <!-- Core Light Stroke -->
+        <path
+            android:pathData="M 96.18,57.85 A 41.41,23.85 0 1,1 13.36,57.85 A 41.41,23.85 0 1,1 96.18,57.85"
+            android:strokeWidth="1.8"
+            android:strokeLineCap="round">
+            <aapt:attr name="android:strokeColor">
+                <gradient
+                    android:startX="13.36"
+                    android:startY="57.85"
+                    android:endX="96.18"
+                    android:endY="57.85"
+                    android:type="linear">
+                    <item android:color="#FF5CD7FF" android:offset="0.0" />
+                    <item android:color="#FFFFFFFF" android:offset="0.8" />
+                    <item android:color="#FFB2F5FF" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <!-- Center Specular Highlight -->
+        <path
+            android:pathData="M 96.18,57.85 A 41.41,23.85 0 1,1 13.36,57.85 A 41.41,23.85 0 1,1 96.18,57.85"
+            android:strokeColor="#DDFFFFFF"
+            android:strokeWidth="0.8"
+            android:strokeLineCap="round" />
+    </group>
 
-    <!-- Central Play Prism: Drop Shadow -->
+    <!-- Glowing Sync Node (Lower-right: centered on orbit centerline at cx=71.23, cy=75.23, radius=5.6) -->
+    <!-- Node Outer Glow Halo -->
     <path
-        android:pathData="M31,21.5 L89,55.5 L31,89.5 Z"
-        android:fillColor="#55000000" />
-
-    <!-- Facet 2: Bottom Facet (Azure Shadow) -->
+        android:pathData="M 71.23,66.23 a 9.0,9.0 0 1,1 0,18.0 a 9.0,9.0 0 1,1 0,-18.0"
+        android:fillColor="#5500E5FF" />
+    <!-- Node Sphere Body (Drawn on top of orbit stroke) -->
     <path
-        android:pathData="M50,54 L89,54 L31,88 Z">
+        android:pathData="M 71.23,69.63 a 5.6,5.6 0 1,1 0,11.2 a 5.6,5.6 0 1,1 0,-11.2">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:startX="50"
-                android:startY="54"
-                android:endX="31"
-                android:endY="88"
-                android:type="linear">
-                <item android:color="#FF1E68B8" android:offset="0.0" />
-                <item android:color="#FF0D2E55" android:offset="1.0" />
-            </gradient>
-        </aapt:attr>
-    </path>
-
-    <!-- Facet 3: Spine Facet (Mid-tone Electric Blue) -->
-    <path
-        android:pathData="M31,20 L50,54 L31,88 Z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:startX="31"
-                android:startY="20"
-                android:endX="31"
-                android:endY="88"
-                android:type="linear">
-                <item android:color="#FF54B4FF" android:offset="0.0" />
-                <item android:color="#FF3DA5F4" android:offset="0.45" />
-                <item android:color="#FF1A5FA8" android:offset="1.0" />
-            </gradient>
-        </aapt:attr>
-    </path>
-
-    <!-- Facet 1: Top Facet (Illuminated Sky Blue / White Highlight) -->
-    <path
-        android:pathData="M31,20 L89,54 L50,54 Z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:startX="31"
-                android:startY="20"
-                android:endX="89"
-                android:endY="54"
+                android:startX="69.0"
+                android:startY="71.0"
+                android:endX="75.0"
+                android:endY="79.0"
                 android:type="linear">
                 <item android:color="#FFFFFFFF" android:offset="0.0" />
-                <item android:color="#FF99DEFF" android:offset="0.4" />
-                <item android:color="#FF3DA5F4" android:offset="1.0" />
+                <item android:color="#FF60EEFF" android:offset="0.35" />
+                <item android:color="#FF00B8F0" android:offset="0.75" />
+                <item android:color="#FF007AB8" android:offset="1.0" />
             </gradient>
         </aapt:attr>
     </path>
+    <!-- Node Specular Glint -->
+    <path
+        android:pathData="M 69.73,72.03 a 1.7,1.7 0 1,1 0,3.4 a 1.7,1.7 0 1,1 0,-3.4"
+        android:fillColor="#EEFFFFFF" />
 
-    <!-- Prism Fold Creases -->
+    <!-- Central 3D Play Prism: Drop Shadow behind Prism -->
     <path
-        android:pathData="M50,54 L89,54"
-        android:strokeColor="#EEFFFFFF"
-        android:strokeWidth="1.2"
-        android:strokeLineCap="round" />
-    <path
-        android:pathData="M31,20 L50,54"
-        android:strokeColor="#AAFFFFFF"
-        android:strokeWidth="1.0"
-        android:strokeLineCap="round" />
-    <path
-        android:pathData="M31,88 L50,54"
-        android:strokeColor="#8870C4FF"
-        android:strokeWidth="1.0"
-        android:strokeLineCap="round" />
+        android:pathData="M33.33,25.10 L82.90,53.89 L33.33,82.69 Z"
+        android:fillColor="#44000000" />
 
-    <!-- Prism Outer Rim Highlight (Clean vertex, NO dot at tip) -->
+    <!-- Facet 3: Bottom Shadow Facet (Deep Sapphire Azure) -->
     <path
-        android:pathData="M31,20 L89,54 L31,88 Z"
-        android:strokeColor="#CCFFFFFF"
-        android:strokeWidth="1.4"
-        android:strokeLineJoin="round" />
-
-    <!-- Orbital Sync Loop (Front Arc) -->
-    <path
-        android:pathData="M23,70 A38,24 -24 0,0 85,38"
-        android:strokeWidth="3.6"
-        android:strokeLineCap="round">
-        <aapt:attr name="android:strokeColor">
+        android:pathData="M48.73,53.79 L82.90,53.89 L33.33,82.69 Z">
+        <aapt:attr name="android:fillColor">
             <gradient
-                android:startX="23"
-                android:startY="70"
-                android:endX="85"
-                android:endY="38"
+                android:startX="48.73"
+                android:startY="53.79"
+                android:endX="38.0"
+                android:endY="78.0"
                 android:type="linear">
-                <item android:color="#FF70C4FF" android:offset="0.0" />
-                <item android:color="#FFFFFFFF" android:offset="0.75" />
-                <item android:color="#FFA6E1FF" android:offset="1.0" />
+                <item android:color="#FF1876D0" android:offset="0.0" />
+                <item android:color="#FF0F5EB8" android:offset="0.35" />
+                <item android:color="#FF094590" android:offset="0.7" />
+                <item android:color="#FF06326E" android:offset="1.0" />
             </gradient>
         </aapt:attr>
     </path>
 
-    <!-- Glowing Sync Node (Single bright satellite on front arc) -->
+    <!-- Facet 2: Left Spine Facet (Vibrant Electric Cobalt) -->
     <path
-        android:pathData="M65,77 m-3.2,0 a3.2,3.2 0 1,1 6.4,0 a3.2,3.2 0 1,1 -6.4,0"
-        android:fillColor="#FFFFFFFF" />
+        android:pathData="M33.33,25.10 L48.73,53.79 L33.33,82.69 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="33.33"
+                android:startY="25.10"
+                android:endX="33.33"
+                android:endY="82.69"
+                android:type="linear">
+                <item android:color="#FF34D2FB" android:offset="0.0" />
+                <item android:color="#FF19B2FD" android:offset="0.45" />
+                <item android:color="#FF097CE8" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Facet 1: Top Illuminated Facet (Ice Cyan / White Specular) -->
+    <path
+        android:pathData="M33.33,25.10 L82.90,53.89 L48.73,53.79 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="33.33"
+                android:startY="25.10"
+                android:endX="82.90"
+                android:endY="53.89"
+                android:type="linear">
+                <item android:color="#FF80E2F8" android:offset="0.0" />
+                <item android:color="#FFD8FBFF" android:offset="0.26" />
+                <item android:color="#FFFFFFFF" android:offset="0.42" />
+                <item android:color="#FFB2EEFF" android:offset="0.68" />
+                <item android:color="#FF60C8F6" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Subtle Specular Crease Folds (NO outer border around the triangle) -->
+    <path
+        android:pathData="M48.73,53.79 L82.90,53.89"
+        android:strokeColor="#DDFFFFFF"
+        android:strokeWidth="0.55"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M33.33,25.10 L48.73,53.79"
+        android:strokeColor="#AAFFFFFF"
+        android:strokeWidth="0.45"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M33.33,82.69 L48.73,53.79"
+        android:strokeColor="#8850C8FF"
+        android:strokeWidth="0.4"
+        android:strokeLineCap="round" />
 </vector>

@@ -84,16 +84,24 @@ class RelayProxy(private val scope: CoroutineScope) {
             val key = parts[1].removePrefix("/relay/").substringBefore('/')
             val transfer = routes[key] ?: return respond(out, 404, "Not Found")
             val size = transfer.size
+            val isLive = transfer.name.startsWith("🔴 Live:") || transfer.name.startsWith("Live:")
             val range = parseRange(headers["range"], size)
                 ?: return respond(out, 416, "Range Not Satisfiable", "Content-Range: bytes */$size\r\n")
             val (start, end) = range
             val partial = headers["range"] != null
+
+            // For live streams: if the player probes the tail (e.g. seeking end timestamps in 10GB virtual file),
+            // immediately return 416 rather than stalling the demuxer for 90 seconds.
+            if (isLive && start > 0 && transfer.cache.availableFrom(start) == 0L) {
+                return respond(out, 416, "Range Not Satisfiable", "Content-Range: bytes */$size\r\n")
+            }
+
             what = "${parts[0]} ${headers["range"] ?: "(no range)"} of ${transfer.name}"
             Logger.d(TAG, "$what: serving $start-$end of $size")
             val head = buildString {
                 append(if (partial) "HTTP/1.1 206 Partial Content\r\n" else "HTTP/1.1 200 OK\r\n")
                 append("Content-Type: ${contentType(transfer.name)}\r\n")
-                append("Accept-Ranges: bytes\r\n")
+                if (!isLive) append("Accept-Ranges: bytes\r\n")
                 append("Content-Length: ${end - start + 1}\r\n")
                 if (partial) append("Content-Range: bytes $start-$end/$size\r\n")
                 append("Connection: close\r\n\r\n")
@@ -101,11 +109,12 @@ class RelayProxy(private val scope: CoroutineScope) {
             out.write(head.toByteArray(Charsets.US_ASCII))
             if (parts[0] == "HEAD") return out.flush()
             val reader = transfer.openReader(start)
+            val waitMs = if (isLive) 5_000L else WAIT_MS
             try {
                 val buffer = ByteArray(BUFFER)
                 var pos = start
                 while (pos <= end) {
-                    val available = transfer.awaitAvailable(pos, WAIT_MS)
+                    val available = transfer.awaitAvailable(pos, waitMs)
                     if (available <= 0) {
                         Logger.w(TAG, "$what: data at $pos didn't arrive in time (${transfer.lastError ?: "no error"}), served $served")
                         break
@@ -171,15 +180,19 @@ class RelayProxy(private val scope: CoroutineScope) {
             return range.takeIf { it.first in 0 until size && it.second >= it.first }
         }
 
-        private fun contentType(name: String) = when (name.substringAfterLast('.', "").lowercase()) {
-            "mp4", "m4v" -> "video/mp4"
-            "mkv" -> "video/x-matroska"
-            "webm" -> "video/webm"
-            "avi" -> "video/x-msvideo"
-            "mov" -> "video/quicktime"
-            "mp3" -> "audio/mpeg"
-            "flac" -> "audio/flac"
-            else -> "application/octet-stream"
+        private fun contentType(name: String): String {
+            if (name.startsWith("🔴 Live:") || name.startsWith("Live:")) return "video/mp2t"
+            return when (name.substringAfterLast('.', "").lowercase()) {
+                "mp4", "m4v" -> "video/mp4"
+                "mkv" -> "video/x-matroska"
+                "webm" -> "video/webm"
+                "avi" -> "video/x-msvideo"
+                "mov" -> "video/quicktime"
+                "ts", "m2ts" -> "video/mp2t"
+                "mp3" -> "audio/mpeg"
+                "flac" -> "audio/flac"
+                else -> "application/octet-stream"
+            }
         }
     }
 }

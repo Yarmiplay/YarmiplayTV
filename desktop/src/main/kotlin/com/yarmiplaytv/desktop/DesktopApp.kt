@@ -266,6 +266,22 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             mainWindow = window
             DesktopPlayerInput.toggleFullscreen = { applyFullscreen(!fullscreen.isFullscreen) }
             DesktopPip.toggle = { setPip(!DesktopPip.open) }
+            runCatching {
+                DesktopVideo::class.java.getResourceAsStream("/icon.png")?.use { stream ->
+                    val master = javax.imageio.ImageIO.read(stream)
+                    val sizes = listOf(16, 24, 32, 48, 64, 128, 256)
+                    window.iconImages = sizes.map { s ->
+                        val scaled = java.awt.image.BufferedImage(s, s, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+                        val g = scaled.createGraphics()
+                        g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+                        g.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING, java.awt.RenderingHints.VALUE_RENDER_QUALITY)
+                        g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON)
+                        g.drawImage(master, 0, 0, s, s, null)
+                        g.dispose()
+                        scaled
+                    }
+                }
+            }
         }
         LaunchedEffect(Unit) {
             // Leaving the player leaves full screen. Picture-in-picture stays: browsing meanwhile is what it's for.

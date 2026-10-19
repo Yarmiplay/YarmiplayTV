@@ -199,8 +199,28 @@ internal class LaunchUpdateWindow : LaunchUpdateUi {
             return "Version $version · $progress"
         }
 
-        /** The app's logo (two overlapping play triangles) on its dark rounded square, [size] pixels wide. */
-        fun logoImage(size: Int): BufferedImage = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB).also { image ->
+        /** The app's logo on its dark rounded square, [size] pixels wide. */
+        fun logoImage(size: Int): BufferedImage {
+            val stream = LaunchUpdateWindow::class.java.getResourceAsStream("/icon.png")
+            if (stream != null) {
+                return runCatching {
+                    stream.use {
+                        val master = javax.imageio.ImageIO.read(it)
+                        val image = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
+                        val g = image.createGraphics()
+                        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+                        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+                        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                        g.drawImage(master, 0, 0, size, size, null)
+                        g.dispose()
+                        image
+                    }
+                }.getOrNull() ?: fallbackLogoImage(size)
+            }
+            return fallbackLogoImage(size)
+        }
+
+        private fun fallbackLogoImage(size: Int): BufferedImage = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB).also { image ->
             val g = image.createGraphics()
             try {
                 paintLogo(g, size)

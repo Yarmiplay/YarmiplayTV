@@ -51,42 +51,135 @@ PREVIEW_IMAGE = os.path.join("docs", "play", "feature-graphic-1024x500.png")
 LOGO_SVG = (
     """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" aria-hidden="true">
   <defs>
-    <linearGradient id="logo-bg" x1="0" y1="0" x2="108" y2="108" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#1B2A41"/>
-      <stop offset="100%" stop-color="#0E1116"/>
+    <!-- Background Dark Midnight Gradient -->
+    <linearGradient id="logo-bg" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#1B2B43"/>
+      <stop offset="45%" stop-color="#101B2B"/>
+      <stop offset="100%" stop-color="#080D16"/>
     </linearGradient>
-    <linearGradient id="prism-top" x1="31" y1="20" x2="89" y2="54" gradientUnits="userSpaceOnUse">
+
+    <!-- Squircle Subtle Top Rim Light -->
+    <linearGradient id="squircle-rim" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#70A8DB" stop-opacity="0.35"/>
+      <stop offset="25%" stop-color="#2D527C" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#0E1E33" stop-opacity="0.05"/>
+    </linearGradient>
+
+    <!-- Soft Ambient Center Bloom -->
+    <radialGradient id="ambient-bloom" cx="52%" cy="54%" r="48%">
+      <stop offset="0%" stop-color="#1E6CB5" stop-opacity="0.32"/>
+      <stop offset="50%" stop-color="#103E70" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#080D16" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Top Facet (Illuminated Ice-Cyan to Specular White) -->
+    <linearGradient id="prism-top" x1="33.3" y1="25.1" x2="82.9" y2="53.9" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#80E2F8"/>
+      <stop offset="26%" stop-color="#D8FBFF"/>
+      <stop offset="42%" stop-color="#FFFFFF"/>
+      <stop offset="68%" stop-color="#B2EEFF"/>
+      <stop offset="100%" stop-color="#60C8F6"/>
+    </linearGradient>
+
+    <!-- Spine Facet (Vibrant Electric Cobalt / Sky Blue) -->
+    <linearGradient id="prism-spine" x1="33.3" y1="25.1" x2="33.3" y2="82.7" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#34D2FB"/>
+      <stop offset="45%" stop-color="#19B2FD"/>
+      <stop offset="100%" stop-color="#097CE8"/>
+    </linearGradient>
+
+    <!-- Bottom Facet (Deep Sapphire / Royal Azure Shadow) -->
+    <linearGradient id="prism-bottom" x1="48.7" y1="53.8" x2="38" y2="78" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1876D0"/>
+      <stop offset="35%" stop-color="#0F5EB8"/>
+      <stop offset="70%" stop-color="#094590"/>
+      <stop offset="100%" stop-color="#06326E"/>
+    </linearGradient>
+
+    <!-- Orbit Ring Radiant Neon Bloom Filter -->
+    <filter id="neon-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.2" result="blur1"/>
+      <feGaussianBlur stdDeviation="4.5" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Orbit Ring Depth Gradient (Dimmer top-left, brilliant cyan/white bottom-right) -->
+    <linearGradient id="ring-glow-grad" x1="30" y1="30" x2="75" y2="75" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00A2E8" stop-opacity="0.45"/>
+      <stop offset="40%" stop-color="#00D2FF" stop-opacity="0.6"/>
+      <stop offset="80%" stop-color="#00F0FF" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#6DF7FF" stop-opacity="0.95"/>
+    </linearGradient>
+
+    <linearGradient id="ring-core-grad" x1="30" y1="30" x2="75" y2="75" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#5CD7FF"/>
+      <stop offset="50%" stop-color="#8EECFF"/>
+      <stop offset="85%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#B2F5FF"/>
+    </linearGradient>
+
+    <!-- Sync Node Radial Shading -->
+    <radialGradient id="node-sphere" cx="40%" cy="32%" r="62%">
       <stop offset="0%" stop-color="#FFFFFF"/>
-      <stop offset="40%" stop-color="#99DEFF"/>
-      <stop offset="100%" stop-color="#3DA5F4"/>
-    </linearGradient>
-    <linearGradient id="prism-bottom" x1="50" y1="54" x2="31" y2="88" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#1E68B8"/>
-      <stop offset="100%" stop-color="#0D2E55"/>
-    </linearGradient>
-    <linearGradient id="prism-spine" x1="31" y1="20" x2="31" y2="88" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#54B4FF"/>
-      <stop offset="45%" stop-color="#3DA5F4"/>
-      <stop offset="100%" stop-color="#1A5FA8"/>
-    </linearGradient>
-    <linearGradient id="orbit-front" x1="23" y1="70" x2="85" y2="38" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#70C4FF"/>
-      <stop offset="75%" stop-color="#FFFFFF"/>
-      <stop offset="100%" stop-color="#A6E1FF"/>
-    </linearGradient>
+      <stop offset="30%" stop-color="#B6FAFF"/>
+      <stop offset="65%" stop-color="#38E5FF"/>
+      <stop offset="90%" stop-color="#00B6E8"/>
+      <stop offset="100%" stop-color="#0080B8"/>
+    </radialGradient>
+
+    <!-- Node Bloom Filter -->
+    <filter id="node-glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="3.0" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
-  <rect x="6.48" y="6.48" width="95.04" height="95.04" rx="20.9" fill="url(#logo-bg)" stroke="#fff" stroke-opacity=".12" stroke-width=".84"/>
-  <path d="M85 38 A38 24 -24 0 0 23 70" fill="none" stroke="#3DA5F4" stroke-opacity="0.6" stroke-width="3.2" stroke-linecap="round"/>
-  <polygon points="31,21.5 89,55.5 31,89.5" fill="#000" fill-opacity="0.35"/>
-  <polygon points="50,54 89,54 31,88" fill="url(#prism-bottom)"/>
-  <polygon points="31,20 50,54 31,88" fill="url(#prism-spine)"/>
-  <polygon points="31,20 89,54 50,54" fill="url(#prism-top)"/>
-  <line x1="50" y1="54" x2="89" y2="54" stroke="#FFF" stroke-opacity="0.9" stroke-width="1.2" stroke-linecap="round"/>
-  <line x1="31" y1="20" x2="50" y2="54" stroke="#FFF" stroke-opacity="0.65" stroke-width="1.0" stroke-linecap="round"/>
-  <line x1="31" y1="88" x2="50" y2="54" stroke="#70C4FF" stroke-opacity="0.65" stroke-width="1.0" stroke-linecap="round"/>
-  <polygon points="31,20 89,54 31,88" fill="none" stroke="#FFF" stroke-opacity="0.85" stroke-width="1.4" stroke-linejoin="round"/>
-  <path d="M23 70 A38 24 -24 0 0 85 38" fill="none" stroke="url(#orbit-front)" stroke-width="3.6" stroke-linecap="round"/>
-  <circle cx="65" cy="77" r="3.2" fill="#FFF"/>
+
+  <!-- Squircle Base Tile -->
+  <rect x="7" y="7" width="94" height="94" rx="22" fill="url(#logo-bg)"/>
+  <rect x="7" y="7" width="94" height="94" rx="22" fill="url(#ambient-bloom)"/>
+  <rect x="7.4" y="7.4" width="93.2" height="93.2" rx="21.6" fill="none" stroke="url(#squircle-rim)" stroke-width="0.8"/>
+
+  <!-- Orbital Sync Ring (Rotated Ellipse: cx=54.77, cy=57.85, rx=41.41, ry=23.85, rot=-37.46deg) -->
+  <g transform="rotate(-37.46 54.77 57.85)">
+    <!-- Outer Neon Bloom -->
+    <ellipse cx="54.77" cy="57.85" rx="41.41" ry="23.85" fill="none" stroke="url(#ring-glow-grad)" stroke-width="3.6" filter="url(#neon-glow)"/>
+    <!-- Crisp Core Light Stroke -->
+    <ellipse cx="54.77" cy="57.85" rx="41.41" ry="23.85" fill="none" stroke="url(#ring-core-grad)" stroke-width="1.8"/>
+    <ellipse cx="54.77" cy="57.85" rx="41.41" ry="23.85" fill="none" stroke="#FFFFFF" stroke-width="0.7" stroke-opacity="0.85"/>
+  </g>
+
+  <!-- Glowing Sync Node (Lower-right: centered on orbit centerline at cx=71.23, cy=75.23, radius=5.6) -->
+  <!-- Outer Bloom Halo -->
+  <circle cx="71.23" cy="75.23" r="9.0" fill="#00E5FF" fill-opacity="0.45" filter="url(#node-glow)"/>
+  <!-- 3D Sphere Body (Drawn on top of the orbit stroke) -->
+  <circle cx="71.23" cy="75.23" r="5.6" fill="url(#node-sphere)"/>
+  <!-- Specular Glint Highlight -->
+  <circle cx="69.73" cy="73.73" r="1.7" fill="#FFFFFF" fill-opacity="0.95"/>
+
+  <!-- Central 3D Play Prism (Mounted directly in front of the ring) -->
+  <!-- Drop Shadow behind Prism onto the ring -->
+  <polygon points="33.33,25.10 82.90,53.89 33.33,82.69" fill="#000000" fill-opacity="0.32" filter="url(#neon-glow)"/>
+
+  <!-- Facet 3: Bottom Shadow Facet (Deep Sapphire) -->
+  <polygon points="48.73,53.79 82.90,53.89 33.33,82.69" fill="url(#prism-bottom)"/>
+
+  <!-- Facet 2: Left Spine Facet (Vibrant Cobalt) -->
+  <polygon points="33.33,25.10 48.73,53.79 33.33,82.69" fill="url(#prism-spine)"/>
+
+  <!-- Facet 1: Top Illuminated Facet (Ice Cyan / White Specular) -->
+  <polygon points="33.33,25.10 82.90,53.89 48.73,53.79" fill="url(#prism-top)"/>
+
+  <!-- Subtle Specular Crease Folds (NO outer border around the triangle) -->
+  <line x1="48.73" y1="53.79" x2="82.90" y2="53.89" stroke="#FFFFFF" stroke-width="0.55" stroke-opacity="0.85" stroke-linecap="round"/>
+  <line x1="33.33" y1="25.10" x2="48.73" y2="53.79" stroke="#FFFFFF" stroke-width="0.45" stroke-opacity="0.65" stroke-linecap="round"/>
+  <line x1="33.33" y1="82.69" x2="48.73" y2="53.79" stroke="#50C8FF" stroke-width="0.4" stroke-opacity="0.55" stroke-linecap="round"/>
 </svg>"""
 )
 # Markdown docs published as pages: file in docs/, folder on the site, footer link, search description.
