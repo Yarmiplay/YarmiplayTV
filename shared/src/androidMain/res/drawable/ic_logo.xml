@@ -5,53 +5,27 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- TV Frame Contour -->
-    <path
-        android:pathData="M25.5,30.5 L82.5,30.5 A8,8 0 0,1 90.5,38.5 L90.5,69.5 A8,8 0 0,1 82.5,77.5 L25.5,77.5 A8,8 0 0,1 17.5,69.5 L17.5,38.5 A8,8 0 0,1 25.5,30.5 Z"
-        android:strokeWidth="2.4"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round">
-        <aapt:attr name="android:strokeColor">
-            <gradient
-                android:startX="17.5"
-                android:startY="30.5"
-                android:endX="90.5"
-                android:endY="77.5"
-                android:type="linear">
-                <item android:color="#E670C4FF" android:offset="0.0" />
-                <item android:color="#991E68B8" android:offset="1.0" />
-            </gradient>
-        </aapt:attr>
-    </path>
-
-    <!-- TV Stand Accent Bar -->
-    <path
-        android:pathData="M44,82 L64,82"
-        android:strokeColor="#8070C4FF"
-        android:strokeWidth="1.8"
-        android:strokeLineCap="round" />
-
     <!-- Orbital Sync Loop (Back Arc) -->
     <path
-        android:pathData="M81.5,41.5 A36,21 -24 0,0 26.5,64.5"
-        android:strokeColor="#883DA5F4"
-        android:strokeWidth="2.2"
+        android:pathData="M85,38 A38,24 -24 0,0 23,70"
+        android:strokeColor="#993DA5F4"
+        android:strokeWidth="3.2"
         android:strokeLineCap="round" />
 
     <!-- Central Play Prism: Drop Shadow -->
     <path
-        android:pathData="M36,27.5 L84,55.5 L36,83.5 Z"
+        android:pathData="M31,21.5 L89,55.5 L31,89.5 Z"
         android:fillColor="#55000000" />
 
     <!-- Facet 2: Bottom Facet (Azure Shadow) -->
     <path
-        android:pathData="M52,54 L84,54 L36,82 Z">
+        android:pathData="M50,54 L89,54 L31,88 Z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:startX="52"
+                android:startX="50"
                 android:startY="54"
-                android:endX="36"
-                android:endY="82"
+                android:endX="31"
+                android:endY="88"
                 android:type="linear">
                 <item android:color="#FF1E68B8" android:offset="0.0" />
                 <item android:color="#FF0D2E55" android:offset="1.0" />
@@ -61,13 +35,13 @@
 
     <!-- Facet 3: Spine Facet (Mid-tone Electric Blue) -->
     <path
-        android:pathData="M36,26 L52,54 L36,82 Z">
+        android:pathData="M31,20 L50,54 L31,88 Z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:startX="36"
-                android:startY="26"
-                android:endX="36"
-                android:endY="82"
+                android:startX="31"
+                android:startY="20"
+                android:endX="31"
+                android:endY="88"
                 android:type="linear">
                 <item android:color="#FF54B4FF" android:offset="0.0" />
                 <item android:color="#FF3DA5F4" android:offset="0.45" />
@@ -78,12 +52,12 @@
 
     <!-- Facet 1: Top Facet (Illuminated Sky Blue / White Highlight) -->
     <path
-        android:pathData="M36,26 L84,54 L52,54 Z">
+        android:pathData="M31,20 L89,54 L50,54 Z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:startX="36"
-                android:startY="26"
-                android:endX="84"
+                android:startX="31"
+                android:startY="20"
+                android:endX="89"
                 android:endY="54"
                 android:type="linear">
                 <item android:color="#FFFFFFFF" android:offset="0.0" />
@@ -95,39 +69,39 @@
 
     <!-- Prism Fold Creases -->
     <path
-        android:pathData="M52,54 L84,54"
+        android:pathData="M50,54 L89,54"
         android:strokeColor="#EEFFFFFF"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M31,20 L50,54"
+        android:strokeColor="#AAFFFFFF"
         android:strokeWidth="1.0"
         android:strokeLineCap="round" />
     <path
-        android:pathData="M36,26 L52,54"
-        android:strokeColor="#AAFFFFFF"
-        android:strokeWidth="0.8"
-        android:strokeLineCap="round" />
-    <path
-        android:pathData="M36,82 L52,54"
+        android:pathData="M31,88 L50,54"
         android:strokeColor="#8870C4FF"
-        android:strokeWidth="0.8"
+        android:strokeWidth="1.0"
         android:strokeLineCap="round" />
 
     <!-- Prism Outer Rim Highlight (Clean vertex, NO dot at tip) -->
     <path
-        android:pathData="M36,26 L84,54 L36,82 Z"
+        android:pathData="M31,20 L89,54 L31,88 Z"
         android:strokeColor="#CCFFFFFF"
-        android:strokeWidth="1.2"
+        android:strokeWidth="1.4"
         android:strokeLineJoin="round" />
 
     <!-- Orbital Sync Loop (Front Arc) -->
     <path
-        android:pathData="M26.5,64.5 A36,21 -24 0,0 81.5,41.5"
-        android:strokeWidth="2.8"
+        android:pathData="M23,70 A38,24 -24 0,0 85,38"
+        android:strokeWidth="3.6"
         android:strokeLineCap="round">
         <aapt:attr name="android:strokeColor">
             <gradient
-                android:startX="26.5"
-                android:startY="64.5"
-                android:endX="81.5"
-                android:endY="41.5"
+                android:startX="23"
+                android:startY="70"
+                android:endX="85"
+                android:endY="38"
                 android:type="linear">
                 <item android:color="#FF70C4FF" android:offset="0.0" />
                 <item android:color="#FFFFFFFF" android:offset="0.75" />
@@ -136,17 +110,8 @@
         </aapt:attr>
     </path>
 
-    <!-- Sync Nodes (Viewer Satellites) -->
-    <!-- Node 1: Left -->
+    <!-- Glowing Sync Node (Single bright satellite on front arc) -->
     <path
-        android:pathData="M29,61.5 m-2.2,0 a2.2,2.2 0 1,1 4.4,0 a2.2,2.2 0 1,1 -4.4,0"
-        android:fillColor="#FFFFFFFF" />
-    <!-- Node 2: Bottom -->
-    <path
-        android:pathData="M56.5,74.5 m-2.0,0 a2.0,2.0 0 1,1 4.0,0 a2.0,2.0 0 1,1 -4.0,0"
-        android:fillColor="#FFFFFFFF" />
-    <!-- Node 3: Top Right -->
-    <path
-        android:pathData="M81,41.5 m-2.2,0 a2.2,2.2 0 1,1 4.4,0 a2.2,2.2 0 1,1 -4.4,0"
+        android:pathData="M65,77 m-3.2,0 a3.2,3.2 0 1,1 6.4,0 a3.2,3.2 0 1,1 -6.4,0"
         android:fillColor="#FFFFFFFF" />
 </vector>
