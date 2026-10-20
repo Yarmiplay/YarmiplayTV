@@ -14,6 +14,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -46,7 +47,9 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -90,8 +93,9 @@ class RoomScreenUiTest {
     fun tearDown() {
         if (::app.isInitialized) runBlocking(main) { app.sync.disconnect() }
         server?.close()
-        if (::app.isInitialized) app.scope.cancel()
-        if (::storeScope.isInitialized) storeScope.cancel()
+        // Join before resetMain: leaving Main work running races on Windows/macOS CI.
+        if (::app.isInitialized) runBlocking { app.scope.coroutineContext.job.cancelAndJoin() }
+        if (::storeScope.isInitialized) runBlocking { storeScope.coroutineContext.job.cancelAndJoin() }
         runCatching { Dispatchers.resetMain() }
         if (::main.isInitialized) main.close()
     }
@@ -112,6 +116,11 @@ class RoomScreenUiTest {
     @Test
     fun `wide windows show the known rooms beside the form, and a known room fills it`() = runComposeUiTest {
         show(1280, 800)
+        // Saved rooms arrive on a flow; waitForIdle alone can race on Windows CI.
+        waitUntil(timeoutMillis = 5_000) {
+            onAllNodesWithTag("join_two_panes").fetchSemanticsNodes().isNotEmpty() &&
+                onAllNodesWithTag("known_room_anime-club").fetchSemanticsNodes().isNotEmpty()
+        }
         onNodeWithTag("join_two_panes").assertIsDisplayed()
         onNodeWithTag("known_room_anime-club").assertIsDisplayed()
         onNodeWithTag("known_room_movie-night").assertIsDisplayed()
