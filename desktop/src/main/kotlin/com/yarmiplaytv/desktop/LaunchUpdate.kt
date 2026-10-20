@@ -229,22 +229,26 @@ internal class LaunchUpdateWindow : LaunchUpdateUi {
             }
         }
 
+        /** The play prism from packaging/app_icon.png, used only when that file is not on the classpath. */
         private fun paintLogo(g: Graphics2D, size: Int) {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
-            val s = size / 108.0
+            val s = size / 1024.0
             g.color = Palette.logoBackground
-            g.fill(RoundRectangle2D.Double(0.0, 0.0, size.toDouble(), size.toDouble(), size * 0.44, size * 0.44))
-            fun triangle(x: Double, top: Double, bottom: Double, tip: Double) = Path2D.Double().apply {
-                moveTo(x * s, top * s)
-                lineTo(x * s, bottom * s)
-                lineTo(tip * s, 54 * s)
+            val corner = size * 230.0 / 512.0
+            g.fill(RoundRectangle2D.Double(0.0, 0.0, size.toDouble(), size.toDouble(), corner, corner))
+            fun facet(vararg points: Double) = Path2D.Double().apply {
+                moveTo(points[0] * s, points[1] * s)
+                lineTo(points[2] * s, points[3] * s)
+                lineTo(points[4] * s, points[5] * s)
                 closePath()
             }
-            g.color = Palette.accent
-            g.fill(triangle(30.0, 28.0, 80.0, 70.0))
-            g.color = Color(255, 255, 255, 0xCC)
-            g.fill(triangle(46.0, 34.0, 74.0, 78.0))
+            g.color = Color(0x02, 0x84, 0xC7)
+            g.fill(facet(460.0, 512.0, 903.0, 512.0, 263.0, 906.0))
+            g.color = Color(0x0E, 0xA5, 0xE9)
+            g.fill(facet(263.0, 118.0, 460.0, 512.0, 263.0, 906.0))
+            g.color = Color(0x67, 0xE8, 0xF9)
+            g.fill(facet(263.0, 118.0, 903.0, 512.0, 460.0, 512.0))
         }
 
         private fun translucencySupported(): Boolean = runCatching {
@@ -307,7 +311,7 @@ internal class LaunchUpdateWindow : LaunchUpdateUi {
         override fun paintComponent(g: Graphics) {
             val g2 = g.create() as Graphics2D
             try {
-                paintLogo(g2, size)
+                g2.drawImage(logoImage(size), 0, 0, null)
             } finally {
                 g2.dispose()
             }
