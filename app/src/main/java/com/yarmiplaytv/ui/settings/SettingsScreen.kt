@@ -79,6 +79,7 @@ import com.yarmiplaytv.ui.shared.rememberSavedText
 import com.yarmiplaytv.ui.shared.serverLabel
 import com.yarmiplaytv.ui.shared.shortUrl
 import com.yarmiplaytv.ui.shared.updateSourceLine
+import com.yarmiplaytv.ui.mobile.UpdateProgressBar
 import com.yarmiplaytv.ui.shared.updateStateLine
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.AppTheme
@@ -375,9 +376,11 @@ private fun UpdatesSection(container: AppContainer, showLink: (AboutLink) -> Uni
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("YarmiplayTV ${s.update.version} is available", style = MaterialTheme.typography.titleMedium, color = AppColors.Accent)
                 Text(updateStateLine(updates, s), color = AppColors.TextDim, modifier = Modifier.testTag("update_state"))
+                UpdateProgressBar(s)
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     val canInstall = updates.installer != null
                     when {
+                        s is UpdateState.Installing -> Unit
                         s is UpdateState.Ready -> ActionButton(readyButtonLabel(updates), updates::restartToInstall, Modifier.testTag("update_install"), primary = true)
                         s is UpdateState.Downloading -> ActionButton("Cancel", { updates.dismiss(remember = false) })
                         canInstall -> ActionButton(if (s is UpdateState.Failed) "Try again" else "Install", { updates.download(thenRestart = true) }, Modifier.testTag("update_install"), primary = true)

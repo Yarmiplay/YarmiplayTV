@@ -56,7 +56,7 @@ internal sealed interface LaunchUpdate {
 /** Shows the download before the window opens. Called from any thread; [show]'s skip may be called from any. */
 internal interface LaunchUpdateUi {
     fun show(update: Update, skip: () -> Unit)
-    fun progress(fraction: Float)
+    fun progress(fraction: Float?)
     fun close()
 }
 
@@ -181,8 +181,9 @@ internal class LaunchUpdateWindow : LaunchUpdateUi {
         bar.start()
     }
 
-    override fun progress(fraction: Float) = SwingUtilities.invokeLater {
-        bar.target = fraction.coerceIn(0f, 1f)
+    override fun progress(fraction: Float?) = SwingUtilities.invokeLater {
+        // Unknown length keeps the sweeping bar; a real fraction fills it.
+        if (fraction != null) bar.target = fraction.coerceIn(0f, 1f)
         status.text = statusText(version, fraction)
     }
 

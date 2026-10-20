@@ -11,7 +11,7 @@ object UpdateSetup {
     fun install(app: Application, container: AppContainer) {
         val updates = container.updates
         updates.platform = "android"
-        updates.installer = ApkUpdater(app, onFailed = updates::showFailed)
+        updates.installer = ApkUpdater(app, onFailed = updates::showFailed, onCancelled = updates::installCancelled)
         val failed = ApkUpdater.takeFailedInstall(app)
         // Set by the instrumented tests' runner, so tests don't depend on what the live download page offers.
         if (System.getProperty("yarmiplaytv.noUpdateCheck") == null) updates.checkOnLaunch(failed)

@@ -18,7 +18,7 @@ internal class MacUpdater(
     private var dmg: File? = null
     private var version: String? = null
 
-    override suspend fun download(update: Update, progress: (Float) -> Unit) {
+    override suspend fun download(update: Update, progress: (Float?) -> Unit) {
         dmg = downloadVerified(update, File(System.getProperty("java.io.tmpdir"), "YarmiplayTV-${update.version}.dmg"), progress)
         version = update.version
     }

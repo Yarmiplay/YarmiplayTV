@@ -46,14 +46,24 @@ fun updateStateLine(updates: Updates, state: UpdateState): String {
             installer.installsNow -> "Install it now: it downloads, then Android asks to update the app."
             else -> "Install it now, or turn on Automatic updates in Settings."
         }
-        is UpdateState.Downloading -> "Downloading… ${(state.progress * 100).toInt()}%"
+        is UpdateState.Downloading -> state.progress?.let { "Downloading… ${percent(it)}" } ?: "Downloading…"
         is UpdateState.Ready -> when {
             installer?.installsNow == true -> installer.pendingStep() ?: "Downloaded. Select Install to finish."
             else -> "It installs when you close YarmiplayTV."
         }
+        is UpdateState.Installing -> when {
+            state.progress != null -> "Installing… ${percent(state.progress)}"
+            installer?.installsNow == true -> "Installing…"
+            else -> "Installing… YarmiplayTV will close while it finishes."
+        }
         is UpdateState.Failed -> state.message
     }
 }
+
+/** "42%", or "…" when the amount isn't known. */
+fun updatePercentLabel(progress: Float?): String = progress?.let(::percent) ?: "…"
+
+private fun percent(progress: Float) = "${(progress * 100).toInt()}%"
 
 /** The main button's text for a downloaded update. */
 fun readyButtonLabel(updates: Updates): String = when {

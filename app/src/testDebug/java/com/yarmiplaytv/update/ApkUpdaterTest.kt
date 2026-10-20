@@ -18,10 +18,20 @@ class ApkUpdaterTest {
     @Test
     fun `a download matching its checksum is kept, with progress up to 100 percent`() = runBlocking {
         val target = tmp.root.resolve("a.apk")
-        val progress = mutableListOf<Float>()
+        val progress = mutableListOf<Float?>()
         ApkUpdater.copyVerified(bytes.inputStream(), bytes.size.toLong(), sha.uppercase(), target) { progress += it }
         assertTrue(target.readBytes().contentEquals(bytes))
         assertEquals(1f, progress.last())
+        assertTrue(progress.none { it == null })
+    }
+
+    @Test
+    fun `an unknown length is not reported as zero percent`() = runBlocking {
+        val target = tmp.root.resolve("unknown.apk")
+        val progress = mutableListOf<Float?>()
+        ApkUpdater.copyVerified(bytes.inputStream(), -1, sha, target) { progress += it }
+        assertEquals(listOf<Float?>(null), progress.distinct())
+        assertTrue(target.readBytes().contentEquals(bytes))
     }
 
     @Test

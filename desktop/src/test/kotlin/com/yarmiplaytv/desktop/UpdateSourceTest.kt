@@ -128,6 +128,27 @@ class UpdateSourceTest {
     }
 
     @Test
+    fun `the windows installer shows its progress`() {
+        val script = WindowsUpdater(exe, emptyList()).script(File("C:/Temp/YarmiplayTV.msi"), listOf(1), relaunch = false)
+        assertTrue(script.contains("/passive"))
+        assertFalse(script.contains("/qn"))
+    }
+
+    @Test
+    fun `a download of unknown length is not reported as zero`() = runBlocking {
+        val body = "the package".toByteArray()
+        val sha = MessageDigest.getInstance("SHA-256").digest(body).joinToString("") { "%02x".format(it) }
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setChunkedBody(okio.Buffer().write(body), 4))
+            val progress = mutableListOf<Float?>()
+            val target = File(tmp.root, "chunked.zip")
+            downloadVerified(Update("1.9.0", "", server.url("/YarmiplayTV.zip").toString(), sha), target, progress = { progress += it })
+            assertEquals("the package", target.readText())
+            assertEquals(listOf<Float?>(null), progress.distinct())
+        }
+    }
+
+    @Test
     fun `the scripts parse in their shells`() {
         val windows = System.getProperty("os.name").lowercase().startsWith("windows")
         if (windows) {
@@ -176,9 +197,10 @@ class UpdateSourceTest {
             repeat(2) { server.enqueue(MockResponse().setBody(Buffer().write(body))) }
             val url = server.url("/YarmiplayTV.zip").toString()
             val target = File(tmp.root, "update.zip")
-            val progress = mutableListOf<Float>()
+            val progress = mutableListOf<Float?>()
             downloadVerified(Update("1.9.0", "", url, sha.uppercase()), target, progress = { progress += it })
             assertEquals("the package", target.readText())
+            assertEquals("identity", server.takeRequest().getHeader("Accept-Encoding"))
             assertEquals(1f, progress.last())
 
             val damaged = File(tmp.root, "damaged.zip")

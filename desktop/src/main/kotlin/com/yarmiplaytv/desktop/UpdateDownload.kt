@@ -1,11 +1,12 @@
 package com.yarmiplaytv.desktop
 
 import com.yarmiplaytv.update.Update
+import com.yarmiplaytv.update.reportByteProgress
+import com.yarmiplaytv.update.updateDownloadRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
@@ -17,18 +18,19 @@ internal val updateHttp: OkHttpClient by lazy { OkHttpClient.Builder().readTimeo
 
 /**
  * Downloads [update]'s package to [target] and checks it against the download page's SHA-256: a package without
- * a checksum, or one that doesn't match, is refused and deleted. [progress] gets 0 to 1.
+ * a checksum, or one that doesn't match, is refused and deleted. [progress] gets 0 to 1, or null when the
+ * length isn't known.
  */
 internal suspend fun downloadVerified(
     update: Update,
     target: File,
-    progress: (Float) -> Unit,
+    progress: (Float?) -> Unit,
     http: OkHttpClient = updateHttp,
 ): File = withContext(Dispatchers.IO) {
     val expected = update.sha256 ?: error("the download page lists no checksum")
     val partial = File(target.path + ".part")
     try {
-        http.newCall(Request.Builder().url(update.downloadUrl).build()).execute().use { response ->
+        http.newCall(updateDownloadRequest(update.downloadUrl)).execute().use { response ->
             if (!response.isSuccessful) error("HTTP ${response.code}")
             val body = response.body!!
             val total = body.contentLength()
@@ -45,8 +47,7 @@ internal suspend fun downloadVerified(
                         out.write(buffer, 0, n)
                         digest.update(buffer, 0, n)
                         done += n
-                        val p = if (total > 0) (done * 100 / total).toInt() else 0
-                        if (p != percent) progress(p / 100f).also { percent = p }
+                        percent = reportByteProgress(done, total, percent, progress)
                     }
                 }
             }

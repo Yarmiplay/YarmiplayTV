@@ -16,7 +16,7 @@ internal class PortableUpdater(
     private var zip: File? = null
     private var version: String? = null
 
-    override suspend fun download(update: Update, progress: (Float) -> Unit) {
+    override suspend fun download(update: Update, progress: (Float?) -> Unit) {
         zip = downloadVerified(update, File(System.getProperty("java.io.tmpdir"), "YarmiplayTV-${update.version}-portable.zip"), progress)
         version = update.version
     }

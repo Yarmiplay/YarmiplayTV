@@ -15,7 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
@@ -32,6 +31,8 @@ internal class ApkUpdater(
     private val context: Context,
     /** Shows that the installer failed, with the sentence to show. */
     private val onFailed: (Update, String) -> Unit,
+    /** The confirmation was cancelled: the download is still here, so Install can try again. */
+    private val onCancelled: (Update) -> Unit = {},
 ) : UpdateInstaller {
     private val http = OkHttpClient.Builder().readTimeout(60, TimeUnit.SECONDS).build()
     private var apk: File? = null
@@ -39,13 +40,13 @@ internal class ApkUpdater(
 
     override val installsNow: Boolean get() = true
 
-    override suspend fun download(update: Update, progress: (Float) -> Unit) = withContext(Dispatchers.IO) {
+    override suspend fun download(update: Update, progress: (Float?) -> Unit) = withContext(Dispatchers.IO) {
         val expected = update.sha256 ?: error("the download page lists no checksum")
         val dir = File(context.cacheDir, "updates").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
         val target = File(dir, "YarmiplayTV-${update.version}.apk")
         val partial = File(target.path + ".part")
-        http.newCall(Request.Builder().url(update.downloadUrl).build()).execute().use { response ->
+        http.newCall(updateDownloadRequest(update.downloadUrl)).execute().use { response ->
             if (!response.isSuccessful) error("HTTP ${response.code}")
             val body = response.body!!
             body.byteStream().use { input -> copyVerified(input, body.contentLength(), expected, partial, progress) }
@@ -55,35 +56,66 @@ internal class ApkUpdater(
         this@ApkUpdater.update = update
     }
 
+    /** Hands the APK to the system's installer, reporting how much of it has been copied, then asks to confirm. */
+    override suspend fun install(progress: (Float?) -> Unit) = withContext(Dispatchers.IO) {
+        writeSession(progress)
+    }
+
     /** Hands the APK to the system's installer, which asks to confirm; Android closes the app while it installs. */
     override fun installAfterExit(relaunch: Boolean) {
-        val apk = apk ?: return
         val update = update ?: return
-        current = this
+        if (apk == null) return
         thread(name = "update-install") {
-            runCatching {
-                val installer = context.packageManager.packageInstaller
-                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-                    setAppPackageName(context.packageName)
-                    setSize(apk.length())
-                }
-                val id = installer.createSession(params)
-                installer.openSession(id).use { session ->
-                    session.openWrite("YarmiplayTV.apk", 0, apk.length()).use { out ->
-                        apk.inputStream().use { it.copyTo(out, 1 shl 16) }
-                        session.fsync(out)
-                    }
-                    val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                        if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
-                    val result = PendingIntent.getBroadcast(
-                        context, id, Intent(context, ApkInstallReceiver::class.java).putExtra(EXTRA_VERSION, update.version), flags,
-                    )
-                    session.commit(result.intentSender)
-                }
-            }.onFailure {
+            runCatching { writeSession {} }.onFailure {
                 Logger.w(TAG, "Couldn't start installing ${update.version}", it)
                 onFailed(update, Updates.INSTALL_FAILED)
             }
+        }
+    }
+
+    private fun writeSession(progress: (Float?) -> Unit) {
+        val apk = apk ?: error("no package")
+        val update = update ?: error("no package")
+        current = this
+        val installer = context.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+            setAppPackageName(context.packageName)
+            setSize(apk.length())
+        }
+        val id = installer.createSession(params)
+        var committed = false
+        try {
+            installer.openSession(id).use { session ->
+                val length = apk.length()
+                session.openWrite("YarmiplayTV.apk", 0, length).use { out ->
+                    apk.inputStream().use { input ->
+                        val buffer = ByteArray(1 shl 16)
+                        var done = 0L
+                        var percent = -1
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            out.write(buffer, 0, n)
+                            done += n
+                            percent = reportByteProgress(done, length, percent) { fraction ->
+                                if (fraction != null) session.setStagingProgress(fraction)
+                                progress(fraction)
+                            }
+                        }
+                    }
+                    session.fsync(out)
+                }
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                    if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
+                val result = PendingIntent.getBroadcast(
+                    context, id, Intent(context, ApkInstallReceiver::class.java).putExtra(EXTRA_VERSION, update.version), flags,
+                )
+                session.commit(result.intentSender)
+                committed = true
+            }
+        } catch (e: Throwable) {
+            if (!committed) runCatching { installer.abandonSession(id) }
+            throw e
         }
     }
 
@@ -110,7 +142,10 @@ internal class ApkUpdater(
         when (status) {
             PackageInstaller.STATUS_SUCCESS -> Unit
             // Cancelled at the confirmation: Install works again from the notice.
-            PackageInstaller.STATUS_FAILURE_ABORTED -> Logger.i(TAG, "Installing ${update.version} was cancelled")
+            PackageInstaller.STATUS_FAILURE_ABORTED -> {
+                Logger.i(TAG, "Installing ${update.version} was cancelled")
+                onCancelled(update)
+            }
             else -> {
                 Logger.w(TAG, "Installing ${update.version} failed ($status): $message")
                 rememberFailedInstall(context, update.version)
@@ -130,9 +165,9 @@ internal class ApkUpdater(
 
         /**
          * Copies [input] to [target] while checking its SHA-256 against [expected]; deletes [target] and throws when
-         * they differ. [progress] gets 0 to 1 when [total] (the length, or -1) is known.
+         * they differ. [progress] gets 0 to 1 when [total] (the length, or -1) is known, or null once when it isn't.
          */
-        suspend fun copyVerified(input: InputStream, total: Long, expected: String, target: File, progress: (Float) -> Unit) {
+        suspend fun copyVerified(input: InputStream, total: Long, expected: String, target: File, progress: (Float?) -> Unit) {
             val digest = MessageDigest.getInstance("SHA-256")
             var done = 0L
             var percent = -1
@@ -145,8 +180,7 @@ internal class ApkUpdater(
                     out.write(buffer, 0, n)
                     digest.update(buffer, 0, n)
                     done += n
-                    val p = if (total > 0) (done * 100 / total).toInt() else 0
-                    if (p != percent) progress(p / 100f).also { percent = p }
+                    percent = reportByteProgress(done, total, percent, progress)
                 }
             }
             val actual = digest.digest().joinToString("") { "%02x".format(it) }

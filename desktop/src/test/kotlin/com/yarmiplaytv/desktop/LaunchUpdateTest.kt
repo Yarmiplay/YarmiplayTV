@@ -16,7 +16,7 @@ class LaunchUpdateTest {
 
     private class FakeUi(private val skipRightAway: Boolean = false) : LaunchUpdateUi {
         @Volatile var shown: Update? = null
-        @Volatile var progress = -1f
+        @Volatile var progress: Float? = -1f
         @Volatile var closed = false
 
         override fun show(update: Update, skip: () -> Unit) {
@@ -24,7 +24,7 @@ class LaunchUpdateTest {
             if (skipRightAway) skip()
         }
 
-        override fun progress(fraction: Float) {
+        override fun progress(fraction: Float?) {
             progress = fraction
         }
 
@@ -33,10 +33,10 @@ class LaunchUpdateTest {
         }
     }
 
-    private class FakeInstaller(private val download: suspend ((Float) -> Unit) -> Unit = { it(1f) }) : UpdateInstaller {
+    private class FakeInstaller(private val download: suspend ((Float?) -> Unit) -> Unit = { it(1f) }) : UpdateInstaller {
         @Volatile var downloads = 0
 
-        override suspend fun download(update: Update, progress: (Float) -> Unit) {
+        override suspend fun download(update: Update, progress: (Float?) -> Unit) {
             downloads++
             download(progress)
         }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -117,19 +118,35 @@ private fun UpdateProgress(container: AppContainer, s: UpdateState, dismiss: Boo
 private fun UpdateProgressContent(updates: Updates, s: UpdateState, dismiss: Boolean, canInstall: Boolean) {
     val uriHandler = LocalUriHandler.current
     Text(updateStateLine(updates, s), style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim, modifier = Modifier.testTag("update_state"))
-    if (s is UpdateState.Downloading) LinearProgressIndicator(progress = { s.progress }, modifier = Modifier.fillMaxWidth())
+    UpdateProgressBar(s)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         when {
+            s is UpdateState.Installing || s is UpdateState.Downloading -> Unit
             s is UpdateState.Ready -> Button(updates::restartToInstall, Modifier.testTag("update_install")) { Text(readyButtonLabel(updates)) }
-            s is UpdateState.Downloading -> Unit
             (s is UpdateState.Available || s is UpdateState.Failed) && canInstall ->
                 Button({ updates.download(thenRestart = true) }, Modifier.testTag("update_install")) { Text(if (s is UpdateState.Failed) "Try again" else "Install") }
             else -> Button({ uriHandler.openUri(s.update.pageUrl) }) { Text("Download page") }
         }
-        if (dismiss || s is UpdateState.Downloading) {
+        if (s !is UpdateState.Installing && (dismiss || s is UpdateState.Downloading)) {
             TextButton({ updates.dismiss(remember = s !is UpdateState.Downloading) }) { Text(if (s is UpdateState.Downloading) "Cancel" else "Not now") }
         }
         TextButton({ uriHandler.openUri(CHANGELOG_URL) }) { Text("Patch notes") }
+    }
+}
+
+/** The download or install bar: a moving amount when the length is known, an ongoing sweep when it isn't. */
+@Composable
+fun UpdateProgressBar(state: UpdateState, modifier: Modifier = Modifier) {
+    val fraction = when (state) {
+        is UpdateState.Downloading -> state.progress
+        is UpdateState.Installing -> state.progress
+        else -> return
+    }
+    val bar = modifier.fillMaxWidth().height(4.dp)
+    if (fraction == null) {
+        LinearProgressIndicator(modifier = bar, color = AppColors.Accent, trackColor = AppColors.SurfaceHigh)
+    } else {
+        LinearProgressIndicator(progress = { fraction }, modifier = bar, color = AppColors.Accent, trackColor = AppColors.SurfaceHigh)
     }
 }
 

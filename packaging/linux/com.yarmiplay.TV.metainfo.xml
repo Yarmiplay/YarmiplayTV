@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.5.1" date="2026-10-20">
+      <description>
+        <p>Updates started from inside the app show download progress, and installation progress too: Windows shows the installer while it finishes, and Android shows progress while the update is handed over. The update window before the app opens uses the current icon.</p>
+      </description>
+    </release>
     <release version="2.5.0" date="2026-10-20">
       <description>
         <p>Playback keys match mpv: speed, chapters, subtitle timing and size, picture adjustments, and Ctrl+Backspace to reset them. Page Up and Page Down go to the next or previous playlist entry when the file has no further chapter. Subtitle size is G and Shift+F; z and Z shift subtitle timing.</p>

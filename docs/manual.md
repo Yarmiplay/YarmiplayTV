@@ -355,10 +355,12 @@ your copy was installed:
 
 - **Google Play:** updates through Google Play, from the app. **Open Google Play** shows the app's page in the
   Play Store, on a TV too.
-- **The APK from the download page** (phones, tablets, TVs): downloads the new APK and asks Android to install
-  it. The first time, allow YarmiplayTV to install apps when Android asks.
-- **Windows installer:** downloads and installs the new version, then restarts the app. With **Automatic
-  updates** on, it updates before the app opens, with a small window you can skip.
+- **The APK from the download page** (phones, tablets, TVs): downloads the new APK, showing how far along it
+  is, then hands it to Android (that step has its own progress) and asks to confirm. The first time, allow
+  YarmiplayTV to install apps when Android asks.
+- **Windows installer:** downloads the new version, showing how far along it is, then installs it with a
+  progress bar and restarts the app. With **Automatic updates** on, it updates before the app opens, with a
+  small window you can skip.
 - **Windows portable zip, macOS and the Linux `.deb`:** download the new version and replace this one, then
   restart (Linux asks for your password).
 - **Microsoft Store:** opens the Store page, where **Update** is.

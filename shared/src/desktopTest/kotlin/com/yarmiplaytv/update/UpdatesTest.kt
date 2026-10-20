@@ -2,6 +2,7 @@ package com.yarmiplaytv.update
 
 import com.yarmiplaytv.data.SettingsStore
 import com.yarmiplaytv.data.desktopSettingsStore
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -187,6 +188,47 @@ class UpdatesTest {
     }
 
     @Test
+    fun `an unknown length is not shown as zero, and a known one moves the notice`() {
+        assertEquals(0, reportByteProgress(1, -1, -1) { assertNull(it) })
+        assertEquals(0, reportByteProgress(50, -1, 0) { error("already reported") })
+        assertEquals(0, reportByteProgress(0, 200, -1) { assertEquals(0f, it) })
+        assertEquals(50, reportByteProgress(100, 200, 0) { assertEquals(0.5f, it) })
+        assertEquals(100, reportByteProgress(200, 200, 50) { assertEquals(1f, it) })
+
+        val gate = CompletableDeferred<Unit>()
+        val updates = updates(object : UpdateInstaller {
+            override suspend fun download(update: Update, progress: (Float?) -> Unit) {
+                progress(null)
+                progress(0.4f)
+                gate.await()
+            }
+            override fun installAfterExit(relaunch: Boolean) = Unit
+        })
+        updates.show(Update("1.2.0", "", "", null))
+        updates.download(thenRestart = false)
+        awaitTrue { (updates.state.value as? UpdateState.Downloading)?.progress == 0.4f }
+        gate.complete(Unit)
+        awaitTrue { updates.state.value is UpdateState.Ready }
+    }
+
+    @Test
+    fun `installation progress stays on the notice when the installer runs in the app`() {
+        var exited = false
+        val updates = updates(object : UpdateInstaller {
+            override val installsNow = true
+            override suspend fun download(update: Update, progress: (Float?) -> Unit) = Unit
+            override suspend fun install(progress: (Float?) -> Unit) { progress(0.25f) }
+            override fun installAfterExit(relaunch: Boolean) = error("the in-app installer reports its own progress")
+        }).apply { exitApp = { exited = true } }
+        updates.show(Update("1.2.0", "", "", null))
+        updates.download(thenRestart = true)
+        awaitTrue { (updates.state.value as? UpdateState.Installing)?.progress == 0.25f }
+        assertFalse(exited)
+        updates.installCancelled(updates.state.value!!.update)
+        assertTrue(updates.state.value is UpdateState.Ready)
+    }
+
+    @Test
     fun `restart installs right away and closes the app`() {
         server.enqueue(MockResponse().setBody(manifest()))
         val installer = FakeInstaller()
@@ -206,7 +248,7 @@ class UpdatesTest {
         @Volatile var downloaded: Update? = null
         @Volatile var relaunch: Boolean? = null
 
-        override suspend fun download(update: Update, progress: (Float) -> Unit) {
+        override suspend fun download(update: Update, progress: (Float?) -> Unit) {
             progress(0.5f)
             failWith?.let { error(it) }
             downloaded = update

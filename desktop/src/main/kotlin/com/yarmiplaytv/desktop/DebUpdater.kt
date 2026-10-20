@@ -17,7 +17,7 @@ internal class DebUpdater(
     private var deb: File? = null
     private var version: String? = null
 
-    override suspend fun download(update: Update, progress: (Float) -> Unit) {
+    override suspend fun download(update: Update, progress: (Float?) -> Unit) {
         // apt reads local packages as its own user, so the file goes where everyone can read it.
         deb = downloadVerified(update, File(System.getProperty("java.io.tmpdir"), "yarmiplaytv_${update.version}_amd64.deb"), progress)
             .apply { setReadable(true, false) }

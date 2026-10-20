@@ -14,9 +14,12 @@ sealed interface UpdateState {
     val update: Update
 
     data class Available(override val update: Update) : UpdateState
-    data class Downloading(override val update: Update, val progress: Float) : UpdateState
+    /** [progress] is 0 to 1, or null when the download's length isn't known. */
+    data class Downloading(override val update: Update, val progress: Float?) : UpdateState
     /** Downloaded; installs when the app closes, or right away with [Updates.restartToInstall]. */
     data class Ready(override val update: Update) : UpdateState
+    /** [progress] is 0 to 1, or null when the installer doesn't say how far it is. */
+    data class Installing(override val update: Update, val progress: Float?) : UpdateState
     data class Failed(override val update: Update, val message: String) : UpdateState
 }
 
@@ -25,14 +28,27 @@ sealed interface UpdateState {
  * the .deb, Android's APK); without one, the app only points to the download page.
  */
 interface UpdateInstaller {
-    /** Downloads [update]'s package and checks its SHA-256; [progress] gets 0 to 1. Throws on failure. */
-    suspend fun download(update: Update, progress: (Float) -> Unit)
+    /**
+     * Downloads [update]'s package and checks its SHA-256. [progress] gets 0 to 1, or null when the length isn't
+     * known. Throws on failure.
+     */
+    suspend fun download(update: Update, progress: (Float?) -> Unit)
 
     /**
      * Runs the downloaded installer once this process has exited. With [relaunch], starts the app again
      * afterwards: the new version, or this one with a notice when the installer failed.
      */
     fun installAfterExit(relaunch: Boolean)
+
+    /**
+     * Installs the downloaded package now. [progress] gets 0 to 1, or null when the amount isn't known.
+     * The default reports no amount and runs [installAfterExit]; Android reports progress while it hands the
+     * APK to the system.
+     */
+    suspend fun install(progress: (Float?) -> Unit) {
+        progress(null)
+        installAfterExit(relaunch = true)
+    }
 
     /**
      * Whether installing replaces this app right away rather than after it closes (Android's installer):
@@ -213,20 +229,33 @@ class Updates(
     }
 
     fun restartToInstall() {
-        if (_state.value !is UpdateState.Ready) return
+        val ready = _state.value as? UpdateState.Ready ?: return
         val installer = installer ?: return
         if (installer.pendingStep() != null) {
             installer.openPendingStep()
             return
         }
-        if (installer.installsNow) {
-            // The system's installer takes over; if it's cancelled the update can be installed again.
-            installer.installAfterExit(relaunch = true)
-            return
+        val update = ready.update
+        scope.launch {
+            _state.value = UpdateState.Installing(update, null)
+            runCatching { installer.install { p -> _state.value = UpdateState.Installing(update, p) } }
+                .onSuccess {
+                    if (!installer.installsNow) {
+                        _state.value = null
+                        exitApp()
+                    }
+                }
+                .onFailure {
+                    Logger.w(TAG, "Couldn't install version ${update.version}: ${it.message}")
+                    _state.value = UpdateState.Failed(update, INSTALL_FAILED)
+                }
         }
-        installer.installAfterExit(relaunch = true)
-        _state.value = null
-        exitApp()
+    }
+
+    /** The system's installer was cancelled (Android's confirmation): Install works again, without downloading twice. */
+    fun installCancelled(update: Update) {
+        val now = _state.value
+        if (now is UpdateState.Installing && now.update.version == update.version) _state.value = UpdateState.Ready(update)
     }
 
     /** Called when the app closes: starts the installer of a downloaded update that wasn't installed yet. */

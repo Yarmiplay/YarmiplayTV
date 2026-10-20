@@ -46,7 +46,8 @@ internal fun psRelaunch(launcher: File, args: List<String>, version: String): St
 
 /**
  * Installs updates with the download page's .msi. The app is installed per user, so the installer needs no
- * administrator rights and upgrades the installed version in place.
+ * administrator rights and upgrades the installed version in place. The installer shows its own progress bar
+ * (`/passive`) after this process has exited, because it replaces the running app.
  */
 internal class WindowsUpdater(
     private val launcher: File,
@@ -56,7 +57,7 @@ internal class WindowsUpdater(
     private var msi: File? = null
     private var version: String? = null
 
-    override suspend fun download(update: Update, progress: (Float) -> Unit) {
+    override suspend fun download(update: Update, progress: (Float?) -> Unit) {
         msi = downloadVerified(update, File(System.getProperty("java.io.tmpdir"), "YarmiplayTV-${update.version}.msi"), progress)
         version = update.version
     }
@@ -69,7 +70,7 @@ internal class WindowsUpdater(
     internal fun script(msi: File, pids: List<Long>, relaunch: Boolean): String = buildString {
         // The launcher runs the app in a child process and holds YarmiplayTV.exe open until it exits too.
         append("Wait-Process -Id ${pids.joinToString(",")} -ErrorAction SilentlyContinue; ")
-        append("\$p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList ('/i \"' + ${psQuoted(msi.path)} + '\" /qn /norestart'); ")
+        append("\$p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList ('/i \"' + ${psQuoted(msi.path)} + '\" /passive /norestart'); ")
         append("Remove-Item -LiteralPath ${psQuoted(msi.path)} -ErrorAction SilentlyContinue; ")
         if (relaunch) {
             // 3010: installed, Windows wants a restart for something else.

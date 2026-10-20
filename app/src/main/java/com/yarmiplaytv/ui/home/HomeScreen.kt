@@ -80,6 +80,8 @@ import com.yarmiplaytv.ui.shared.recentByServer
 import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serversDetail
 import com.yarmiplaytv.ui.shared.serversTitle
+import com.yarmiplaytv.ui.mobile.UpdateProgressBar
+import com.yarmiplaytv.ui.shared.updatePercentLabel
 import com.yarmiplaytv.ui.shared.updateStateLine
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.update.PlayStore
@@ -310,7 +312,7 @@ private fun UpdateNotice(container: AppContainer, state: UpdateState, onDismiss:
                     when {
                         !canInstall -> if (hasStore) PlayStore.launchStore(context) else onDismiss()
                         state is UpdateState.Ready -> updates.restartToInstall()
-                        state is UpdateState.Downloading -> Unit
+                        state is UpdateState.Downloading || state is UpdateState.Installing -> Unit
                         else -> updates.download(thenRestart = true)
                     }
                 },
@@ -329,12 +331,17 @@ private fun UpdateNotice(container: AppContainer, state: UpdateState, onDismiss:
                             style = MaterialTheme.typography.bodySmall,
                             color = AppColors.TextDim,
                         )
+                        if (state is UpdateState.Downloading || state is UpdateState.Installing) {
+                            Spacer(Modifier.height(8.dp))
+                            UpdateProgressBar(state)
+                        }
                     }
                     Spacer(Modifier.width(16.dp))
                     when {
                         !canInstall -> if (hasStore) Pill("Update", AppColors.Accent) else Pill("Not now", AppColors.TextDim)
                         state is UpdateState.Ready -> Pill(readyButtonLabel(updates), AppColors.Accent)
-                        state is UpdateState.Downloading -> Pill("${(state.progress * 100).toInt()}%", AppColors.TextDim)
+                        state is UpdateState.Downloading -> Pill(updatePercentLabel(state.progress), AppColors.TextDim)
+                        state is UpdateState.Installing -> Pill(updatePercentLabel(state.progress), AppColors.TextDim)
                         else -> Pill(if (state is UpdateState.Failed) "Try again" else "Install", AppColors.Accent)
                     }
                 }
