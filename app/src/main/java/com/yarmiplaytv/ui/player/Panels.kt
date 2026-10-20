@@ -50,7 +50,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.foundation.focusable
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -410,9 +409,10 @@ internal fun ChatPanel(container: AppContainer, focus: FocusRequester) {
 
 @Composable
 internal fun VideoPanel(container: AppContainer, focus: FocusRequester) {
-    Column(Modifier.fillMaxSize().padding(24.dp).focusRequester(focus).focusable()) {
+    // The first adjustment takes the focus. A focusable wrapper around the column trapped the remote on itself.
+    Column(Modifier.fillMaxSize().padding(24.dp)) {
         PanelHeader("Video")
-        VideoAdjustments(container, Modifier.weight(1f).verticalScroll(rememberScrollState()))
+        VideoAdjustments(container, Modifier.weight(1f).verticalScroll(rememberScrollState()), initialFocus = focus)
     }
 }
 
@@ -426,7 +426,8 @@ internal fun TracksPanel(container: AppContainer, type: TrackType, focus: FocusR
             SubtitleSizeControls(container)
             SubtitleTimingControls(container)
         } else {
-            AudioAdjustments(container)
+            // No selected track to land on (an empty list): the timing row is the panel's first control.
+            AudioAdjustments(container, initialFocus = if (list.none { it.selected }) focus else null)
         }
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (type == TrackType.SUBTITLE) {

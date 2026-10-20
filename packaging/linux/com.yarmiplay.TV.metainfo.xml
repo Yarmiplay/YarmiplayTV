@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.5.3" date="2026-10-20">
+      <description>
+        <p>On Android TV, player adjustment menus use the app theme and work with the remote, and Dismiss on the file-not-found card can be focused, activated with OK, and closed with Back.</p>
+      </description>
+    </release>
     <release version="2.5.2" date="2026-10-20">
       <description>
         <p>Player menus show each adjustment with its current value and its own reset: subtitle size, timing and placement, audio timing, speed, zoom, picture, aspect, loop and filters.</p>

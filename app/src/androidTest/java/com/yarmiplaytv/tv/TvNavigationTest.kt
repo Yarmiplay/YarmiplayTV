@@ -318,11 +318,33 @@ class TvNavigationTest {
         tv.await("Give me a minute")
         tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
         tv.awaitFocus("Audio")
+        // Down from the tab enters the timing row; right moves across it; up returns to the tab.
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
+        tv.awaitFocus("Reset audio timing")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Earlier audio")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Later audio")
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("Audio")
         tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
         tv.awaitFocus("Subtitles")
         tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
+        tv.awaitFocus("Reset subtitle size")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Smaller subtitles")
+        val scale = container.subtitleScale.value
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Larger subtitles")
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitUntil(5_000) { container.subtitleScale.value > scale }
+        // Down the rows reaches the track list. Left from Off stays in the menu.
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
+        tv.awaitFocus("Reset subtitle timing")
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
+        tv.awaitFocus("Reset subtitle placement")
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
         tv.awaitFocus("Off")
-        // The focus stays in the menu: left goes nowhere behind it.
         tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
         tv.awaitFocus("Off")
         // Back closes it, straight back to the video; up opens the menu used last.
@@ -352,6 +374,75 @@ class TvNavigationTest {
         tv.awaitGone("Off")
         tv.awaitGone(HIDE_HINT)
         assertEquals(true, container.player.state.value.paused)
+    }
+
+    @Test
+    fun videoAdjustmentsWithDpad() {
+        scenarios.clipPlayingInRoom()
+        launch()
+        waitUntil(10_000) { container.player.state.value.fileLoaded }
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("Room")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT, times = 4)
+        tv.awaitFocus("Video")
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
+        tv.awaitFocus("Reset speed")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Slower")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Faster")
+        tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
+        tv.awaitFocus("Reset zoom")
+        tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("Reset speed")
+        tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
+        tv.awaitFocus("Reset speed")
+        tv.back()
+        tv.awaitGone("Reset speed")
+        tv.awaitGone(HIDE_HINT)
+    }
+
+    @Test
+    fun fileNotFoundDismissWithDpad() {
+        scenarios.fileNotFound()
+        launch()
+        tv.await("Couldn't find this file")
+        tv.awaitFocus("Dismiss")
+        tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
+        tv.awaitFocus("Connect Plex")
+        tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
+        tv.awaitFocus("Connect Jellyfin")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT, times = 2)
+        tv.awaitFocus("Dismiss")
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        tv.await("Nothing playing")
+        tv.awaitFocus("Browse")
+    }
+
+    @Test
+    fun fileNotFoundDismissWithBack() {
+        scenarios.fileNotFound()
+        launch()
+        tv.awaitFocus("Dismiss")
+        tv.back()
+        tv.await("Nothing playing")
+        tv.awaitFocus("Browse")
+    }
+
+    @Test
+    fun fileNotFoundWithLibraryDismissesFromTheRemote() {
+        state.signInJellyfin(jellyfin)
+        scenarios.fileNotFound()
+        launch()
+        tv.await("Pick manually")
+        tv.awaitFocus("Dismiss")
+        tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
+        tv.awaitFocus("Pick manually")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Dismiss")
+        tv.back()
+        tv.await("Nothing playing")
     }
 
     @Test

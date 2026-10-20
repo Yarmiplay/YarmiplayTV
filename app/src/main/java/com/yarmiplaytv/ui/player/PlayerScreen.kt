@@ -119,6 +119,7 @@ import com.yarmiplaytv.ui.mobile.SkipChip
 import com.yarmiplaytv.playback.PlaybackAction
 import com.yarmiplaytv.playback.playbackAction
 import com.yarmiplaytv.ui.mobile.SkipMarks
+import com.yarmiplaytv.ui.mobile.LocalTvPlaybackControls
 import com.yarmiplaytv.ui.mobile.pictureInPictureLabel
 import com.yarmiplaytv.ui.mobile.rememberPictureInPicture
 import com.yarmiplaytv.ui.mobile.rememberRelaySave
@@ -214,9 +215,13 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
         }
     }
 
-    // Back closes the controls or a panel, straight back to the video.
+    // Back closes the controls or a panel, straight back to the video. A status card with Dismiss closes that first.
     BackHandler {
-        if (overlay == Overlay.Hidden) nav.back() else overlay = Overlay.Hidden
+        when {
+            overlay != Overlay.Hidden -> overlay = Overlay.Hidden
+            backDismissesStatusCard(status) -> container.playlist.dismissStatus()
+            else -> nav.back()
+        }
     }
 
     fun togglePause() = player.setPaused(!player.isPaused)
@@ -254,11 +259,15 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 }
                 if (global) return@onPreviewKeyEvent true
                 // A keyboard uses mpv's keys. The D-pad, OK, and Menu stay the remote's own controls.
+                val cardOwnsRemote = statusCardTakesRemote(status, nowPlaying == null, state.fileLoaded)
                 val remoteNav = code == AndroidKeyEvent.KEYCODE_DPAD_LEFT || code == AndroidKeyEvent.KEYCODE_DPAD_RIGHT ||
                     code == AndroidKeyEvent.KEYCODE_DPAD_UP || code == AndroidKeyEvent.KEYCODE_DPAD_DOWN ||
                     code == AndroidKeyEvent.KEYCODE_DPAD_CENTER || code == AndroidKeyEvent.KEYCODE_ENTER ||
                     code == AndroidKeyEvent.KEYCODE_NUMPAD_ENTER || code == AndroidKeyEvent.KEYCODE_MENU ||
                     code == AndroidKeyEvent.KEYCODE_BACK
+                // The file-not-found card (and the other status cards) has real buttons. Let the remote move
+                // between them and press OK; seeking or opening the bar here never reached Dismiss.
+                if (cardOwnsRemote && overlay == Overlay.Hidden && remoteNav) return@onPreviewKeyEvent false
                 if (!remoteNav && (overlay == Overlay.Hidden || overlay == Overlay.Controls)) {
                     val action = playbackAction(ev.key, shift = ev.isShiftPressed, ctrl = ev.isCtrlPressed, alt = ev.isAltPressed)
                     if (action != null) {
@@ -322,7 +331,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
         // Picture-in-picture shows only the video; the system draws the window's controls.
         if (pip.active) return@Box
 
-        CompositionLocalProvider(LocalDensity provides scaledDensity) {
+        CompositionLocalProvider(LocalDensity provides scaledDensity, LocalTvPlaybackControls provides true) {
             Box(Modifier.fillMaxSize()) {
                 if (state.fileLoaded && FileNames.isAudio(nowPlaying?.fileName ?: state.url.orEmpty())) {
                     Column(
@@ -472,6 +481,32 @@ private fun playerStreamingLabel(container: AppContainer, controlsVisible: Boole
 private fun String.withPing(rttMillis: Double): String =
     if (rttMillis > 0) "$this · %.0f ms".format(rttMillis) else this
 
+/**
+ * While this is true and the controls are hidden, D-pad and OK belong to the card in the middle of the video
+ * instead of seeking or opening the bar.
+ */
+internal fun statusCardTakesRemote(status: PlaylistStatus, nothingLoaded: Boolean, fileLoaded: Boolean): Boolean = when (status) {
+    is PlaylistStatus.NotFound, is PlaylistStatus.Failed, is PlaylistStatus.Untrusted -> true
+    PlaylistStatus.Idle -> nothingLoaded && !fileLoaded
+    else -> false
+}
+
+/** Back closes these cards. "Nothing playing" has no status to dismiss, so Back leaves the player. */
+internal fun backDismissesStatusCard(status: PlaylistStatus): Boolean =
+    status is PlaylistStatus.NotFound || status is PlaylistStatus.Failed || status is PlaylistStatus.Untrusted
+
+/** The card's buttons, kept together so the remote can't walk off them onto the video. */
+@Composable
+private fun StatusActions(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier
+            .focusProperties { onExit = { cancelFocusChange() } }
+            .focusGroup(),
+        content = content,
+    )
+}
+
 @Composable
 private fun CenterStatus(
     container: AppContainer,
@@ -503,14 +538,14 @@ private fun CenterStatus(
                         Text(if (status is PlaylistStatus.NotFound) "Couldn't find this file" else "Couldn't play this file", style = MaterialTheme.typography.headlineSmall)
                         Text(file, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(reason, color = AppColors.TextDim)
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
+                        StatusActions(Modifier.padding(top = 8.dp)) {
                             if (container.mediaSource.value != null) {
-                                ActionButton("Pick manually", { nav.push(Screen.Search(pickFor = file)) }, Modifier.focusRequester(focus), icon = Icons.Filled.Search, primary = true)
+                                ActionButton("Pick manually", { nav.push(Screen.Search(pickFor = file)) }, icon = Icons.Filled.Search, primary = true)
                             } else {
-                                ActionButton("Connect Jellyfin", { nav.push(Screen.JellyfinLogin) }, Modifier.focusRequester(focus), primary = true)
+                                ActionButton("Connect Jellyfin", { nav.push(Screen.JellyfinLogin) }, primary = true)
                                 ActionButton("Connect Plex", { nav.push(Screen.PlexLogin) })
                             }
-                            ActionButton("Dismiss", { container.playlist.dismissStatus() })
+                            ActionButton("Dismiss", { container.playlist.dismissStatus() }, Modifier.focusRequester(focus))
                         }
                     }
                 }
@@ -522,9 +557,9 @@ private fun CenterStatus(
                         Text("Open this link?", style = MaterialTheme.typography.headlineSmall)
                         Text(status.url, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text("The room picked it, but it isn't on one of your trusted domains.", color = AppColors.TextDim)
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
-                            ActionButton("Open", { container.playlist.playUntrusted() }, Modifier.focusRequester(focus), primary = true)
-                            ActionButton("Dismiss", { container.playlist.dismissStatus() })
+                        StatusActions(Modifier.padding(top = 8.dp)) {
+                            ActionButton("Open", { container.playlist.playUntrusted() }, primary = true)
+                            ActionButton("Dismiss", { container.playlist.dismissStatus() }, Modifier.focusRequester(focus))
                         }
                     }
                 }
@@ -538,7 +573,7 @@ private fun CenterStatus(
                         color = OnVideo.Text,
                         modifier = Modifier.onVideoLabel(),
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StatusActions {
                         ActionButton("Browse", { nav.popTo(Screen.Home) }, Modifier.focusRequester(focus), icon = Icons.Filled.Home, primary = true)
                         ActionButton("Exit", { container.exitApp() }, icon = Icons.AutoMirrored.Filled.Logout)
                     }
