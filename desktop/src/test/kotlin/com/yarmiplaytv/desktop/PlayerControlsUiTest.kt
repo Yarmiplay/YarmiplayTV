@@ -234,7 +234,7 @@ class PlayerControlsUiTest {
     fun `picture-in-picture moves the video to its own window, and the player says where it went`() = runComposeUiTest {
         DesktopPip.toggle = { DesktopPip.open = !DesktopPip.open }
         showPlayer()
-        onNodeWithTag("pip").assertContentDescriptionEquals("Picture-in-picture (P)")
+        onNodeWithTag("pip").assertContentDescriptionEquals("Picture-in-picture (F12)")
         // The click action, not a mouse click: the pointer left over the video would show the hover controls.
         onNodeWithTag("pip").performSemanticsAction(SemanticsActions.OnClick)
         settle()

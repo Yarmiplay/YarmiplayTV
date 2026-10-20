@@ -610,14 +610,14 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
     }
 }
 
-/** Smaller and larger subtitle text. z and Z do the same, matching mpv. */
+/** Smaller and larger subtitle text. F and G do the same, matching mpv. */
 @Composable
 fun SubtitleSizeControls(container: AppContainer, modifier: Modifier = Modifier) {
     val scale by container.subtitleScale.collectAsStateWithLifecycle()
     Row(modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("Size ${SubtitleScale.percent(scale)}%")
-            Text("z smaller, Z larger", style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
+            Text("G larger, Shift+F smaller", style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
         }
         IconButton(
             onClick = { container.changeSubtitleScale(-SubtitleScale.STEP) },
@@ -642,8 +642,10 @@ fun TracksContent(container: AppContainer, type: TrackType, onPicked: () -> Unit
         SheetTitle(if (type == TrackType.AUDIO) "Audio" else "Subtitles")
         if (type == TrackType.SUBTITLE) {
             SubtitleSizeControls(container)
+            SubtitleAdjustments(container)
             TrackRow("Off", list.none { it.selected }) { container.player.selectTrack(type, null); onPicked() }
         }
+        if (type == TrackType.AUDIO) AudioAdjustments(container)
         list.forEach { track ->
             TrackRow(track.label + if (track.isExternal) " (external)" else "", track.selected) {
                 container.player.selectTrack(type, track.id); onPicked()

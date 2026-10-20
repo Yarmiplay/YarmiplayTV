@@ -3,8 +3,8 @@ package com.yarmiplaytv.player
 import kotlin.math.roundToInt
 
 /**
- * mpv's `sub-scale`. The default keyboard bindings add or subtract [STEP] (`z` smaller, `Z` larger), which is
- * 10% of the normal size.
+ * mpv's `sub-scale`. mpv's G and F add or subtract [STEP], which is 10% of the normal size.
+ * z and Z adjust subtitle delay, not this.
  */
 object SubtitleScale {
     const val DEFAULT = 1.0

@@ -110,10 +110,10 @@ expect val autoPictureInPictureSetting: Boolean
 expect val autoPictureInPictureTitle: String
 expect val autoPictureInPictureSubtitle: String
 
-/** The key that presses the player's Skip button, shown on it: S on desktop, none on Android. */
+/** The key that presses the player's Skip button, shown on it: Y on desktop, none on Android. */
 expect val skipKeyHint: String?
 
-/** The player's picture-in-picture button: "Picture-in-picture" on Android, "Picture-in-picture (P)" on desktop. */
+/** The player's picture-in-picture button: "Picture-in-picture" on Android, "Picture-in-picture (F12)" on desktop. */
 expect val pictureInPictureLabel: String
 
 /**

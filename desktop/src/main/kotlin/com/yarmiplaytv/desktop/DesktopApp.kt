@@ -41,6 +41,7 @@ import com.yarmiplaytv.defaultSyncplayName
 import com.yarmiplaytv.device.FileDeviceKeyStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.local.FrameGrabber
+import com.yarmiplaytv.playback.PlaybackAction
 import com.yarmiplaytv.player.desktop.DesktopMpvOptions
 import com.yarmiplaytv.player.desktop.DesktopMpvPlayer
 import com.yarmiplaytv.player.desktop.MpvFrameGrabber
@@ -214,24 +215,25 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
         object : ShortcutTarget {
             override val isFullscreen get() = fullscreen.isFullscreen
             override fun setFullscreen(on: Boolean) = applyFullscreen(on)
-            override fun togglePictureInPicture() = setPip(!DesktopPip.open)
             override fun back() = DesktopBack.dispatch()
             override val player get() = DesktopPlayerInput.input?.value
-            override fun changeVolume(delta: Double) = DesktopPlayerInput.changeVolume(delta)
-            override fun toggleMute() {
-                val volume = DesktopPlayerInput.volume ?: return
-                val mute = !volume.muted.value
-                volume.setMuted(mute)
-                container.player.showText(if (mute) "Muted" else "Volume ${volume.volume.value.toInt()}%", 1000)
+            override fun perform(action: PlaybackAction): Boolean = when (action) {
+                PlaybackAction.SkipSegment -> {
+                    if (container.skips.prompt.value == null) false else {
+                        container.skips.skip()
+                        true
+                    }
+                }
+                PlaybackAction.FocusChat -> {
+                    DesktopRoomPanel.focusChat()
+                    true
+                }
+                PlaybackAction.TogglePip -> {
+                    setPip(!DesktopPip.open)
+                    true
+                }
+                else -> container.playback.perform(action)
             }
-            override fun focusChat() = DesktopRoomPanel.focusChat()
-            override fun screenshot(subtitles: Boolean) { container.screenshots?.take(subtitles) }
-            override fun skipSegment(): Boolean {
-                if (container.skips.prompt.value == null) return false
-                container.skips.skip()
-                return true
-            }
-            override fun changeSubtitleScale(delta: Double) = container.changeSubtitleScale(delta)
         }
     }
     val drop = remember {
@@ -261,13 +263,20 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             event.type == KeyEventType.KeyDown &&
                 handleShortcut(
                     event.key,
-                    event.isCtrlPressed || event.isAltPressed || event.isMetaPressed,
-                    shortcuts,
-                    event.isShiftPressed,
+                    ctrl = event.isCtrlPressed,
+                    alt = event.isAltPressed,
+                    shift = event.isShiftPressed,
+                    meta = event.isMetaPressed,
+                    target = shortcuts,
                 )
         },
     ) {
         LaunchedEffect(Unit) {
+            DesktopPlayerInput.announce = { container.player.showText(it, 1000) }
+            DesktopPlayerInput.zoomAt = { delta ->
+                val (x, y) = DesktopPlayerInput.pointerFraction ?: (0.5 to 0.5)
+                container.playback.zoomAt(delta, x, y)
+            }
             window.minimumSize = Dimension(WindowBounds.MIN_WIDTH.toInt(), WindowBounds.MIN_HEIGHT.toInt())
             fullscreen.attach(window)
             mainWindow = window
@@ -315,7 +324,15 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
         }
         Box(
             Modifier.fillMaxSize()
-                .onPointerEvent(PointerEventType.Press) { if (it.button == PointerButton.Back) DesktopBack.dispatch() }
+                .onPointerEvent(PointerEventType.Press) {
+                    when (it.button) {
+                        PointerButton.Back -> {
+                            val playing = DesktopPlayerInput.input?.value
+                            if (playing != null) playing.skip(false) else DesktopBack.dispatch()
+                        }
+                        PointerButton.Forward -> DesktopPlayerInput.input?.value?.skip(true)
+                    }
+                }
                 .dragAndDropTarget(shouldStartDragAndDrop = { it.dragData() is DragData.FilesList }, target = drop),
         ) {
             MobileTheme(palette) { MobileRoot(container, DeviceKind.DESKTOP) }

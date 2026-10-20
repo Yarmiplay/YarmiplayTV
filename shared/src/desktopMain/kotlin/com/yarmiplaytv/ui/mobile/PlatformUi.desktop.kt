@@ -17,7 +17,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import java.awt.Point
@@ -82,6 +85,12 @@ object DesktopPlayerInput {
     var changeVolume: (Double) -> Unit = {}
     /** The player's volume for the player bar's volume control; without it the control isn't shown. */
     var volume: PlayerVolume? = null
+    /** Where a mute key announces the new state. The window sets this to the player's on-screen display. */
+    var announce: (String) -> Unit = {}
+    /** Pointer in the video, 0 to 1, for zooming toward the cursor. */
+    var pointerFraction: Pair<Double, Double>? = null
+    /** Ctrl+wheel. The window sets this to zoom toward [pointerFraction]. */
+    var zoomAt: (Double) -> Unit = {}
 }
 
 /**
@@ -123,7 +132,9 @@ actual fun Modifier.playerScreenInput(input: PlayerInput): Modifier {
     val showDistance = with(LocalDensity.current) { SHOW_CONTROLS_DISTANCE.toPx() }
     // The pointer's last position, and where it was when the controls went away.
     val pointer = remember { object { var last: Offset? = null; var hiddenAt: Offset? = null } }
+    var box by remember { mutableStateOf(IntSize.Zero) }
     return this
+        .onSizeChanged { box = it }
         .pointerHoverIcon(if (input.controlsVisible) PointerIcon.Default else hiddenCursor)
         // Parents see pointer events after their children, so moving over the controls counts too.
         .onPointerEvent(PointerEventType.Move) { event ->
@@ -140,14 +151,24 @@ actual fun Modifier.playerScreenInput(input: PlayerInput): Modifier {
                 }
             }
             pointer.last = position
+            if (box.width > 0 && box.height > 0) {
+                DesktopPlayerInput.pointerFraction = (position.x / box.width).toDouble() to (position.y / box.height).toDouble()
+            }
         }
         .onPointerEvent(PointerEventType.Enter) { event ->
             event.changes.firstOrNull()?.let { pointer.last = it.position }
         }
         .onPointerEvent(PointerEventType.Scroll) { event ->
-            val dy = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
-            if (dy != 0f) DesktopPlayerInput.changeVolume(-dy * VOLUME_STEP)
-            latest.value.showControls()
+            val change = event.changes.firstOrNull()
+            val dy = change?.scrollDelta?.y ?: 0f
+            val dx = change?.scrollDelta?.x ?: 0f
+            if (event.keyboardModifiers.isCtrlPressed) {
+                if (dy != 0f) DesktopPlayerInput.zoomAt(if (dy < 0) 0.1 else -0.1)
+            } else if (dy != 0f) {
+                DesktopPlayerInput.changeVolume(-dy * VOLUME_STEP)
+                latest.value.showControls()
+            }
+            if (dx != 0f) latest.value.seekBy(if (dx > 0) 10.0 else -10.0)
         }
 }
 
@@ -157,15 +178,15 @@ actual fun Modifier.videoGestures(input: PlayerInput): Modifier {
     val focusManager = LocalFocusManager.current
     return pointerInput(Unit) {
         detectTapGestures(
-            // Clicking the video leaves the chat box, so the keyboard shortcuts work again.
-            onTap = { focusManager.clearFocus(); latest.value.togglePause() },
+            // Clicking the video leaves the chat box, so the keyboard shortcuts work again. mpv ignores this button.
+            onTap = { focusManager.clearFocus() },
             onDoubleTap = { DesktopPlayerInput.toggleFullscreen() },
         )
     }
 }
 
-/** Volume change per scroll-wheel notch or arrow key, in percentage points. */
-const val VOLUME_STEP = 5.0
+/** Volume change per scroll-wheel notch, in percentage points. mpv's wheel step is 2. */
+const val VOLUME_STEP = 2.0
 
 /** Set by the desktop app to the libmpv render view; until then the player area stays empty. */
 object DesktopVideo {
@@ -185,9 +206,9 @@ actual fun rememberFullscreenToggle(isPortrait: Boolean): (() -> Unit)? = null
 actual val autoPictureInPictureSetting = true
 actual val autoPictureInPictureTitle = "Picture-in-picture when minimized"
 actual val autoPictureInPictureSubtitle = "A playing video keeps going in a small window on top when you minimize YarmiplayTV"
-actual val pictureInPictureLabel = "Picture-in-picture (P)"
+actual val pictureInPictureLabel = "Picture-in-picture (F12)"
 
-actual val skipKeyHint: String? = "S"
+actual val skipKeyHint: String? = "Y"
 actual val pictureInPictureWindow = true
 
 /** Picture-in-picture is [DesktopPip]'s window: the button or P opens and closes it, and so does minimizing (a setting). */

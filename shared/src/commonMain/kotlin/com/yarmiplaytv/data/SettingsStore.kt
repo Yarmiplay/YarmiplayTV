@@ -156,7 +156,7 @@ data class PlaybackPrefs(
     val detectSkips: Boolean = true,
     /** Also read Jellyfin and Plex episodes for that on mobile data (a metered network), not only on Wi-Fi or Ethernet. */
     val detectOnAnyNetwork: Boolean = false,
-    /** mpv `sub-scale`. 1 is the normal size; z and Z change it by a tenth. */
+    /** mpv `sub-scale`. 1 is the normal size; G and F change it by a tenth. */
     val subtitleScale: Double = SubtitleScale.DEFAULT,
 )
 

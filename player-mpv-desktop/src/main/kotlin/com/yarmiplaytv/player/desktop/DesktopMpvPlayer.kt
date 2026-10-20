@@ -86,6 +86,9 @@ class DesktopMpvPlayer(
     @Volatile private var cachedPaused = true
     @Volatile private var cachedSpeed = 1.0
     @Volatile private var userSeekedFlag = false
+    /** Set by [markUserSeek] so the next demuxer jump counts as this user's seek. */
+    @Volatile private var acceptJump = false
+    @Volatile private var undoPosition: Double? = null
     @Volatile private var lastSeekAt = 0L
     @Volatile private var lastSeekTarget = 0.0
     @Volatile private var currentUrl: String? = null
@@ -174,6 +177,7 @@ class DesktopMpvPlayer(
     private fun performSeek(position: Double, userInitiated: Boolean) {
         val target = position.coerceAtLeast(0.0)
         val now = System.nanoTime()
+        if (userInitiated) undoPosition = currentPosition()
         userSeekedFlag = userInitiated
         lastSeekTarget = target
         lastSeekAt = now
@@ -194,6 +198,34 @@ class DesktopMpvPlayer(
         cachedSpeed = speed
         core.setDouble("speed", speed)
     }
+
+    override fun add(property: String, delta: Double) {
+        core.command("add", property, delta.toString())
+    }
+
+    override fun cycle(property: String, down: Boolean) {
+        if (down) core.command("cycle", property, "down") else core.command("cycle", property)
+    }
+
+    override fun command(vararg args: String): Boolean = core.command(*args) >= 0
+
+    override fun markUserSeek() {
+        userSeekedFlag = true
+        acceptJump = true
+        lastSeekAt = System.nanoTime()
+    }
+
+    override fun seekUndoPosition(): Double? = undoPosition
+
+    override fun setUserAudioDelay(seconds: Double) {
+        compensator.userAudioDelay = seconds
+    }
+
+    override fun userAudioDelay(): Double = compensator.userAudioDelay
+
+    override fun propertyDouble(name: String): Double? = core.getDouble(name)
+
+    override fun propertyString(name: String): String? = core.getString(name)
 
     @Volatile private var appliedSubtitleScale = SubtitleScale.DEFAULT
 
@@ -232,9 +264,7 @@ class DesktopMpvPlayer(
     }
 
     /** The user's audio delay in seconds, on top of the automatic display-latency compensation. */
-    fun setAudioDelay(seconds: Double) {
-        compensator.userAudioDelay = seconds
-    }
+    fun setAudioDelay(seconds: Double) = setUserAudioDelay(seconds)
 
     // --- Fast reads for the sync engine -------------------------------------------
 
@@ -339,7 +369,13 @@ class DesktopMpvPlayer(
             val elapsed = ((now - cachedPositionAt) / 1e9).coerceAtLeast(0.0)
             val expectedMax = cachedPosition + (if (cachedPaused) 0.0 else elapsed * cachedSpeed)
             val nearRecentSeek = now - lastSeekAt < SEEK_SETTLE_NS && kotlin.math.abs(value - lastSeekTarget) <= UNINITIATED_JUMP_THRESHOLD
-            if (!nearRecentSeek && (value < cachedPosition - UNINITIATED_JUMP_THRESHOLD || value > expectedMax + UNINITIATED_JUMP_THRESHOLD)) {
+            val jump = value < cachedPosition - UNINITIATED_JUMP_THRESHOLD || value > expectedMax + UNINITIATED_JUMP_THRESHOLD
+            if (acceptJump && jump) {
+                acceptJump = false
+                userSeekedFlag = true
+                lastSeekTarget = value
+                lastSeekAt = now
+            } else if (!nearRecentSeek && jump) {
                 val from = currentPosition()
                 userSeekedFlag = false
                 _events.tryEmit(PlayerEvent.UninitiatedJump(currentUrl, from, value))

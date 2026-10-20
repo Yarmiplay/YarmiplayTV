@@ -13,18 +13,17 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
-import com.yarmiplaytv.player.SubtitleScale
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import com.yarmiplaytv.AppContainer
-import com.yarmiplaytv.ui.mobile.DesktopPlayerInput
+import com.yarmiplaytv.playback.PlaybackAction
+import com.yarmiplaytv.playback.playbackAction
 import com.yarmiplaytv.ui.mobile.MobileTheme
 import com.yarmiplaytv.ui.mobile.appPalette
 import com.yarmiplaytv.ui.mobile.PipContent
-import com.yarmiplaytv.ui.mobile.VOLUME_STEP
 import com.yarmiplaytv.ui.mobile.appLogoPainter
 import java.awt.GraphicsEnvironment
 import java.awt.Point
@@ -66,7 +65,9 @@ internal fun PipWindow(
                 container,
                 event.key,
                 event.isShiftPressed,
-                event.isCtrlPressed || event.isAltPressed || event.isMetaPressed,
+                event.isCtrlPressed,
+                event.isAltPressed,
+                event.isMetaPressed,
                 onBack,
                 onClose,
             )
@@ -95,33 +96,34 @@ internal fun PipWindow(
     }
 }
 
-/** The picture-in-picture window's keys: Space, ←/→, ↑/↓ and M as in the player; z and Z resize subtitles; Esc goes back to the app, P closes it. */
+/** The picture-in-picture window's keys match the player's. Esc goes back to the app; F12 closes the window. */
 private fun pipKey(
     container: AppContainer,
     key: Key,
     shift: Boolean,
-    modified: Boolean,
+    ctrl: Boolean,
+    alt: Boolean,
+    meta: Boolean,
     onBack: () -> Unit,
     onClose: () -> Unit,
 ): Boolean {
-    val player = container.player
-    val step = container.settings.value.playback.seekStepSeconds.toDouble()
-    if (!modified && key == Key.Z) {
-        container.changeSubtitleScale(if (shift) SubtitleScale.STEP else -SubtitleScale.STEP)
+    if (meta) return false
+    if (key == Key.Escape && !ctrl && !alt && !shift) {
+        onBack()
         return true
     }
-    when (key) {
-        Key.Spacebar, Key.K -> player.setPaused(!player.isPaused)
-        Key.DirectionLeft, Key.J -> player.seekRelative(-step)
-        Key.DirectionRight, Key.L -> player.seekRelative(step)
-        Key.DirectionUp -> DesktopPlayerInput.changeVolume(VOLUME_STEP)
-        Key.DirectionDown -> DesktopPlayerInput.changeVolume(-VOLUME_STEP)
-        Key.M -> DesktopPlayerInput.volume?.let { it.setMuted(!it.muted.value) }
-        Key.Escape -> onBack()
-        Key.P -> onClose()
-        else -> return false
+    val action = playbackAction(key, shift = shift, ctrl = ctrl, alt = alt) ?: return false
+    if (action == PlaybackAction.TogglePip) {
+        onClose()
+        return true
     }
-    return true
+    if (action == PlaybackAction.SkipSegment) {
+        if (container.skips.prompt.value == null) return false
+        container.skips.skip()
+        return true
+    }
+    if (action == PlaybackAction.Fullscreen || action == PlaybackAction.FocusChat || action == PlaybackAction.ToggleControls) return false
+    return container.playback.perform(action)
 }
 
 internal object PipPlacement {

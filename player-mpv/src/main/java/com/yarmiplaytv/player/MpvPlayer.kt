@@ -54,6 +54,10 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     @Volatile private var cachedPaused = true
     @Volatile private var cachedSpeed = 1.0
     @Volatile private var userSeekedFlag = false
+    /** Set by [markUserSeek] so the next demuxer jump counts as this user's seek. */
+    @Volatile private var acceptJump = false
+    @Volatile private var undoPosition: Double? = null
+    @Volatile private var audioDelay = 0.0
     @Volatile private var lastSeekAt = 0L
     @Volatile private var lastSeekTarget = 0.0
     @Volatile private var surfaceAttached = false
@@ -237,6 +241,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     private fun performSeek(position: Double, userInitiated: Boolean) {
         val target = position.coerceAtLeast(0.0)
         val now = SystemClock.elapsedRealtime()
+        if (userInitiated) undoPosition = currentPosition()
         userSeekedFlag = userInitiated
         lastSeekTarget = target
         lastSeekAt = now
@@ -257,6 +262,38 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         cachedSpeed = speed
         mpv.setPropertyDouble("speed", speed)
     }
+
+    override fun add(property: String, delta: Double) {
+        mpv.command(arrayOf("add", property, delta.toString()))
+    }
+
+    override fun cycle(property: String, down: Boolean) {
+        mpv.command(if (down) arrayOf("cycle", property, "down") else arrayOf("cycle", property))
+    }
+
+    override fun command(vararg args: String): Boolean {
+        mpv.command(arrayOf(*args))
+        return true
+    }
+
+    override fun markUserSeek() {
+        userSeekedFlag = true
+        acceptJump = true
+        lastSeekAt = SystemClock.elapsedRealtime()
+    }
+
+    override fun seekUndoPosition(): Double? = undoPosition
+
+    override fun setUserAudioDelay(seconds: Double) {
+        audioDelay = seconds
+        mpv.setPropertyDouble("audio-delay", seconds)
+    }
+
+    override fun userAudioDelay(): Double = audioDelay
+
+    override fun propertyDouble(name: String): Double? = mpv.getPropertyDouble(name)
+
+    override fun propertyString(name: String): String? = mpv.getPropertyString(name)
 
     @Volatile private var appliedSubtitleScale = SubtitleScale.DEFAULT
 
@@ -358,7 +395,13 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             val elapsed = ((now - cachedPositionAt) / 1000.0).coerceAtLeast(0.0)
             val expectedMax = cachedPosition + (if (cachedPaused) 0.0 else elapsed * cachedSpeed)
             val nearRecentSeek = now - lastSeekAt < SEEK_SETTLE_MS && kotlin.math.abs(value - lastSeekTarget) <= UNINITIATED_JUMP_THRESHOLD
-            if (!nearRecentSeek && (value < cachedPosition - UNINITIATED_JUMP_THRESHOLD || value > expectedMax + UNINITIATED_JUMP_THRESHOLD)) {
+            val jump = value < cachedPosition - UNINITIATED_JUMP_THRESHOLD || value > expectedMax + UNINITIATED_JUMP_THRESHOLD
+            if (acceptJump && jump) {
+                acceptJump = false
+                userSeekedFlag = true
+                lastSeekTarget = value
+                lastSeekAt = now
+            } else if (!nearRecentSeek && jump) {
                 val from = currentPosition()
                 userSeekedFlag = false
                 _events.tryEmit(PlayerEvent.UninitiatedJump(currentUrl, from, value))

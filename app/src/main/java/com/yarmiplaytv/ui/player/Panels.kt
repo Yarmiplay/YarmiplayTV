@@ -1,5 +1,7 @@
 package com.yarmiplaytv.ui.player
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
@@ -48,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusable
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -80,7 +83,10 @@ import com.yarmiplaytv.ui.shared.roomSkipSubtitle
 import com.yarmiplaytv.ui.shared.roomsOnServer
 import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serverStatusLine
+import com.yarmiplaytv.ui.mobile.AudioAdjustments
+import com.yarmiplaytv.ui.mobile.SubtitleAdjustments
 import com.yarmiplaytv.ui.mobile.SubtitleSizeControls
+import com.yarmiplaytv.ui.mobile.VideoAdjustments
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
@@ -400,6 +406,14 @@ internal fun ChatPanel(container: AppContainer, focus: FocusRequester) {
 }
 
 @Composable
+internal fun VideoPanel(container: AppContainer, focus: FocusRequester) {
+    Column(Modifier.fillMaxSize().padding(24.dp).focusRequester(focus).focusable()) {
+        PanelHeader("Video")
+        VideoAdjustments(container, Modifier.weight(1f).verticalScroll(rememberScrollState()))
+    }
+}
+
+@Composable
 internal fun TracksPanel(container: AppContainer, type: TrackType, focus: FocusRequester) {
     val tracks by container.player.tracks.collectAsStateWithLifecycle()
     val list = tracks.filter { it.type == type }
@@ -419,6 +433,9 @@ internal fun TracksPanel(container: AppContainer, type: TrackType, focus: FocusR
                     { container.player.selectTrack(type, track.id) },
                     if (track.selected) Modifier.focusRequester(focus) else Modifier,
                 )
+            }
+            item {
+                if (type == TrackType.SUBTITLE) SubtitleAdjustments(container) else AudioAdjustments(container)
             }
         }
         if (list.isEmpty()) Text("No ${if (type == TrackType.AUDIO) "audio" else "subtitle"} tracks", color = AppColors.TextDim)

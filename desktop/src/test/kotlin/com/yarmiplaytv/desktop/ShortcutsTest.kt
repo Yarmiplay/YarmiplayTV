@@ -1,6 +1,7 @@
 package com.yarmiplaytv.desktop
 
 import androidx.compose.ui.input.key.Key
+import com.yarmiplaytv.playback.PlaybackAction
 import com.yarmiplaytv.ui.mobile.PlayerInput
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,23 +11,26 @@ import org.junit.Test
 class ShortcutsTest {
     private val log = mutableListOf<String>()
 
-    private inner class Target(full: Boolean = false, val playerShowing: Boolean = true, val canGoBack: Boolean = true) : ShortcutTarget {
+    private inner class Target(
+        full: Boolean = false,
+        val playerShowing: Boolean = true,
+        val canGoBack: Boolean = true,
+    ) : ShortcutTarget {
         private var full = full
         override val isFullscreen get() = full
         override fun setFullscreen(on: Boolean) { full = on; log += "fullscreen $on" }
         override fun back(): Boolean { log += "back"; return canGoBack }
         override val player: PlayerInput? get() = if (playerShowing) input else null
-        override fun changeVolume(delta: Double) { log += "volume $delta" }
-        override fun toggleMute() { log += "mute" }
-        override fun focusChat() { log += "chat" }
-        override fun screenshot(subtitles: Boolean) { log += if (subtitles) "screenshot" else "screenshot without subtitles" }
-        override fun togglePictureInPicture() { log += "picture-in-picture" }
         var skipOffered = false
-        override fun skipSegment(): Boolean {
-            if (skipOffered) log += "skip"
-            return skipOffered
+        override fun perform(action: PlaybackAction): Boolean {
+            if (action == PlaybackAction.SkipSegment) {
+                if (!skipOffered) return false
+                log += "skip"
+                return true
+            }
+            log += action.javaClass.simpleName + if (action is PlaybackAction.SeekBy) " ${action.seconds}" else ""
+            return true
         }
-        override fun changeSubtitleScale(delta: Double) { log += "subtitles $delta" }
     }
 
     private val input = PlayerInput(
@@ -39,100 +43,116 @@ class ShortcutsTest {
         skip = { log += if (it) "next" else "previous" },
     )
 
+    private fun press(key: Key, target: Target = Target(), ctrl: Boolean = false, alt: Boolean = false, shift: Boolean = false, meta: Boolean = false) =
+        handleShortcut(key, ctrl, alt, shift, meta, target)
+
     @Test
-    fun playerKeys() {
+    fun arrowsSeekLikeMpvAndTransportKeysShowTheControls() {
         val t = Target()
-        assertTrue(handleShortcut(Key.Spacebar, false, t))
-        assertTrue(handleShortcut(Key.DirectionLeft, false, t))
-        assertTrue(handleShortcut(Key.DirectionRight, false, t))
-        assertTrue(handleShortcut(Key.DirectionUp, false, t))
-        assertTrue(handleShortcut(Key.DirectionDown, false, t))
-        assertTrue(handleShortcut(Key.M, false, t))
-        assertTrue(handleShortcut(Key.F, false, t))
-        assertTrue(handleShortcut(Key.Enter, false, t))
+        assertTrue(press(Key.Spacebar, t))
+        assertTrue(press(Key.DirectionLeft, t))
+        assertTrue(press(Key.DirectionRight, t))
+        assertTrue(press(Key.DirectionUp, t))
+        assertTrue(press(Key.DirectionDown, t))
         assertEquals(
             listOf(
-                "pause", "show", "seek -10.0", "show", "seek 10.0", "show", "volume 5.0", "show", "volume -5.0", "show",
-                "mute", "show", "fullscreen true", "show", "chat", "show",
+                "TogglePause", "show",
+                "SeekBy -5.0", "show",
+                "SeekBy 5.0", "show",
+                "SeekBy 60.0", "show",
+                "SeekBy -60.0", "show",
             ),
             log,
         )
     }
 
     @Test
-    fun nAndBOrTheMediaKeysGoToTheNextAndPreviousPlaylistEntry() {
+    fun shiftArrowsSeekExactly() {
         val t = Target()
-        assertTrue(handleShortcut(Key.N, false, t))
-        assertTrue(handleShortcut(Key.B, false, t))
-        assertTrue(handleShortcut(Key.MediaNext, false, t))
-        assertTrue(handleShortcut(Key.MediaPrevious, false, t))
-        assertFalse(handleShortcut(Key.N, true, t))
-        assertEquals(listOf("next", "show", "previous", "show", "next", "show", "previous", "show"), log)
+        assertTrue(press(Key.DirectionLeft, t, shift = true))
+        assertTrue(press(Key.DirectionUp, t, shift = true))
+        assertEquals(listOf("SeekBy -1.0", "show", "SeekBy 5.0", "show"), log)
     }
 
     @Test
-    fun zAndShiftZChangeTheSubtitleSizeLikeMpv() {
+    fun playlistKeysMatchMpvAndShiftNGoesBack() {
         val t = Target()
-        assertTrue(handleShortcut(Key.Z, false, t, shift = false))
-        assertTrue(handleShortcut(Key.Z, false, t, shift = true))
-        assertFalse(handleShortcut(Key.Z, true, t, shift = true))
-        assertFalse(handleShortcut(Key.Z, false, Target(playerShowing = false)))
-        assertEquals(listOf("subtitles -0.1", "subtitles 0.1"), log)
+        assertTrue(press(Key.N, t))
+        assertTrue(press(Key.N, t, shift = true))
+        assertTrue(press(Key.Enter, t))
+        assertTrue(press(Key.MediaPrevious, t))
+        assertTrue(press(Key.B, t))
+        assertEquals(
+            listOf("Playlist", "show", "Playlist", "show", "Playlist", "show", "Playlist", "show", "CycleProperty"),
+            log,
+        )
     }
 
     @Test
-    fun sSkipsTheOpeningOnlyWhileTheSkipButtonShows() {
+    fun zAdjustsSubtitleDelayAndGAndFAdjustSize() {
         val t = Target()
-        assertFalse(handleShortcut(Key.S, false, t))
+        assertTrue(press(Key.Z, t))
+        assertTrue(press(Key.Z, t, shift = true))
+        assertTrue(press(Key.G, t))
+        assertTrue(press(Key.F, t, shift = true))
+        assertTrue(press(Key.F, t))
+        assertEquals(listOf("Adjust", "Adjust", "SubtitleScaleBy", "SubtitleScaleBy", "fullscreen true", "show"), log)
+    }
+
+    @Test
+    fun ySkipsTheOpeningOnlyWhileTheSkipButtonShows() {
+        val t = Target()
+        assertFalse(press(Key.Y, t))
         t.skipOffered = true
-        assertTrue(handleShortcut(Key.S, false, t))
+        assertTrue(press(Key.Y, t))
         assertEquals(listOf("skip"), log)
     }
 
     @Test
     fun hTogglesTheControlsWithoutShowingThem() {
-        assertTrue(handleShortcut(Key.H, false, Target()))
-        assertFalse(handleShortcut(Key.H, true, Target()))
-        assertFalse(handleShortcut(Key.H, false, Target(playerShowing = false)))
+        assertTrue(press(Key.H))
+        assertFalse(press(Key.H, meta = true))
+        assertFalse(press(Key.H, Target(playerShowing = false)))
         assertEquals(listOf("toggleControls"), log)
     }
 
     @Test
-    fun f5TakesAScreenshotWithoutShowingTheControls() {
-        assertTrue(handleShortcut(Key.F5, false, Target()))
-        assertFalse(handleShortcut(Key.F5, true, Target()))
-        assertFalse(handleShortcut(Key.F5, false, Target(playerShowing = false)))
-        assertEquals(listOf("screenshot"), log)
+    fun screenshotsUseMpvKeysAndTheOldFunctionKeys() {
+        assertTrue(press(Key.S))
+        assertTrue(press(Key.S, shift = true))
+        assertTrue(press(Key.F5))
+        assertTrue(press(Key.F6))
+        assertEquals(listOf("Screenshot", "Screenshot", "Screenshot", "Screenshot"), log)
     }
 
     @Test
-    fun f6TakesAScreenshotWithoutTheSubtitles() {
-        assertTrue(handleShortcut(Key.F6, false, Target()))
-        assertEquals(listOf("screenshot without subtitles"), log)
+    fun pShowsProgressAndF12IsPictureInPicture() {
+        assertTrue(press(Key.P, shift = true))
+        assertTrue(press(Key.F12))
+        assertEquals(listOf("ShowProgress", "TogglePip"), log)
     }
 
     @Test
-    fun pTogglesPictureInPictureWithoutShowingTheControls() {
-        assertTrue(handleShortcut(Key.P, false, Target()))
-        assertFalse(handleShortcut(Key.P, true, Target()))
-        assertFalse(handleShortcut(Key.P, false, Target(playerShowing = false)))
-        assertEquals(listOf("picture-in-picture"), log)
+    fun cOpensChatAndCtrlBackspaceResets() {
+        assertTrue(press(Key.C))
+        assertTrue(press(Key.Backspace, ctrl = true))
+        assertEquals(listOf("FocusChat", "show", "ResetAll"), log)
     }
 
     @Test
     fun escapeLeavesFullscreenBeforeGoingBack() {
         val t = Target(full = true)
-        assertTrue(handleShortcut(Key.Escape, false, t))
-        assertTrue(handleShortcut(Key.Escape, false, t))
+        assertTrue(press(Key.Escape, t))
+        assertTrue(press(Key.Escape, t))
         assertEquals(listOf("fullscreen false", "back"), log)
-        assertFalse(handleShortcut(Key.Escape, false, Target(canGoBack = false)))
+        assertFalse(press(Key.Escape, Target(canGoBack = false)))
     }
 
     @Test
-    fun playerKeysNeedThePlayerAndNoModifiers() {
-        assertFalse(handleShortcut(Key.Spacebar, false, Target(playerShowing = false)))
-        assertFalse(handleShortcut(Key.F, true, Target()))
-        assertFalse(handleShortcut(Key.A, false, Target()))
+    fun playerKeysNeedThePlayerAndMetaIsLeftAlone() {
+        assertFalse(press(Key.Spacebar, Target(playerShowing = false)))
+        assertFalse(press(Key.F, meta = true))
+        assertFalse(press(Key.A))
         assertEquals(emptyList<String>(), log)
     }
 }

@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.5.0" date="2026-10-20">
+      <description>
+        <p>Playback keys match mpv: speed, chapters, subtitle timing and size, picture adjustments, and Ctrl+Backspace to reset them. Page Up and Page Down go to the next or previous playlist entry when the file has no further chapter. Subtitle size is G and Shift+F; z and Z shift subtitle timing.</p>
+      </description>
+    </release>
     <release version="2.4.6" date="2026-10-20">
       <description>
         <p>Adopt flat app icon with bold 70% hero play prism and zero margin across all platforms.</p>

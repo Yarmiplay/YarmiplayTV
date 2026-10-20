@@ -195,16 +195,18 @@ of a season takes a little while (often until after its opening); what's learned
 ready at once. Episodes from Jellyfin or Plex are only listened to on Wi-Fi or Ethernet, as it downloads part of
 each; **Also listen on mobile data** in Settings > Playback allows it there too, and **Find openings and endings
 by listening** turns listening off. The seek bar marks them in amber. As one starts, a **Skip opening**
-or **Skip ending** button shows for 3 seconds: tap or click it, press **S** on a computer, or **OK** on a TV
+or **Skip ending** button shows for 3 seconds: tap or click it, press **Y** on a computer, or **OK** on a TV
 remote. In a room the whole room jumps, as when anyone seeks. To skip them by themselves instead, turn on **Skip
 openings and endings** in the room (see [In the room](#in-the-room)), or, watching alone, in Settings > Playback.
 Settings > Playback can also stop showing the button.
 
 - **Audio and subtitles:** pick a track in the player. The subtitles menu also makes the text smaller or
-  larger, and that size is remembered. Settings > Playback sets the languages chosen automatically.
+  larger (remembered), shifts its timing, and can show a second subtitle. The video menu has speed, aspect,
+  picture adjustments, chapters, and **Reset**, which puts those adjustments back. Settings > Playback sets the
+  languages chosen automatically.
 - **Screenshots:** the camera button in the player's bottom bar saves the current frame, subtitles included, to
-  Pictures/YarmiplayTV (or a folder you pick in Settings > Media). On a computer **F5** does the same, and **F6**
-  saves the frame without the subtitles.
+  Pictures/YarmiplayTV (or a folder you pick in Settings > Media). On a computer **s** or **F5** does the same, and
+  **S** or **F6** saves the frame without the subtitles. On a phone or TV the picture always includes the subtitles.
 - **Hardware decoding** is on by default; turn it off in Settings > Playback if a video doesn't play right.
 
 ### The remote on a TV
@@ -212,24 +214,35 @@ Settings > Playback can also stop showing the button.
 - **OK** or **↓**: show the controls; **↓** past their buttons or **Back** hides them again.
 - **←** / **→**: back or forward, while the controls are hidden
 - **↑**, or the **Menus** button in the controls: open the menu you used last (the room the first time). Its tabs
-  at the top switch to the shared playlist, the room, the chat, audio, subtitles or MyAnimeList as you move along
+  at the top switch to the shared playlist, the room, the chat, audio, subtitles, video or MyAnimeList as you move along
   them, and **OK** on a tab goes into that menu. **Back** or **Menu** closes it, straight back to the video.
 - **Play/pause**, **fast-forward**, **rewind**, **next** and **previous** keys work at any time; the captions key
   switches subtitles.
 
 ### Keys on a computer
 
-- **Space** or **K**: play or pause
-- **←** / **→** or **J** / **L**: back or forward
-- **↑** / **↓** or the scroll wheel: volume; **M**: mute
-- **N** / **B** or the media keys: next or previous playlist entry
-- **F** or **F11**: full screen; **Esc**: leave full screen or go back
-- **F5**: screenshot; **F6**: screenshot without the subtitles
-- **S**: skip the opening or ending while its Skip button shows
-- **z** / **Z**: smaller or larger subtitles, as in mpv
+These match mpv. A keyboard on a phone uses the same keys; on a TV the arrows, OK, and Menu stay the remote's controls.
+
+- **Space**, **p**, or **K**: play or pause
+- **←** / **→**: back or forward 5 seconds; **Shift** makes that 1 second, exactly
+- **↑** / **↓**: forward or back 1 minute; **Shift** makes that 5 seconds, exactly
+- **Page Up** / **Page Down**: next or previous chapter, or the next or previous playlist entry when the file has no further chapter. **Page Down** returns to the start of the current chapter once you are more than 5 seconds into it
+- **Home**: the start. **Shift+Page Up** / **Shift+Page Down**: 10 minutes
+- **9** / **0** or the scroll wheel: volume, 2% a step; **M**: mute
+- **Enter**, **>**, **N**, or media next: next playlist entry. **<**, **Shift+N**, or media previous: the previous one
+- **f** or **F11**: full screen; **Esc**: leave full screen or go back
+- **s** or **F5**: screenshot; **S** or **F6**: screenshot without the subtitles
+- **Y**: skip the opening or ending while its Skip button shows
+- **G**: larger subtitles. **Shift+F**: smaller. **z** / **Z**: subtitle timing, 100 ms a step
+- **[** / **]**: slower or faster, while watching alone. **Backspace** returns to normal speed
+- **l**: set or clear an A-B loop, while watching alone. **L**: loop the file
+- **Ctrl+Backspace**: reset speed, subtitles, audio delay, zoom, and picture adjustments
 - **H**: hide or show the controls
-- **P**: picture-in-picture
-- **Enter**: open the chat
+- **F12**: picture-in-picture
+- **C**: open the chat
+- **P** or **o**: show the playback time
+
+The video, audio, and subtitle menus have the same adjustments, for a remote or a touch screen.
 
 On a computer, the player's playlist, room and chat buttons open a side panel. In its playlist you can add
 videos, folders or links, drag to reorder, select several with Ctrl or Shift, remove with Delete and undo with
@@ -243,7 +256,7 @@ and **Undo** puts the old order back.
 
 - **Android phones, tablets and TVs:** leaving the app while a video plays keeps it playing, in sync, in a small
   window over other apps (Settings > Playback can turn this off). The picture-in-picture button does it too.
-- **Computers:** **P**, the picture-in-picture button, or minimizing the app while a video plays (Settings >
+- **Computers:** **F12**, the picture-in-picture button, or minimizing the app while a video plays (Settings >
   Picture-in-picture when minimized) moves the video to a small window that stays on top while you use the rest
   of the app. Hover over it for play, pause, seeking, the volume, the way back and close. Drag it to move it,
   drag its corner to resize it, and double-click it or press **Esc** to go back.

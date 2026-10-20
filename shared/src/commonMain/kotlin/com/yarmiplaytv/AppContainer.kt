@@ -21,6 +21,7 @@ import com.yarmiplaytv.media.jellyfin.JellyfinClient
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
 import com.yarmiplaytv.media.jellyfin.JellyfinSource
 import com.yarmiplaytv.media.aniskip.AniSkipClient
+import com.yarmiplaytv.playback.PlaybackController
 import com.yarmiplaytv.media.mal.MalClient
 import com.yarmiplaytv.media.plex.PlexClient
 import com.yarmiplaytv.media.plex.PlexSession
@@ -120,15 +121,18 @@ class AppContainer(
     val player: Player = createPlayer(initial).also { it.setSubtitleScale(initial.playback.subtitleScale) }
 
     private val _subtitleScale = MutableStateFlow(initial.playback.subtitleScale)
-    /** mpv's subtitle scale (1 is normal). z and Z, and the subtitle menu, change it. */
+    /** mpv's subtitle scale (1 is normal). G and F, and the subtitle menu, change it. */
     val subtitleScale: StateFlow<Double> = _subtitleScale.asStateFlow()
 
     /** Steps [subtitleScale] by [delta] (mpv uses ±0.1), shows the new size, and remembers it. */
-    fun changeSubtitleScale(delta: Double) {
-        val next = SubtitleScale.adjust(_subtitleScale.value, delta)
+    fun changeSubtitleScale(delta: Double) = applySubtitleScale(SubtitleScale.adjust(_subtitleScale.value, delta), announce = true)
+
+    /** Remembers [scale]. [announce] shows it on the player's on-screen display; a full reset stays quiet. */
+    fun applySubtitleScale(scale: Double, announce: Boolean) {
+        val next = scale.coerceIn(SubtitleScale.MIN, SubtitleScale.MAX)
         _subtitleScale.value = next
         player.setSubtitleScale(next)
-        player.showText(SubtitleScale.label(next))
+        if (announce) player.showText(SubtitleScale.label(next))
         scope.launch { settingsStore.saveSubtitleScale(next) }
     }
 
@@ -174,6 +178,23 @@ class AppContainer(
     val screenshots: Screenshots? = screenshotStore?.let { store ->
         Screenshots(scope, player, store, folder = { settings.value.screenshotDirectory }) { playlist.nowPlaying.value?.title }
     }
+    /** mpv's playback keys, and the same actions from the player panels. */
+    val playback = PlaybackController(
+        player = player,
+        inRoom = { sync.isActive },
+        skip = { forward -> playlist.skip(forward) },
+        adjustSubtitleScale = ::changeSubtitleScale,
+        setSubtitleScale = { applySubtitleScale(it, announce = false) },
+        playlistText = {
+            sync.room.value.playlist.joinToString("\n").ifBlank { "Playlist is empty" }
+        },
+        trackText = {
+            player.tracks.value.joinToString("\n") { track ->
+                "${track.type.mpvName} ${track.id}: ${track.label}${if (track.selected) " *" else ""}"
+            }
+        },
+        screenshot = { subtitles -> screenshots?.take(subtitles) },
+    )
     private val reporter = PlaybackReporter(scope, player, playlist.nowPlaying, servers).apply { enabled = initial.reportPlayback }
     /** MyAnimeList: the account, the playing episode's entry, and list updates. */
     val mal = MalService(scope, settingsStore, settings, MalClient(malClientId))

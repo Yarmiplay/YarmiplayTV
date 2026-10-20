@@ -18,6 +18,8 @@ actual object DevicePlatform {
         appContext = context.applicationContext
     }
 
+    internal fun appContextOrNull(): Context? = appContext
+
     actual val isTv: Boolean
         get() {
             val ctx = appContext ?: return false

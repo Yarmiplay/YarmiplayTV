@@ -1,9 +1,9 @@
 package com.yarmiplaytv.desktop
 
 import androidx.compose.ui.input.key.Key
-import com.yarmiplaytv.player.SubtitleScale
+import com.yarmiplaytv.playback.PlaybackAction
+import com.yarmiplaytv.playback.playbackAction
 import com.yarmiplaytv.ui.mobile.PlayerInput
-import com.yarmiplaytv.ui.mobile.VOLUME_STEP
 
 /** What the window's keyboard shortcuts act on. */
 internal interface ShortcutTarget {
@@ -13,68 +13,48 @@ internal interface ShortcutTarget {
     fun back(): Boolean
     /** The player screen's input while it's showing. */
     val player: PlayerInput?
-    fun changeVolume(delta: Double)
-    fun toggleMute()
-    /** Opens the chat panel with the cursor in the message box. */
-    fun focusChat()
-    /** Saves the current frame to the Pictures folder, with its subtitles unless [subtitles] is false. */
-    fun screenshot(subtitles: Boolean)
-    /** Opens or closes the picture-in-picture window. */
-    fun togglePictureInPicture()
-    /** Skips the opening or ending the Skip button offers; false when none is offered. */
-    fun skipSegment(): Boolean
-    /** mpv's z and Z: [delta] is added to the subtitle scale. */
-    fun changeSubtitleScale(delta: Double)
+    /** mpv playback actions, and the app's own keys that share that table. False when it did not apply. */
+    fun perform(action: PlaybackAction): Boolean
 }
 
 /**
  * Window-level shortcuts. The window only passes keys nothing focused has used, and the side panel keeps its
- * keys to itself, so typing in a text field never triggers them. Esc leaves full screen, else goes back; the
- * rest only work on the player screen, and all but H (which hides or shows the controls), F5 (screenshot; F6 without the subtitles) and
- * P (picture-in-picture) show the controls. N and B (or the media keys) go to the room playlist's next and previous entry. S
- * skips the opening or ending while its Skip button shows. z and Z (shift) make subtitles smaller and larger, as in
- * mpv, without opening the controls. Esc brings the video back from picture-in-picture (the player's back handler).
+ * keys to itself, so typing in a text field never triggers them. Esc leaves full screen, else goes back.
+ * The rest follow mpv's defaults while the player is showing. Meta is left alone. Transport keys show the
+ * controls; picture and subtitle keys use the on-screen display instead.
  */
-internal fun handleShortcut(key: Key, modified: Boolean, target: ShortcutTarget, shift: Boolean = false): Boolean {
-    if (key == Key.Escape) {
+internal fun handleShortcut(
+    key: Key,
+    ctrl: Boolean,
+    alt: Boolean,
+    shift: Boolean,
+    meta: Boolean,
+    target: ShortcutTarget,
+): Boolean {
+    if (key == Key.Escape && !ctrl && !alt && !meta && !shift) {
         if (target.isFullscreen) {
             target.setFullscreen(false)
             return true
         }
         return target.back()
     }
-    val input = target.player ?: return false
-    if (modified) return false
-    if (key == Key.H) {
-        input.toggleControls()
-        return true
+    if (meta) return false
+    if (target.player == null) return false
+    val action = playbackAction(key, shift = shift, ctrl = ctrl, alt = alt) ?: return false
+    val handled = when (action) {
+        PlaybackAction.Fullscreen -> {
+            target.setFullscreen(!target.isFullscreen)
+            true
+        }
+        PlaybackAction.ToggleControls -> {
+            target.player?.toggleControls()
+            true
+        }
+        PlaybackAction.SkipSegment -> target.perform(action)
+        PlaybackAction.FocusChat -> target.perform(action)
+        PlaybackAction.TogglePip -> target.perform(action)
+        else -> target.perform(action)
     }
-    if (key == Key.F5 || key == Key.F6) {
-        target.screenshot(subtitles = key == Key.F5)
-        return true
-    }
-    if (key == Key.P) {
-        target.togglePictureInPicture()
-        return true
-    }
-    if (key == Key.S) return target.skipSegment()
-    if (key == Key.Z) {
-        target.changeSubtitleScale(if (shift) SubtitleScale.STEP else -SubtitleScale.STEP)
-        return true
-    }
-    when (key) {
-        Key.Spacebar, Key.K -> input.togglePause()
-        Key.DirectionLeft, Key.J -> input.seekBy(-input.seekStep)
-        Key.DirectionRight, Key.L -> input.seekBy(input.seekStep)
-        Key.DirectionUp -> target.changeVolume(VOLUME_STEP)
-        Key.DirectionDown -> target.changeVolume(-VOLUME_STEP)
-        Key.M -> target.toggleMute()
-        Key.F, Key.F11 -> target.setFullscreen(!target.isFullscreen)
-        Key.Enter, Key.NumPadEnter -> target.focusChat()
-        Key.N, Key.MediaNext -> input.skip(true)
-        Key.B, Key.MediaPrevious -> input.skip(false)
-        else -> return false
-    }
-    input.showControls()
-    return true
+    if (handled && action.showsControls) target.player?.showControls()
+    return handled
 }

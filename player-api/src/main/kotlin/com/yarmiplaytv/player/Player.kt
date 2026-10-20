@@ -23,6 +23,33 @@ interface Player {
     fun seekRelative(offset: Double)
     fun setSpeed(speed: Double)
 
+    /** Adds [delta] to an mpv numeric property. Players that are not mpv ignore it. */
+    fun add(property: String, delta: Double) {}
+
+    /** Cycles an mpv property, backwards when [down] is true. */
+    fun cycle(property: String, down: Boolean = false) {}
+
+    /** Runs an mpv command. False when the player has no mpv or mpv rejected it. */
+    fun command(vararg args: String): Boolean = false
+
+    /**
+     * The next position jump mpv makes on its own (a frame step, a subtitle seek) is this user's seek,
+     * so a room treats it as one.
+     */
+    fun markUserSeek() {}
+
+    /** Where playback was just before the latest user seek, for undoing it. */
+    fun seekUndoPosition(): Double? = null
+
+    /** The user's audio delay in seconds, on top of any automatic correction. */
+    fun setUserAudioDelay(seconds: Double) {}
+
+    fun userAudioDelay(): Double = 0.0
+
+    fun propertyDouble(name: String): Double? = null
+
+    fun propertyString(name: String): String? = null
+
     /** null disables the track. */
     fun selectTrack(type: TrackType, id: Int?)
 

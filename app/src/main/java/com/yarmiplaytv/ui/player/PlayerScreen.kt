@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -73,6 +74,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
@@ -113,7 +116,8 @@ import com.yarmiplaytv.ui.mal.MalPanel
 import com.yarmiplaytv.ui.mobile.PictureInPicture
 import com.yarmiplaytv.ui.mobile.RelayDownloadBar
 import com.yarmiplaytv.ui.mobile.SkipChip
-import com.yarmiplaytv.player.SubtitleScale
+import com.yarmiplaytv.playback.PlaybackAction
+import com.yarmiplaytv.playback.playbackAction
 import com.yarmiplaytv.ui.mobile.SkipMarks
 import com.yarmiplaytv.ui.mobile.pictureInPictureLabel
 import com.yarmiplaytv.ui.mobile.rememberPictureInPicture
@@ -132,6 +136,7 @@ internal enum class PanelKind(val label: String, val icon: ImageVector) {
     CHAT("Chat", Icons.Filled.Forum),
     AUDIO("Audio", Icons.Filled.Audiotrack),
     SUBTITLES("Subtitles", Icons.Filled.Subtitles),
+    VIDEO("Video", Icons.Filled.Tune),
     MAL("MyAnimeList", Icons.Filled.Bookmarks),
 }
 
@@ -248,10 +253,28 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                     else -> false
                 }
                 if (global) return@onPreviewKeyEvent true
-                // mpv's z / Z. A panel may be typing, so only the video and its controls take these.
-                if (code == AndroidKeyEvent.KEYCODE_Z && (overlay == Overlay.Hidden || overlay == Overlay.Controls)) {
-                    if (down) container.changeSubtitleScale(if (ev.isShiftPressed) SubtitleScale.STEP else -SubtitleScale.STEP)
-                    return@onPreviewKeyEvent true
+                // A keyboard uses mpv's keys. The D-pad, OK, and Menu stay the remote's own controls.
+                val remoteNav = code == AndroidKeyEvent.KEYCODE_DPAD_LEFT || code == AndroidKeyEvent.KEYCODE_DPAD_RIGHT ||
+                    code == AndroidKeyEvent.KEYCODE_DPAD_UP || code == AndroidKeyEvent.KEYCODE_DPAD_DOWN ||
+                    code == AndroidKeyEvent.KEYCODE_DPAD_CENTER || code == AndroidKeyEvent.KEYCODE_ENTER ||
+                    code == AndroidKeyEvent.KEYCODE_NUMPAD_ENTER || code == AndroidKeyEvent.KEYCODE_MENU ||
+                    code == AndroidKeyEvent.KEYCODE_BACK
+                if (!remoteNav && (overlay == Overlay.Hidden || overlay == Overlay.Controls)) {
+                    val action = playbackAction(ev.key, shift = ev.isShiftPressed, ctrl = ev.isCtrlPressed, alt = ev.isAltPressed)
+                    if (action != null) {
+                        val first = ev.nativeKeyEvent.repeatCount == 0
+                        if (down && (action.repeats || first)) {
+                            when (action) {
+                                PlaybackAction.SkipSegment -> if (container.skips.prompt.value != null) container.skips.skip()
+                                PlaybackAction.FocusChat -> openPanel(PanelKind.CHAT)
+                                PlaybackAction.TogglePip -> pip.toggle()
+                                PlaybackAction.ToggleControls -> overlay = if (overlay == Overlay.Hidden) Overlay.Controls else Overlay.Hidden
+                                PlaybackAction.Fullscreen -> Unit
+                                else -> container.playback.perform(action)
+                            }
+                        }
+                        return@onPreviewKeyEvent true
+                    }
                 }
                 // Held keys repeat; only the first press toggles, or the bar would flicker.
                 val firstPress = down && ev.nativeKeyEvent.repeatCount == 0
@@ -389,6 +412,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                                     PanelKind.CHAT -> ChatPanel(container, panelFocus)
                                     PanelKind.AUDIO -> TracksPanel(container, TrackType.AUDIO, panelFocus)
                                     PanelKind.SUBTITLES -> TracksPanel(container, TrackType.SUBTITLE, panelFocus)
+                                    PanelKind.VIDEO -> VideoPanel(container, panelFocus)
                                     PanelKind.MAL -> MalPanel(container, panelFocus)
                                 }
                             }

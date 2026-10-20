@@ -34,6 +34,8 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonDefaults
 import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.media.FileNames
+import com.yarmiplaytv.playback.PlaybackAction
+import com.yarmiplaytv.playback.playbackAction
 import com.yarmiplaytv.player.SubtitleScale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -57,6 +59,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LocalContentColor
@@ -117,7 +120,7 @@ import com.yarmiplaytv.ui.theme.onVideoLabel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private enum class PlayerSheet { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES, MAL }
+private enum class PlayerSheet { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES, VIDEO, MAL }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -199,20 +202,34 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
         return
     }
     val isAudio = FileNames.isAudio(nowPlaying?.fileName ?: state.url.orEmpty())
-    val subtitleKeys = if (container.deviceKind == DeviceKind.DESKTOP) {
+    val fullscreenHolder = remember { mutableStateOf<(() -> Unit)?>(null) }
+    // The desktop window has the same keys. A text field consumes a key before this sees it.
+    val keyboard = if (container.deviceKind == DeviceKind.DESKTOP) {
         Modifier
     } else {
-        // The desktop window handles z and Z itself. A text field consumes the key before this sees it.
         Modifier.onKeyEvent { event ->
-            if (event.type != KeyEventType.KeyDown || event.key != Key.Z) return@onKeyEvent false
-            if (event.isCtrlPressed || event.isAltPressed || event.isMetaPressed) return@onKeyEvent false
-            container.changeSubtitleScale(if (event.isShiftPressed) SubtitleScale.STEP else -SubtitleScale.STEP)
+            if (event.type != KeyEventType.KeyDown || event.isMetaPressed) return@onKeyEvent false
+            val action = playbackAction(event.key, shift = event.isShiftPressed, ctrl = event.isCtrlPressed, alt = event.isAltPressed)
+                ?: return@onKeyEvent false
+            when (action) {
+                PlaybackAction.ToggleControls -> input.toggleControls()
+                PlaybackAction.SkipSegment -> {
+                    if (container.skips.prompt.value == null) return@onKeyEvent false
+                    container.skips.skip()
+                }
+                PlaybackAction.FocusChat -> openSheet(PlayerSheet.CHAT)
+                PlaybackAction.TogglePip -> pip.toggle()
+                PlaybackAction.Fullscreen -> fullscreenHolder.value?.invoke() ?: return@onKeyEvent false
+                else -> if (!container.playback.perform(action)) return@onKeyEvent false
+            }
+            if (action.showsControls) input.showControls()
             true
         }
     }
-    BoxWithConstraints(Modifier.fillMaxSize().then(subtitleKeys)) {
+    BoxWithConstraints(Modifier.fillMaxSize().then(keyboard)) {
         val isPortrait = maxWidth < maxHeight
         val fullscreenToggle = rememberFullscreenToggle(isPortrait)
+        fullscreenHolder.value = fullscreenToggle
         FullscreenLandscape(pictureInPicture = pip.active, isPortrait = isPortrait)
 
         Layout(
@@ -634,6 +651,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                     SheetButton(Icons.Filled.Forum, "Chat", tint = AppColors.Text) { openSheet(PlayerSheet.CHAT) }
                                     SheetButton(Icons.Filled.Audiotrack, "Audio", tint = AppColors.Text) { openSheet(PlayerSheet.AUDIO) }
                                     SheetButton(Icons.Filled.Subtitles, "Subtitles", tint = AppColors.Text) { openSheet(PlayerSheet.SUBTITLES) }
+                                    SheetButton(Icons.Filled.Tune, "Video", tint = AppColors.Text) { openSheet(PlayerSheet.VIDEO) }
                                     if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList", tint = AppColors.Text) { openSheet(PlayerSheet.MAL) }
                                 }
                             }
@@ -699,6 +717,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                     PlayerSheet.CHAT -> ChatContent(container, maxHeight = 220.dp)
                     PlayerSheet.AUDIO -> TracksContent(container, TrackType.AUDIO, onPicked = { sheet = null })
                     PlayerSheet.SUBTITLES -> TracksContent(container, TrackType.SUBTITLE, onPicked = { sheet = null })
+                    PlayerSheet.VIDEO -> VideoAdjustments(container, Modifier.padding(horizontal = 16.dp))
                     PlayerSheet.MAL -> {
                         val mal by container.mal.state.collectAsStateWithLifecycle()
                         MalContent(container, mal, onSignIn = { sheet = null; nav.push(Screen.MalLogin) })
@@ -751,6 +770,7 @@ private fun BottomControls(
             SheetButton(Icons.Filled.Forum, "Chat") { onSheet(PlayerSheet.CHAT) }
             SheetButton(Icons.Filled.Audiotrack, "Audio") { onSheet(PlayerSheet.AUDIO) }
             SheetButton(Icons.Filled.Subtitles, "Subtitles") { onSheet(PlayerSheet.SUBTITLES) }
+            SheetButton(Icons.Filled.Tune, "Video") { onSheet(PlayerSheet.VIDEO) }
             if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList") { onSheet(PlayerSheet.MAL) }
         }
     }
