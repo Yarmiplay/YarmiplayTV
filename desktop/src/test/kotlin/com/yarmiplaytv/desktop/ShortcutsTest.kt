@@ -47,7 +47,7 @@ class ShortcutsTest {
         handleShortcut(key, ctrl, alt, shift, meta, target)
 
     @Test
-    fun arrowsSeekLikeMpvAndTransportKeysShowTheControls() {
+    fun arrowsSeekWithoutShowingTheControlsAndSpaceStillDoes() {
         val t = Target()
         assertTrue(press(Key.Spacebar, t))
         assertTrue(press(Key.DirectionLeft, t))
@@ -57,21 +57,21 @@ class ShortcutsTest {
         assertEquals(
             listOf(
                 "TogglePause", "show",
-                "SeekBy -5.0", "show",
-                "SeekBy 5.0", "show",
-                "SeekBy 60.0", "show",
-                "SeekBy -60.0", "show",
+                "SeekBy -5.0",
+                "SeekBy 5.0",
+                "SeekBy 60.0",
+                "SeekBy -60.0",
             ),
             log,
         )
     }
 
     @Test
-    fun shiftArrowsSeekExactly() {
+    fun shiftArrowsSeekExactlyWithoutShowingTheControls() {
         val t = Target()
         assertTrue(press(Key.DirectionLeft, t, shift = true))
         assertTrue(press(Key.DirectionUp, t, shift = true))
-        assertEquals(listOf("SeekBy -1.0", "show", "SeekBy 5.0", "show"), log)
+        assertEquals(listOf("SeekBy -1.0", "SeekBy 5.0"), log)
     }
 
     @Test

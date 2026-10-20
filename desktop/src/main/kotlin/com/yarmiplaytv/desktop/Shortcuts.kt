@@ -20,8 +20,9 @@ internal interface ShortcutTarget {
 /**
  * Window-level shortcuts. The window only passes keys nothing focused has used, and the side panel keeps its
  * keys to itself, so typing in a text field never triggers them. Esc leaves full screen, else goes back.
- * The rest follow mpv's defaults while the player is showing. Meta is left alone. Transport keys show the
- * controls; picture and subtitle keys use the on-screen display instead.
+ * The rest follow mpv's defaults while the player is showing. Meta is left alone. Pause and other transport
+ * keys show the controls; arrow-key seeks do not (so the HUD stays down). Picture and subtitle keys use the
+ * on-screen display instead.
  */
 internal fun handleShortcut(
     key: Key,
