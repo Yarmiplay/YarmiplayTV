@@ -7,13 +7,13 @@
 
     <!-- Facet 3: Bottom Shadow Facet -->
     <path
-        android:pathData="M 49.57,54.00 L 87.54,54.00 L 32.70,87.75 Z">
+        android:pathData="M 50.30,54.00 L 81.48,54.00 L 36.48,81.64 Z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:startX="68.55"
+                android:startX="65.89"
                 android:startY="54.00"
-                android:endX="32.70"
-                android:endY="87.75"
+                android:endX="36.48"
+                android:endY="81.64"
                 android:type="linear">
                 <item android:color="#FF0284C7" android:offset="0.0" />
                 <item android:color="#FF0369A1" android:offset="0.5" />
@@ -24,13 +24,13 @@
 
     <!-- Facet 2: Left Spine Facet -->
     <path
-        android:pathData="M 32.70,20.25 L 49.57,54.00 L 32.70,87.75 Z">
+        android:pathData="M 36.48,26.36 L 50.30,54.00 L 36.48,81.64 Z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:startX="32.70"
-                android:startY="20.25"
-                android:endX="32.70"
-                android:endY="87.75"
+                android:startX="36.48"
+                android:startY="26.36"
+                android:endX="36.48"
+                android:endY="81.64"
                 android:type="linear">
                 <item android:color="#FF38BDF8" android:offset="0.0" />
                 <item android:color="#FF0EA5E9" android:offset="0.5" />
@@ -41,13 +41,13 @@
 
     <!-- Facet 1: Top Illuminated Facet -->
     <path
-        android:pathData="M 32.70,20.25 L 87.54,54.00 L 49.57,54.00 Z">
+        android:pathData="M 36.48,26.36 L 81.48,54.00 L 50.30,54.00 Z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:startX="32.70"
-                android:startY="20.25"
-                android:endX="87.54"
-                android:endY="37.12"
+                android:startX="36.48"
+                android:startY="26.36"
+                android:endX="81.48"
+                android:endY="40.18"
                 android:type="linear">
                 <item android:color="#FFA5F3FC" android:offset="0.0" />
                 <item android:color="#FF67E8F9" android:offset="0.35" />
@@ -58,18 +58,18 @@
 
     <!-- Crease Dividers -->
     <path
-        android:pathData="M 49.57,54.00 L 87.54,54.00"
+        android:pathData="M 50.30,54.00 L 81.48,54.00"
         android:strokeColor="#CCFFFFFF"
-        android:strokeWidth="0.35"
+        android:strokeWidth="0.38"
         android:strokeLineCap="round" />
     <path
-        android:pathData="M 32.70,20.25 L 49.57,54.00"
+        android:pathData="M 36.48,26.36 L 50.30,54.00"
         android:strokeColor="#99FFFFFF"
-        android:strokeWidth="0.3"
+        android:strokeWidth="0.32"
         android:strokeLineCap="round" />
     <path
-        android:pathData="M 32.70,87.75 L 49.57,54.00"
+        android:pathData="M 36.48,81.64 L 50.30,54.00"
         android:strokeColor="#8038BDF8"
-        android:strokeWidth="0.25"
+        android:strokeWidth="0.26"
         android:strokeLineCap="round" />
 </vector>
