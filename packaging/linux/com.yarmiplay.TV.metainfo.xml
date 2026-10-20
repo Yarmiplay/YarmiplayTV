@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.5.4" date="2026-10-20">
+      <description>
+        <p>Align the MyAnimeList Search button with the search field on Android TV.</p>
+      </description>
+    </release>
     <release version="2.5.3" date="2026-10-20">
       <description>
         <p>On Android TV, player adjustment menus use the app theme and work with the remote, and Dismiss on the file-not-found card can be focused, activated with OK, and closed with Back.</p>

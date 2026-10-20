@@ -7,13 +7,17 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -90,7 +94,7 @@ fun TvTile(
     enabled: Boolean = true,
     container: Color = AppColors.Surface,
     focusedScale: Float = 1.04f,
-    content: @Composable () -> Unit,
+    content: @Composable BoxScope.() -> Unit,
 ) {
     Surface(
         onClick = onClick,
@@ -123,8 +127,9 @@ fun ActionButton(
         container = container,
         focusedScale = 1.06f,
     ) {
+        // Center in the tile so fillMaxHeight() (e.g. next to a TvTextField) keeps label/icon mid-row.
         Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -152,7 +157,7 @@ fun CompactActionButton(
         focusedScale = 1.05f,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
@@ -210,6 +215,9 @@ fun Dot(color: Color, modifier: Modifier = Modifier) {
 
 /**
  * D-pad friendly text field: navigating onto it does not pop up the keyboard; pressing OK does.
+ *
+ * [trailing] sits beside the input tile (not the label), matching its height — use for a Search
+ * button so [Alignment.CenterVertically] against the whole labeled column does not lift the control.
  */
 @Composable
 fun TvTextField(
@@ -221,6 +229,7 @@ fun TvTextField(
     password: Boolean = false,
     keyboardType: KeyboardType = KeyboardType.Text,
     onSubmit: (() -> Unit)? = null,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     var editing by remember { mutableStateOf(false) }
     val fieldFocus = remember { FocusRequester() }
@@ -234,39 +243,55 @@ fun TvTextField(
     }
     Column(modifier) {
         Text(label, style = MaterialTheme.typography.labelLarge, color = AppColors.TextDim, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
-        TvTile(
-            onClick = { editing = true },
-            modifier = Modifier.fillMaxWidth().focusRequester(tileFocus),
-            container = AppColors.SurfaceHigh,
-            focusedScale = 1.02f,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (trailing != null) Modifier.height(IntrinsicSize.Min) else Modifier),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
-                if (value.isEmpty() && !editing) {
-                    Text(placeholder, color = AppColors.TextDim, fontSize = 20.sp)
-                }
-                BasicTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    singleLine = true,
-                    textStyle = TextStyle(color = AppColors.Text, fontSize = 20.sp),
-                    cursorBrush = SolidColor(AppColors.Accent),
-                    visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = if (password) KeyboardType.Password else keyboardType,
-                        imeAction = if (onSubmit != null) ImeAction.Go else ImeAction.Done,
-                        autoCorrectEnabled = false,
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = { editing = false; keyboard?.hide(); tileFocus.requestFocus() },
-                        onGo = { editing = false; keyboard?.hide(); tileFocus.requestFocus(); onSubmit?.invoke() },
-                    ),
-                    modifier = Modifier
+            TvTile(
+                onClick = { editing = true },
+                modifier = Modifier
+                    .then(if (trailing != null) Modifier.weight(1f).fillMaxHeight() else Modifier.fillMaxWidth())
+                    .focusRequester(tileFocus),
+                container = AppColors.SurfaceHigh,
+                focusedScale = 1.02f,
+            ) {
+                Box(
+                    Modifier
+                        .align(Alignment.CenterStart)
                         .fillMaxWidth()
-                        .focusRequester(fieldFocus)
-                        .focusProperties { canFocus = editing }
-                        .onFocusChanged { if (!it.isFocused && editing) editing = false },
-                )
+                        .padding(horizontal = 18.dp, vertical = 14.dp),
+                ) {
+                    if (value.isEmpty() && !editing) {
+                        Text(placeholder, color = AppColors.TextDim, fontSize = 20.sp)
+                    }
+                    BasicTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        singleLine = true,
+                        textStyle = TextStyle(color = AppColors.Text, fontSize = 20.sp),
+                        cursorBrush = SolidColor(AppColors.Accent),
+                        visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = if (password) KeyboardType.Password else keyboardType,
+                            imeAction = if (onSubmit != null) ImeAction.Go else ImeAction.Done,
+                            autoCorrectEnabled = false,
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { editing = false; keyboard?.hide(); tileFocus.requestFocus() },
+                            onGo = { editing = false; keyboard?.hide(); tileFocus.requestFocus(); onSubmit?.invoke() },
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(fieldFocus)
+                            .focusProperties { canFocus = editing }
+                            .onFocusChanged { if (!it.isFocused && editing) editing = false },
+                    )
+                }
             }
+            trailing?.invoke(this)
         }
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -316,10 +317,19 @@ private fun TvPicker(container: AppContainer, info: EpisodeInfo, candidates: Lis
         LaunchedEffect(pick) { runCatching { focus.requestFocus() } }
         return
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        TvTextField(query, { query = it.take(64) }, "Search MyAnimeList", Modifier.width(420.dp), onSubmit = { scope.launch { results = container.mal.search(query).ifEmpty { results } } })
-        ActionButton("Search", { scope.launch { results = container.mal.search(query).ifEmpty { results } } }, icon = Icons.Filled.Search)
-    }
+    // Width covers the former 420.dp field plus the Search control that now shares the row.
+    TvTextField(
+        query, { query = it.take(64) }, "Search MyAnimeList", Modifier.width(560.dp),
+        onSubmit = { scope.launch { results = container.mal.search(query).ifEmpty { results } } },
+        trailing = {
+            ActionButton(
+                "Search",
+                { scope.launch { results = container.mal.search(query).ifEmpty { results } } },
+                Modifier.fillMaxHeight(),
+                icon = Icons.Filled.Search,
+            )
+        },
+    )
     results.forEachIndexed { i, anime ->
         TvTile(
             onClick = {
@@ -353,10 +363,14 @@ private fun TvPicker(container: AppContainer, info: EpisodeInfo, candidates: Lis
 @Composable
 private fun TvMalSearch(model: MalSearchModel) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.testTag("mal_find_section")) {
-        Row(Modifier.widthIn(max = 640.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            TvTextField(model.query, { model.query = it.take(64) }, "Search MyAnimeList", Modifier.weight(1f).testTag("mal_find"), onSubmit = model::search)
-            ActionButton("Search", model::search, Modifier.testTag("mal_find_go"), icon = Icons.Filled.Search)
-        }
+        TvTextField(
+            model.query, { model.query = it.take(64) }, "Search MyAnimeList",
+            Modifier.widthIn(max = 640.dp).fillMaxWidth().testTag("mal_find"),
+            onSubmit = model::search,
+            trailing = {
+                ActionButton("Search", model::search, Modifier.fillMaxHeight().testTag("mal_find_go"), icon = Icons.Filled.Search)
+            },
+        )
         when {
             model.busy -> Text("Searching…", color = AppColors.TextDim)
             model.error != null -> Text(model.error!!, color = AppColors.Error)
