@@ -10,15 +10,15 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 
 /**
- * One playback key action. [showsControls] opens the player bar (transport keys). [repeats] runs again while the key
- * is held; toggles do not.
+ * One playback key action. [showsControls] opens the player bar (pause, playlist, volume, …). Seek steps do not:
+ * on desktop the arrow keys seek without the full HUD (mpv-style OSD / seek flash is enough). [repeats] runs again
+ * while the key is held; toggles do not.
  */
 sealed interface PlaybackAction {
     val showsControls: Boolean get() = false
     val repeats: Boolean get() = false
 
     data class SeekBy(val seconds: Double) : PlaybackAction {
-        override val showsControls = true
         override val repeats = true
     }
 

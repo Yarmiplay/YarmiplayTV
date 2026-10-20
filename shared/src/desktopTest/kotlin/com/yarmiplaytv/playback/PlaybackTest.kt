@@ -69,6 +69,13 @@ class PlaybackTest {
         assertEquals(listOf("seekRelative 5.0", "seek 0.0"), player.log)
     }
 
+    @Test
+    fun aSeekStepDoesNotAskForThePlayerBar() {
+        // Desktop arrow keys use SeekBy; showing the full HUD on every seek is wrong. Pause still does.
+        assertFalse(PlaybackAction.SeekBy(5.0).showsControls)
+        assertTrue(PlaybackAction.TogglePause.showsControls)
+    }
+
     private fun controller(player: RecordingPlayer, inRoom: Boolean) = PlaybackController(
         player = player,
         inRoom = { inRoom },
