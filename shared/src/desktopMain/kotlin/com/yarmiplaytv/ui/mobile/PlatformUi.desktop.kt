@@ -108,8 +108,11 @@ object DesktopPip {
     var toggle: () -> Unit = { open = !open }
 }
 
+/** Invisible while the player controls are hidden. Falls back when the display can't make a custom cursor (headless CI). */
 private val hiddenCursor: PointerIcon by lazy {
-    PointerIcon(Toolkit.getDefaultToolkit().createCustomCursor(BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), Point(0, 0), "hidden"))
+    runCatching {
+        PointerIcon(Toolkit.getDefaultToolkit().createCustomCursor(BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), Point(0, 0), "hidden"))
+    }.getOrDefault(PointerIcon.Default)
 }
 
 actual val controlsHideMillis = 2000L

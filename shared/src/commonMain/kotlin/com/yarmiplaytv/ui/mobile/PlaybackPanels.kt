@@ -2,13 +2,23 @@
 
 package com.yarmiplaytv.ui.mobile
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Autorenew
@@ -27,9 +37,19 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
@@ -40,6 +60,12 @@ import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+
+/**
+ * TV player menus draw these rows for a remote: the app's colours, a visible focus, and D-pad order.
+ * Phone, tablet and desktop leave this off and keep the material controls.
+ */
+val LocalTvPlaybackControls = staticCompositionLocalOf { false }
 
 /** Subtitle delay and position, in the same row as [SubtitleSizeControls]. */
 @Composable
@@ -102,7 +128,7 @@ fun SubtitleAdjustments(container: AppContainer, modifier: Modifier = Modifier) 
 }
 
 @Composable
-fun AudioAdjustments(container: AppContainer, modifier: Modifier = Modifier) {
+fun AudioAdjustments(container: AppContainer, modifier: Modifier = Modifier, initialFocus: FocusRequester? = null) {
     val delay = rememberPlayerValue(container.player.userAudioDelay()) { container.player.userAudioDelay() }
     StepperRow(
         title = "Timing ${signedMillis(delay.value)}",
@@ -118,6 +144,7 @@ fun AudioAdjustments(container: AppContainer, modifier: Modifier = Modifier) {
         increaseDescription = "Later audio",
         resetDescription = "Reset audio timing",
         modifier = modifier.padding(bottom = 8.dp),
+        initialFocus = initialFocus,
     )
 }
 
@@ -135,23 +162,20 @@ internal fun StepperRow(
     modifier: Modifier = Modifier,
     decreaseTag: String? = null,
     increaseTag: String? = null,
+    initialFocus: FocusRequester? = null,
 ) {
-    Row(modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    AdjustRow(modifier, initialFocus) { enter ->
         AdjustmentLabel(title, hint, Modifier.weight(1f))
-        IconButton(onClick = onReset) { Icon(Icons.Filled.RestartAlt, contentDescription = resetDescription) }
-        IconButton(onClick = onDecrease, modifier = if (decreaseTag == null) Modifier else Modifier.testTag(decreaseTag)) {
-            Icon(Icons.Filled.Remove, contentDescription = decreaseDescription)
-        }
-        IconButton(onClick = onIncrease, modifier = if (increaseTag == null) Modifier else Modifier.testTag(increaseTag)) {
-            Icon(Icons.Filled.Add, contentDescription = increaseDescription)
-        }
+        AdjustIcon(Icons.Filled.RestartAlt, resetDescription, onReset, enter)
+        AdjustIcon(Icons.Filled.Remove, decreaseDescription, onDecrease, tag = decreaseTag)
+        AdjustIcon(Icons.Filled.Add, increaseDescription, onIncrease, tag = increaseTag)
     }
 }
 
 @Composable
 private fun AdjustmentLabel(title: String, hint: String, modifier: Modifier = Modifier) {
     Column(modifier) {
-        Text(title)
+        Text(title, color = AppColors.Text)
         Text(hint, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
     }
 }
@@ -166,10 +190,14 @@ private fun SwitchRow(
     onReset: () -> Unit,
     resetDescription: String,
 ) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    AdjustRow { enter ->
         AdjustmentLabel(title, hint, Modifier.weight(1f))
-        IconButton(onClick = onReset) { Icon(Icons.Filled.RestartAlt, contentDescription = resetDescription) }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        AdjustIcon(Icons.Filled.RestartAlt, resetDescription, onReset, enter)
+        if (LocalTvPlaybackControls.current) {
+            TvToggle(checked, onCheckedChange)
+        } else {
+            Switch(checked = checked, onCheckedChange = onCheckedChange)
+        }
     }
 }
 
@@ -183,11 +211,49 @@ private fun CycleRow(
     cycleDescription: String,
     resetDescription: String,
 ) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    AdjustRow { enter ->
         AdjustmentLabel(title, hint, Modifier.weight(1f))
-        IconButton(onClick = onReset) { Icon(Icons.Filled.RestartAlt, contentDescription = resetDescription) }
-        IconButton(onClick = onCycle) { Icon(Icons.Filled.Autorenew, contentDescription = cycleDescription) }
+        AdjustIcon(Icons.Filled.RestartAlt, resetDescription, onReset, enter)
+        AdjustIcon(Icons.Filled.Autorenew, cycleDescription, onCycle)
     }
+}
+
+/**
+ * One adjustment on its own line. On TV, entering the row from above or below lands on [initialFocus]
+ * (or the row's first control), so Down walks the labels instead of skipping across the buttons.
+ */
+@Composable
+private fun AdjustRow(
+    modifier: Modifier = Modifier,
+    initialFocus: FocusRequester? = null,
+    content: @Composable RowScope.(FocusRequester?) -> Unit,
+) {
+    val tv = LocalTvPlaybackControls.current
+    val created = remember { FocusRequester() }
+    val enter = initialFocus ?: if (tv) created else null
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .then(
+                if (enter != null) {
+                    // Up or Down into the row lands on its first control. Left and Right still move between the buttons.
+                    Modifier.focusProperties {
+                        onEnter = {
+                            if (requestedFocusDirection == FocusDirection.Up ||
+                                requestedFocusDirection == FocusDirection.Down ||
+                                requestedFocusDirection == FocusDirection.Enter
+                            ) {
+                                enter.requestFocus()
+                            }
+                        }
+                    }.focusGroup()
+                } else {
+                    Modifier
+                },
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) { content.invoke(this, enter) }
 }
 
 /** [read] again after each change, and while the row is open so a key press shows too. */
@@ -214,7 +280,7 @@ private fun signedMillis(seconds: Double): String {
 
 /** Picture, speed, looping, and chapters. Each adjustment shows its value and resets on its own. */
 @Composable
-fun VideoAdjustments(container: AppContainer, modifier: Modifier = Modifier) {
+fun VideoAdjustments(container: AppContainer, modifier: Modifier = Modifier, initialFocus: FocusRequester? = null) {
     val state by container.player.state.collectAsStateWithLifecycle()
     val zoom = rememberPlayerValue(container.player.propertyDouble("video-zoom") ?: 0.0) { container.player.propertyDouble("video-zoom") ?: 0.0 }
     val contrast = rememberPlayerValue(container.player.propertyDouble("contrast") ?: 0.0) { container.player.propertyDouble("contrast") ?: 0.0 }
@@ -237,6 +303,7 @@ fun VideoAdjustments(container: AppContainer, modifier: Modifier = Modifier) {
             decreaseDescription = "Slower",
             increaseDescription = "Faster",
             resetDescription = "Reset speed",
+            initialFocus = initialFocus,
         )
         StepperRow(
             title = "Zoom ${formatStep(zoom.value)}",
@@ -313,11 +380,9 @@ fun VideoAdjustments(container: AppContainer, modifier: Modifier = Modifier) {
             onReset = { setFlag(container, "deinterlace", "Deinterlace", false); deinterlace.refresh() },
             resetDescription = "Turn off deinterlace",
         )
-        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        AdjustRow {
             AdjustmentLabel("Reset all", "Ctrl+Backspace", Modifier.weight(1f))
-            IconButton(onClick = { container.playback.perform(PlaybackAction.ResetAll) }) {
-                Icon(Icons.Filled.RestartAlt, contentDescription = "Reset everything")
-            }
+            AdjustIcon(Icons.Filled.RestartAlt, "Reset everything", { container.playback.perform(PlaybackAction.ResetAll) }, it)
         }
         if (state.chapters.isNotEmpty()) {
             Text("Chapters", style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim, modifier = Modifier.padding(top = 8.dp))
@@ -385,8 +450,109 @@ private fun AdjustmentRow(modifier: Modifier = Modifier, content: @Composable ()
 
 @Composable
 private fun Adjust(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = modifier, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
-        Text(label, maxLines = 1)
+    if (LocalTvPlaybackControls.current) {
+        TvTextControl(label, onClick, modifier)
+    } else {
+        TextButton(onClick = onClick, modifier = modifier, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
+            Text(label, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun AdjustIcon(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    focus: FocusRequester? = null,
+    tag: String? = null,
+) {
+    var modifier: Modifier = if (focus != null) Modifier.focusRequester(focus) else Modifier
+    if (tag != null) modifier = modifier.testTag(tag)
+    if (LocalTvPlaybackControls.current) {
+        TvFocusIcon(icon, description, onClick, modifier)
+    } else {
+        IconButton(onClick = onClick, modifier = modifier) {
+            Icon(icon, contentDescription = description, tint = AppColors.Text)
+        }
+    }
+}
+
+/** A remote button: theme-coloured icon, and the accent fill while it has the focus, like the rest of the TV controls. */
+@Composable
+private fun TvFocusIcon(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        modifier
+            .size(48.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .clip(CircleShape)
+            .background(if (focused) AppColors.Accent else Color.Transparent)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = description,
+            tint = if (focused) AppColors.OnAccent else AppColors.Text,
+            modifier = Modifier.size(26.dp),
+        )
+    }
+}
+
+/** A labelled remote button: surface tile, theme text, accent border while focused. */
+@Composable
+private fun TvTextControl(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(shape)
+            .background(AppColors.SurfaceHigh)
+            .border(3.dp, if (focused) AppColors.Accent else Color.Transparent, shape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(label, color = AppColors.Text, maxLines = 1)
+    }
+}
+
+/** On or off, as its own focused control. Checked is the accent wash; focused is the solid accent. */
+@Composable
+private fun TvToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    val label = if (checked) "On" else "Off"
+    Box(
+        Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(shape)
+            .background(when {
+                focused -> AppColors.Accent
+                checked -> AppColors.Accent.copy(alpha = 0.28f)
+                else -> AppColors.SurfaceHigh
+            })
+            .border(3.dp, if (focused) AppColors.Accent else Color.Transparent, shape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                role = Role.Switch,
+                onClick = { onCheckedChange(!checked) },
+            )
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Text(label, color = if (focused) AppColors.OnAccent else AppColors.Text, maxLines = 1)
     }
 }
 
