@@ -555,7 +555,9 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
     val showChat = settings.showRoomChat
     var message by remember { mutableStateOf(mobileChatDraft) }
     val listState = rememberLazyListState()
-    LaunchedEffect(feed.size) { if (feed.isNotEmpty()) listState.scrollToItem(feed.lastIndex) }
+    // requestScrollToItem waits for the next layout. scrollToItem measures immediately, and a
+    // message that arrives during layout makes that call throw.
+    LaunchedEffect(feed.size) { if (feed.isNotEmpty()) listState.requestScrollToItem(feed.lastIndex) }
     fun send() {
         if (message.isNotBlank()) {
             container.sync.sendChat(message)

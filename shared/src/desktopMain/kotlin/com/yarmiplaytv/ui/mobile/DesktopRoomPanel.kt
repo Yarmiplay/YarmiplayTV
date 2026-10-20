@@ -632,7 +632,9 @@ private fun DesktopChat(container: AppContainer, modifier: Modifier) {
     val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
-    LaunchedEffect(feed.size) { if (feed.isNotEmpty()) listState.scrollToItem(feed.lastIndex) }
+    // requestScrollToItem waits for the next layout. scrollToItem measures immediately, and a
+    // message that arrives during layout makes that call throw.
+    LaunchedEffect(feed.size) { if (feed.isNotEmpty()) listState.requestScrollToItem(feed.lastIndex) }
     LaunchedEffect(panel.chatFocusRequests) { if (panel.chatFocusRequests > 0) runCatching { focus.requestFocus() } }
     val connected = room.status == ConnectionStatus.CONNECTED
     val max = container.sync.maxChatLength
