@@ -440,7 +440,7 @@ BASE_CSS = """ :root { --bg:#0E1116; --surface:#151A21; --surface2:#1E242E; --li
  code, pre { font-family:ui-monospace,Consolas,monospace; font-size:.9em; }
  code { background:var(--bg); padding:.1em .35em; border-radius:4px; color:var(--text); overflow-wrap:anywhere; }
  a:focus-visible, summary:focus-visible { outline:3px solid var(--text); outline-offset:3px; border-radius:6px; }
- @media (max-width:620px) { .wrap { padding:0 16px; } .top nav a:not(:first-child) { display:none; } }
+ @media (max-width:620px) { .wrap { padding:0 16px; } .top nav a:not(:nth-child(-n+2)) { display:none; } }
  @media (min-width:1600px) { body { font-size:20px; } .wrap { max-width:1500px; } }"""
 
 
@@ -484,7 +484,7 @@ def render_page(downloads, version, built, short_link=None, docs=(), site_url=No
     features = "".join(f'<div class="feature"><span class="fi">{icon(name)}</span><h3>{title}</h3><p>{text}</p></div>'
                        for name, title, text in FEATURES)
     pages = {folder: label for _, folder, label, _ in docs}
-    nav = [("#download", "Download")] + [(f"{f}/", pages[f]) for f in ("manual", "changelog") if f in pages]
+    nav = [(HOME_URL, "Home"), ("#download", "Download")] + [(f"{f}/", pages[f]) for f in ("manual", "changelog") if f in pages]
     nav.append((REPO_URL, "Source"))
     legal = ("privacy", "terms")
     columns = (
@@ -948,7 +948,7 @@ def render_doc(md, description, site_url=None, path="", steps=False, toc=False):
 <header class="top">
  <a class="brand" href="../">{LOGO_SVG}{NAME}</a>
  <nav>{"".join(f'<a href="{href}"' + (' aria-current="page"' if href == f"../{path}" else "") + f">{label}</a>"
-               for href, label in (("../#download", "Download"), ("../manual/", "Manual"), ("../changelog/", "Patch notes")))}</nav>
+               for href, label in ((HOME_URL, "Home"), ("../#download", "Download"), ("../manual/", "Manual"), ("../changelog/", "Patch notes")))}</nav>
 </header>
 {content}
 </div></body></html>
