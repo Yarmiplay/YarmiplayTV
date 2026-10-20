@@ -57,8 +57,10 @@ import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.job
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -121,10 +123,11 @@ class PlayerControlsUiTest {
         DesktopPlayerInput.volume = null
         DesktopPip.open = false
         DesktopPip.toggle = { DesktopPip.open = !DesktopPip.open }
-        app.scope.cancel()
-        storeScope.cancel()
-        Dispatchers.resetMain()
-        main.close()
+        // Join before resetMain: leaving Main work running races and fails on macOS CI.
+        if (::app.isInitialized) runBlocking { app.scope.coroutineContext.job.cancelAndJoin() }
+        if (::storeScope.isInitialized) runBlocking { storeScope.coroutineContext.job.cancelAndJoin() }
+        runCatching { Dispatchers.resetMain() }
+        if (::main.isInitialized) main.close()
     }
 
     private fun ComposeUiTest.showPlayer() {
