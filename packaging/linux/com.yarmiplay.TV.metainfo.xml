@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.5.2" date="2026-10-20">
+      <description>
+        <p>Player menus show each adjustment with its current value and its own reset: subtitle size, timing and placement, audio timing, speed, zoom, picture, aspect, loop and filters.</p>
+      </description>
+    </release>
     <release version="2.5.1" date="2026-10-20">
       <description>
         <p>Updates started from inside the app show download progress, and installation progress too: Windows shows the installer while it finishes, and Android shows progress while the update is handed over. The update window before the app opens uses the current icon.</p>

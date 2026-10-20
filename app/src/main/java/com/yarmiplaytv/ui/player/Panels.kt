@@ -86,6 +86,7 @@ import com.yarmiplaytv.ui.shared.serverStatusLine
 import com.yarmiplaytv.ui.mobile.AudioAdjustments
 import com.yarmiplaytv.ui.mobile.SubtitleAdjustments
 import com.yarmiplaytv.ui.mobile.SubtitleSizeControls
+import com.yarmiplaytv.ui.mobile.SubtitleTimingControls
 import com.yarmiplaytv.ui.mobile.VideoAdjustments
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
@@ -419,7 +420,12 @@ internal fun TracksPanel(container: AppContainer, type: TrackType, focus: FocusR
     val list = tracks.filter { it.type == type }
     Column(Modifier.fillMaxSize().padding(24.dp)) {
         PanelHeader(if (type == TrackType.AUDIO) "Audio" else "Subtitles")
-        if (type == TrackType.SUBTITLE) SubtitleSizeControls(container)
+        if (type == TrackType.SUBTITLE) {
+            SubtitleSizeControls(container)
+            SubtitleTimingControls(container)
+        } else {
+            AudioAdjustments(container)
+        }
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (type == TrackType.SUBTITLE) {
                 item {
@@ -435,7 +441,7 @@ internal fun TracksPanel(container: AppContainer, type: TrackType, focus: FocusR
                 )
             }
             item {
-                if (type == TrackType.SUBTITLE) SubtitleAdjustments(container) else AudioAdjustments(container)
+                if (type == TrackType.SUBTITLE) SubtitleAdjustments(container)
             }
         }
         if (list.isEmpty()) Text("No ${if (type == TrackType.AUDIO) "audio" else "subtitle"} tracks", color = AppColors.TextDim)

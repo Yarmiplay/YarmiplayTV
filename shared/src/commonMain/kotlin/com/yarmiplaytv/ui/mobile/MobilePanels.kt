@@ -610,28 +610,23 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
     }
 }
 
-/** Smaller and larger subtitle text. F and G do the same, matching mpv. */
+/** Smaller and larger subtitle text, and a reset back to the normal size. G and Shift+F do the same. */
 @Composable
 fun SubtitleSizeControls(container: AppContainer, modifier: Modifier = Modifier) {
     val scale by container.subtitleScale.collectAsStateWithLifecycle()
-    Row(modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text("Size ${SubtitleScale.percent(scale)}%")
-            Text("G larger, Shift+F smaller", style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
-        }
-        IconButton(
-            onClick = { container.changeSubtitleScale(-SubtitleScale.STEP) },
-            modifier = Modifier.testTag("subtitle_smaller"),
-        ) {
-            Icon(Icons.Filled.Remove, contentDescription = "Smaller subtitles")
-        }
-        IconButton(
-            onClick = { container.changeSubtitleScale(SubtitleScale.STEP) },
-            modifier = Modifier.testTag("subtitle_larger"),
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = "Larger subtitles")
-        }
-    }
+    StepperRow(
+        title = "Size ${SubtitleScale.percent(scale)}%",
+        hint = "G larger, Shift+F smaller",
+        onDecrease = { container.changeSubtitleScale(-SubtitleScale.STEP) },
+        onIncrease = { container.changeSubtitleScale(SubtitleScale.STEP) },
+        onReset = { container.applySubtitleScale(SubtitleScale.DEFAULT, announce = true) },
+        decreaseDescription = "Smaller subtitles",
+        increaseDescription = "Larger subtitles",
+        resetDescription = "Reset subtitle size",
+        modifier = modifier,
+        decreaseTag = "subtitle_smaller",
+        increaseTag = "subtitle_larger",
+    )
 }
 
 @Composable
@@ -642,6 +637,7 @@ fun TracksContent(container: AppContainer, type: TrackType, onPicked: () -> Unit
         SheetTitle(if (type == TrackType.AUDIO) "Audio" else "Subtitles")
         if (type == TrackType.SUBTITLE) {
             SubtitleSizeControls(container)
+            SubtitleTimingControls(container)
             SubtitleAdjustments(container)
             TrackRow("Off", list.none { it.selected }) { container.player.selectTrack(type, null); onPicked() }
         }
