@@ -397,7 +397,7 @@ def search_head(description, site_url=None, path="", google_verification=None):
 
 def app_head(version, site_url=None, preview=False):
     """Favicon, Open Graph / Twitter card tags and SoftwareApplication structured data for the main page."""
-    tags = ['<link rel="icon" href="favicon.svg" type="image/svg+xml">',
+    tags = ['<link rel="icon" href="favicon.svg?v=2" type="image/svg+xml">',
             '<meta property="og:type" content="website">',
             f'<meta property="og:site_name" content="{NAME}">',
             f'<meta property="og:title" content="{html.escape(TITLE)}">',
@@ -924,7 +924,7 @@ def render_doc(md, description, site_url=None, path="", steps=False, toc=False):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)}</title>
 {search_head(description, site_url, path)}
-<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="icon" href="../favicon.svg?v=2" type="image/svg+xml">
 <meta name="theme-color" content="#0E1116">
 <style>
 {BASE_CSS}
@@ -1087,7 +1087,7 @@ def build(dist, out, version, site_url, desktop_version=None, google_verificatio
         docs.append(("", folder, label, description))
 
     with open(os.path.join(out, "favicon.svg"), "w", encoding="utf-8") as f:
-        f.write(LOGO_SVG.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ', 1))
+        f.write(LOGO_SVG)
     preview = os.path.isfile(os.path.join(root, PREVIEW_IMAGE))
     if preview:
         shutil.copyfile(os.path.join(root, PREVIEW_IMAGE), os.path.join(out, "preview.png"))
