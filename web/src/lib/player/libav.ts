@@ -82,6 +82,8 @@ export interface LibAV {
   avformat_close_input_js(fmtCtx: number): Promise<void>;
   AVFormatContext_start_time(fmtCtx: number): Promise<number>;
   AVFormatContext_start_timehi(fmtCtx: number): Promise<number>;
+  AVFormatContext_duration(fmtCtx: number): Promise<number>;
+  AVFormatContext_durationhi(fmtCtx: number): Promise<number>;
   av_packet_alloc(): Promise<number>;
   av_packet_free_js(pkt: number): Promise<void>;
   avcodec_get_name(id: number): Promise<string>;

@@ -79,7 +79,17 @@ export class Demuxer {
     const streams: StreamInfo[] = [];
     for (const s of raw) streams.push(await describe(libav, s));
     const chapters = await readChapters(libav, fmtCtx);
-    const duration = Math.max(0, ...raw.map((s) => (Number.isFinite(s.duration) ? s.duration : 0)));
+    let duration = Math.max(0, ...raw.map((s) => (Number.isFinite(s.duration) ? s.duration : 0)));
+    // WebM often leaves the stream duration at 0 and keeps the length on the file instead.
+    if (!(duration > 0)) {
+      const fromFile = await Promise.all([
+        libav.AVFormatContext_duration(fmtCtx),
+        libav.AVFormatContext_durationhi(fmtCtx),
+      ])
+        .then(([lo, hi]) => seconds(lo, hi, 1, 1_000_000))
+        .catch(() => null);
+      if (fromFile && fromFile > 0 && fromFile < 1e7) duration = fromFile;
+    }
     const startTime =
       seconds(await libav.AVFormatContext_start_time(fmtCtx), await libav.AVFormatContext_start_timehi(fmtCtx), 1, 1_000_000) ?? 0;
     const pkt = await libav.av_packet_alloc();

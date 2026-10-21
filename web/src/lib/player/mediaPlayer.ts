@@ -120,6 +120,8 @@ export class MediaPlayer implements PlayerAdapter {
   private _source: ByteSource | null = null;
   private generation = 0;
   private eof = false;
+  /** An empty end-of-file right after opening was rewound once (a probe can leave WebM there). */
+  private rewound = false;
   /** File time of the file's start; positions shown count from here (MPEG-TS files start a second or so in). */
   private origin = 0;
   /** Where a seek is going, in file time; null when none is. */
@@ -224,6 +226,8 @@ export class MediaPlayer implements PlayerAdapter {
       if (generation !== this.generation) return void demuxer.close();
       this.demuxer = demuxer;
       this._source = source;
+      // Finding the streams can read a WebM to its end and not come back. Start at the beginning.
+      await demuxer.seek(demuxer.startTime).catch(() => {});
 
       const videos = demuxer.streams.filter((s) => s.kind === "video" && !["mjpeg", "png", "bmp"].includes(s.codec));
       const audios = demuxer.streams.filter((s) => s.kind === "audio");
@@ -261,6 +265,7 @@ export class MediaPlayer implements PlayerAdapter {
       if (generation !== this.generation) return;
 
       this.eof = false;
+      this.rewound = false;
       this.origin = demuxer.startTime;
       this.wallBase = this.origin;
       this.wallStart = performance.now();
@@ -497,13 +502,15 @@ export class MediaPlayer implements PlayerAdapter {
         }
         if (this.output && this.audio?.hardware && this.output.time() - this.origin > 0.05) this.audioHealthy = true;
         // Checked before the end-of-file wait: a silent decoder still has to be replaced after the file is read.
+        // A clock that stays put while playing is a decoder that produced nothing, including when no
+        // packet was handed over because the file was already at its end.
+        const playingStuck = this.playSince > 0 && performance.now() - this.playSince > 400 && !this.audioHealthy;
+        const fedSilent = this.audioFedAt > 0 && !this.pcmSeen && performance.now() - this.audioFedAt > 400;
         const audioSilent =
           !this.audioHealthy &&
           !this.audioFallback &&
           !!this.audio?.hardware &&
-          this.audioFedAt > 0 &&
-          ((!this.pcmSeen && performance.now() - this.audioFedAt > 400) ||
-            (!!this.playSince && performance.now() - this.playSince > 250));
+          (playingStuck || fedSilent);
         if (audioSilent) {
           await this.useSoftwareAudio();
           continue;
@@ -530,14 +537,38 @@ export class MediaPlayer implements PlayerAdapter {
         if (generation !== this.generation || this.seekPending) continue;
         await this.route(packets);
         if (eof) {
+          // The first read can be an empty end when the probe left the reader there.
+          if (packets.length === 0 && !this.audioFedAt && this.frames.length === 0 && !this.rewound) {
+            this.rewound = true;
+            await this.demuxer?.seek(this.origin);
+            continue;
+          }
           this.eof = true;
-          await this.video?.flush();
+          await this.finishVideo(generation);
         }
       } catch (e) {
         if (generation === this.generation) this.fail(e as Error);
         return;
       }
     }
+  }
+
+  /**
+   * Flushes the video decoder at the end of the file. A WebCodecs flush that never resolves used to freeze the
+   * read loop, so the clock stayed at 0 and the software decoder was never tried.
+   */
+  private async finishVideo(generation: number) {
+    const video = this.video;
+    if (!video) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const hung = await Promise.race([
+      video.flush().then(() => false).catch(() => false),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(true), 800);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (hung && generation === this.generation && video.kind === "hardware") await this.useSoftwareVideo();
   }
 
   /** Hands a batch of packets to their decoders: one call each, as FFmpeg's are round trips to its worker. */
@@ -603,7 +634,8 @@ export class MediaPlayer implements PlayerAdapter {
     }
 
     const atEnd = this.eof && this.frames.length === 0 && (this.output?.buffered ?? 0) < 0.05;
-    if (atEnd && !this.state.paused && !this.state.ended && now - this.origin >= this.state.duration - 0.25) {
+    // A missing duration is 0, which would otherwise end the file the moment it is opened.
+    if (atEnd && this.state.duration > 0.25 && !this.state.paused && !this.state.ended && now - this.origin >= this.state.duration - 0.25) {
       this.wallBase = this.origin + this.state.duration;
       this.update({ ended: true });
       this.setPaused(true);
