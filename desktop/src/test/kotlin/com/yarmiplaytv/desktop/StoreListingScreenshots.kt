@@ -79,7 +79,7 @@ class StoreListingScreenshots {
         app = AppContainer(
             settingsStore = store,
             deviceName = "desk",
-            appVersion = "2.5.6",
+            appVersion = "2.5.7",
             createPlayer = { IdlePlayer() },
             createLocalLibrary = { s, scope, folders -> FileLocalLibrary(s, scope, folders, watchForChanges = false) },
             malClientId = "store-shots",

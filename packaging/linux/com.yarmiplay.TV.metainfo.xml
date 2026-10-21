@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.5.7" date="2026-10-21">
+      <description>
+        <p>Grass uses the leaf green.</p>
+      </description>
+    </release>
     <release version="2.5.6" date="2026-10-21">
       <description>
         <p>Downloads leave out unused icons. Appearance adds Ember, Grass, Sky, and Snow.</p>

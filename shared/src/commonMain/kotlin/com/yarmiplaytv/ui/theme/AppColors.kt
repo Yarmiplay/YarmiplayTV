@@ -137,22 +137,22 @@ object Palettes {
         onSurfaceDim = Color(0xFF3A4C4E),
     )
 
-    /** Bright green page, white cards, dark text. */
+    /** Leaf green page. Cards are a deeper green so the white text still shows. */
     val Grass = Palette(
-        isLight = true,
-        background = Color(0xFF4ADE80),
-        surface = Color(0xFFFFFFFF),
-        surfaceHigh = Color(0xFFD8F5E2),
-        accent = Color(0xFF0E6B34),
-        onAccent = Color(0xFFFFFFFF),
-        text = Color(0xFF062410),
-        textDim = Color(0xFF0E4A28),
-        ready = Color(0xFF1B8A55),
-        notReady = Color(0xFFB86800),
-        error = Color(0xFFC62828),
-        scrim = Color(0x99000000),
-        onSurface = Color(0xFF062410),
-        onSurfaceDim = Color(0xFF0E4A28),
+        isLight = false,
+        background = Color(0xFF538532),
+        surface = Color(0xFF3D6424),
+        surfaceHigh = Color(0xFF2E4C1B),
+        accent = Color(0xFFC6EF84),
+        onAccent = Color(0xFF14240A),
+        text = Color(0xFFFFFFFF),
+        textDim = Color(0xFFE8F2DC),
+        ready = Color(0xFFB6E8C4),
+        notReady = Color(0xFFFFE0A3),
+        error = Color(0xFFFFB4B0),
+        scrim = Color(0xCC000000),
+        onSurface = Color(0xFFFFFFFF),
+        onSurfaceDim = Color(0xFFE8F2DC),
     )
 
     /** Bright blue page. Cards are a deeper blue so the white text still shows. */
@@ -182,7 +182,7 @@ enum class AppTheme(val key: String, val label: String, val description: String)
     LIGHT("light", "Light", "Light backgrounds and dark text"),
     EMBER("ember", "Ember", "Warm black and copper"),
     SNOW("snow", "Snow", "Dark slate and pale ice"),
-    GRASS("grass", "Grass", "Bright green"),
+    GRASS("grass", "Grass", "Leaf green"),
     SKY("sky", "Sky", "Bright blue"),
     SYSTEM("system", "Match the system", "Light or dark, as your device is set");
 

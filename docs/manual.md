@@ -386,7 +386,7 @@ a computer, a wide tablet or a TV, the categories are on the left and the chosen
   Skip button and finding them by listening, the seek step and the audio and subtitle languages.
 - **Appearance:** the theme: **Dark** (night blue, the app's own look), **Noire** (dark purple),
   **Monochrome** (true black and white, darkest on OLED screens), **Light**, **Ember** (warm black and copper),
-  **Snow** (dark slate and pale ice), **Grass** (bright green), **Sky** (bright blue), or **Match the system**
+  **Snow** (dark slate and pale ice), **Grass** (leaf green), **Sky** (bright blue), or **Match the system**
   (light or dark as your device is set, changing with it). Everything takes the new colours at once, the player's panels and
   sheets included; what's written straight on the video (its title, the times, hints) stays white on see-through
   black, so it reads on a bright picture too. On Windows the window's title bar follows; on a Mac it does after
