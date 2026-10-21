@@ -113,6 +113,8 @@ export class MediaPlayer implements PlayerAdapter {
   private audioHealthy = false;
   /** output.time() when playback or a seek last started. Health is movement past this, not the seek point itself. */
   private heardAt = 0;
+  /** Wall time of the last real clock movement, so a stall after a healthy start still falls back. */
+  private clockAdvancedAt = 0;
   private audioFallback = false;
   private pcmToken = 0;
   /** When playback was last started, so a clock that stays at 0 can be given to the software decoder. */
@@ -173,6 +175,7 @@ export class MediaPlayer implements PlayerAdapter {
   setPaused(paused: boolean) {
     if (paused === this.state.paused) return;
     this.playSince = paused ? 0 : performance.now();
+    if (!paused) this.clockAdvancedAt = this.playSince;
     this.wallBase = this.clock();
     this.wallStart = performance.now();
     this.update({ paused, ended: paused ? this.state.ended : false });
@@ -503,17 +506,16 @@ export class MediaPlayer implements PlayerAdapter {
           await this.doSeek();
           continue;
         }
-        if (this.output && this.audio?.hardware && this.output.time() - this.heardAt > 0.05) this.audioHealthy = true;
+        if (this.output && this.audio?.hardware && this.output.time() - this.heardAt > 0.05) {
+          this.audioHealthy = true;
+          this.clockAdvancedAt = performance.now();
+          this.heardAt = this.output.time();
+        }
         // Checked before the end-of-file wait: a silent decoder still has to be replaced after the file is read.
-        // A clock that stays put while playing is a decoder that produced nothing, including when no
-        // packet was handed over because the file was already at its end.
-        const playingStuck = this.playSince > 0 && performance.now() - this.playSince > 400 && !this.audioHealthy;
-        const fedSilent = this.audioFedAt > 0 && !this.pcmSeen && performance.now() - this.audioFedAt > 400;
-        const audioSilent =
-          !this.audioHealthy &&
-          !this.audioFallback &&
-          !!this.audio?.hardware &&
-          (playingStuck || fedSilent);
+        // Movement has to keep happening. A clock that parks on a seek point, or plays and then stops, is replaced.
+        const sinceMove = Math.max(this.playSince, this.clockAdvancedAt);
+        const clockStalled = !this.state.paused && this.playSince > 0 && performance.now() - sinceMove > 500;
+        const audioSilent = !this.audioFallback && !!this.audio?.hardware && clockStalled;
         if (audioSilent) {
           await this.useSoftwareAudio();
           continue;
@@ -611,7 +613,10 @@ export class MediaPlayer implements PlayerAdapter {
     this.pcmSeen = false;
     this.audioFedAt = 0;
     if (this.audio?.hardware) this.audioFallback = false;
-    if (!this.state.paused) this.playSince = performance.now();
+    if (!this.state.paused) {
+      this.playSince = performance.now();
+      this.clockAdvancedAt = this.playSince;
+    }
     // Subtitle lines that began a little before the target are read again too.
     await this.demuxer?.seek(this.subtitles ? Math.max(0, target - 1) : target);
     if (!this.videoStream && !this.audioStream) this.finishSeek();
