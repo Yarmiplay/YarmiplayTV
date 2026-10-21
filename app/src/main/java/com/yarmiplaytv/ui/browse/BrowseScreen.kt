@@ -17,12 +17,12 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.runtime.Composable
@@ -126,6 +126,16 @@ fun BrowseScreen(container: AppContainer, nav: Navigator, parent: MediaItem) {
                 }
                 Text(parent.name, style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            if (parent.type == MediaItemType.SEASON) {
+                val episodes = items.orEmpty().filter { it.isPlayable }
+                ActionButton(
+                    "Add all to playlist",
+                    { container.playlist.addToRoomPlaylist(episodes) },
+                    enabled = episodes.isNotEmpty(),
+                    icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                )
+                Spacer(Modifier.width(12.dp))
+            }
             if (container.mal.client.configured && parent.malInfo() != null) {
                 ActionButton("MyAnimeList", { nav.push(Screen.MalEntry(parent)) }, icon = Icons.Filled.Bookmarks)
                 Spacer(Modifier.width(12.dp))
@@ -219,7 +229,7 @@ fun ItemActionsDialog(container: AppContainer, item: MediaItem, onDismiss: () ->
                         }, Modifier.fillMaxWidth().focusRequester(firstFocus), icon = Icons.Filled.Groups, primary = true)
                         ActionButton("Add to room playlist", {
                             container.playlist.addToRoomPlaylist(item); onDismiss()
-                        }, Modifier.fillMaxWidth(), icon = Icons.Filled.PlaylistAdd)
+                        }, Modifier.fillMaxWidth(), icon = Icons.AutoMirrored.Filled.PlaylistAdd)
                         ActionButton("Play only on this TV", {
                             container.playlist.playHere(item); onDismiss()
                         }, Modifier.fillMaxWidth(), icon = Icons.Filled.PlayArrow)

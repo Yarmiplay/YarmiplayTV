@@ -2,7 +2,7 @@ import * as Settings from "../data/settings";
 import * as SavedRooms from "../data/savedRooms";
 import { getSeekPosition } from "../data/seekPositions";
 import type { LocalFile, LocalLibrary } from "../local/library";
-import { MediaLocator, ownCopy, type EpisodeInfo, type MediaItem, type MediaSource, type PlayableMedia, type RoomLocation, type ServerCopy } from "../media";
+import { MediaLocator, fileNameOf, isPlayable, ownCopy, type EpisodeInfo, type MediaItem, type MediaSource, type PlayableMedia, type RoomLocation, type ServerCopy } from "../media";
 import * as FileNames from "../media/fileNames";
 import { findRelayFile, openRelayFile, RelaySharing } from "../relay/relay";
 import type { RelayFile } from "../syncplay/yarmiplay";
@@ -750,6 +750,46 @@ export class RoomSession {
     this.known.set(media.fileName, media);
     if (inRoom && this.client && this.isActive) this.client.playInRoom(media.fileName);
     else await this.load(media, inRoom, false);
+  }
+
+  /** One season's episodes, in the order they are listed, as a single playlist edit. */
+  private addingItems = false;
+
+  async addItems(source: MediaSource, items: MediaItem[]) {
+    if (!this.client) {
+      this.postLocal("Join a Syncplay room to use the shared playlist", true);
+      return;
+    }
+    const episodes = items.filter(isPlayable);
+    if (!episodes.length) {
+      this.postLocal("Nothing to add", true);
+      return;
+    }
+    if (this.addingItems) return;
+    this.addingItems = true;
+    try {
+      const names: string[] = [];
+      let failed = 0;
+      for (const item of episodes) {
+        try {
+          const media = playableNowPlaying(await source.playable(item));
+          this.known.set(media.fileName, media);
+          names.push(media.fileName);
+        } catch {
+          const name = fileNameOf(item);
+          if (name) names.push(name);
+          else failed++;
+        }
+      }
+      if (!names.length) {
+        this.postLocal("Couldn't add those episodes", true);
+        return;
+      }
+      this.reportAdded(names.length, this.add(names));
+      if (failed > 0) this.postLocal(`Couldn't add ${failed}`, true);
+    } finally {
+      this.addingItems = false;
+    }
   }
 
   /**

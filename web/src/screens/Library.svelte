@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { route } from "../app/context";
+  import { route, session as sessionStore } from "../app/context";
   import Icon from "../components/Icon.svelte";
   import { sourceByKey, sources } from "../app/media";
   import MediaTile, { knownItems } from "../components/MediaTile.svelte";
-  import type { MediaItem, MediaSource } from "../lib/media";
+  import { isPlayable, type MediaItem, type MediaSource } from "../lib/media";
 
   /**
    * Browsing the media servers (MobileBrowse.kt): every server's libraries side by side, then a library's shows and
@@ -16,6 +16,18 @@
   let groups = $state<{ source: MediaSource; items: MediaItem[]; error: string | null }[]>([]);
   let children = $state<MediaItem[] | null>(null);
   let error = $state<string | null>(null);
+  let adding = $state(false);
+  const session = $derived($sessionStore);
+
+  async function addAll() {
+    if (!source || !children || adding) return;
+    adding = true;
+    try {
+      await session?.addItems(source, children);
+    } finally {
+      adding = false;
+    }
+  }
 
   $effect(() => {
     const list = $sources;
@@ -44,9 +56,17 @@
   {#if parts.length && !parent}
     <p class="dim">This page was opened directly. <a href="#/library">Back to the libraries</a></p>
   {:else if parent}
-    <header>
-      <a href="#/library">Libraries</a>
-      <h1>{parent.name}</h1>
+    <header class="bar">
+      <div class="titles">
+        <a href="#/library">Libraries</a>
+        {#if parent.type === "SEASON" && parent.seriesName}<p class="dim">{parent.seriesName}</p>{/if}
+        <h1>{parent.name}</h1>
+      </div>
+      {#if parent.type === "SEASON"}
+        <button class="button" disabled={adding || !children?.some(isPlayable)} onclick={addAll}>
+          <Icon name="playlist_add" size={18} />Add all to playlist
+        </button>
+      {/if}
     </header>
     {#if error}<p class="error">{error}</p>{/if}
     {#if children === null && !error}<p class="dim">Loading…</p>{/if}
@@ -85,6 +105,20 @@
   header {
     display: grid;
     gap: 4px;
+  }
+  header.bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .titles {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+  .titles p {
+    margin: 0;
   }
   h1 {
     margin: 0;

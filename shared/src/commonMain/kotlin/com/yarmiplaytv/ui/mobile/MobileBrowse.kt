@@ -140,6 +140,25 @@ fun MobileBrowseScreen(container: AppContainer, nav: Navigator, parent: MediaIte
     }
     Column(Modifier.fillMaxSize()) {
         MobileTopBar(parent.name, nav, subtitle = parent.seriesName?.takeIf { parent.type == MediaItemType.SEASON }) {
+            if (parent.type == MediaItemType.SEASON) {
+                val episodes = items.orEmpty().filter { it.isPlayable }
+                if (kind.isLarge) {
+                    FilledTonalButton(
+                        { container.playlist.addToRoomPlaylist(episodes) },
+                        enabled = episodes.isNotEmpty(),
+                        modifier = Modifier.testTag("browse_add_all"),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
+                        Text(" Add all to playlist")
+                    }
+                } else {
+                    IconButton(
+                        { container.playlist.addToRoomPlaylist(episodes) },
+                        enabled = episodes.isNotEmpty(),
+                        modifier = Modifier.testTag("browse_add_all"),
+                    ) { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Add all to playlist") }
+                }
+            }
             if (container.mal.client.configured && parent.malInfo() != null) {
                 IconButton(onClick = { nav.push(Screen.MalEntry(parent)) }, Modifier.testTag("browse_mal")) { Icon(Icons.Filled.Bookmarks, contentDescription = "MyAnimeList") }
             }

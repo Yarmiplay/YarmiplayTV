@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.5.8" date="2026-10-21">
+      <description>
+        <p>A season's episodes can be added to the playlist at once.</p>
+      </description>
+    </release>
     <release version="2.5.7" date="2026-10-21">
       <description>
         <p>Grass uses the leaf green.</p>

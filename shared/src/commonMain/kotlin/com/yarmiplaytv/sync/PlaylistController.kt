@@ -554,6 +554,50 @@ class PlaylistController(
         }
     }
 
+    /** One season's episodes, in the order they are listed, as a single playlist edit. */
+    private var addingAll = false
+
+    fun addToRoomPlaylist(items: List<MediaItem>) {
+        val source = mediaSource.value ?: return
+        if (sync.client == null) {
+            sync.postLocal("Join a Syncplay room to use the shared playlist", isError = true)
+            return
+        }
+        val episodes = items.filter { it.isPlayable }
+        if (episodes.isEmpty()) {
+            sync.postLocal("Nothing to add", isError = true)
+            return
+        }
+        if (addingAll) return
+        addingAll = true
+        scope.launch {
+            try {
+                val names = ArrayList<String>(episodes.size)
+                var failed = 0
+                for (item in episodes) {
+                    val playable = runCatching { source.playable(item) }.getOrNull()
+                    val name = item.fileName
+                    when {
+                        playable != null -> {
+                            remember(playable)
+                            names += playable.fileName
+                        }
+                        name != null -> names += name
+                        else -> failed++
+                    }
+                }
+                if (names.isEmpty()) {
+                    sync.postLocal("Couldn't add those episodes", isError = true)
+                    return@launch
+                }
+                reportAdded(names.size, shared.add(names))
+                if (failed > 0) sync.postLocal("Couldn't add $failed", isError = true)
+            } finally {
+                addingAll = false
+            }
+        }
+    }
+
     /** Manual pick after a failed lookup: play [item] as the substitute for the playlist entry. */
     fun resolveManually(item: MediaItem) {
         val status = _status.value as? PlaylistStatus.NotFound
