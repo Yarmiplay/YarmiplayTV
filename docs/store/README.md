@@ -15,6 +15,11 @@ Product identity.
 | Store display art / Hero banner (1920x1080) | `banner-1920x1080.png` |
 | App tile icon (300x300 or 512x512) | `icon-300x300.png` / `icon-512x512.png` |
 | Desktop screenshots (1366x768 or larger) | `screenshots/` |
+
+The pictures in `screenshots/` are the current desktop app at 1920x1080 (home, Sky, Grass, joining a
+room, and Appearance). Regenerate them with `YARMIPLAYTV_STORE_SHOTS=1` and
+`./gradlew :desktop:test --tests com.yarmiplaytv.desktop.StoreListingScreenshots`. The **Store screenshots**
+workflow submits that folder to Partner Center; it waits if a package submission is still in certification.
 | Privacy policy URL | `https://tv.yarmiplay.com/privacy/` (from `docs/privacy.md`) |
 
 ## Pricing and availability
