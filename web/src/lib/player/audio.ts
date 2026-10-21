@@ -147,6 +147,15 @@ export interface AudioDecoding {
   close(): Promise<void>;
 }
 
+/** Opus needs its identification header; without it Chrome reports the codec and then never plays it. */
+async function withOpusHeader(libav: LibAV, stream: StreamInfo, config: AudioDecoderConfig): Promise<AudioDecoderConfig> {
+  if (config.codec !== "opus" || config.description) return config;
+  const size = await libav.AVCodecParameters_extradata_size(stream.raw.codecpar).catch(() => 0);
+  if (size <= 0) return config;
+  const description = await libav.copyout_u8(await libav.AVCodecParameters_extradata(stream.raw.codecpar), size);
+  return { ...config, description };
+}
+
 export async function openAudioDecoding(
   libav: LibAV,
   stream: StreamInfo,
@@ -155,10 +164,27 @@ export async function openAudioDecoding(
 ): Promise<AudioDecoding> {
   const config = await audioStreamToConfig(libav, stream.raw).catch(() => null);
   if (config && typeof AudioDecoder !== "undefined") {
-    const support = await AudioDecoder.isConfigSupported(config).catch(() => null);
-    if (support?.supported) return new WebCodecsAudio(stream, config, output, onError);
+    const ready = await withOpusHeader(libav, stream, config);
+    const support = await AudioDecoder.isConfigSupported(ready).catch(() => null);
+    if (support?.supported) return new WebCodecsAudio(stream, support.config ?? ready, output, onError);
   }
+  return openSoftwareAudio(libav, stream, output);
+}
+
+/** FFmpeg's decoder, for codecs the browser has no WebCodecs decoder for, and when that decoder never plays. */
+export function openSoftwareAudio(
+  libav: LibAV,
+  stream: StreamInfo,
+  output: (chunk: PcmChunk) => void,
+): Promise<AudioDecoding> {
   return FfmpegAudio.open(libav, stream, output);
+}
+
+/** The chunk must be exactly the packet. A view into a larger buffer would hand the decoder the bytes around it. */
+function tight<T extends { data: Uint8Array }>(packet: T): T {
+  const data = packet.data;
+  if (data.byteOffset === 0 && data.byteLength === data.buffer.byteLength) return packet;
+  return { ...packet, data: new Uint8Array(data) };
 }
 
 class WebCodecsAudio implements AudioDecoding {
@@ -175,7 +201,17 @@ class WebCodecsAudio implements AudioDecoding {
   }
 
   private make() {
-    const decoder = new AudioDecoder({ output: (data) => this.output(toPcm(data)), error: (e) => this.onError(e) });
+    const decoder = new AudioDecoder({
+      output: (data) => {
+        try {
+          this.output(toPcm(data));
+        } catch (e) {
+          data.close();
+          this.onError(e as Error);
+        }
+      },
+      error: (e) => this.onError(e),
+    });
     decoder.configure(this.config);
     return decoder;
   }
@@ -190,7 +226,7 @@ class WebCodecsAudio implements AudioDecoding {
 
   async decode(packets: TimedPacket[]) {
     if (this.decoder.state === "closed") this.decoder = this.make();
-    for (const p of packets) this.decoder.decode(packetToEncodedAudioChunk(p.packet, this.stream.timeBase));
+    for (const p of packets) this.decoder.decode(packetToEncodedAudioChunk(tight(p.packet), this.stream.timeBase));
   }
 
   async reset() {

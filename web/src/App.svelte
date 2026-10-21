@@ -136,7 +136,7 @@
     gap: 10px;
     margin-bottom: 12px;
     padding: 0 4px;
-    color: var(--text);
+    color: var(--on-surface, var(--text));
     font-weight: 700;
     font-size: 18px;
     text-decoration: none;
@@ -147,11 +147,11 @@
     gap: 12px;
     padding: 10px 12px;
     border-radius: 10px;
-    color: var(--text);
+    color: var(--on-surface, var(--text));
     text-decoration: none;
   }
   .sections a:not(.brand, .on) :global(.icon) {
-    color: var(--text-dim);
+    color: var(--on-surface-dim, var(--text-dim));
   }
   .sections a.on {
     background: var(--surface-high);

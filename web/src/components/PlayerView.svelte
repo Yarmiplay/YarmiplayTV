@@ -659,7 +659,7 @@
   }
   .sheet h2 {
     background: var(--surface);
-    color: var(--text);
+    color: var(--on-surface, var(--text));
     border-radius: 16px 16px 0 0;
     padding: 16px 16px 4px;
     margin: 0;
@@ -668,7 +668,7 @@
   .sheet > p,
   .sheet > .row {
     background: var(--surface);
-    color: var(--text);
+    color: var(--on-surface, var(--text));
     margin: 0;
     padding: 4px 16px;
     width: 100%;
@@ -976,11 +976,15 @@
     bottom: 0;
     width: min(380px, 92%);
     background: var(--surface);
-    color: var(--text);
+    color: var(--on-surface, var(--text));
     display: flex;
     flex-direction: column;
     z-index: 5;
     box-shadow: -8px 0 24px rgb(0 0 0 / 0.4);
+  }
+  .side :global(.dim),
+  .sheet :global(.dim) {
+    color: var(--on-surface-dim, var(--text-dim));
   }
   .side header {
     display: flex;

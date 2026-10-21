@@ -63,6 +63,69 @@
   color-scheme: light;
 }
 
+[data-theme="ember"] {
+  --background: #14110e;
+  --surface: #1e1914;
+  --surface-high: #2c241c;
+  --accent: #e39a4a;
+  --on-accent: #1a1006;
+  --text: #f3ebe3;
+  --text-dim: #a89888;
+  --ready: #4cc38a;
+  --not-ready: #ffb74d;
+  --error: #ef5350;
+  --scrim: rgb(0 0 0 / 0.8);
+  color-scheme: dark;
+}
+
+/* The page is slate with white text. Cards are pale ice, so their text is the dark ink, not the page's. */
+[data-theme="snow"] {
+  --background: #75898a;
+  --surface: #d1e4e6;
+  --surface-high: #879fa1;
+  --accent: #75898a;
+  --on-accent: #ffffff;
+  --text: #ffffff;
+  --text-dim: #e7f1f2;
+  --on-surface: #1c2829;
+  --on-surface-dim: #3a4c4e;
+  --ready: #1b8a55;
+  --not-ready: #b86800;
+  --error: #c62828;
+  --scrim: rgb(0 0 0 / 0.8);
+  color-scheme: dark;
+}
+
+[data-theme="grass"] {
+  --background: #538532;
+  --surface: #3d6424;
+  --surface-high: #2e4c1b;
+  --accent: #c6ef84;
+  --on-accent: #14240a;
+  --text: #ffffff;
+  --text-dim: #e8f2dc;
+  --ready: #b6e8c4;
+  --not-ready: #ffe0a3;
+  --error: #ffb4b0;
+  --scrim: rgb(0 0 0 / 0.8);
+  color-scheme: dark;
+}
+
+[data-theme="sky"] {
+  --background: #41b1e9;
+  --surface: #1872a8;
+  --surface-high: #125e8c;
+  --accent: #ffffff;
+  --on-accent: #083048;
+  --text: #ffffff;
+  --text-dim: #e7f4fc;
+  --ready: #d8ffe8;
+  --not-ready: #ffe7b8;
+  --error: #ffd0cd;
+  --scrim: rgb(0 0 0 / 0.8);
+  color-scheme: dark;
+}
+
 *,
 *::before,
 *::after {
@@ -100,12 +163,17 @@ textarea {
 
 .card {
   background: var(--surface);
+  color: var(--on-surface, var(--text));
   border-radius: 16px;
   padding: 16px;
 }
 
 .dim {
   color: var(--text-dim);
+}
+
+.card .dim {
+  color: var(--on-surface-dim, var(--text-dim));
 }
 
 .mono {
@@ -143,6 +211,11 @@ textarea {
 .button.quiet {
   background: var(--surface-high);
   color: var(--text);
+}
+
+/* Snow's accent is the same colour as the page, so a selected row on the pale card uses the card's dark text. */
+[data-theme="snow"] :is(.sections, nav) a.on {
+  color: var(--on-surface);
 }
 
 .button:disabled {

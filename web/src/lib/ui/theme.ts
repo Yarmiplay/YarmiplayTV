@@ -1,17 +1,21 @@
 /**
- * The app's themes, as in AppColors.kt: Dark (night blue, the app's own look), Noire
- * (dark purple), Monochrome (true black and white), Light, and Match the system (Light or Dark as the device is set). The colours themselves
- * live in app.css as custom properties under `html[data-theme=…]`; this file picks which set applies.
+ * The app's themes, as in AppColors.kt. The colours themselves live in app.css as custom properties under
+ * `html[data-theme=…]`; this file picks which set applies. Snow is the one palette whose cards are lighter than
+ * its page, so card text uses `--on-surface` rather than the page's `--text`.
  */
 
-export type ThemeKey = "dark" | "noire" | "monochrome" | "light" | "system";
-export type PaletteKey = "dark" | "noire" | "monochrome" | "light";
+export type ThemeKey = "dark" | "noire" | "monochrome" | "light" | "ember" | "snow" | "grass" | "sky" | "system";
+export type PaletteKey = Exclude<ThemeKey, "system">;
 
 export const THEMES: { key: ThemeKey; label: string; description: string }[] = [
   { key: "dark", label: "Dark", description: "Night blue, the app's own look" },
   { key: "noire", label: "Noire", description: "Dark purple" },
   { key: "monochrome", label: "Monochrome", description: "Black and white: true black, darkest on OLED screens" },
   { key: "light", label: "Light", description: "Light backgrounds and dark text" },
+  { key: "ember", label: "Ember", description: "Warm black and copper" },
+  { key: "snow", label: "Snow", description: "Dark slate and pale ice" },
+  { key: "grass", label: "Grass", description: "Leaf green" },
+  { key: "sky", label: "Sky", description: "Bright blue" },
   { key: "system", label: "Match the system", description: "Light or dark, as your device is set" },
 ];
 
@@ -19,7 +23,16 @@ export const THEMES: { key: ThemeKey; label: string; description: string }[] = [
 export const THEME_NOTE = "The player takes the theme too; what's written on the video stays white, on see-through black.";
 
 /** The browser bar's colour for each palette: its background. */
-const BAR: Record<PaletteKey, string> = { dark: "#0E1116", noire: "#100C16", monochrome: "#000000", light: "#F3F5F8" };
+const BAR: Record<PaletteKey, string> = {
+  dark: "#0E1116",
+  noire: "#100C16",
+  monochrome: "#000000",
+  light: "#F3F5F8",
+  ember: "#14110E",
+  snow: "#75898A",
+  grass: "#538532",
+  sky: "#41B1E9",
+};
 
 /** A stored setting as a theme; anything unknown is Dark, as AppTheme.of does. */
 export function themeOf(key: string | null | undefined): ThemeKey {

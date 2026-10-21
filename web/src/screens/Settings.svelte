@@ -237,7 +237,7 @@
     gap: 12px;
     padding: 10px 12px;
     border-radius: 10px;
-    color: var(--text);
+    color: var(--on-surface, var(--text));
     text-decoration: none;
     background: var(--surface);
   }

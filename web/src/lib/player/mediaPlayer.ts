@@ -1,5 +1,5 @@
 import type { PlayerAdapter } from "../syncplay/models";
-import { AudioOutput, openAudioDecoding, type AudioDecoding, type PcmChunk } from "./audio";
+import { AudioOutput, openAudioDecoding, openSoftwareAudio, type AudioDecoding, type PcmChunk } from "./audio";
 import type { ByteSource } from "./bytes";
 import { Demuxer, type Chapter, type StreamInfo, type TimedPacket } from "./demuxer";
 import { createLibAV, type LibAV } from "./libav";
@@ -104,6 +104,13 @@ export class MediaPlayer implements PlayerAdapter {
   private subtitles: SubtitleLayer | PgsLayer | null = null;
 
   private readonly frames: VideoFrame[] = [];
+  /** Video packets held back while the video decoder is already full, so reading can still feed the sound. */
+  private heldVideo: TimedPacket[] = [];
+  /** Sound was handed to the browser's decoder and it produced nothing; the software decoder takes over once. */
+  private audioFedAt = 0;
+  private pcmSeen = false;
+  private audioFallback = false;
+  private pcmToken = 0;
   private _source: ByteSource | null = null;
   private generation = 0;
   private eof = false;
@@ -330,7 +337,10 @@ export class MediaPlayer implements PlayerAdapter {
     this.output = await AudioOutput.create(sampleRate);
     this.output.setRate(this.state.speed);
     this.output.setVolume(this.state.muted ? 0 : this.state.volume);
-    this.audio = await openAudioDecoding(libav, stream, this.onPcm, (e) => this.fail(e));
+    this.audioFedAt = 0;
+    this.pcmSeen = false;
+    this.audioFallback = false;
+    this.audio = await openAudioDecoding(libav, stream, this.bindPcm(), (e) => void this.audioFailed(e));
     if (!this.state.paused) await this.output.play();
   }
 
@@ -352,6 +362,7 @@ export class MediaPlayer implements PlayerAdapter {
 
   private async teardown() {
     this.frames.splice(0).forEach((f) => f.close());
+    this.heldVideo = [];
     this.seekTarget = null;
     this.seekPending = false;
     const video = this.video;
@@ -389,6 +400,42 @@ export class MediaPlayer implements PlayerAdapter {
     if (this.seekTarget !== null && !this.seekPending) this.finishSeek();
   };
 
+  /** Drops sound from a decoder that has since been replaced. */
+  private bindPcm(): (chunk: PcmChunk) => void {
+    const token = ++this.pcmToken;
+    return (chunk) => {
+      if (token !== this.pcmToken || !this.output || this.closed) return;
+      this.pcmSeen = true;
+      this.onPcm(chunk);
+    };
+  }
+
+  /** Ignores a late error from the decoder that is already being replaced. */
+  private switchingAudio = false;
+
+  /** The browser's audio decoder produced nothing. FFmpeg decodes the same track, and playback starts again there. */
+  private async audioFailed(error: Error) {
+    if (this.switchingAudio) return;
+    if (!this.audioFallback && this.audio?.hardware && this.audioStream && this.libav) {
+      await this.useSoftwareAudio();
+      return;
+    }
+    this.fail(error);
+  }
+
+  private async useSoftwareAudio() {
+    if (this.switchingAudio || this.audioFallback || !this.audioStream || !this.libav) return;
+    this.switchingAudio = true;
+    this.audioFallback = true;
+    const stream = this.audioStream;
+    await this.audio?.close().catch(() => {});
+    this.audio = await openSoftwareAudio(this.libav, stream, this.bindPcm());
+    this.audioFedAt = 0;
+    this.update({ audioDecoder: "software" });
+    this.switchingAudio = false;
+    this.seek(Math.max(0, this.position));
+  }
+
   private readonly onPcm = (chunk: PcmChunk) => {
     if (!this.output || this.closed) return;
     const end = chunk.time + chunk.left.length / chunk.sampleRate;
@@ -416,13 +463,26 @@ export class MediaPlayer implements PlayerAdapter {
           await sleep(50);
           continue;
         }
+        if (
+          !this.pcmSeen &&
+          this.audio?.hardware &&
+          this.audioFedAt > 0 &&
+          performance.now() - this.audioFedAt > 400
+        ) {
+          await this.useSoftwareAudio();
+          continue;
+        }
+        if (this.heldVideo.length && this.video && this.video.queued < MAX_QUEUED) {
+          const batch = this.heldVideo.splice(0, MAX_QUEUED - this.video.queued);
+          await this.video.decode(batch);
+        }
         const audioAhead = this.output ? this.output.buffered : Infinity;
         const videoWants = !!this.video && this.frames.length < MAX_FRAMES && this.video.queued < MAX_QUEUED / 2;
         const audioWants = !!this.audio && audioAhead < AUDIO_HIGH && this.audio.queued < MAX_QUEUED;
         const audioStarved = !!this.audio && audioAhead < AUDIO_LOW;
-        // Video decoders hold a few frames each; past this many waiting packets, reading waits whatever the sound needs.
-        const videoBlocked = !!this.video && this.video.queued >= MAX_QUEUED;
-        if (videoBlocked || !(videoWants || audioStarved || (audioWants && !this.video))) {
+        // A full video decoder must not stop the sound being read. Those video packets wait in heldVideo.
+        const videoBlocked = !!this.video && (this.video.queued >= MAX_QUEUED || this.heldVideo.length > 0);
+        if (!((videoWants && !videoBlocked) || audioStarved || (audioWants && !this.video))) {
           await sleep(10);
           continue;
         }
@@ -444,11 +504,15 @@ export class MediaPlayer implements PlayerAdapter {
   private async route(packets: TimedPacket[]) {
     const video: TimedPacket[] = [];
     const audio: TimedPacket[] = [];
+    const room = this.video ? Math.max(0, MAX_QUEUED - this.video.queued) : 0;
     for (const packet of packets) {
-      if (packet.stream === this.videoStream?.index) video.push(packet);
-      else if (packet.stream === this.audioStream?.index) audio.push(packet);
+      if (packet.stream === this.videoStream?.index) {
+        if (video.length < room) video.push(packet);
+        else this.heldVideo.push(packet);
+      } else if (packet.stream === this.audioStream?.index) audio.push(packet);
       else if (packet.stream === this.subtitles?.stream.index) this.subtitles.add(packet);
     }
+    if (audio.length && this.audioFedAt === 0) this.audioFedAt = performance.now();
     await Promise.all([
       video.length ? this.video?.decode(video) : null,
       audio.length ? this.audio?.decode(audio) : null,
@@ -457,6 +521,7 @@ export class MediaPlayer implements PlayerAdapter {
 
   private async doSeek() {
     this.seekPending = false;
+    this.heldVideo = [];
     const target = this.seekTarget ?? 0;
     this.update({ buffering: true });
     this.frames.splice(0).forEach((f) => f.close());
