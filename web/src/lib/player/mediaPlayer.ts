@@ -111,10 +111,6 @@ export class MediaPlayer implements PlayerAdapter {
   private pcmSeen = false;
   /** The browser's audio decoder produced samples and the clock moved, so it is left in place. */
   private audioHealthy = false;
-  /** output.time() when playback or a seek last started. Health is movement past this, not the seek point itself. */
-  private heardAt = 0;
-  /** Wall time of the last real clock movement, so a stall after a healthy start still falls back. */
-  private clockAdvancedAt = 0;
   private audioFallback = false;
   private pcmToken = 0;
   /** When playback was last started, so a clock that stays at 0 can be given to the software decoder. */
@@ -124,8 +120,6 @@ export class MediaPlayer implements PlayerAdapter {
   private _source: ByteSource | null = null;
   private generation = 0;
   private eof = false;
-  /** An empty end-of-file right after opening was rewound once (a probe can leave WebM there). */
-  private rewound = false;
   /** File time of the file's start; positions shown count from here (MPEG-TS files start a second or so in). */
   private origin = 0;
   /** Where a seek is going, in file time; null when none is. */
@@ -175,7 +169,6 @@ export class MediaPlayer implements PlayerAdapter {
   setPaused(paused: boolean) {
     if (paused === this.state.paused) return;
     this.playSince = paused ? 0 : performance.now();
-    if (!paused) this.clockAdvancedAt = this.playSince;
     this.wallBase = this.clock();
     this.wallStart = performance.now();
     this.update({ paused, ended: paused ? this.state.ended : false });
@@ -231,8 +224,6 @@ export class MediaPlayer implements PlayerAdapter {
       if (generation !== this.generation) return void demuxer.close();
       this.demuxer = demuxer;
       this._source = source;
-      // Finding the streams can read a WebM to its end and not come back. Start at the beginning.
-      await demuxer.seek(demuxer.startTime).catch(() => {});
 
       const videos = demuxer.streams.filter((s) => s.kind === "video" && !["mjpeg", "png", "bmp"].includes(s.codec));
       const audios = demuxer.streams.filter((s) => s.kind === "audio");
@@ -270,9 +261,7 @@ export class MediaPlayer implements PlayerAdapter {
       if (generation !== this.generation) return;
 
       this.eof = false;
-      this.rewound = false;
       this.origin = demuxer.startTime;
-      this.heardAt = demuxer.startTime;
       this.wallBase = this.origin;
       this.wallStart = performance.now();
       this.update({
@@ -506,16 +495,15 @@ export class MediaPlayer implements PlayerAdapter {
           await this.doSeek();
           continue;
         }
-        if (this.output && this.audio?.hardware && this.output.time() - this.heardAt > 0.05) {
-          this.audioHealthy = true;
-          this.clockAdvancedAt = performance.now();
-          this.heardAt = this.output.time();
-        }
+        if (this.output && this.audio?.hardware && this.output.time() - this.origin > 0.05) this.audioHealthy = true;
         // Checked before the end-of-file wait: a silent decoder still has to be replaced after the file is read.
-        // Movement has to keep happening. A clock that parks on a seek point, or plays and then stops, is replaced.
-        const sinceMove = Math.max(this.playSince, this.clockAdvancedAt);
-        const clockStalled = !this.state.paused && this.playSince > 0 && performance.now() - sinceMove > 500;
-        const audioSilent = !this.audioFallback && !!this.audio?.hardware && clockStalled;
+        const audioSilent =
+          !this.audioHealthy &&
+          !this.audioFallback &&
+          !!this.audio?.hardware &&
+          this.audioFedAt > 0 &&
+          ((!this.pcmSeen && performance.now() - this.audioFedAt > 400) ||
+            (!!this.playSince && performance.now() - this.playSince > 250));
         if (audioSilent) {
           await this.useSoftwareAudio();
           continue;
@@ -542,38 +530,14 @@ export class MediaPlayer implements PlayerAdapter {
         if (generation !== this.generation || this.seekPending) continue;
         await this.route(packets);
         if (eof) {
-          // The first read can be an empty end when the probe left the reader there.
-          if (packets.length === 0 && !this.audioFedAt && this.frames.length === 0 && !this.rewound) {
-            this.rewound = true;
-            await this.demuxer?.seek(this.origin);
-            continue;
-          }
           this.eof = true;
-          await this.finishVideo(generation);
+          await this.video?.flush();
         }
       } catch (e) {
         if (generation === this.generation) this.fail(e as Error);
         return;
       }
     }
-  }
-
-  /**
-   * Flushes the video decoder at the end of the file. A WebCodecs flush that never resolves used to freeze the
-   * read loop, so the clock stayed at 0 and the software decoder was never tried.
-   */
-  private async finishVideo(generation: number) {
-    const video = this.video;
-    if (!video) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const hung = await Promise.race([
-      video.flush().then(() => false).catch(() => false),
-      new Promise<boolean>((resolve) => {
-        timer = setTimeout(() => resolve(true), 800);
-      }),
-    ]);
-    clearTimeout(timer);
-    if (hung && generation === this.generation && video.kind === "hardware") await this.useSoftwareVideo();
   }
 
   /** Hands a batch of packets to their decoders: one call each, as FFmpeg's are round trips to its worker. */
@@ -606,17 +570,6 @@ export class MediaPlayer implements PlayerAdapter {
     this.output?.flush(target);
     this.dropBefore = target;
     this.eof = false;
-    // A seek can silence the browser's decoder (Opus in WebM drops its preroll). The flushed clock
-    // already sits on the seek point, so that alone is not proof the decoder is playing.
-    this.heardAt = this.output?.time() ?? target;
-    this.audioHealthy = false;
-    this.pcmSeen = false;
-    this.audioFedAt = 0;
-    if (this.audio?.hardware) this.audioFallback = false;
-    if (!this.state.paused) {
-      this.playSince = performance.now();
-      this.clockAdvancedAt = this.playSince;
-    }
     // Subtitle lines that began a little before the target are read again too.
     await this.demuxer?.seek(this.subtitles ? Math.max(0, target - 1) : target);
     if (!this.videoStream && !this.audioStream) this.finishSeek();
@@ -650,8 +603,7 @@ export class MediaPlayer implements PlayerAdapter {
     }
 
     const atEnd = this.eof && this.frames.length === 0 && (this.output?.buffered ?? 0) < 0.05;
-    // A missing duration is 0, which would otherwise end the file the moment it is opened.
-    if (atEnd && this.state.duration > 0.25 && !this.state.paused && !this.state.ended && now - this.origin >= this.state.duration - 0.25) {
+    if (atEnd && !this.state.paused && !this.state.ended && now - this.origin >= this.state.duration - 0.25) {
       this.wallBase = this.origin + this.state.duration;
       this.update({ ended: true });
       this.setPaused(true);
