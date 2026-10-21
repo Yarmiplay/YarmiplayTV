@@ -495,12 +495,8 @@ export class MediaPlayer implements PlayerAdapter {
           await this.doSeek();
           continue;
         }
-        if (this.eof || !this.demuxer || this.state.error) {
-          await sleep(50);
-          continue;
-        }
         if (this.output && this.audio?.hardware && this.output.time() - this.origin > 0.05) this.audioHealthy = true;
-        // No samples yet: the decoder is silent. Samples, but the clock stays put once playback starts: same thing.
+        // Checked before the end-of-file wait: a silent decoder still has to be replaced after the file is read.
         const audioSilent =
           !this.audioHealthy &&
           !this.audioFallback &&
@@ -512,6 +508,10 @@ export class MediaPlayer implements PlayerAdapter {
           await this.useSoftwareAudio();
           continue;
         }
+        if (this.eof || !this.demuxer || this.state.error) {
+          await sleep(50);
+          continue;
+        }
         if (this.heldVideo.length && this.video && this.video.queued < MAX_QUEUED) {
           const batch = this.heldVideo.splice(0, MAX_QUEUED - this.video.queued);
           await this.video.decode(batch);
@@ -520,10 +520,9 @@ export class MediaPlayer implements PlayerAdapter {
         const videoWants = !!this.video && this.frames.length < MAX_FRAMES && this.video.queued < MAX_QUEUED / 2;
         const audioWants = !!this.audio && audioAhead < AUDIO_HIGH && this.audio.queued < MAX_QUEUED;
         const audioStarved = !!this.audio && audioAhead < AUDIO_LOW;
-        // A full video decoder must not stop the sound being read. Those video packets wait in heldVideo.
-        const videoBlocked = !!this.video && (this.video.queued >= MAX_QUEUED || this.heldVideo.length > 0);
-        const needAudio = !!this.audio && !this.pcmSeen && !this.audioFallback;
-        if (!((videoWants && !videoBlocked) || audioStarved || needAudio || (audioWants && !this.video))) {
+        // A full video decoder waits. Packets past the cap sit in heldVideo, and a starved sound track is still read.
+        const videoBlocked = !!this.video && this.video.queued >= MAX_QUEUED && !audioStarved;
+        if (videoBlocked || !(videoWants || audioStarved || (audioWants && !this.video))) {
           await sleep(10);
           continue;
         }

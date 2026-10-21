@@ -213,8 +213,9 @@ textarea {
   color: var(--text);
 }
 
-/* Snow's accent is the same colour as the page, so a selected row on the pale card uses the card's dark text. */
-[data-theme="snow"] :is(.sections, nav) a.on {
+/* Snow's accent is the same colour as the page, so a selected row uses the card's dark text.
+   The section rule has to outrank the component's own accent colour. */
+html[data-theme="snow"] :is(.sections, nav) a.on {
   color: var(--on-surface);
 }
 

@@ -158,6 +158,10 @@
     color: var(--accent);
     font-weight: 600;
   }
+  /* Scoped accent would otherwise beat the stylesheet: Snow's accent is the page colour. */
+  :global(html[data-theme="snow"]) .sections a.on {
+    color: var(--on-surface);
+  }
   .content {
     min-width: 0;
     min-height: 0;
