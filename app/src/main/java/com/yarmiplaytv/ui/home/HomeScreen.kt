@@ -235,7 +235,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                             PosterCard(
                                 title = lib.name,
                                 subtitle = (source as? CompositeMediaSource)?.sourceOf(lib)?.displayName,
-                                imageUrl = source?.imageUrl(lib, 480),
+                                imageUrl = source?.imageUrl(lib, 360),
                                 aspectRatio = 16f / 9f,
                                 placeholderIcon = when (lib.collectionType) {
                                     "tvshows" -> Icons.Filled.Tv
@@ -243,7 +243,7 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
                                     else -> Icons.Filled.Folder
                                 },
                                 onClick = { nav.push(Screen.Browse(lib)) },
-                                modifier = Modifier.width(260.dp),
+                                modifier = Modifier.width(180.dp),
                                 titleLines = Int.MAX_VALUE,
                                 subtitleLines = Int.MAX_VALUE,
                             )

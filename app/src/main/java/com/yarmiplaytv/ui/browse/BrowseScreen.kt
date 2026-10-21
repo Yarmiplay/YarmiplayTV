@@ -1,5 +1,6 @@
 package com.yarmiplaytv.ui.browse
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,9 +13,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
@@ -30,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,6 +43,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -60,9 +70,12 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.malInfo
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.SurfaceInk
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ItemGrid(
     container: AppContainer,
@@ -74,17 +87,44 @@ private fun ItemGrid(
 ) {
     val source by container.mediaSource.collectAsStateWithLifecycle()
     val aspect = aspectFor(items)
-    val gridState = rememberLazyGridState()
+    // Keep the next and previous row composed. A row that is not on screen yet is brought in
+    // one cell at a time, and that cell is column 0, so Down would land there.
+    val gridState = rememberLazyGridState(cacheWindow = LazyLayoutCacheWindow(ahead = 800.dp, behind = 400.dp))
+    val scope = rememberCoroutineScope()
+    val focus = remember(items) { ShowGridFocus(items.size) }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(if (aspect < 1f) 170.dp else 240.dp),
         state = gridState,
-        modifier = modifier.focusRestorer(),
+        modifier = modifier.focusRestorer().onPreviewKeyEvent { event ->
+            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            val rowsDelta = when (event.key) {
+                Key.DirectionDown -> 1
+                Key.DirectionUp -> -1
+                else -> return@onPreviewKeyEvent false
+            }
+            val columns = gridState.layoutInfo.maxSpan
+            val from = if (focus.landing >= 0) focus.landing else focus.cursor
+            val target = sameColumnTarget(from, columns, rowsDelta, items.size) ?: return@onPreviewKeyEvent false
+            if (focus.request(target)) return@onPreviewKeyEvent true
+            focus.landing = target
+            focus.job?.cancel()
+            focus.job = scope.launch {
+                val goal = target
+                revealRow(gridState, from, goal, columns, rowsDelta)
+                repeat(4) {
+                    // A Left or Right while this row was scrolling in wins over the queued Down.
+                    if (!isActive || focus.landing != goal) return@launch
+                    if (focus.request(goal)) return@launch
+                    delay(16)
+                }
+            }
+            true
+        },
         contentPadding = PaddingValues(horizontal = 48.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(24.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        items(items, key = { it.uniqueKey }) { item ->
-            val index = items.indexOf(item)
+        itemsIndexed(items, key = { _, item -> item.uniqueKey }) { index, item ->
             PosterCard(
                 title = if (item.type == MediaItemType.EPISODE) item.displayTitle else item.name,
                 subtitle = subtitleFor(item, if (showServer) serverNameOf(source, item) else null),
@@ -97,10 +137,56 @@ private fun ItemGrid(
                 },
                 badge = if (item.played) "Watched" else null,
                 onClick = { onClick(item) },
-                modifier = if (index == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier,
+                modifier = Modifier
+                    .focusRequester(focus.requesters[index])
+                    .then(if (index == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier)
+                    .onFocusChanged { if (it.hasFocus) focus.arrived(index) },
             )
         }
     }
+}
+
+/** Focus bookkeeping for one show grid. Not state: moving focus should not rebuild the grid. */
+private class ShowGridFocus(count: Int) {
+    val requesters = List(count) { FocusRequester() }
+    var cursor = 0
+    var landing = -1
+    var job: Job? = null
+
+    fun request(index: Int): Boolean {
+        val ok = runCatching { requesters[index].requestFocus() }.getOrDefault(false)
+        if (ok) arrived(index)
+        return ok
+    }
+
+    fun arrived(index: Int) {
+        cursor = index
+        landing = -1
+    }
+}
+
+/**
+ * Compose just enough of [target]'s row to focus it, without scrolling the current poster away.
+ * One pixel of the row is enough: a vertical grid measures every column of a row together.
+ */
+private suspend fun revealRow(state: LazyGridState, from: Int, target: Int, columns: Int, rowsDelta: Int) {
+    val info = state.layoutInfo
+    val anchor = info.visibleItemsInfo.firstOrNull { it.index == from }
+    val rowStart = target - target.mod(columns)
+    if (anchor == null) {
+        state.scrollToItem(rowStart)
+        return
+    }
+    val spacing = info.mainAxisItemSpacing
+    val delta = if (rowsDelta > 0) {
+        val bottom = anchor.offset.y + anchor.size.height
+        (bottom + spacing + 1) - info.viewportEndOffset
+    } else {
+        val top = anchor.offset.y
+        info.viewportStartOffset - (top - spacing - 1)
+    }
+    if (delta > 0) state.scroll { scrollBy(if (rowsDelta > 0) delta.toFloat() else -delta.toFloat()) }
+    else state.scrollToItem(rowStart)
 }
 
 @Composable
