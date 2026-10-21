@@ -44,8 +44,9 @@ const livePosition = (page: Page) => page.evaluate(() => (window as any).playerL
 
 async function playFor(page: Page, seconds: number): Promise<[number, number]> {
   if ((await snapshot(page)).paused) await page.getByRole("button", { name: "Play" }).click();
-  // Let the sound start (and a speed change settle) before measuring.
-  await page.waitForTimeout(500);
+  // Let the sound start. A seek can make the browser's decoder go quiet, and the player then
+  // switches to the software decoder; that has to finish before the clock is measured.
+  await page.waitForTimeout(1200);
   const before = await livePosition(page);
   await page.waitForTimeout(seconds * 1000);
   const after = await livePosition(page);

@@ -601,6 +601,13 @@ export class MediaPlayer implements PlayerAdapter {
     this.output?.flush(target);
     this.dropBefore = target;
     this.eof = false;
+    // A seek can silence the browser's decoder (Opus in WebM drops its preroll). It gets one more
+    // chance to move the clock, then the software decoder takes over, same as when playback starts.
+    this.audioHealthy = false;
+    this.pcmSeen = false;
+    this.audioFedAt = 0;
+    if (this.audio?.hardware) this.audioFallback = false;
+    if (!this.state.paused) this.playSince = performance.now();
     // Subtitle lines that began a little before the target are read again too.
     await this.demuxer?.seek(this.subtitles ? Math.max(0, target - 1) : target);
     if (!this.videoStream && !this.audioStream) this.finishSeek();
