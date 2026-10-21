@@ -234,8 +234,11 @@ class WebCodecsAudio implements AudioDecoding {
   }
 
   async reset() {
-    if (this.decoder.state !== "closed") this.decoder.reset();
-    this.decoder.configure(this.config);
+    if (this.decoder.state === "closed") this.decoder = this.make();
+    else {
+      this.decoder.reset();
+      this.decoder.configure(this.config);
+    }
   }
 
   async close() {

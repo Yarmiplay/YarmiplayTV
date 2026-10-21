@@ -89,8 +89,12 @@ class WebCodecsVideo implements VideoDecoding {
   }
 
   async reset() {
-    if (this.decoder.state !== "closed") this.decoder.reset();
-    this.decoder.configure(this.config);
+    // An error closes the decoder; configure on a closed one throws and stops the file.
+    if (this.decoder.state === "closed") this.decoder = this.make();
+    else {
+      this.decoder.reset();
+      this.decoder.configure(this.config);
+    }
     this.needKey = true;
   }
 
