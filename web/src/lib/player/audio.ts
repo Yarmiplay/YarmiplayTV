@@ -226,7 +226,11 @@ class WebCodecsAudio implements AudioDecoding {
 
   async decode(packets: TimedPacket[]) {
     if (this.decoder.state === "closed") this.decoder = this.make();
-    for (const p of packets) this.decoder.decode(packetToEncodedAudioChunk(tight(p.packet), this.stream.timeBase));
+    try {
+      for (const p of packets) this.decoder.decode(packetToEncodedAudioChunk(tight(p.packet), this.stream.timeBase));
+    } catch (e) {
+      this.onError(e as Error);
+    }
   }
 
   async reset() {

@@ -5,7 +5,7 @@ import { Demuxer, type Chapter, type StreamInfo, type TimedPacket } from "./demu
 import { createLibAV, type LibAV } from "./libav";
 import { Renderer } from "./renderer";
 import { PGS, PgsLayer, SubtitleLayer, TEXT_SUBTITLES } from "./subtitles";
-import { openVideoDecoding, type VideoDecoding } from "./video";
+import { openSoftwareVideo, openVideoDecoding, type VideoDecoding } from "./video";
 
 export interface Track {
   /** The stream's index in the file. */
@@ -109,8 +109,14 @@ export class MediaPlayer implements PlayerAdapter {
   /** Sound was handed to the browser's decoder and it produced nothing; the software decoder takes over once. */
   private audioFedAt = 0;
   private pcmSeen = false;
+  /** The browser's audio decoder produced samples and the clock moved, so it is left in place. */
+  private audioHealthy = false;
   private audioFallback = false;
   private pcmToken = 0;
+  /** When playback was last started, so a clock that stays at 0 can be given to the software decoder. */
+  private playSince = 0;
+  private videoFallback = false;
+  private switchingVideo = false;
   private _source: ByteSource | null = null;
   private generation = 0;
   private eof = false;
@@ -162,6 +168,7 @@ export class MediaPlayer implements PlayerAdapter {
 
   setPaused(paused: boolean) {
     if (paused === this.state.paused) return;
+    this.playSince = paused ? 0 : performance.now();
     this.wallBase = this.clock();
     this.wallStart = performance.now();
     this.update({ paused, ended: paused ? this.state.ended : false });
@@ -232,8 +239,10 @@ export class MediaPlayer implements PlayerAdapter {
         textSubs[0] ??
         null;
 
+      this.videoFallback = false;
+      this.playSince = 0;
       if (this.videoStream) {
-        this.video = await openVideoDecoding(libav, this.videoStream, this.onFrame, (e) => this.fail(e));
+        this.video = await openVideoDecoding(libav, this.videoStream, this.onFrame, (e) => void this.videoFailed(e));
       }
       if (this.audioStream) await this.openAudio(this.audioStream);
       if (subtitle) await this.openSubtitles(subtitle);
@@ -339,6 +348,7 @@ export class MediaPlayer implements PlayerAdapter {
     this.output.setVolume(this.state.muted ? 0 : this.state.volume);
     this.audioFedAt = 0;
     this.pcmSeen = false;
+    this.audioHealthy = false;
     this.audioFallback = false;
     this.audio = await openAudioDecoding(libav, stream, this.bindPcm(), (e) => void this.audioFailed(e));
     if (!this.state.paused) await this.output.play();
@@ -431,8 +441,34 @@ export class MediaPlayer implements PlayerAdapter {
     await this.audio?.close().catch(() => {});
     this.audio = await openSoftwareAudio(this.libav, stream, this.bindPcm());
     this.audioFedAt = 0;
-    this.update({ audioDecoder: "software" });
+    this.update({ audioDecoder: "software", error: null });
     this.switchingAudio = false;
+    this.seek(Math.max(0, this.position));
+  }
+
+  /** The browser's video decoder reported an error. FFmpeg decodes the same stream, and playback starts again there. */
+  private async videoFailed(error: Error) {
+    if (this.switchingVideo) return;
+    if (!this.videoFallback && this.video?.kind === "hardware" && this.videoStream && this.libav) {
+      await this.useSoftwareVideo();
+      return;
+    }
+    this.fail(error);
+  }
+
+  private async useSoftwareVideo() {
+    if (this.switchingVideo || this.videoFallback || !this.videoStream || !this.libav) return;
+    this.switchingVideo = true;
+    this.videoFallback = true;
+    const stream = this.videoStream;
+    await this.video?.close().catch(() => {});
+    this.video = await openSoftwareVideo(this.libav, stream, this.onFrame);
+    this.heldVideo = [];
+    this.update({
+      error: null,
+      video: this.state.video ? { ...this.state.video, decoder: "software" } : null,
+    });
+    this.switchingVideo = false;
     this.seek(Math.max(0, this.position));
   }
 
@@ -463,12 +499,16 @@ export class MediaPlayer implements PlayerAdapter {
           await sleep(50);
           continue;
         }
-        if (
-          !this.pcmSeen &&
-          this.audio?.hardware &&
+        if (this.output && this.audio?.hardware && this.output.time() - this.origin > 0.05) this.audioHealthy = true;
+        // No samples yet: the decoder is silent. Samples, but the clock stays put once playback starts: same thing.
+        const audioSilent =
+          !this.audioHealthy &&
+          !this.audioFallback &&
+          !!this.audio?.hardware &&
           this.audioFedAt > 0 &&
-          performance.now() - this.audioFedAt > 400
-        ) {
+          ((!this.pcmSeen && performance.now() - this.audioFedAt > 400) ||
+            (!!this.playSince && performance.now() - this.playSince > 250));
+        if (audioSilent) {
           await this.useSoftwareAudio();
           continue;
         }
@@ -482,7 +522,8 @@ export class MediaPlayer implements PlayerAdapter {
         const audioStarved = !!this.audio && audioAhead < AUDIO_LOW;
         // A full video decoder must not stop the sound being read. Those video packets wait in heldVideo.
         const videoBlocked = !!this.video && (this.video.queued >= MAX_QUEUED || this.heldVideo.length > 0);
-        if (!((videoWants && !videoBlocked) || audioStarved || (audioWants && !this.video))) {
+        const needAudio = !!this.audio && !this.pcmSeen && !this.audioFallback;
+        if (!((videoWants && !videoBlocked) || audioStarved || needAudio || (audioWants && !this.video))) {
           await sleep(10);
           continue;
         }

@@ -32,7 +32,7 @@ export async function openVideoDecoding(
     if (support?.supported) return new WebCodecsVideo(stream, support.config ?? config, output, onError);
   }
   try {
-    return await FfmpegVideo.open(libav, stream, output);
+    return await openSoftwareVideo(libav, stream, output);
   } catch {
     throw new UnsupportedVideoError(
       stream.codec === "hevc"
@@ -73,10 +73,14 @@ class WebCodecsVideo implements VideoDecoding {
 
   async decode(packets: TimedPacket[]) {
     if (this.decoder.state === "closed") this.decoder = this.make();
-    for (const p of packets) {
-      if (this.needKey && !p.key) continue;
-      this.needKey = false;
-      this.decoder.decode(packetToEncodedVideoChunk(p.packet, this.stream.timeBase));
+    try {
+      for (const p of packets) {
+        if (this.needKey && !p.key) continue;
+        this.needKey = false;
+        this.decoder.decode(packetToEncodedVideoChunk(p.packet, this.stream.timeBase));
+      }
+    } catch (e) {
+      this.onError(e as Error);
     }
   }
 
@@ -93,6 +97,15 @@ class WebCodecsVideo implements VideoDecoding {
   async close() {
     if (this.decoder.state !== "closed") this.decoder.close();
   }
+}
+
+/** FFmpeg's decoder, for codecs the browser has no WebCodecs decoder for, and when that decoder reports an error. */
+export function openSoftwareVideo(
+  libav: LibAV,
+  stream: StreamInfo,
+  output: (frame: VideoFrame) => void,
+): Promise<VideoDecoding> {
+  return FfmpegVideo.open(libav, stream, output);
 }
 
 class FfmpegVideo implements VideoDecoding {
