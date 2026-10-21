@@ -62,6 +62,7 @@ import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.malInfo
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.SurfaceInk
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -197,7 +198,8 @@ fun MobileSearchScreen(container: AppContainer, nav: Navigator, initialQuery: St
 fun MobileItemActionsSheet(container: AppContainer, item: MediaItem, onDismiss: () -> Unit, onMal: (() -> Unit)? = null) {
     val room by container.sync.room.collectAsStateWithLifecycle()
     val inRoom = room.status == ConnectionStatus.CONNECTED
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = AppColors.Surface, modifier = Modifier.exposeTestTags()) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = AppColors.Surface, contentColor = AppColors.OnSurface, modifier = Modifier.exposeTestTags()) {
+        SurfaceInk {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item.seriesName?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.titleSmall) }
             Text(item.displayTitle, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -224,6 +226,7 @@ fun MobileItemActionsSheet(container: AppContainer, item: MediaItem, onDismiss: 
                     Icon(Icons.Filled.Bookmarks, contentDescription = null); Text("  MyAnimeList…")
                 }
             }
+        }
         }
     }
 }

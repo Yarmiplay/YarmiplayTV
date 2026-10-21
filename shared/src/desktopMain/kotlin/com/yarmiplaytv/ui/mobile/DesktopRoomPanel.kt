@@ -129,6 +129,7 @@ import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.player.sizeWarning
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.SurfaceInk
 import java.awt.dnd.DropTargetDragEvent
 import java.awt.dnd.DropTargetDropEvent
 import java.net.URI
@@ -235,8 +236,9 @@ actual fun RoomSidePanel(container: AppContainer) {
             // player's shortcuts. Esc still goes on to leave full screen or go back.
             .onKeyEvent { it.key != Key.Escape && !it.isCtrlPressed && !it.isAltPressed && !it.isMetaPressed },
         color = AppColors.Surface,
-        contentColor = AppColors.Text,
+        contentColor = AppColors.OnSurface,
     ) {
+        SurfaceInk {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TabRow(selectedTabIndex = panel.tab.ordinal, containerColor = AppColors.Surface, modifier = Modifier.weight(1f)) {
@@ -269,6 +271,7 @@ actual fun RoomSidePanel(container: AppContainer) {
                     MalFindSection(container)
                 }
             }
+        }
         }
     }
 }

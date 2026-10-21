@@ -282,7 +282,7 @@ private fun KnownRooms(container: AppContainer, model: SyncplayConnectModel, onC
     if (model.discovered.isNotEmpty()) {
         Text("Found on your network", style = MaterialTheme.typography.titleMedium)
         model.discovered.forEach { server ->
-            Surface(color = AppColors.Surface, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+            Surface(color = AppColors.Surface, contentColor = AppColors.OnSurface, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Dns, contentDescription = null, tint = AppColors.TextDim, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(12.dp))
@@ -293,7 +293,7 @@ private fun KnownRooms(container: AppContainer, model: SyncplayConnectModel, onC
         }
     }
     if (!compact && saved.isEmpty() && recent.isEmpty() && model.discovered.isEmpty()) {
-        Surface(color = AppColors.Surface, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Surface(color = AppColors.Surface, contentColor = AppColors.OnSurface, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("How rooms work", style = MaterialTheme.typography.titleMedium)
                 Text(
@@ -378,7 +378,7 @@ private val COMPACT_FORM_WIDTH = 480.dp
 private fun JoinCard(container: AppContainer, model: SyncplayConnectModel, status: ConnectionStatus, onConnected: () -> Unit, modifier: Modifier, compact: Boolean = false) {
     val settings by container.settings.collectAsStateWithLifecycle()
     var more by remember { mutableStateOf(model.password.isNotEmpty() || model.autoConnect) }
-    Surface(color = AppColors.Surface, shape = RoundedCornerShape(16.dp), modifier = modifier.testTag("join_card")) {
+    Surface(color = AppColors.Surface, contentColor = AppColors.OnSurface, shape = RoundedCornerShape(16.dp), modifier = modifier.testTag("join_card")) {
         Column(Modifier.padding(if (compact) 14.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (!compact) Text("Join a room", style = MaterialTheme.typography.titleLarge)
 
@@ -532,7 +532,7 @@ fun MobileJellyfinScreen(container: AppContainer, nav: Navigator) {
                 Text("Quick Connect", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
                 val code = model.quickCode
                 if (code != null) {
-                    Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface), shape = RoundedCornerShape(16.dp)) {
+                    Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface, contentColor = AppColors.OnSurface), shape = RoundedCornerShape(16.dp)) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             model.status?.let { Text(it, color = AppColors.TextDim) }
                             Text(
@@ -574,7 +574,7 @@ fun MobilePlexScreen(container: AppContainer, nav: Navigator) {
                 Text("Link this device to your Plex account, then pick a server.", color = AppColors.TextDim)
                 val code = model.linkCode
                 if (code != null) {
-                    Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface), shape = RoundedCornerShape(16.dp)) {
+                    Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface, contentColor = AppColors.OnSurface), shape = RoundedCornerShape(16.dp)) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             model.status?.let { Text(it, color = AppColors.TextDim) }
                             Text(

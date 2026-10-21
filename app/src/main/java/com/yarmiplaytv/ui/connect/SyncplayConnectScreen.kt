@@ -61,6 +61,7 @@ import com.yarmiplaytv.ui.shared.rememberSyncplayConnectModel
 import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serverStatusLine
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.SurfaceInk
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -170,6 +171,7 @@ private fun RoomRulesDialog(onAgree: () -> Unit, onDecline: () -> Unit) {
     LaunchedEffect(Unit) { runCatching { delay(50); agree.requestFocus() } }
     Dialog(onDismissRequest = onDecline) {
         Box(Modifier.width(820.dp).clip(RoundedCornerShape(20.dp)).background(AppColors.Surface).padding(32.dp)) {
+            SurfaceInk {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("Community rules", style = MaterialTheme.typography.headlineSmall)
                 ROOM_RULES.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
@@ -178,6 +180,7 @@ private fun RoomRulesDialog(onAgree: () -> Unit, onDecline: () -> Unit) {
                     ActionButton("I agree", onAgree, Modifier.focusRequester(agree), icon = Icons.Filled.Check, primary = true)
                     ActionButton("Cancel", onDecline)
                 }
+            }
             }
         }
     }

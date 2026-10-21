@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.SurfaceInk
 
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
@@ -50,10 +51,11 @@ fun StatusCard(icon: ImageVector, title: String, detail: String, dot: Color, onC
     Card(
         onClick = onClick,
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
+        colors = CardDefaults.cardColors(containerColor = AppColors.Surface, contentColor = AppColors.OnSurface),
         shape = RoundedCornerShape(16.dp),
     ) {
         // Fills the card when a grid row makes it taller than its text, with the text in the middle.
+        SurfaceInk {
         Row(Modifier.fillMaxSize().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(14.dp))
@@ -63,6 +65,7 @@ fun StatusCard(icon: ImageVector, title: String, detail: String, dot: Color, onC
             }
             Spacer(Modifier.width(12.dp))
             Box(Modifier.size(10.dp).clip(CircleShape).background(dot))
+        }
         }
     }
 }

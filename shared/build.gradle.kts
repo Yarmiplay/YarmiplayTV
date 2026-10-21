@@ -28,6 +28,7 @@ kotlin {
             implementation(libs.jetbrains.compose.foundation)
             implementation(libs.jetbrains.compose.ui)
             implementation(libs.jetbrains.compose.material3)
+            // Core only. Icons it lacks live under androidx.compose.material.icons in this source set.
             implementation(libs.jetbrains.compose.material.icons)
             implementation(libs.jetbrains.lifecycle.runtime.compose)
             implementation(libs.coil.compose)

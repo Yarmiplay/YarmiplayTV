@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -28,6 +29,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -66,6 +68,8 @@ import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.yarmiplaytv.sync.FeedMessage
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.LocalSurfaceInk
+import com.yarmiplaytv.ui.theme.SurfaceInk
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 
@@ -79,7 +83,7 @@ fun focusBorder() = ClickableSurfaceDefaults.border(
 @Composable
 fun cardColors(container: Color = AppColors.Surface) = ClickableSurfaceDefaults.colors(
     containerColor = container,
-    contentColor = AppColors.Text,
+    contentColor = if (container == AppColors.Surface) AppColors.OnSurface else AppColors.Text,
     focusedContainerColor = AppColors.SurfaceHigh,
     focusedContentColor = AppColors.Text,
     pressedContainerColor = AppColors.SurfaceHigh,
@@ -96,16 +100,20 @@ fun TvTile(
     focusedScale: Float = 1.04f,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    Surface(
-        onClick = onClick,
-        onLongClick = onLongClick,
-        enabled = enabled,
-        modifier = modifier,
-        shape = ClickableSurfaceDefaults.shape(CardShape),
-        colors = cardColors(container),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = focusedScale),
-        border = focusBorder(),
-    ) { content() }
+    // Focus lifts the tile onto SurfaceHigh, whose text is the page colour. Unfocused, a Surface tile uses the card ink.
+    var focused by remember { mutableStateOf(false) }
+    CompositionLocalProvider(LocalSurfaceInk provides (container == AppColors.Surface && !focused)) {
+        Surface(
+            onClick = onClick,
+            onLongClick = onLongClick,
+            enabled = enabled,
+            modifier = modifier.onFocusChanged { focused = it.isFocused },
+            shape = ClickableSurfaceDefaults.shape(CardShape),
+            colors = cardColors(container),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = focusedScale),
+            border = focusBorder(),
+        ) { content() }
+    }
 }
 
 @Composable
@@ -365,8 +373,8 @@ fun Panel(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
-        colors = SurfaceDefaults.colors(containerColor = AppColors.Surface.copy(alpha = 0.96f), contentColor = AppColors.Text),
-    ) { content() }
+        colors = SurfaceDefaults.colors(containerColor = AppColors.Surface.copy(alpha = 0.96f), contentColor = AppColors.OnSurface),
+    ) { SurfaceInk { content() } }
 }
 
 /** Transient notifications (chat, joins, pauses) stacked in a corner. */
@@ -400,7 +408,7 @@ fun ToastHost(toasts: Flow<FeedMessage>, modifier: Modifier = Modifier) {
                     if (msg.from != null) {
                         Text("${msg.from}: ", color = AppColors.Accent, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
                     }
-                    Text(msg.text, color = if (msg.isError) AppColors.Error else AppColors.Text, style = MaterialTheme.typography.bodyLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Text(msg.text, color = if (msg.isError) AppColors.Error else AppColors.OnSurface, style = MaterialTheme.typography.bodyLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

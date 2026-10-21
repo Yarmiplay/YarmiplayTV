@@ -62,6 +62,7 @@ import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.SurfaceInk
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -167,9 +168,11 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
     }
 
     picked?.let { uri ->
-        ModalBottomSheet(onDismissRequest = { picked = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = AppColors.Surface, modifier = Modifier.exposeTestTags()) {
+        ModalBottomSheet(onDismissRequest = { picked = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = AppColors.Surface, contentColor = AppColors.OnSurface, modifier = Modifier.exposeTestTags()) {
+            SurfaceInk {
             val file = files.firstOrNull { it.uri == uri }
             LocalFileActions(container, uri, file, file?.name ?: uriFileName(uri) ?: "", ManagedRooms.label(room.room)) { picked = null }
+            }
         }
     }
 }

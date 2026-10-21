@@ -13,12 +13,12 @@ fun YarmiplayTvTheme(palette: Palette = LocalPalette.current, content: @Composab
         if (isLight) {
             lightColorScheme(
                 primary = accent, onPrimary = onAccent, background = background, onBackground = text,
-                surface = surface, onSurface = text, surfaceVariant = surfaceHigh, onSurfaceVariant = textDim, error = error,
+                surface = surface, onSurface = onSurface, surfaceVariant = surfaceHigh, onSurfaceVariant = textDim, error = error,
             )
         } else {
             darkColorScheme(
                 primary = accent, onPrimary = onAccent, background = background, onBackground = text,
-                surface = surface, onSurface = text, surfaceVariant = surfaceHigh, onSurfaceVariant = textDim, error = error,
+                surface = surface, onSurface = onSurface, surfaceVariant = surfaceHigh, onSurfaceVariant = textDim, error = error,
             )
         }
     }

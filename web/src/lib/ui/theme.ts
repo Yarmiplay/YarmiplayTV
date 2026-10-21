@@ -1,6 +1,6 @@
 /**
  * The app's themes, as in AppColors.kt: Dark (night blue, the app's own look), Noire
- * (dark purple, as NoireServerTV), Monochrome (true black and white), Light, and Match the system (Light or Dark as the device is set). The colours themselves
+ * (dark purple), Monochrome (true black and white), Light, and Match the system (Light or Dark as the device is set). The colours themselves
  * live in app.css as custom properties under `html[data-theme=…]`; this file picks which set applies.
  */
 
@@ -9,7 +9,7 @@ export type PaletteKey = "dark" | "noire" | "monochrome" | "light";
 
 export const THEMES: { key: ThemeKey; label: string; description: string }[] = [
   { key: "dark", label: "Dark", description: "Night blue, the app's own look" },
-  { key: "noire", label: "Noire", description: "Dark purple, as NoireServerTV" },
+  { key: "noire", label: "Noire", description: "Dark purple" },
   { key: "monochrome", label: "Monochrome", description: "Black and white: true black, darkest on OLED screens" },
   { key: "light", label: "Light", description: "Light backgrounds and dark text" },
   { key: "system", label: "Match the system", description: "Light or dark, as your device is set" },

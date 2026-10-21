@@ -49,6 +49,7 @@ import com.yarmiplaytv.ui.shared.readyButtonLabel
 import com.yarmiplaytv.ui.shared.updateSourceLine
 import com.yarmiplaytv.ui.shared.updateStateLine
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.SurfaceInk
 import com.yarmiplaytv.update.StoreUpdates
 import com.yarmiplaytv.update.UpdateCheck
 import com.yarmiplaytv.update.UpdateState
@@ -67,9 +68,10 @@ fun UpdateBanner(container: AppContainer, modifier: Modifier = Modifier) {
     val s = state ?: return
     Card(
         modifier.testTag("update_banner"),
-        colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
+        colors = CardDefaults.cardColors(containerColor = AppColors.Surface, contentColor = AppColors.OnSurface),
         shape = RoundedCornerShape(16.dp),
     ) {
+        SurfaceInk {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.SystemUpdate, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(28.dp))
@@ -77,6 +79,7 @@ fun UpdateBanner(container: AppContainer, modifier: Modifier = Modifier) {
                 Text("YarmiplayTV ${s.update.version} is available", style = MaterialTheme.typography.titleMedium)
             }
             UpdateProgress(container, s, dismiss = true)
+        }
         }
     }
 }
@@ -87,9 +90,10 @@ private fun StoreUpdateBanner(container: AppContainer, store: StoreUpdates, modi
     val uriHandler = LocalUriHandler.current
     Card(
         modifier.testTag("update_banner"),
-        colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
+        colors = CardDefaults.cardColors(containerColor = AppColors.Surface, contentColor = AppColors.OnSurface),
         shape = RoundedCornerShape(16.dp),
     ) {
+        SurfaceInk {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.SystemUpdate, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(28.dp))
@@ -100,6 +104,7 @@ private fun StoreUpdateBanner(container: AppContainer, store: StoreUpdates, modi
                 Button({ container.updates.updateFromStore(uriHandler::openUri) }, Modifier.testTag("store_update")) { Text("Update") }
                 TextButton(container.updates::dismissStoreUpdate) { Text("Not now") }
             }
+        }
         }
     }
 }

@@ -94,6 +94,7 @@ import com.yarmiplaytv.ui.shared.playEpisode
 import com.yarmiplaytv.ui.shared.rememberMalLoginModel
 import com.yarmiplaytv.ui.shared.rememberMalSearchModel
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.SurfaceInk
 import com.yarmiplaytv.ui.theme.OnVideo
 import kotlinx.coroutines.launch
 
@@ -521,10 +522,12 @@ fun MobileMalScreen(container: AppContainer, nav: Navigator) {
 
 @Composable
 private fun MalSection(title: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Surface(color = AppColors.Surface, shape = RoundedCornerShape(16.dp), modifier = modifier.fillMaxWidth()) {
+    Surface(color = AppColors.Surface, contentColor = AppColors.OnSurface, shape = RoundedCornerShape(16.dp), modifier = modifier.fillMaxWidth()) {
+        SurfaceInk {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             content()
+        }
         }
     }
 }
@@ -532,7 +535,8 @@ private fun MalSection(title: String, modifier: Modifier = Modifier, content: @C
 @Composable
 private fun MalAccountCard(container: AppContainer, userName: String, picture: String?) {
     var confirm by remember { mutableStateOf(false) }
-    Surface(color = AppColors.Surface, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = AppColors.Surface, contentColor = AppColors.OnSurface, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+        SurfaceInk {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(48.dp).clip(RoundedCornerShape(24.dp)).background(AppColors.SurfaceHigh)) {
                 picture?.let { AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
@@ -543,6 +547,7 @@ private fun MalAccountCard(container: AppContainer, userName: String, picture: S
                 Text(MAL_ATTRIBUTION, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
             }
             TextButton({ confirm = true }, Modifier.testTag("mal_hub_sign_out")) { Text("Sign out") }
+        }
         }
     }
     if (confirm) {
@@ -559,10 +564,12 @@ private fun MalAccountCard(container: AppContainer, userName: String, picture: S
 @Composable
 private fun MalNowPlaying(container: AppContainer, state: MalState, nav: Navigator) {
     if (state == MalState.Idle) return
-    Surface(color = AppColors.Surface, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = AppColors.Surface, contentColor = AppColors.OnSurface, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+        SurfaceInk {
         Column(Modifier.padding(vertical = 12.dp)) {
             Text("Now playing", style = MaterialTheme.typography.labelLarge, color = AppColors.TextDim, modifier = Modifier.padding(horizontal = 16.dp))
             MalContent(container, state, onSignIn = { nav.push(Screen.MalLogin) })
+        }
         }
     }
 }

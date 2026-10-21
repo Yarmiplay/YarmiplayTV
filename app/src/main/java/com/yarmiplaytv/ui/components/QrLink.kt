@@ -33,6 +33,7 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.google.zxing.qrcode.encoder.Encoder
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.SurfaceInk
 import kotlinx.coroutines.delay
 
 /** [url] as the dark modules of a QR code, row by row; null when it doesn't fit in one. */
@@ -52,12 +53,14 @@ fun QrLinkDialog(title: String, url: String, onDismiss: () -> Unit) {
     LaunchedEffect(Unit) { runCatching { delay(50); close.requestFocus() } }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.width(560.dp).clip(RoundedCornerShape(20.dp)).background(AppColors.Surface).padding(32.dp).testTag("qr_dialog")) {
+            SurfaceInk {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
                 Text("Scan with your phone, or type the address.", color = AppColors.TextDim, textAlign = TextAlign.Center)
                 if (modules != null) QrCode(modules, Modifier.size(280.dp).testTag("qr_code"))
                 Text(shortUrl(url), style = MaterialTheme.typography.titleLarge, color = AppColors.Accent, textAlign = TextAlign.Center)
                 ActionButton("Close", onDismiss, Modifier.focusRequester(close), icon = Icons.Filled.Close)
+            }
             }
         }
     }

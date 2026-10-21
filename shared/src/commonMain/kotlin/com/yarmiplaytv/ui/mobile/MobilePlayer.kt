@@ -115,6 +115,7 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.player.playbackInfo
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.SurfaceInk
 import com.yarmiplaytv.ui.theme.OnVideo
 import com.yarmiplaytv.ui.theme.onVideoLabel
 import kotlinx.coroutines.delay
@@ -389,13 +390,14 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                             // Media Info Card with expandable full title and media details
                             var titleExpanded by remember(nowPlaying?.url) { mutableStateOf(false) }
                             Surface(
-                                color = AppColors.Surface,
+                                color = AppColors.Surface, contentColor = AppColors.OnSurface,
                                 shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("title_card")
                                     .clickable { titleExpanded = !titleExpanded },
                             ) {
+                                SurfaceInk {
                                 Column(
                                     Modifier
                                         .fillMaxWidth()
@@ -462,12 +464,13 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         }
                                     }
                                 }
+                                }
                             }
 
                             // Dedicated Room Status & Ready Card (always visible when connected to a room, no need to tap the video)
                             if (room.status != ConnectionStatus.DISCONNECTED) {
                                 Surface(
-                                    color = AppColors.Surface,
+                                    color = AppColors.Surface, contentColor = AppColors.OnSurface,
                                     shape = RoundedCornerShape(16.dp),
                                     modifier = Modifier.fillMaxWidth().testTag("portrait_room_card"),
                                 ) {
@@ -540,7 +543,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
 
                             // Portrait player controls card (stays visible so controls never vanish in portrait)
                             Surface(
-                                color = AppColors.Surface,
+                                color = AppColors.Surface, contentColor = AppColors.OnSurface,
                                 shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier.fillMaxWidth().testTag("player_controls"),
                             ) {
@@ -637,7 +640,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
 
                             // Portrait sheet buttons bar
                             Surface(
-                                color = AppColors.Surface,
+                                color = AppColors.Surface, contentColor = AppColors.OnSurface,
                                 shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
@@ -708,8 +711,10 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
             onDismissRequest = { sheet = null },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = AppColors.Surface,
+            contentColor = AppColors.OnSurface,
             modifier = Modifier.testTag("player_sheet").exposeTestTags(),
         ) {
+            SurfaceInk {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                 when (kind) {
                     PlayerSheet.PLAYLIST -> PlaylistContent(container, onBrowse = { sheet = null; nav.popTo(Screen.Home) })
@@ -725,6 +730,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         MalFindSection(container)
                     }
                 }
+            }
             }
         }
     }
@@ -915,7 +921,7 @@ private fun BoxScope.RelayOnPlayer(
         )
         status.playbackHint(fileLoaded) == RelayHint.Downloading -> Surface(
             color = AppColors.Surface.copy(alpha = 0.9f),
-            contentColor = AppColors.Text,
+            contentColor = AppColors.OnSurface,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.align(Alignment.Center).widthIn(max = 560.dp).testTag("relay_download"),
         ) {
@@ -956,7 +962,7 @@ private fun CenterStatus(
                     is PlaylistStatus.Failed -> status.fileName to status.reason
                     else -> "" to ""
                 }
-                Surface(color = AppColors.Surface.copy(alpha = 0.95f), contentColor = AppColors.Text, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp).testTag("not_found")) {
+                Surface(color = AppColors.Surface.copy(alpha = 0.95f), contentColor = AppColors.OnSurface, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp).testTag("not_found")) {
                     Column(Modifier.verticalScroll(rememberScrollState()).padding(innerPadding), verticalArrangement = Arrangement.spacedBy(itemSpacing)) {
                         Text(if (status is PlaylistStatus.NotFound) "Couldn't find this file" else "Couldn't play this file", style = titleStyle)
                         Text(file, style = MaterialTheme.typography.titleSmall, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
@@ -974,7 +980,7 @@ private fun CenterStatus(
                 }
             }
             is PlaylistStatus.Untrusted -> {
-                Surface(color = AppColors.Surface.copy(alpha = 0.95f), contentColor = AppColors.Text, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp).testTag("untrusted_url")) {
+                Surface(color = AppColors.Surface.copy(alpha = 0.95f), contentColor = AppColors.OnSurface, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp).testTag("untrusted_url")) {
                     Column(Modifier.verticalScroll(rememberScrollState()).padding(innerPadding), verticalArrangement = Arrangement.spacedBy(itemSpacing)) {
                         Text("Open this link?", style = titleStyle)
                         Text(status.url, style = MaterialTheme.typography.titleSmall, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
@@ -1014,7 +1020,7 @@ private fun CenterStatus(
 
 @Composable
 private fun StatusBox(title: String, detail: String) {
-    Surface(color = AppColors.Surface.copy(alpha = 0.9f), contentColor = AppColors.Text, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp)) {
+    Surface(color = AppColors.Surface.copy(alpha = 0.9f), contentColor = AppColors.OnSurface, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             Text(detail, color = AppColors.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis)

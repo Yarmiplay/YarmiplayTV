@@ -36,8 +36,8 @@ New to it? The [user manual](https://tv.yarmiplay.com/manual/) explains everythi
   name with a lock instead of the hash. The Room tab lists the shared playlist first, then the chat, the
   people in the room, and last switching rooms. On a computer or a wide tablet the Room tab shows the playlist,
   the chat and the room side by side.
-- Themes, in Settings > Appearance: Dark (the app's night blue), Noire (dark purple, as NoireServerTV),
-  Monochrome (true black and white, for OLED screens), Light, or Match the system. The whole app recolours at once,
+- Themes, in Settings > Appearance: Dark (the app's night blue), Noire (dark purple),
+  Monochrome (true black and white, for OLED screens), Light, Ember (warm black and copper), Snow (dark slate and pale ice), Grass (bright green), Sky (bright blue), or Match the system. The whole app recolours at once,
   title bar, Android system bars and the player's panels included; what's written on the video stays white, on
   see-through black, so it reads on any picture.
 - Saved and recent rooms: every room you join is kept as a recent room (the 15 latest), and **Save this room**

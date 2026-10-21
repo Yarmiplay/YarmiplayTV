@@ -59,6 +59,7 @@ import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.malInfo
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.SurfaceInk
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -203,6 +204,7 @@ fun ItemActionsDialog(container: AppContainer, item: MediaItem, onDismiss: () ->
                 .background(AppColors.Surface)
                 .padding(32.dp),
         ) {
+            SurfaceInk {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 item.seriesName?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.titleMedium) }
                 Text(item.displayTitle, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -231,6 +233,7 @@ fun ItemActionsDialog(container: AppContainer, item: MediaItem, onDismiss: () ->
                         ActionButton("MyAnimeList…", { onDismiss(); onMal() }, Modifier.fillMaxWidth(), icon = Icons.Filled.Bookmarks)
                     }
                 }
+            }
             }
         }
     }

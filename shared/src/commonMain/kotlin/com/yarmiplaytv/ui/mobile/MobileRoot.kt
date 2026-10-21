@@ -38,8 +38,10 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -67,6 +69,7 @@ import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.SurfaceInk
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.setValue
@@ -229,6 +232,30 @@ private fun MobileScaffold(
     content: @Composable () -> Unit,
 ) {
     val showBottomBar = style == SectionNav.BAR && (screen != Screen.Player || isPortrait)
+    // Snow's cards are pale under a dark page, so the bar's labels follow the card ink. Every other theme keeps the defaults.
+    val onCard = AppColors.OnSurface != AppColors.Text
+    val barColors = if (onCard) {
+        NavigationBarItemDefaults.colors(
+            selectedIconColor = AppColors.OnSurface,
+            selectedTextColor = AppColors.OnSurface,
+            unselectedIconColor = AppColors.OnSurfaceDim,
+            unselectedTextColor = AppColors.OnSurfaceDim,
+            indicatorColor = AppColors.SurfaceHigh,
+        )
+    } else {
+        NavigationBarItemDefaults.colors()
+    }
+    val railColors = if (onCard) {
+        NavigationRailItemDefaults.colors(
+            selectedIconColor = AppColors.OnSurface,
+            selectedTextColor = AppColors.OnSurface,
+            unselectedIconColor = AppColors.OnSurfaceDim,
+            unselectedTextColor = AppColors.OnSurfaceDim,
+            indicatorColor = AppColors.SurfaceHigh,
+        )
+    } else {
+        NavigationRailItemDefaults.colors()
+    }
     Scaffold(
         containerColor = AppColors.Background,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -238,13 +265,14 @@ private fun MobileScaffold(
                     if (screen != Screen.Player) {
                         MiniPlayerBar(container, onOpenPlayer)
                     }
-                    NavigationBar(containerColor = AppColors.Surface) {
+                    NavigationBar(containerColor = AppColors.Surface, contentColor = AppColors.OnSurface) {
                         tabs.forEach { tab ->
                             NavigationBarItem(
                                 selected = tab == selected,
                                 onClick = { onTab(tab) },
                                 icon = { Icon(tab.icon, contentDescription = null) },
                                 label = { Text(tab.label) },
+                                colors = barColors,
                                 modifier = Modifier.testTag("tab_${tab.label}"),
                             )
                         }
@@ -257,13 +285,14 @@ private fun MobileScaffold(
         Row(Modifier.fillMaxSize().padding(contentPadding)) {
             when (style) {
                 SectionNav.RAIL -> if (screen != Screen.Player) {
-                    NavigationRail(containerColor = AppColors.Surface) {
+                    NavigationRail(containerColor = AppColors.Surface, contentColor = AppColors.OnSurface) {
                         tabs.forEach { tab ->
                             NavigationRailItem(
                                 selected = tab == selected,
                                 onClick = { onTab(tab) },
                                 icon = { Icon(tab.icon, contentDescription = null) },
                                 label = { Text(tab.label) },
+                                colors = railColors,
                                 modifier = Modifier.testTag("tab_${tab.label}"),
                             )
                         }
@@ -273,6 +302,7 @@ private fun MobileScaffold(
                             onClick = { container.exitApp() },
                             icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Exit YarmiplayTV") },
                             label = { Text("Exit") },
+                            colors = railColors,
                             modifier = Modifier.testTag("rail_exit"),
                         )
                     }
@@ -314,11 +344,13 @@ private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
 
     Surface(
         color = AppColors.Surface,
+        contentColor = AppColors.OnSurface,
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onOpenPlayer)
             .testTag("mini_player"),
     ) {
+        SurfaceInk {
         Column {
             val progress = if (state.duration > 0) (position / state.duration).toFloat().coerceIn(0f, 1f) else 0f
             LinearProgressIndicator(
@@ -391,6 +423,7 @@ private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
                     }
                 }
             }
+        }
         }
     }
 }

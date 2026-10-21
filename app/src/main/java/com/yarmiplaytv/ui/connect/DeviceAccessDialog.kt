@@ -36,6 +36,7 @@ import com.yarmiplaytv.ui.shared.closeDeviceAccess
 import com.yarmiplaytv.ui.shared.deviceAccessPrompt
 import com.yarmiplaytv.ui.shared.requestDeviceAccess
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.SurfaceInk
 import kotlinx.coroutines.delay
 
 /** Shown over any screen while a YarmiplayServerTV host decides about this device, or after they said no. */
@@ -48,6 +49,7 @@ fun DeviceAccessDialog(container: AppContainer) {
     val close = { closeDeviceAccess(container) }
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.width(860.dp).clip(RoundedCornerShape(20.dp)).background(AppColors.Surface).padding(32.dp)) {
+            SurfaceInk {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(prompt.title, style = MaterialTheme.typography.headlineSmall)
                 Text(prompt.message, color = AppColors.TextDim)
@@ -74,6 +76,7 @@ fun DeviceAccessDialog(container: AppContainer) {
                         }
                     }
                 }
+            }
             }
         }
     }

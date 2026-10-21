@@ -39,6 +39,7 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.shared.CHANGELOG_URL
 import kotlinx.coroutines.launch
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.SurfaceInk
 import com.yarmiplaytv.update.ReleaseNote
 import com.yarmiplaytv.update.ReleaseNotes
 import com.yarmiplaytv.update.WhatsNew
@@ -65,9 +66,10 @@ fun MobileWhatsNewScreen(container: AppContainer, nav: Navigator) {
 private fun ReleaseNoteCard(note: ReleaseNote, current: Boolean) {
     Card(
         Modifier.fillMaxWidth().testTag("release_${note.version}"),
-        colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
+        colors = CardDefaults.cardColors(containerColor = AppColors.Surface, contentColor = AppColors.OnSurface),
         shape = RoundedCornerShape(16.dp),
     ) {
+        SurfaceInk {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text("Version ${note.version}", style = MaterialTheme.typography.titleMedium)
@@ -79,6 +81,7 @@ private fun ReleaseNoteCard(note: ReleaseNote, current: Boolean) {
                 Text(note.date, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
             }
             note.paragraphs.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        }
         }
     }
 }
@@ -94,9 +97,10 @@ fun WhatsNewCard(container: AppContainer, nav: Navigator, modifier: Modifier = M
     Card(
         onClick = { seen(); nav.push(Screen.WhatsNew) },
         modifier = modifier.testTag("whats_new_card"),
-        colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
+        colors = CardDefaults.cardColors(containerColor = AppColors.Surface, contentColor = AppColors.OnSurface),
         shape = RoundedCornerShape(16.dp),
     ) {
+        SurfaceInk {
         Row(Modifier.padding(start = 16.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.NewReleases, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(14.dp))
@@ -105,6 +109,7 @@ fun WhatsNewCard(container: AppContainer, nav: Navigator, modifier: Modifier = M
                 Text(note.paragraphs.firstOrNull().orEmpty(), color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             IconButton({ seen() }, Modifier.testTag("whats_new_dismiss")) { Icon(Icons.Filled.Close, "Hide", tint = AppColors.TextDim) }
+        }
         }
     }
 }
