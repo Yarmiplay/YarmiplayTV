@@ -111,6 +111,8 @@ export class MediaPlayer implements PlayerAdapter {
   private pcmSeen = false;
   /** The browser's audio decoder produced samples and the clock moved, so it is left in place. */
   private audioHealthy = false;
+  /** output.time() when playback or a seek last started. Health is movement past this, not the seek point itself. */
+  private heardAt = 0;
   private audioFallback = false;
   private pcmToken = 0;
   /** When playback was last started, so a clock that stays at 0 can be given to the software decoder. */
@@ -267,6 +269,7 @@ export class MediaPlayer implements PlayerAdapter {
       this.eof = false;
       this.rewound = false;
       this.origin = demuxer.startTime;
+      this.heardAt = demuxer.startTime;
       this.wallBase = this.origin;
       this.wallStart = performance.now();
       this.update({
@@ -500,7 +503,7 @@ export class MediaPlayer implements PlayerAdapter {
           await this.doSeek();
           continue;
         }
-        if (this.output && this.audio?.hardware && this.output.time() - this.origin > 0.05) this.audioHealthy = true;
+        if (this.output && this.audio?.hardware && this.output.time() - this.heardAt > 0.05) this.audioHealthy = true;
         // Checked before the end-of-file wait: a silent decoder still has to be replaced after the file is read.
         // A clock that stays put while playing is a decoder that produced nothing, including when no
         // packet was handed over because the file was already at its end.
@@ -601,8 +604,9 @@ export class MediaPlayer implements PlayerAdapter {
     this.output?.flush(target);
     this.dropBefore = target;
     this.eof = false;
-    // A seek can silence the browser's decoder (Opus in WebM drops its preroll). It gets one more
-    // chance to move the clock, then the software decoder takes over, same as when playback starts.
+    // A seek can silence the browser's decoder (Opus in WebM drops its preroll). The flushed clock
+    // already sits on the seek point, so that alone is not proof the decoder is playing.
+    this.heardAt = this.output?.time() ?? target;
     this.audioHealthy = false;
     this.pcmSeen = false;
     this.audioFedAt = 0;
