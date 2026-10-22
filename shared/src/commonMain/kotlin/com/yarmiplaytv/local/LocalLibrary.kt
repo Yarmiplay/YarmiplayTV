@@ -2,6 +2,7 @@ package com.yarmiplaytv.local
 
 import com.yarmiplaytv.Logger
 import com.yarmiplaytv.data.SettingsStore
+import com.yarmiplaytv.media.ExternalSubtitle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -114,6 +115,12 @@ abstract class LocalLibrary(
      * platform can't list it (Android's picked files). Blocking, call on IO.
      */
     open fun neighbours(uri: String): List<LocalFile> = emptyList()
+
+    /**
+     * Subtitle files beside the video at [videoUri] (`Episode.srt`, `Episode.en.ass`). Empty when the folder
+     * can't be listed, such as a file opened on its own.
+     */
+    open fun sidecarsBeside(videoUri: String, videoName: String): List<ExternalSubtitle> = emptyList()
 
     /** The folder entry (with display name) for a folder URI. */
     abstract fun folderOf(uri: String): LocalFolder

@@ -5,14 +5,19 @@ import com.yarmiplaytv.data.SettingsStore
 import com.yarmiplaytv.local.LocalFile
 import com.yarmiplaytv.local.LocalLibrary
 import com.yarmiplaytv.local.LocalMatcher
+import com.yarmiplaytv.local.SeekOffers
 import com.yarmiplaytv.media.CompositeMediaSource
 import com.yarmiplaytv.media.EpisodeInfo
+import com.yarmiplaytv.media.ExternalSubtitle
 import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.MediaSource
 import com.yarmiplaytv.media.PlayableMedia
+import com.yarmiplaytv.media.preferredSidecar
+import com.yarmiplaytv.media.server
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.PlayerEvent
+import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.relay.RelayManager
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.FileInfo
@@ -35,8 +40,11 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** What the player is (about to be) showing. */
 data class NowPlaying(
@@ -101,6 +109,14 @@ class PlaylistController(
     var autoReady: Boolean = true
     var trustedDomains: List<String> = TrustedDomains.DEFAULT
     var onlySwitchToTrustedDomains: Boolean = true
+
+    /** Settings > Playback, used when an auto-loaded sidecar is the first subtitle. */
+    var subtitleLanguages: String = "eng,en"
+
+    private val queuedSubs = mutableListOf<ExternalSubtitle>()
+    private val forceSelect = mutableSetOf<String>()
+    /** Subtitles dropped with a video, attached when that file's URL loads. */
+    private val sidecarsForUrl = java.util.concurrent.ConcurrentHashMap<String, MutableList<ExternalSubtitle>>()
 
     /** Syncplay-style editing of the room's playlist (multi-select, shuffle, undo). */
     val shared = SharedPlaylist(scope, sync)
@@ -440,7 +456,88 @@ class PlaylistController(
         _status.value = PlaylistStatus.Loading(media.fileName)
         sync.reportLoading()
         val savedPos = getSeekPosition(media.fileName)
+        val remembered = sidecarsForUrl.remove(media.url).orEmpty()
+        synchronized(queuedSubs) {
+            queuedSubs.clear()
+            queuedSubs += remembered
+        }
+        forceSelect.retainAll(remembered.map { it.url }.toSet())
         player.load(media.url, media.title, startPaused = true, startPosition = savedPos)
+        rememberSeekOffer(media)
+        attachSidecars(media)
+    }
+
+    /** A subtitle the user opened or dropped. It is selected, and it stays on this device. */
+    fun addExternalSubtitle(url: String, title: String, language: String?) {
+        synchronized(queuedSubs) {
+            queuedSubs += ExternalSubtitle(url, title, language)
+            forceSelect += url
+        }
+        if (player.isFileLoaded) flushSubs()
+    }
+
+    /** Subtitles dropped together with the video at [url], selected when that file opens. */
+    fun rememberSidecars(url: String, subs: List<ExternalSubtitle>) {
+        if (subs.isEmpty()) return
+        val list = sidecarsForUrl.getOrPut(url) { mutableListOf() }
+        synchronized(list) { list += subs }
+        forceSelect += subs.map { it.url }
+    }
+
+    private fun rememberSeekOffer(media: NowPlaying) {
+        val item = media.itemId ?: return
+        val key = media.copies.firstOrNull()?.sourceKey?.takeIf { it.isNotEmpty() } ?: return
+        val url = media.url
+        scope.launch {
+            val frames = runCatching { mediaSource.value?.server(key)?.storedSeekFrames(item) }.getOrNull() ?: return@launch
+            if (_nowPlaying.value?.url == url) SeekOffers.remember(url, frames)
+        }
+    }
+
+    private fun attachSidecars(media: NowPlaying) {
+        val url = media.url
+        scope.launch {
+            val found = discoverSubs(media)
+            if (_nowPlaying.value?.url != url) return@launch
+            synchronized(queuedSubs) { queuedSubs += found }
+            withTimeoutOrNull(20_000) {
+                while (isActive && !(player.isFileLoaded && player.state.value.url == url)) delay(50)
+            }
+            if (_nowPlaying.value?.url == url && player.isFileLoaded) flushSubs()
+        }
+    }
+
+    private suspend fun discoverSubs(media: NowPlaying): List<ExternalSubtitle> {
+        val beside = runCatching { local.sidecarsBeside(media.url, media.fileName) }.getOrDefault(emptyList())
+        val item = media.itemId
+        val key = media.copies.firstOrNull()?.sourceKey
+        val remote = if (item != null && !key.isNullOrEmpty() && item != media.url) {
+            runCatching { mediaSource.value?.server(key)?.externalSubtitles(item) }.getOrNull().orEmpty()
+        } else {
+            emptyList()
+        }
+        val already = synchronized(queuedSubs) { queuedSubs.map { it.url }.toSet() }
+        return (beside + remote).filter { it.url !in already }
+    }
+
+    private fun flushSubs() {
+        val batch = synchronized(queuedSubs) {
+            val copy = queuedSubs.toList()
+            queuedSubs.clear()
+            copy
+        }
+        if (batch.isEmpty()) return
+        if (!player.isFileLoaded) {
+            synchronized(queuedSubs) { queuedSubs.addAll(0, batch) }
+            return
+        }
+        val selected = player.tracks.value.any { it.type == TrackType.SUBTITLE && it.selected }
+        val pick = if (selected) null else preferredSidecar(batch.filter { it.url !in forceSelect }, subtitleLanguages)
+        for (sub in batch) {
+            val select = sub.url in forceSelect || sub == pick
+            player.command("sub-add", sub.url, if (select) "select" else "auto", sub.title, sub.language.orEmpty())
+            forceSelect.remove(sub.url)
+        }
     }
 
     // --- User actions ------------------------------------------------------------------

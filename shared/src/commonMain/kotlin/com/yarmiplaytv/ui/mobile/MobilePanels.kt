@@ -85,6 +85,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.media.sidecarLanguage
 import com.yarmiplaytv.player.SubtitleScale
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.sync.RoomSkip
@@ -650,6 +651,14 @@ fun TracksContent(container: AppContainer, type: TrackType, onPicked: () -> Unit
             }
         }
         if (list.isEmpty()) Text("No ${if (type == TrackType.AUDIO) "audio" else "subtitle"} tracks", color = AppColors.TextDim)
+        if (type == TrackType.SUBTITLE) {
+            val pick = rememberSubtitlePicker { uri ->
+                val name = uri.substringAfterLast('/').substringAfterLast('\\').substringBefore('?')
+                val decoded = runCatching { java.net.URLDecoder.decode(name, "UTF-8") }.getOrDefault(name)
+                container.playlist.addExternalSubtitle(uri, decoded.substringBeforeLast('.'), sidecarLanguage(decoded))
+            }
+            TrackRow("Open subtitle file", selected = false, onClick = pick)
+        }
     }
 }
 

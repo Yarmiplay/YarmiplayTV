@@ -182,6 +182,16 @@ private fun createContainer(configDir: File, store: SettingsStore): AppContainer
  * added to the room's shared playlist when in a room. Folders stand for the videos in them and their subfolders.
  * With the playlist panel open ([addToPlaylist]), every video goes to the playlist instead.
  */
+/** Videos stay videos. A loose subtitle file is not one of them, and a folder is left for [openFiles] to walk. */
+internal fun splitDropped(files: List<File>): Pair<List<File>, List<File>> {
+    val subs = mutableListOf<File>()
+    val rest = mutableListOf<File>()
+    for (file in files) {
+        if (file.isFile && file.extension.lowercase() in com.yarmiplaytv.media.SUBTITLE_EXTENSIONS) subs += file else rest += file
+    }
+    return rest to subs
+}
+
 internal fun openFiles(container: AppContainer, files: List<File>, addToPlaylist: Boolean = false) {
     val videos = files.flatMap { DesktopDialogs.videosIn(it.toPath()) }.map(FileLocalLibrary::uriOf)
     if (addToPlaylist) {
@@ -241,7 +251,18 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             override fun onDrop(event: DragAndDropEvent): Boolean {
                 val files = (event.dragData() as? DragData.FilesList)?.readFiles().orEmpty()
                     .mapNotNull { runCatching { Paths.get(URI(it)).toFile() }.getOrNull() }
-                openFiles(container, files, addToPlaylist = DesktopRoomPanel.showsPlaylist && container.sync.isActive)
+                val (videos, subs) = splitDropped(files)
+                val playingWith = videos.flatMap { DesktopDialogs.videosIn(it.toPath()) }.firstOrNull()
+                val sidecars = subs.map { file ->
+                    com.yarmiplaytv.media.ExternalSubtitle(
+                        FileLocalLibrary.uriOf(file.toPath()),
+                        file.nameWithoutExtension,
+                        com.yarmiplaytv.media.sidecarLanguage(file.name),
+                    )
+                }
+                if (playingWith != null) container.playlist.rememberSidecars(FileLocalLibrary.uriOf(playingWith), sidecars)
+                openFiles(container, videos, addToPlaylist = DesktopRoomPanel.showsPlaylist && container.sync.isActive)
+                if (playingWith == null) sidecars.forEach { container.playlist.addExternalSubtitle(it.url, it.title, it.language) }
                 return files.isNotEmpty()
             }
         }

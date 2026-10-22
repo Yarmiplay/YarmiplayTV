@@ -1,12 +1,11 @@
-import { FileSource } from "./bytes";
+import { FileSource, type ByteSource } from "./bytes";
 import { Demuxer, type StreamInfo } from "./demuxer";
 import { createLibAV, type LibAV } from "./libav";
 import { openVideoDecoding, type VideoDecoding } from "./video";
 
 /**
- * Pictures for the seek bar's preview (SeekFrames.kt, 1.8.9): the keyframe at or a little before a time, from a file
- * on this device, decoded by its own FFmpeg and decoder so the playing video is never disturbed. Streams get none,
- * as every picture would be another download.
+ * Pictures for the seek bar's preview: the keyframe at or a little before a time, decoded by its own FFmpeg so the
+ * playing video is never seeked. A stream is a second range reader, not a second copy of the file.
  */
 export class SeekFrames {
   private busy: Promise<unknown> = Promise.resolve();
@@ -21,10 +20,10 @@ export class SeekFrames {
     private readonly frames: VideoFrame[],
   ) {}
 
-  static async open(file: Blob): Promise<SeekFrames | null> {
+  static async open(file: Blob | ByteSource): Promise<SeekFrames | null> {
     const libav = await createLibAV();
     try {
-      const demuxer = await Demuxer.open(libav, new FileSource(file));
+      const demuxer = await Demuxer.open(libav, file instanceof Blob ? new FileSource(file) : file);
       const stream = demuxer.streams.find((s) => s.kind === "video" && !["mjpeg", "png", "bmp"].includes(s.codec));
       if (!stream) {
         await demuxer.close();

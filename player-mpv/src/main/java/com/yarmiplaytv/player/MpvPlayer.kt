@@ -272,7 +272,12 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     }
 
     override fun command(vararg args: String): Boolean {
-        mpv.command(arrayOf(*args))
+        val rewritten = if (args.firstOrNull() == "sub-add" && args.size > 1) {
+            arrayOf("sub-add", mpvTarget(args[1]), *args.drop(2).toTypedArray())
+        } else {
+            arrayOf(*args)
+        }
+        mpv.command(rewritten)
         return true
     }
 

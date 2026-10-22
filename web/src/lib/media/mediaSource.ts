@@ -1,4 +1,5 @@
 import * as FileNames from "./fileNames";
+import type { ExternalSubtitle, StoredSeekFrames } from "./seekThumbs";
 import type { SkipSegment } from "./skipSegment";
 
 /**
@@ -54,6 +55,12 @@ export interface MediaSource {
   seasonEpisodes(itemId: string): Promise<PlayableMedia[]>;
 
   imageUrl(item: MediaItem, maxWidth?: number): string | null;
+
+  /** Frames the server stored for the seek bar, or null when it never generated them. */
+  storedSeekFrames?(itemId: string): Promise<StoredSeekFrames | null>;
+
+  /** Subtitle files the server lists beside the video, separate from the tracks inside it. */
+  externalSubtitles?(itemId: string): Promise<ExternalSubtitle[]>;
 }
 
 export type ReportState = "STARTED" | "PLAYING" | "PAUSED" | "STOPPED";

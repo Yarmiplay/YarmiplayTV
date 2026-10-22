@@ -53,6 +53,15 @@ interface MediaSource {
      */
     suspend fun seasonEpisodes(itemId: String): List<PlayableMedia> = emptyList()
 
+    /**
+     * Frames the server stored for the seek bar (Jellyfin trickplay, Plex preview indexes). Null when it hasn't
+     * generated any, so the player decodes a frame from the file instead.
+     */
+    suspend fun storedSeekFrames(itemId: String): StoredSeekFrames? = null
+
+    /** Subtitle files the server keeps beside [itemId], not the tracks inside the video. */
+    suspend fun externalSubtitles(itemId: String): List<ExternalSubtitle> = emptyList()
+
     fun imageUrl(item: MediaItem, maxWidth: Int = 400): String?
 }
 
@@ -144,3 +153,9 @@ sealed interface ResolveResult {
 enum class MatchKind { EXACT_FILENAME, NORMALIZED_FILENAME, PARSED_SEARCH }
 
 class MediaSourceException(message: String, val httpCode: Int? = null, cause: Throwable? = null) : Exception(message, cause)
+
+/** The server [key] inside a combined library, or this source when it is that server. */
+fun MediaSource.server(key: String): MediaSource? = when (this) {
+    is CompositeMediaSource -> sources.firstOrNull { it.key == key }
+    else -> takeIf { this.key == key }
+}

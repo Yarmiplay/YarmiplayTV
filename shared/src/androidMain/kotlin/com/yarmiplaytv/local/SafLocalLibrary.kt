@@ -8,6 +8,9 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import com.yarmiplaytv.Logger
 import com.yarmiplaytv.data.SettingsStore
+import com.yarmiplaytv.media.ExternalSubtitle
+import com.yarmiplaytv.media.sidecarLanguage
+import com.yarmiplaytv.media.sidecarMatches
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -94,6 +97,33 @@ class SafLocalLibrary(
                         out += LocalFile(name, size, uri, folder.name, modified, directory, folder.uri)
                     }
                 }
+            }
+        }
+        return out
+    }
+
+    override fun sidecarsBeside(videoUri: String, videoName: String): List<ExternalSubtitle> {
+        val parsed = Uri.parse(videoUri)
+        if (parsed.scheme == "file") {
+            val dir = parsed.path?.let { java.io.File(it).parentFile } ?: return emptyList()
+            return dir.listFiles()?.mapNotNull { file ->
+                if (!file.isFile || !sidecarMatches(videoName, file.name)) return@mapNotNull null
+                ExternalSubtitle(Uri.fromFile(file).toString(), file.name.substringBeforeLast('.'), sidecarLanguage(file.name))
+            }.orEmpty()
+        }
+        if (!videoUri.contains("/tree/")) return emptyList()
+        val docId = runCatching { DocumentsContract.getDocumentId(parsed) }.getOrNull() ?: return emptyList()
+        val treeId = runCatching { DocumentsContract.getTreeDocumentId(parsed) }.getOrNull() ?: return emptyList()
+        val parentId = if ('/' in docId) docId.substringBeforeLast('/') else treeId
+        if (parentId == docId) return emptyList()
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(parsed, parentId)
+        val out = mutableListOf<ExternalSubtitle>()
+        resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
+            while (c.moveToNext()) {
+                val name = c.getString(1) ?: continue
+                if (!sidecarMatches(videoName, name)) continue
+                val uri = DocumentsContract.buildDocumentUriUsingTree(parsed, c.getString(0)).toString()
+                out += ExternalSubtitle(uri, name.substringBeforeLast('.'), sidecarLanguage(name))
             }
         }
         return out

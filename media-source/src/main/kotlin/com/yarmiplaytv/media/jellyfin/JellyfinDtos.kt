@@ -88,6 +88,30 @@ data class MediaSourceInfo(
     @SerialName("Size") val size: Long? = null,
     @SerialName("RunTimeTicks") val runTimeTicks: Long? = null,
     @SerialName("Protocol") val protocol: String? = null,
+    /** Seek-bar sprite sheets, keyed by thumbnail width, when the server has generated them. */
+    @SerialName("Trickplay") val trickplay: Map<String, TrickplayInfoDto>? = null,
+    @SerialName("MediaStreams") val mediaStreams: List<MediaStreamDto>? = null,
+)
+
+@Serializable
+data class TrickplayInfoDto(
+    @SerialName("Width") val width: Int = 0,
+    @SerialName("Height") val height: Int = 0,
+    @SerialName("TileWidth") val tileWidth: Int = 0,
+    @SerialName("TileHeight") val tileHeight: Int = 0,
+    @SerialName("ThumbnailCount") val thumbnailCount: Int = 0,
+    @SerialName("Interval") val interval: Int = 0,
+)
+
+@Serializable
+data class MediaStreamDto(
+    @SerialName("Type") val type: String? = null,
+    @SerialName("Index") val index: Int? = null,
+    @SerialName("IsExternal") val isExternal: Boolean? = null,
+    @SerialName("DeliveryUrl") val deliveryUrl: String? = null,
+    @SerialName("Language") val language: String? = null,
+    @SerialName("DisplayTitle") val displayTitle: String? = null,
+    @SerialName("Codec") val codec: String? = null,
 )
 
 @Serializable

@@ -226,6 +226,12 @@ actual fun rememberVideoPicker(onPicked: (String) -> Unit): () -> Unit {
 }
 
 @Composable
+actual fun rememberSubtitlePicker(onPicked: (String) -> Unit): () -> Unit {
+    val current by rememberUpdatedState(onPicked)
+    return remember { { DesktopDialogs.pickSubtitle()?.let { current(FileLocalLibrary.uriOf(it)) } } }
+}
+
+@Composable
 actual fun rememberFolderPicker(container: AppContainer): () -> Unit =
     remember(container) { { DesktopDialogs.pickFolder()?.let { container.local.addFolder(FileLocalLibrary.uriOf(it)) } } }
 

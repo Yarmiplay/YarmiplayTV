@@ -20,7 +20,14 @@ import {
 } from "../mediaSource";
 import { sortedSegments, type SkipKind, type SkipSegment } from "../skipSegment";
 import type { JellyfinClient, JellyfinSession } from "./client";
-import type { BaseItemDto, ItemsResult, MediaSegmentsResult, PlaybackProgressBody } from "./dtos";
+import {
+  isTextSubtitleCodec,
+  trickplayWidth,
+  type ExternalSubtitle,
+  type StoredSeekFrames,
+  type TrickplaySet,
+} from "../seekThumbs";
+import type { BaseItemDto, ItemsResult, MediaSegmentsResult, MediaSourceInfo, PlaybackProgressBody } from "./dtos";
 
 export const JELLYFIN_KIND = "jellyfin";
 
@@ -49,6 +56,55 @@ export class JellyfinSource implements MediaSource {
   private readonly index: FilenameIndex;
   /** The media source (version) each item was last resolved to, so reports name the one being played. */
   private readonly mediaSourceIds = new Map<string, string>();
+  private readonly subsByItem = new Map<string, ExternalSubtitle[]>();
+
+  private rememberStreams(itemId: string, source: MediaSourceInfo | undefined) {
+    const subs: ExternalSubtitle[] = [];
+    for (const stream of source?.MediaStreams ?? []) {
+      if (stream.Type !== "Subtitle" || stream.IsExternal !== true || !isTextSubtitleCodec(stream.Codec)) continue;
+      const delivery = stream.DeliveryUrl?.trim();
+      if (!delivery) continue;
+      subs.push({
+        url: this.withToken(delivery),
+        title: stream.DisplayTitle?.trim() || "Subtitles",
+        language: stream.Language?.trim() || null,
+      });
+    }
+    this.subsByItem.set(itemId, subs);
+  }
+
+  private withToken(delivery: string): string {
+    const absolute = delivery.startsWith("http://") || delivery.startsWith("https://") ? delivery : `${this.base.replace(/\/+$/, "")}/${delivery.replace(/^\/+/, "")}`;
+    if (absolute.includes("api_key=")) return absolute;
+    return `${absolute}${absolute.includes("?") ? "&" : "?"}api_key=${encodeURIComponent(this.token)}`;
+  }
+
+  async storedSeekFrames(itemId: string): Promise<StoredSeekFrames | null> {
+    const dto = (await this.items([["ids", itemId], ["fields", "Path,MediaSources"]]))[0];
+    if (!dto) return null;
+    const sources = dto.MediaSources ?? [];
+    const source = sources.find((s) => s.Protocol == null || s.Protocol === "File") ?? sources[0];
+    this.rememberStreams(itemId, source);
+    const sets = source?.Trickplay ?? {};
+    const width = trickplayWidth(Object.keys(sets).map((k) => Number(k)).filter((n) => Number.isFinite(n)));
+    const info = width === null ? null : sets[String(width)];
+    if (width === null || !info) return null;
+    const set: TrickplaySet = {
+      intervalMs: info.Interval ?? 0,
+      thumbWidth: info.Width ?? 0,
+      thumbHeight: info.Height ?? 0,
+      columns: info.TileWidth ?? 0,
+      rows: info.TileHeight ?? 0,
+      count: info.ThumbnailCount ?? 0,
+    };
+    if (set.intervalMs <= 0 || set.count <= 0 || set.columns <= 0 || set.rows <= 0) return null;
+    return { kind: "jellyfin", server: this.base, itemId, width, token: this.token, set };
+  }
+
+  async externalSubtitles(itemId: string): Promise<ExternalSubtitle[]> {
+    if (!this.subsByItem.has(itemId)) await this.storedSeekFrames(itemId);
+    return this.subsByItem.get(itemId) ?? [];
+  }
 
   constructor(
     private readonly client: JellyfinClient,
@@ -240,6 +296,7 @@ export class JellyfinSource implements MediaSource {
     if (!path) throw new MediaSourceError(`${dto.Name} has no file`);
     const ticks = source?.RunTimeTicks ?? dto.RunTimeTicks ?? 0;
     if (source?.Id) this.mediaSourceIds.set(dto.Id, source.Id);
+    this.rememberStreams(dto.Id, source);
     const isAudio = dto.Type === "Audio";
     const m = this.toMediaItem(dto);
     const title = m.artistName !== null && m.type === "TRACK" ? `${m.artistName} · ${m.name}` : m.seriesName !== null ? `${m.seriesName} · ${displayTitle(m)}` : displayTitle(m);

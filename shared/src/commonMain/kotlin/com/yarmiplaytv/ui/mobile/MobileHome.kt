@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -37,7 +36,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Constraints
@@ -104,8 +102,8 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
                 })
             } else {
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(appLogoPainter(), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(36.dp))
-                    Spacer(Modifier.width(12.dp))
+                    AppMark(40.dp)
+                    Spacer(Modifier.width(8.dp))
                     Text("YarmiplayTV", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.weight(1f))
                     IconButton(onClick = { container.exitApp() }, modifier = Modifier.testTag("home_exit_app")) {

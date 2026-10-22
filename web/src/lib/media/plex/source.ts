@@ -20,6 +20,7 @@ import {
 } from "../mediaSource";
 import { sortedSegments, type SkipKind, type SkipSegment } from "../skipSegment";
 import type { PlexClient, PlexServer, PlexSession } from "./client";
+import { isTextSubtitleCodec, plexPartId, type ExternalSubtitle, type StoredSeekFrames } from "../seekThumbs";
 import type { PlexContainer, PlexMedia, PlexMetadata, PlexPart, PlexResponse } from "./dtos";
 
 export const PLEX_KIND = "plex";
@@ -49,6 +50,8 @@ export class PlexSource implements MediaSource {
   readonly key: string;
   readonly kind = PLEX_KIND;
   private readonly index: FilenameIndex;
+  private readonly partByItem = new Map<string, string>();
+  private readonly subsByItem = new Map<string, ExternalSubtitle[]>();
 
   constructor(
     private readonly client: PlexClient,
@@ -134,6 +137,57 @@ export class PlexSource implements MediaSource {
     return (await this.container(`library/metadata/${ratingKey}`)).Metadata?.[0] ?? null;
   }
 
+  private rememberPart(meta: PlexMetadata, part: PlexPart) {
+    const id = part.key ? plexPartId(part.key) : null;
+    if (id) this.partByItem.set(meta.ratingKey, id);
+    const subs: ExternalSubtitle[] = [];
+    for (const stream of part.Stream ?? []) {
+      const key = stream.key;
+      if (!key?.startsWith("/library/streams/") || stream.streamType !== 3 || !isTextSubtitleCodec(stream.codec)) continue;
+      subs.push({
+        url: this.client.url(this.base, key, [["X-Plex-Token", this.token]]).href,
+        title: stream.displayTitle?.trim() || "Subtitles",
+        language: stream.languageCode ?? stream.language ?? null,
+      });
+    }
+    this.subsByItem.set(meta.ratingKey, subs);
+  }
+
+  async storedSeekFrames(itemId: string): Promise<StoredSeekFrames | null> {
+    let part = this.partByItem.get(itemId);
+    if (!part) {
+      const meta = await this.metadata(itemId);
+      const chosen = meta?.Media?.flatMap((m) => m.Part ?? []).find((p) => p.key);
+      if (!meta || !chosen) {
+        if (!this.subsByItem.has(itemId)) this.subsByItem.set(itemId, []);
+        return null;
+      }
+      this.rememberPart(meta, chosen);
+      part = this.partByItem.get(itemId);
+      if (!part) return null;
+    }
+    let index: string | null = null;
+    try {
+      const body = await this.client.get<{ MediaContainer?: { Index?: { id?: string | number } | { id?: string | number }[] } }>(
+        this.base,
+        this.token,
+        `library/parts/${part}/indexes`,
+      );
+      const raw = body.MediaContainer?.Index;
+      const first = Array.isArray(raw) ? raw[0] : raw;
+      index = first?.id != null && String(first.id) !== "" ? String(first.id) : null;
+    } catch {
+      index = null;
+    }
+    if (!index) return null;
+    return { kind: "plex", server: this.base, partId: part, indexId: index, token: this.token };
+  }
+
+  async externalSubtitles(itemId: string): Promise<ExternalSubtitle[]> {
+    if (!this.subsByItem.has(itemId)) await this.storedSeekFrames(itemId);
+    return this.subsByItem.get(itemId) ?? [];
+  }
+
   async skipSegments(itemId: string): Promise<SkipSegment[]> {
     const meta = (await this.container(`library/metadata/${itemId}`, [["includeMarkers", "1"]])).Metadata?.[0];
     if (!meta) return [];
@@ -175,6 +229,7 @@ export class PlexSource implements MediaSource {
     if (!chosen) throw new MediaSourceError(`${meta.title} has no file`);
     const [media, part] = chosen;
     const millis = part.duration ?? media.duration ?? meta.duration ?? 0;
+    this.rememberPart(meta, part);
     const item = this.toMediaItem(meta);
     const series = meta.type === "episode" && item.seriesName !== null && item.seriesName.trim() !== "" ? item.seriesName : null;
     return {

@@ -182,8 +182,9 @@ Tap or move the mouse to show the controls: play and pause, back and forward (do
 of the video on a phone), the previous and next playlist entry, the seek bar and the volume. The buttons at the
 bottom open the shared playlist, the room, the chat, audio tracks, subtitles and MyAnimeList (on a TV, the
 **Menus** button opens them). Dragging along the
-seek bar, or holding the mouse over it, shows the time there, and for a video on your device a picture of that
-moment too.
+seek bar, or holding the mouse over it, shows the time there and a picture of that moment. The picture is a frame
+from the video, including one Jellyfin or Plex stored for the seek bar, or the keyframe at that time when the
+server has none. A poster is never used.
 
 **Openings and endings:** the app finds where an episode's opening and ending are, for each from the first that
 knows: the file's own chapters (named "Opening", "OP", "Ending", "Credits" and the like), your Jellyfin or Plex
@@ -200,10 +201,16 @@ remote. In a room the whole room jumps, as when anyone seeks. To skip them by th
 openings and endings** in the room (see [In the room](#in-the-room)), or, watching alone, in Settings > Playback.
 Settings > Playback can also stop showing the button.
 
-- **Audio and subtitles:** pick a track in the player. The subtitles menu also makes the text smaller or
-  larger (remembered), shifts its timing, and can show a second subtitle. The video menu has speed, aspect,
-  picture adjustments, chapters, and **Reset**, which puts those adjustments back. Settings > Playback sets the
-  languages chosen automatically.
+- **Audio and subtitles:** pick a track in the player. Subtitle files beside a video (`.srt`, `.ass`, `.ssa`, `.vtt`,
+  the same name or that name plus a language, like `Episode.en.ass`) are loaded too, and so are the sidecar files
+  Jellyfin and Plex already know. **Open subtitle file** in the subtitles menu picks one on a computer, a phone, or
+  in the browser. On a computer you can also drop a subtitle onto the window: it attaches to the video that's
+  playing, or to a video dropped with it, and it is not added to the shared playlist. A file you open or drop is
+  selected. One found automatically is selected only when nothing else is, preferring the languages in
+  Settings > Playback. Each device loads its own file; it is not sent to the room. The subtitles menu also makes
+  the text smaller or larger (remembered), shifts its timing, and can show a second subtitle. The video menu has
+  speed, aspect, picture adjustments, chapters, and **Reset**, which puts those adjustments back. Settings >
+  Playback sets the languages chosen automatically. A TV gets the automatic loads and not a file picker.
 - **Screenshots:** the camera button in the player's bottom bar saves the current frame, subtitles included, to
   Pictures/YarmiplayTV (or a folder you pick in Settings > Media). On a computer **s** or **F5** does the same, and
   **S** or **F6** saves the frame without the subtitles. On a phone or TV the picture always includes the subtitles.

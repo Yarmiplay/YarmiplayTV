@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.yarmiplaytv.local.SeekFrames
+import com.yarmiplaytv.local.SeekOffers
 import com.yarmiplaytv.media.SkipSegment
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.ui.player.formatClock
@@ -170,14 +171,15 @@ private fun SeekBubble(time: String, frame: ImageBitmap?, fraction: Float, track
 }
 
 /**
- * The preview frame for [at] seconds into the video at [url] (null while the bar isn't pointed at, or for a stream).
+ * The preview frame for [at] seconds into the video at [url] (null while the bar isn't pointed at). A server's stored
+ * frames are used when it has them; otherwise the keyframe at that time is decoded, including from a stream.
  * Times go in steps of a 200th of the video (at least a second); one frame is decoded at a time, the newest wanted
  * first, and the last few dozen are kept so going back and forth doesn't decode them again.
  */
 @Composable
 private fun rememberSeekFrame(frames: SeekFrames?, url: String?, duration: Double, at: Double?, width: Int): ImageBitmap? {
     val source = frames ?: return null
-    val video = url?.takeIf { duration > 0 && SeekFrames.canPreview(it) } ?: return null
+    val video = url?.takeIf { duration > 0 && canPreviewAny(it) } ?: return null
     val step = (duration / 200).coerceAtLeast(1.0)
     val cache = remember(video, step) {
         object : LinkedHashMap<Long, ImageBitmap>(16, 0.75f, true) {
@@ -200,6 +202,10 @@ private fun rememberSeekFrame(frames: SeekFrames?, url: String?, duration: Doubl
     DisposableEffect(video) { onDispose { source.release() } }
     return frame.takeIf { at != null }
 }
+
+/** A local file, a stream the player can read, or a server that stored frames for this URL. */
+private fun canPreviewAny(url: String): Boolean =
+    SeekFrames.canPreview(url) || SeekOffers.of(url) != null || url.startsWith("http://") || url.startsWith("https://")
 
 /**
  * The TV bar's 6 dp track (white at 20 %, the [buffered] part a little lighter, the part up to [value] in the accent

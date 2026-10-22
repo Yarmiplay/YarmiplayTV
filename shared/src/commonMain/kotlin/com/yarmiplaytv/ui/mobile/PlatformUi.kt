@@ -126,6 +126,10 @@ expect val pictureInPictureWindow: Boolean
 @Composable
 expect fun rememberVideoPicker(onPicked: (String) -> Unit): () -> Unit
 
+/** System picker for a subtitle file (.srt, .ass, .ssa, .vtt). [onPicked] gets its URI. */
+@Composable
+expect fun rememberSubtitlePicker(onPicked: (String) -> Unit): () -> Unit
+
 /** Picks a folder and adds it to the media folders. */
 @Composable
 expect fun rememberFolderPicker(container: AppContainer): () -> Unit

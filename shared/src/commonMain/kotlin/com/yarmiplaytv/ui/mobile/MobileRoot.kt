@@ -57,7 +57,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -432,9 +431,9 @@ private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
 @Composable
 private fun Sidebar(container: AppContainer, selected: Tab, onTab: (Tab) -> Unit) {
     Column(Modifier.width(SIDEBAR_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState()).padding(12.dp).testTag("sidebar")) {
-        Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(appLogoPainter(), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(32.dp))
-            Spacer(Modifier.width(10.dp))
+        Row(Modifier.padding(top = 4.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            AppMark(40.dp)
+            Spacer(Modifier.width(8.dp))
             Text("YarmiplayTV", style = MaterialTheme.typography.titleLarge)
         }
         tabs.forEach { tab -> SideNavItem(tab.label, tab.icon, tab == selected, { onTab(tab) }, Modifier.testTag("tab_${tab.label}")) }

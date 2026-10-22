@@ -1,7 +1,12 @@
 package com.yarmiplaytv.media.jellyfin
 
 import com.yarmiplaytv.media.EpisodeInfo
+import com.yarmiplaytv.media.ExternalSubtitle
 import com.yarmiplaytv.media.FileNames
+import com.yarmiplaytv.media.StoredSeekFrames
+import com.yarmiplaytv.media.TrickplaySet
+import com.yarmiplaytv.media.isTextSubtitleCodec
+import com.yarmiplaytv.media.trickplayWidth
 import com.yarmiplaytv.media.FilenameIndex
 import com.yarmiplaytv.media.MatchKind
 import com.yarmiplaytv.media.MediaItem
@@ -184,6 +189,7 @@ class JellyfinSource(
         val path = source?.path ?: dto.path ?: throw MediaSourceException("${dto.name} has no file")
         val ticks = source?.runTimeTicks ?: dto.runTimeTicks ?: 0L
         source?.id?.let { mediaSourceIds[dto.id] = it }
+        rememberStreams(dto.id, source)
         val isAudio = dto.type == "Audio"
         val item = dto.toMediaItem()
         val title = when {
@@ -213,6 +219,49 @@ class JellyfinSource(
 
     /** The media source (version) each item was last resolved to, so reports name the one being played. */
     private val mediaSourceIds = ConcurrentHashMap<String, String>()
+
+    /** Subtitle files beside the item, from the last time its media source was read. */
+    private val subsByItem = ConcurrentHashMap<String, List<ExternalSubtitle>>()
+
+    private fun rememberStreams(itemId: String, source: MediaSourceInfo?) {
+        subsByItem[itemId] = source?.mediaStreams.orEmpty().mapNotNull { stream ->
+            if (stream.type != "Subtitle" || stream.isExternal != true || !isTextSubtitleCodec(stream.codec)) return@mapNotNull null
+            val delivery = stream.deliveryUrl?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val title = stream.displayTitle?.takeIf { it.isNotBlank() } ?: "Subtitles"
+            ExternalSubtitle(withToken(delivery), title, stream.language?.takeIf { it.isNotBlank() })
+        }
+    }
+
+    private fun withToken(delivery: String): String {
+        val absolute = if (delivery.startsWith("http://") || delivery.startsWith("https://")) delivery
+        else base.trimEnd('/') + "/" + delivery.trimStart('/')
+        if ("api_key=" in absolute) return absolute
+        val key = java.net.URLEncoder.encode(token, "UTF-8")
+        return absolute + (if ('?' in absolute) "&" else "?") + "api_key=$key"
+    }
+
+    override suspend fun storedSeekFrames(itemId: String): StoredSeekFrames? {
+        val dto = items {
+            addQueryParameter("ids", itemId)
+            addQueryParameter("fields", "Path,MediaSources")
+        }.firstOrNull() ?: return null
+        val source = dto.mediaSources?.firstOrNull { it.protocol == null || it.protocol == "File" }
+            ?: dto.mediaSources?.firstOrNull()
+        rememberStreams(itemId, source)
+        val sets = source?.trickplay.orEmpty()
+        val width = trickplayWidth(sets.keys.mapNotNull { it.toIntOrNull() }) ?: return null
+        val info = sets[width.toString()] ?: return null
+        if (info.interval <= 0 || info.thumbnailCount <= 0 || info.tileWidth <= 0 || info.tileHeight <= 0) return null
+        return StoredSeekFrames.Jellyfin(
+            base, itemId, width, token,
+            TrickplaySet(info.interval, info.width, info.height, info.tileWidth, info.tileHeight, info.thumbnailCount),
+        )
+    }
+
+    override suspend fun externalSubtitles(itemId: String): List<ExternalSubtitle> {
+        if (!subsByItem.containsKey(itemId)) storedSeekFrames(itemId)
+        return subsByItem[itemId].orEmpty()
+    }
 
     override suspend fun reportPlayback(report: PlaybackReport) {
         val path = when (report.state) {

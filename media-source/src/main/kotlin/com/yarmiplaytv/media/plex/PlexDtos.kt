@@ -2,6 +2,10 @@ package com.yarmiplaytv.media.plex
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonTransformingSerializer
 
 @Serializable
 data class PlexPin(
@@ -111,4 +115,37 @@ data class PlexPart(
     val file: String? = null,
     val size: Long? = null,
     val duration: Long? = null,
+    @SerialName("Stream") val streams: List<PlexStream> = emptyList(),
+)
+
+@Serializable
+data class PlexStream(
+    val id: Long? = null,
+    /** 1 video, 2 audio, 3 subtitle. */
+    val streamType: Int? = null,
+    val codec: String? = null,
+    val language: String? = null,
+    val languageCode: String? = null,
+    val displayTitle: String? = null,
+    /** Set for a subtitle file beside the video (`/library/streams/…`), not for one inside it. */
+    val key: String? = null,
+)
+
+/** Plex answers `Index` as one object or a list. */
+object PlexIndexListSerializer : JsonTransformingSerializer<List<PlexIndex>>(ListSerializer(PlexIndex.serializer())) {
+    override fun transformDeserialize(element: JsonElement): JsonElement = if (element is JsonArray) element else JsonArray(listOf(element))
+}
+
+@Serializable
+data class PlexIndex(val id: String? = null)
+
+@Serializable
+data class PlexIndexesBody(
+    @SerialName("MediaContainer") val container: PlexIndexesContainer = PlexIndexesContainer(),
+)
+
+@Serializable
+data class PlexIndexesContainer(
+    @Serializable(with = PlexIndexListSerializer::class)
+    @SerialName("Index") val indexes: List<PlexIndex> = emptyList(),
 )

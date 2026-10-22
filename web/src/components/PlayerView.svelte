@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { attachPlayer, go, session as sessionStore, settings } from "../app/context";
-  import { FileSource } from "../lib/player/bytes";
+  import { FileSource, HttpSource, type ByteSource } from "../lib/player/bytes";
   import { MediaPlayer, type PlayerState } from "../lib/player/mediaPlayer";
   import { SeekFrames } from "../lib/player/seekFrames";
+  import { dropSeek, jpegUrl, seekOffer, sheetUrl, sidecarLanguage, trickplayTile } from "../lib/media/seekThumbs";
   import type { FeedMessage, PlaylistStatus } from "../lib/sync/room";
   import { followsOperators, type RoomState } from "../lib/syncplay/client";
   import * as ManagedRooms from "../lib/syncplay/managedRooms";
@@ -55,6 +56,25 @@
   let previewShown = $state(false);
   let seekFrames: Promise<SeekFrames | null> | null = null;
   let seekFramesFor: unknown = null;
+  let subtitleFile: HTMLInputElement | undefined = $state();
+  const sheets = new Map<string, Promise<Blob | null>>();
+
+  function cachedBlob(url: string): Promise<Blob | null> {
+    let pending = sheets.get(url);
+    if (!pending) {
+      pending = fetch(url).then((r) => (r.ok ? r.blob() : null)).catch(() => null);
+      sheets.set(url, pending);
+    }
+    return pending;
+  }
+
+  async function pickedSubtitle(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    await player?.addExternalSubtitle(file.name, await file.text(), sidecarLanguage(file.name), true);
+  }
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
@@ -170,26 +190,77 @@
     if (fileName) saveSeekPosition(fileName, s.position);
   });
 
-  /** The picture at [time] under the seek bar, for a file on this device (streams show the time only). */
+  /** The picture at [time] under the seek bar: a server's stored frame, or the keyframe read from the file. */
   async function showPreview(time: number) {
-    const source = player?.source;
-    if (!(source instanceof FileSource)) {
+    const key = session?.nowPlaying.value?.key ?? null;
+    const offer = key ? seekOffer(key) : null;
+    if (offer?.kind === "jellyfin") {
+      const tile = trickplayTile(offer.set, time);
+      if (tile) {
+        const blob = await cachedBlob(sheetUrl(offer, tile.sheet));
+        if (blob) {
+          const full = await createImageBitmap(blob);
+          const w = Math.min(tile.width, full.width - tile.x);
+          const h = Math.min(tile.height, full.height - tile.y);
+          if (w > 0 && h > 0) {
+            const bitmap = await createImageBitmap(full, tile.x, tile.y, w, h);
+            full.close();
+            drawPreview(bitmap);
+            return;
+          }
+          full.close();
+        }
+      }
+    } else if (offer?.kind === "plex" && key) {
+      const blob = await fetch(jpegUrl(offer, time)).then((r) => (r.ok ? r.blob() : null)).catch(() => null);
+      if (!blob) dropSeek(key);
+      else {
+        drawPreview(await createImageBitmap(blob));
+        return;
+      }
+    }
+    const byteSource = await previewSource(key, player?.source ?? null);
+    if (!byteSource) {
       previewShown = false;
       return;
     }
-    if (seekFramesFor !== source) {
+    if (seekFramesFor !== byteSource) {
       void seekFrames?.then((f) => f?.close());
-      seekFramesFor = source;
-      seekFrames = SeekFrames.open(source.file);
+      seekFramesFor = byteSource;
+      seekFrames = SeekFrames.open(byteSource);
     }
     const frames = await seekFrames;
     const bitmap = await frames?.frame(time, 160);
     if (!bitmap || !preview) return;
+    drawPreview(bitmap);
+  }
+
+  function drawPreview(bitmap: ImageBitmap) {
+    if (!preview) {
+      bitmap.close();
+      return;
+    }
     preview.width = bitmap.width;
     preview.height = bitmap.height;
     preview.getContext("2d")?.drawImage(bitmap, 0, 0);
     bitmap.close();
     previewShown = true;
+  }
+
+  let remotePreview: Promise<ByteSource | null> | null = null;
+  let remotePreviewKey: string | null = null;
+
+  /** A file on this device, or a second range reader for a stream so playback is left alone. */
+  async function previewSource(key: string | null, playing: ByteSource | null): Promise<ByteSource | null> {
+    if (playing instanceof FileSource) return playing;
+    if (key && (key.startsWith("http://") || key.startsWith("https://"))) {
+      if (remotePreviewKey !== key) {
+        remotePreviewKey = key;
+        remotePreview = HttpSource.open(key, { name: "preview" }).catch(() => null);
+      }
+      return remotePreview;
+    }
+    return null;
   }
 
   /** Done with pictures for now: the second FFmpeg lets go of the file. */
@@ -198,6 +269,9 @@
     void seekFrames?.then((f) => f?.close());
     seekFrames = null;
     seekFramesFor = null;
+    void remotePreview?.then((source) => source?.close());
+    remotePreview = null;
+    remotePreviewKey = null;
   }
 
   function trackTime(event: PointerEvent, track: HTMLElement): number {
@@ -596,6 +670,16 @@
                 </button>
               </li>
             {/each}
+            <li>
+              <button onclick={() => subtitleFile?.click()}>Open subtitle file</button>
+              <input
+                bind:this={subtitleFile}
+                type="file"
+                accept=".srt,.ass,.ssa,.vtt,text/vtt,application/x-subrip"
+                hidden
+                onchange={(event) => void pickedSubtitle(event)}
+              />
+            </li>
           </ul>
         {/if}
       </aside>

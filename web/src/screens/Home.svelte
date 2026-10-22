@@ -50,7 +50,7 @@
 
 <main class="home">
   <header>
-    <img src="./favicon.svg" alt="" width="40" height="40" />
+    <img class="app-mark" src="./favicon.svg" alt="" width="40" height="40" />
     <h1>YarmiplayTV</h1>
   </header>
 

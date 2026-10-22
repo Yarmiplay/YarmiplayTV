@@ -1,7 +1,11 @@
 package com.yarmiplaytv.media.plex
 
 import com.yarmiplaytv.media.EpisodeInfo
+import com.yarmiplaytv.media.ExternalSubtitle
 import com.yarmiplaytv.media.FileNames
+import com.yarmiplaytv.media.StoredSeekFrames
+import com.yarmiplaytv.media.isTextSubtitleCodec
+import com.yarmiplaytv.media.plexPartId
 import com.yarmiplaytv.media.FilenameIndex
 import com.yarmiplaytv.media.MatchKind
 import com.yarmiplaytv.media.MediaItem
@@ -13,6 +17,7 @@ import com.yarmiplaytv.media.PlaybackReport
 import com.yarmiplaytv.media.ReportState
 import com.yarmiplaytv.media.ResolveResult
 import com.yarmiplaytv.media.SkipSegment
+import java.util.concurrent.ConcurrentHashMap
 import okhttp3.HttpUrl
 
 class PlexSource(
@@ -115,6 +120,7 @@ class PlexSource(
             ?: parts.firstOrNull()
             ?: throw MediaSourceException("${meta.title} has no file")
         val millis = part.duration ?: media.duration ?: meta.duration ?: 0L
+        rememberPart(meta, part)
         val item = meta.toMediaItem()
         return PlayableMedia(
             itemId = meta.ratingKey,
@@ -128,6 +134,45 @@ class PlexSource(
                 EpisodeInfo(series, item.parentIndexNumber, item.indexNumber, meta.year, seriesKey = "$key/${meta.grandparentRatingKey ?: series}")
             },
         )
+    }
+
+    private val partByItem = ConcurrentHashMap<String, String>()
+    private val subsByItem = ConcurrentHashMap<String, List<ExternalSubtitle>>()
+
+    private fun rememberPart(meta: PlexMetadata, part: PlexPart) {
+        part.key?.let { plexPartId(it) }?.let { partByItem[meta.ratingKey] = it }
+        subsByItem[meta.ratingKey] = part.streams.mapNotNull { stream ->
+            val key = stream.key?.takeIf { it.startsWith("/library/streams/") } ?: return@mapNotNull null
+            if (stream.streamType != 3 || !isTextSubtitleCodec(stream.codec)) return@mapNotNull null
+            val title = stream.displayTitle?.takeIf { it.isNotBlank() } ?: "Subtitles"
+            val url = client.url(base, key) { addQueryParameter("X-Plex-Token", token) }.toString()
+            ExternalSubtitle(url, title, stream.languageCode ?: stream.language)
+        }
+    }
+
+    override suspend fun storedSeekFrames(itemId: String): StoredSeekFrames? {
+        val part = partByItem[itemId] ?: run {
+            val meta = metadata(itemId) ?: return null
+            val chosen = meta.media.flatMap { it.parts }.firstOrNull { it.key != null }
+            if (chosen == null) {
+                subsByItem.putIfAbsent(itemId, emptyList())
+                return null
+            }
+            rememberPart(meta, chosen)
+            partByItem[itemId] ?: return null
+        }
+        val index = try {
+            client.get<PlexIndexesBody>(base, token, "library/parts/$part/indexes") { }
+                .container.indexes.firstOrNull()?.id?.takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            null
+        } ?: return null
+        return StoredSeekFrames.Plex(base, part, index, token)
+    }
+
+    override suspend fun externalSubtitles(itemId: String): List<ExternalSubtitle> {
+        if (!subsByItem.containsKey(itemId)) storedSeekFrames(itemId)
+        return subsByItem[itemId].orEmpty()
     }
 
     override fun imageUrl(item: MediaItem, maxWidth: Int): String? {

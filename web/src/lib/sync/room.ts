@@ -4,6 +4,7 @@ import { getSeekPosition } from "../data/seekPositions";
 import type { LocalFile, LocalLibrary } from "../local/library";
 import { MediaLocator, fileNameOf, isPlayable, ownCopy, type EpisodeInfo, type MediaItem, type MediaSource, type PlayableMedia, type RoomLocation, type ServerCopy } from "../media";
 import * as FileNames from "../media/fileNames";
+import { preferredSidecar, rememberSeek, sidecarLanguage, type ExternalSubtitle } from "../media/seekThumbs";
 import { findRelayFile, openRelayFile, RelaySharing } from "../relay/relay";
 import type { RelayFile } from "../syncplay/yarmiplay";
 import { FileSource, HttpSource, type ByteSource } from "../player/bytes";
@@ -65,6 +66,13 @@ export interface NowPlaying {
   /** Read over the network (listening to other episodes waits for an unmetered network). */
   remote: boolean;
   open(): Promise<ByteSource>;
+}
+
+function subtitleFileName(sub: ExternalSubtitle): string {
+  const fromUrl = decodeURIComponent(sub.url.split("?")[0].split("/").pop() || "");
+  if (/\.(srt|ass|ssa|vtt)$/i.test(fromUrl)) return fromUrl;
+  if (/\.(srt|ass|ssa|vtt)$/i.test(sub.title)) return sub.title;
+  return `${sub.title}.srt`;
 }
 
 /** The episode a file is, from its name (and folder, e.g. "Show/Season 2"), for files no server describes. */
@@ -681,6 +689,40 @@ export class RoomSession {
     this.prepared = location.kind === "missing" ? null : { fileName: name, location, at: fresh?.at ?? Date.now() };
   }
 
+  /** Seek-bar frames and subtitle files for this device only. Nothing here is sent to the room. */
+  private async attachExtras(media: NowPlaying, token: number) {
+    const source = media.item ? this.servers().find((s) => s.key === media.item?.sourceKey) : undefined;
+    if (source?.storedSeekFrames && media.item) {
+      const frames = await source.storedSeekFrames(media.item.itemId).catch(() => null);
+      if (token !== this.loadToken) return;
+      if (frames) rememberSeek(media.key, frames);
+    }
+    const subs = await this.discoverSubs(media, source);
+    if (token !== this.loadToken || subs.length === 0) return;
+    const pick = this.player.snapshot.subtitleTrack !== null ? null : preferredSidecar(subs, this.settings.playback.subtitleLanguages);
+    for (const sub of subs) {
+      if (token !== this.loadToken) return;
+      const text = sub.text ?? (await fetch(sub.url).then((r) => (r.ok ? r.text() : null)).catch(() => null));
+      if (!text) continue;
+      await this.player.addExternalSubtitle(subtitleFileName(sub), text, sub.language, sub === pick);
+    }
+  }
+
+  private async discoverSubs(media: NowPlaying, source: MediaSource | undefined): Promise<Array<ExternalSubtitle & { text?: string }>> {
+    const subs: Array<ExternalSubtitle & { text?: string }> = [];
+    if (media.local) {
+      for (const file of this.library.sidecarsBeside(media.local)) {
+        const text = await file.open().then((f) => f.text()).catch(() => null);
+        if (text) subs.push({ url: `file:${file.folder}/${file.directory}/${file.name}`, title: file.name, language: sidecarLanguage(file.name), text });
+      }
+    }
+    if (source?.externalSubtitles && media.item && media.item.itemId !== media.key) {
+      const remote = await source.externalSubtitles(media.item.itemId).catch(() => []);
+      for (const sub of remote) if (!subs.some((have) => have.url === sub.url)) subs.push(sub);
+    }
+    return subs;
+  }
+
   /** What was found for [filename] ahead of time, or the lookup still under way; null when it wasn't prepared. */
   private takePrepared(filename: string): Promise<RoomLocation<RelayFile>> | null {
     const p = this.prepared;
@@ -717,6 +759,7 @@ export class RoomSession {
       return;
     }
     if (token !== this.loadToken) return;
+    void this.attachExtras(media, token);
     this.status.set({ kind: "idle" });
     this.schedulePrepare();
     const file: FileInfo = { name: media.fileName, duration: this.player.duration || media.durationHint, size: media.size };

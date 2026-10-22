@@ -160,6 +160,20 @@ actual fun rememberVideoPicker(onPicked: (String) -> Unit): () -> Unit {
 }
 
 @Composable
+actual fun rememberSubtitlePicker(onPicked: (String) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            onPicked(uri.toString())
+        }
+    }
+    return {
+        launcher.launch(arrayOf("application/x-subrip", "application/x-ssa", "text/vtt", "text/plain", "*/*"))
+    }
+}
+
+@Composable
 actual fun rememberFolderPicker(container: AppContainer): () -> Unit {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) container.local.addFolder(uri.toString())

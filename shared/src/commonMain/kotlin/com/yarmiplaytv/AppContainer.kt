@@ -11,6 +11,7 @@ import com.yarmiplaytv.device.DeviceKeys
 import com.yarmiplaytv.local.FrameGrabber
 import com.yarmiplaytv.local.LocalLibrary
 import com.yarmiplaytv.local.SeekFrames
+import com.yarmiplaytv.local.SeekLocals
 import com.yarmiplaytv.local.VideoThumbnails
 import com.yarmiplaytv.media.CompositeMediaSource
 import com.yarmiplaytv.media.LanHosts
@@ -242,6 +243,7 @@ class AppContainer(
                 playlist.autoReady = s.autoReadyOnLoad
                 playlist.trustedDomains = s.trustedDomains
                 playlist.onlySwitchToTrustedDomains = s.onlySwitchToTrustedDomains
+                playlist.subtitleLanguages = s.playback.subtitleLanguages
                 autosave.enabled = s.autosavePlaylists
                 locator.preferredServer = s.preferredServer
                 reporter.enabled = s.reportPlayback
@@ -254,6 +256,7 @@ class AppContainer(
         initial.jellyfinServers.forEach(::rememberLanAddress)
         // At home a server's name can lead to the router: the player and images reach it where Syncplay did.
         StreamRoutes.route = SessionDns::direct
+        SeekLocals.completeRelay = { url -> relay?.completeFile(url) }
         SingletonImageLoader.setSafe { context ->
             ImageLoader.Builder(context)
                 .components { add(OkHttpNetworkFetcherFactory(callFactory = { OkHttpClient.Builder().dns(SessionDns).build() })) }

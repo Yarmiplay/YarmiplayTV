@@ -6,7 +6,7 @@ import type { Attachment, StreamInfo, TimedPacket } from "./demuxer";
 export const TEXT_SUBTITLES = new Set(["ass", "ssa", "subrip", "srt", "webvtt", "text", "mov_text"]);
 
 /** A plain script for subtitles that bring no styles of their own (SRT, WebVTT): white text with a black outline. */
-const PLAIN_HEADER = `[Script Info]
+export const PLAIN_HEADER = `[Script Info]
 ScriptType: v4.00+
 PlayResX: 1920
 PlayResY: 1080
@@ -28,6 +28,59 @@ export function plainToAss(text: string): string {
     .replace(/\r?\n/g, "\\N")
     .replace(/<(\/?)([ibu])>/gi, (_, close: string, tag: string) => `{\\${tag.toLowerCase()}${close ? 0 : 1}}`)
     .replace(/<[^>]+>/g, "");
+}
+
+/** `00:00:01,500` or `0:00:01.5` as ASS centiseconds (`0:00:01.50`). */
+function assTime(raw: string): string {
+  const m = raw.trim().match(/(?:(\d+):)?(\d+):(\d+)[.,](\d+)/);
+  if (!m) return "0:00:00.00";
+  const hours = Number(m[1] ?? 0);
+  const frac = `${m[4]}00`.slice(0, 2);
+  return `${hours}:${m[2].padStart(2, "0")}:${m[3].padStart(2, "0")}.${frac}`;
+}
+
+/** An SRT or WebVTT file as one ASS script. An ASS or SSA file is returned as it is. */
+export function externalScript(text: string): string {
+  const body = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+  if (/^\s*\[Script Info\]/m.test(body)) return body;
+  const cues = body.replace(/^WEBVTT[^\n]*\n/, "").split(/\n\s*\n/);
+  const lines: string[] = [];
+  for (const cue of cues) {
+    const rows = cue.split("\n").filter((row) => row.trim() !== "" && !row.startsWith("NOTE") && !row.startsWith("STYLE") && !row.startsWith("REGION"));
+    const timeRow = rows.findIndex((row) => row.includes("-->"));
+    if (timeRow < 0) continue;
+    const [startRaw, endRaw] = rows[timeRow].split("-->");
+    const textLines = rows.slice(timeRow + 1).join("\n");
+    const end = endRaw?.trim().split(/\s+/)[0];
+    if (!startRaw?.trim() || !end || textLines.trim() === "") continue;
+    lines.push(`Dialogue: 0,${assTime(startRaw)},${assTime(end)},Default,,0,0,0,,${plainToAss(textLines)}`);
+  }
+  return `${PLAIN_HEADER}${lines.join("\n")}\n`;
+}
+
+/** A whole subtitle file drawn with libass, with no demuxer stream of its own. */
+export class ScriptSubtitles {
+  private readonly jassub: JASSUB;
+
+  constructor(canvas: HTMLCanvasElement, script: string) {
+    this.jassub = new JASSUB({ canvas, subContent: script, queryFonts: "local" });
+  }
+
+  ready(): Promise<void> {
+    return this.jassub.ready;
+  }
+
+  render(time: number, width: number, height: number) {
+    void this.jassub.manualRender({ mediaTime: time, expectedDisplayTime: performance.now(), width, height });
+  }
+
+  resize() {
+    void this.jassub.resize(true);
+  }
+
+  async destroy() {
+    await this.jassub.destroy().catch(() => {});
+  }
 }
 
 /** Subtitles of one stream drawn on a canvas over the video, at the player's clock. */

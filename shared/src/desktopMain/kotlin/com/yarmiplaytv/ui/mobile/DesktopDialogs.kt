@@ -3,6 +3,7 @@ package com.yarmiplaytv.ui.mobile
 import com.yarmiplaytv.local.LocalBrowse
 import com.yarmiplaytv.local.LocalLibrary
 import com.yarmiplaytv.local.LocalMatcher
+import com.yarmiplaytv.media.SUBTITLE_EXTENSIONS
 import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.KeyboardFocusManager
@@ -24,6 +25,16 @@ object DesktopDialogs {
         dialog.setFilenameFilter { _, name -> LocalMatcher.isMedia(name, null) }
         // Windows ignores the filename filter and only understands a pattern in the file name box.
         if (isWindows) dialog.file = MEDIA_PATTERN
+        dialog.isVisible = true
+        val dir = dialog.directory ?: return null
+        val file = dialog.file ?: return null
+        return File(dir, file).toPath()
+    }
+
+    fun pickSubtitle(): Path? {
+        val dialog = FileDialog(owner, "Open subtitle file", FileDialog.LOAD)
+        dialog.setFilenameFilter { _, name -> name.substringAfterLast('.').lowercase() in SUBTITLE_EXTENSIONS }
+        if (isWindows) dialog.file = "*.srt;*.ass;*.ssa;*.vtt"
         dialog.isVisible = true
         val dir = dialog.directory ?: return null
         val file = dialog.file ?: return null

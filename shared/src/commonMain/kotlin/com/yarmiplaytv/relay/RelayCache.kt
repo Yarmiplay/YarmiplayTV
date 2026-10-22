@@ -104,6 +104,9 @@ class CachedFile internal constructor(private val file: File, val size: Long, va
 
     val complete: Boolean @Synchronized get() = blocks.cardinality() == blockCount
 
+    /** The file on disk once every block is here, so the seek bar can read it without the proxy. */
+    fun pathIfComplete(): String? = if (complete && !deleted) file.absolutePath else null
+
     fun blockOf(offset: Long): Int = (offset / RelayCache.BLOCK).toInt()
 
     fun blockStart(index: Int): Long = index * RelayCache.BLOCK

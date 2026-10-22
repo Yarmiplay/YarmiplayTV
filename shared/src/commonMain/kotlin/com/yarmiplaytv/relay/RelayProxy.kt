@@ -41,6 +41,13 @@ class RelayProxy(private val scope: CoroutineScope) {
 
     fun isProxyUrl(url: String?): Boolean = url != null && server?.let { url.startsWith("http://$HOST:${it.localPort}/relay/") } == true
 
+    /** A relay URL whose file is already complete, as a path on disk. */
+    fun cachedPath(url: String): String? {
+        if (!isProxyUrl(url)) return null
+        val key = url.substringAfter("/relay/").substringBefore('/')
+        return routes[key]?.cache?.pathIfComplete()
+    }
+
     @Synchronized
     fun close() {
         runCatching { server?.close() }

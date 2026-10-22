@@ -207,7 +207,14 @@ class DesktopMpvPlayer(
         if (down) core.command("cycle", property, "down") else core.command("cycle", property)
     }
 
-    override fun command(vararg args: String): Boolean = core.command(*args) >= 0
+    override fun command(vararg args: String): Boolean {
+        val rewritten = if (args.firstOrNull() == "sub-add" && args.size > 1) {
+            arrayOf("sub-add", mpvTarget(args[1]), *args.drop(2).toTypedArray())
+        } else {
+            args
+        }
+        return core.command(*rewritten) >= 0
+    }
 
     override fun markUserSeek() {
         userSeekedFlag = true

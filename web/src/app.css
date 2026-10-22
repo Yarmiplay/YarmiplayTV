@@ -149,6 +149,15 @@ body {
   min-height: 100%;
 }
 
+/* The favicon's dark tile, edged so it stays visible on every theme. Same corner as the icon artwork. */
+.app-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 22.5%;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.5);
+  flex: none;
+}
+
 a {
   color: var(--accent);
 }

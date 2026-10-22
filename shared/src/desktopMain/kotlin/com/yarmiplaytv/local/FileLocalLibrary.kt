@@ -2,6 +2,9 @@ package com.yarmiplaytv.local
 
 import com.yarmiplaytv.Logger
 import com.yarmiplaytv.data.SettingsStore
+import com.yarmiplaytv.media.ExternalSubtitle
+import com.yarmiplaytv.media.sidecarLanguage
+import com.yarmiplaytv.media.sidecarMatches
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -72,6 +75,19 @@ class FileLocalLibrary(
             Files.list(dir).use { paths ->
                 paths.filter { Files.isRegularFile(it) && LocalMatcher.isMedia(it.fileName.toString(), null) }.limit(MAX_NEIGHBOURS).toList()
                     .map { LocalFile(it.fileName.toString(), Files.size(it), uriOf(it), modified = Files.getLastModifiedTime(it).toMillis()) }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    override fun sidecarsBeside(videoUri: String, videoName: String): List<ExternalSubtitle> {
+        val dir = runCatching { pathOf(videoUri).parent }.getOrNull() ?: return emptyList()
+        return runCatching {
+            Files.list(dir).use { paths ->
+                paths.filter { Files.isRegularFile(it) && sidecarMatches(videoName, it.fileName.toString()) }.toList()
+                    .map {
+                        val name = it.fileName.toString()
+                        ExternalSubtitle(uriOf(it), name.substringBeforeLast('.'), sidecarLanguage(name))
+                    }
             }
         }.getOrDefault(emptyList())
     }

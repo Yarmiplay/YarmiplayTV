@@ -80,6 +80,7 @@ import com.yarmiplaytv.ui.shared.recentByServer
 import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serversDetail
 import com.yarmiplaytv.ui.shared.serversTitle
+import com.yarmiplaytv.ui.mobile.AppMark
 import com.yarmiplaytv.ui.mobile.UpdateProgressBar
 import com.yarmiplaytv.ui.shared.updatePercentLabel
 import com.yarmiplaytv.ui.shared.updateStateLine
@@ -128,8 +129,8 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
     ) {
         item(key = "header") {
             Row(Modifier.fillMaxWidth().padding(horizontal = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(androidx.compose.ui.res.painterResource(com.yarmiplaytv.shared.R.drawable.ic_logo), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(48.dp))
-                Spacer(Modifier.width(16.dp))
+                AppMark(56.dp)
+                Spacer(Modifier.width(12.dp))
                 Text("YarmiplayTV", style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.weight(1f))
                 // The tiles under these buttons would otherwise win over the full-width update notice.

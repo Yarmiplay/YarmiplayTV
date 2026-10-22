@@ -277,6 +277,9 @@ class RelayManager(
 
     fun isRelayUrl(url: String?): Boolean = proxy.isProxyUrl(url)
 
+    /** The finished cache file for a relay URL, so a seek preview can read it as a local file. */
+    fun completeFile(url: String): String? = proxy.cachedPath(url)
+
     /** Withdraws a broken/incomplete local file from our relay offers. */
     fun markLocalUnreliable(uri: String) = offers.markUnreliable(uri)
 

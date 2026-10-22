@@ -1,3 +1,4 @@
+import { sidecarMatches, SUBTITLE_EXTENSIONS } from "../media/seekThumbs";
 import { baseName } from "../syncplay/filenames";
 
 /**
@@ -25,6 +26,8 @@ const VIDEO_EXTENSIONS = new Set([
 
 export const isVideo = (name: string, mimeType?: string) =>
   mimeType?.startsWith("video/") === true || VIDEO_EXTENSIONS.has(name.slice(name.lastIndexOf(".") + 1).toLowerCase());
+
+export const isSubtitleName = (name: string) => SUBTITLE_EXTENSIONS.has(name.slice(name.lastIndexOf(".") + 1).toLowerCase());
 
 
 /** Syncplay's stripfilename, lowercased: the looser match after exact names. */
@@ -99,6 +102,7 @@ export const keepsFolders = () => typeof (globalThis as { showDirectoryPicker?: 
 export class LocalLibrary {
   private folders: MediaFolder[] = [];
   private folderFiles: LocalFile[] = [];
+  private subtitleFiles: LocalFile[] = [];
   private readonly opened = new Map<string, File>();
   private readonly listeners = new Set<() => void>();
 
@@ -158,7 +162,7 @@ export class LocalLibrary {
   /** A folder picked with <input webkitdirectory>: [files] carry their paths in webkitRelativePath. */
   async addFolderFiles(files: File[]): Promise<void> {
     const name = files[0]?.webkitRelativePath.split("/")[0] || "Folder";
-    this.folders = [...this.folders, { name, readable: true, files: files.filter((f) => isVideo(f.name, f.type)) }];
+    this.folders = [...this.folders, { name, readable: true, files: files.filter((f) => isVideo(f.name, f.type) || isSubtitleName(f.name)) }];
     await this.rescan();
   }
 
@@ -179,6 +183,11 @@ export class LocalLibrary {
     return find(this.files, fileName);
   }
 
+  /** Subtitle files in the same folder as [video]: `Episode.srt` and `Episode.en.ass`. */
+  sidecarsBeside(video: LocalFile): LocalFile[] {
+    return this.subtitleFiles.filter((sub) => sub.folder === video.folder && sub.directory === video.directory && sidecarMatches(video.name, sub.name));
+  }
+
   private async persist() {
     if (!keepsFolders()) return;
     const handles = this.folders.flatMap((f) => (f.handle ? [f.handle] : []));
@@ -187,17 +196,21 @@ export class LocalLibrary {
 
   private async rescan() {
     const out: LocalFile[] = [];
+    const subs: LocalFile[] = [];
     for (const folder of this.folders) {
       if (folder.files) {
         for (const f of folder.files) {
           const parts = f.webkitRelativePath.split("/");
-          out.push(fileEntry(f, parts.slice(1, -1).join("/"), folder.name));
+          const entry = fileEntry(f, parts.slice(1, -1).join("/"), folder.name);
+          if (isSubtitleName(f.name)) subs.push(entry);
+          else if (isVideo(f.name, f.type)) out.push(entry);
         }
       } else if (folder.handle && folder.readable) {
-        await walk(folder.handle, "", folder.name, out).catch(() => {});
+        await walk(folder.handle, "", folder.name, out, subs).catch(() => {});
       }
     }
     this.folderFiles = out;
+    this.subtitleFiles = subs;
     this.changed();
   }
 }
@@ -207,15 +220,17 @@ function fileEntry(file: File, directory: string, folder: string): LocalFile {
 }
 
 /** Every video under [dir], with its size and date (the relay offers files by size and a hash of their ends). */
-async function walk(dir: DirectoryHandle, path: string, folder: string, out: LocalFile[], depth = 0): Promise<void> {
+async function walk(dir: DirectoryHandle, path: string, folder: string, out: LocalFile[], subs: LocalFile[], depth = 0): Promise<void> {
   if (depth > 8) return;
   for await (const entry of dir.values()) {
     if (entry.kind === "directory") {
-      await walk(entry as DirectoryHandle, path ? `${path}/${entry.name}` : entry.name, folder, out, depth + 1);
-    } else if (isVideo(entry.name)) {
+      await walk(entry as DirectoryHandle, path ? `${path}/${entry.name}` : entry.name, folder, out, subs, depth + 1);
+    } else if (isVideo(entry.name) || isSubtitleName(entry.name)) {
       const handle = entry as FileSystemFileHandle;
       const file = await handle.getFile();
-      out.push({ name: entry.name, size: file.size, modified: file.lastModified, directory: path, folder, open: () => handle.getFile() });
+      const listed = { name: entry.name, size: file.size, modified: file.lastModified, directory: path, folder, open: () => handle.getFile() };
+      if (isSubtitleName(entry.name)) subs.push(listed);
+      else out.push(listed);
     }
   }
 }

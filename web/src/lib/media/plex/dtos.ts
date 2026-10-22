@@ -101,4 +101,17 @@ export interface PlexPart {
   file?: string | null;
   size?: number | null;
   duration?: number | null;
+  Stream?: PlexStream[] | null;
+}
+
+export interface PlexStream {
+  id?: number | null;
+  /** 1 video, 2 audio, 3 subtitle. */
+  streamType?: number | null;
+  codec?: string | null;
+  language?: string | null;
+  languageCode?: string | null;
+  displayTitle?: string | null;
+  /** Set for a subtitle file beside the video (`/library/streams/…`), not for one inside it. */
+  key?: string | null;
 }

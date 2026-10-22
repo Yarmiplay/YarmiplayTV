@@ -79,6 +79,27 @@ export interface MediaSourceInfo {
   Size?: number | null;
   RunTimeTicks?: number | null;
   Protocol?: string | null;
+  /** Real frames for the seek bar, keyed by thumbnail width. */
+  Trickplay?: Record<string, TrickplayInfo> | null;
+  MediaStreams?: MediaStreamInfo[] | null;
+}
+
+export interface TrickplayInfo {
+  Width?: number | null;
+  Height?: number | null;
+  TileWidth?: number | null;
+  TileHeight?: number | null;
+  ThumbnailCount?: number | null;
+  Interval?: number | null;
+}
+
+export interface MediaStreamInfo {
+  Type?: string | null;
+  IsExternal?: boolean | null;
+  DeliveryUrl?: string | null;
+  Language?: string | null;
+  DisplayTitle?: string | null;
+  Codec?: string | null;
 }
 
 export interface UserItemData {

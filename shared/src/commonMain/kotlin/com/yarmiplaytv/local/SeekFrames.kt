@@ -11,10 +11,7 @@ interface SeekFrames {
     fun release() {}
 
     companion object {
-        /**
-         * Whether [url] is a file on this device, the only kind the seek bar previews: a stream would be downloaded
-         * again from the server for every frame.
-         */
+        /** Whether [url] is a file on this device. Streams are previewed too, by a range read or a stored server frame. */
         fun canPreview(url: String): Boolean = url.startsWith("file:") || url.startsWith("content:") || "://" !in url
     }
 }

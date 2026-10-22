@@ -4,7 +4,8 @@ import type { ByteSource } from "./bytes";
 import { Demuxer, type Chapter, type StreamInfo, type TimedPacket } from "./demuxer";
 import { createLibAV, type LibAV } from "./libav";
 import { Renderer } from "./renderer";
-import { PGS, PgsLayer, SubtitleLayer, TEXT_SUBTITLES } from "./subtitles";
+import { externalScript, PGS, PgsLayer, ScriptSubtitles, SubtitleLayer, TEXT_SUBTITLES } from "./subtitles";
+import { sidecarLanguage } from "../media/seekThumbs";
 import { openSoftwareVideo, openVideoDecoding, type VideoDecoding } from "./video";
 
 export interface Track {
@@ -101,7 +102,9 @@ export class MediaPlayer implements PlayerAdapter {
   private audioStream: StreamInfo | null = null;
   private audio: AudioDecoding | null = null;
   private output: AudioOutput | null = null;
-  private subtitles: SubtitleLayer | PgsLayer | null = null;
+  private subtitles: SubtitleLayer | PgsLayer | ScriptSubtitles | null = null;
+  private readonly scripts = new Map<number, string>();
+  private nextExternalId = -1;
 
   private readonly frames: VideoFrame[] = [];
   /** Video packets held back while the video decoder is already full, so reading can still feed the sound. */
@@ -297,7 +300,32 @@ export class MediaPlayer implements PlayerAdapter {
     this.seek(this.position);
   }
 
+  /**
+   * A subtitle file the user opened or that sat beside the video. [select] turns it on. Negative track ids are these
+   * files, so they never collide with a stream inside the video.
+   */
+  async addExternalSubtitle(fileName: string, text: string, language: string | null, select: boolean) {
+    const id = this.nextExternalId--;
+    this.scripts.set(id, externalScript(text));
+    const ext = fileName.slice(fileName.lastIndexOf(".") + 1).toLowerCase();
+    const track: Track = {
+      id,
+      kind: "subtitle",
+      label: fileName.replace(/\.[^.]+$/, ""),
+      language: language ?? sidecarLanguage(fileName),
+      codec: ext,
+      isDefault: false,
+      playable: true,
+    };
+    this.update({ subtitleTracks: [...this.state.subtitleTracks, track] });
+    if (select) await this.showScript(id);
+  }
+
   async selectSubtitle(id: number | null) {
+    if (id !== null && this.scripts.has(id)) {
+      await this.showScript(id);
+      return;
+    }
     await this.subtitles?.destroy();
     this.subtitles = null;
     const stream = this.demuxer?.streams.find((s) => s.index === id && s.kind === "subtitle") ?? null;
@@ -305,6 +333,15 @@ export class MediaPlayer implements PlayerAdapter {
     this.update({ subtitleTrack: this.subtitles ? stream!.index : null });
     // Back a little, so a line that started before now is read again.
     if (this.subtitles) this.seek(this.position);
+  }
+
+  private async showScript(id: number) {
+    const script = this.scripts.get(id);
+    if (!script) return;
+    await this.subtitles?.destroy();
+    this.subtitles = new ScriptSubtitles(this.subtitleCanvas, script);
+    await this.subtitles.ready().catch(() => {});
+    this.update({ subtitleTrack: id });
   }
 
   /** The frame on screen as a PNG; with [withSubtitles], the subtitles drawn over it. */
@@ -384,6 +421,8 @@ export class MediaPlayer implements PlayerAdapter {
     this.output = null;
     await this.subtitles?.destroy();
     this.subtitles = null;
+    this.scripts.clear();
+    this.nextExternalId = -1;
     await video?.close().catch(() => {});
     await audio?.close().catch(() => {});
     await demuxer?.close().catch(() => {});
@@ -550,7 +589,7 @@ export class MediaPlayer implements PlayerAdapter {
         if (video.length < room) video.push(packet);
         else this.heldVideo.push(packet);
       } else if (packet.stream === this.audioStream?.index) audio.push(packet);
-      else if (packet.stream === this.subtitles?.stream.index) this.subtitles.add(packet);
+      else if (this.subtitles && "add" in this.subtitles && packet.stream === this.subtitles.stream.index) this.subtitles.add(packet);
     }
     if (audio.length && this.audioFedAt === 0) this.audioFedAt = performance.now();
     await Promise.all([
