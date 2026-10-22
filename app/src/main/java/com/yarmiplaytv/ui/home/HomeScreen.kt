@@ -129,8 +129,8 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
     ) {
         item(key = "header") {
             Row(Modifier.fillMaxWidth().padding(horizontal = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                AppMark(56.dp)
-                Spacer(Modifier.width(12.dp))
+                AppMark(48.dp)
+                Spacer(Modifier.width(14.dp))
                 Text("YarmiplayTV", style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.weight(1f))
                 // The tiles under these buttons would otherwise win over the full-width update notice.

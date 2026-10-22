@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.6.1" date="2026-10-22">
+      <description>
+        <p>The icon beside the app's name is a little smaller, and it no longer has a light edge.</p>
+      </description>
+    </release>
     <release version="2.6.0" date="2026-10-22">
       <description>
         <p>The seek bar shows a picture of the moment you're pointing at, whether the video is on this device, on Jellyfin or Plex, or shared through the room. Subtitle files beside a video are loaded, and you can open one or drop it on the window. The icon beside the app's name is larger and keeps its background on every theme.</p>

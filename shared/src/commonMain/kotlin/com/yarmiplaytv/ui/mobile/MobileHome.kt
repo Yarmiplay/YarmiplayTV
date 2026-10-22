@@ -102,8 +102,8 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
                 })
             } else {
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AppMark(40.dp)
-                    Spacer(Modifier.width(8.dp))
+                    AppMark(32.dp)
+                    Spacer(Modifier.width(10.dp))
                     Text("YarmiplayTV", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.weight(1f))
                     IconButton(onClick = { container.exitApp() }, modifier = Modifier.testTag("home_exit_app")) {

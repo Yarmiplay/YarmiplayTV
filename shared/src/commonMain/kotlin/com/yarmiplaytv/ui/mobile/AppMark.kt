@@ -1,7 +1,6 @@
 package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -14,12 +13,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 
 /**
- * The app icon beside the title: the same dark squircle as the launcher, with a light edge so the tile
- * stays visible when the page behind it changes theme. The launcher foreground is padded for the
- * adaptive-icon safe zone, so the prism is drawn larger inside the tile to match the favicon.
+ * The app icon beside the title: the same dark squircle as the launcher. The launcher foreground is
+ * padded for the adaptive-icon safe zone, so the prism is drawn larger inside the tile to match the favicon.
  */
 @Composable
 fun AppMark(size: Dp, modifier: Modifier = Modifier) {
@@ -28,8 +25,7 @@ fun AppMark(size: Dp, modifier: Modifier = Modifier) {
         modifier
             .size(size)
             .clip(shape)
-            .background(Brush.linearGradient(listOf(Color(0xFF152238), Color(0xFF0D1524), Color(0xFF070B12))))
-            .border(1.dp, Color.White.copy(alpha = 0.5f), shape),
+            .background(Brush.linearGradient(listOf(Color(0xFF152238), Color(0xFF0D1524), Color(0xFF070B12)))),
     ) {
         Icon(
             appLogoPainter(),
