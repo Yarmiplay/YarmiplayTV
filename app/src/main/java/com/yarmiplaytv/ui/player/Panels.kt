@@ -338,8 +338,8 @@ private fun ManagedRoomActions(container: AppContainer, room: RoomState) {
             color = AppColors.TextDim,
             style = MaterialTheme.typography.bodySmall,
         )
-        val passwordChanges by container.sync.operatorPasswordChanges.collectAsStateWithLifecycle()
-        val saved = remember(room.room, room.isOperator, passwordChanges) { if (room.isOperator) container.sync.savedOperatorPassword(room.room) else null }
+        val savedPasswords by container.sync.savedOperatorPasswords.collectAsStateWithLifecycle()
+        val saved = if (room.isOperator) container.sync.savedOperatorPassword(room.room, savedPasswords) else null
         Text(room.room + (saved?.let { " · operator password $it" } ?: ""), color = AppColors.Accent, style = MaterialTheme.typography.labelMedium)
         if (!room.isOperator) {
             fun identify() { if (password.isNotBlank()) { container.sync.identifyAsOperator(password); password = "" } }

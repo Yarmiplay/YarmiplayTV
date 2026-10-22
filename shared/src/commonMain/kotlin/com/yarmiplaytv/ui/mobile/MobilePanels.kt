@@ -497,8 +497,8 @@ private fun ManagedRoomActions(container: AppContainer, room: RoomState) {
     var newManaged by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     if (room.inManagedRoom) {
-        val passwordChanges by container.sync.operatorPasswordChanges.collectAsStateWithLifecycle()
-        val saved = remember(room.room, room.isOperator, passwordChanges) { if (room.isOperator) container.sync.savedOperatorPassword(room.room) else null }
+        val savedPasswords by container.sync.savedOperatorPasswords.collectAsStateWithLifecycle()
+        val saved = if (room.isOperator) container.sync.savedOperatorPassword(room.room, savedPasswords) else null
         Surface(color = AppColors.SurfaceHigh, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().testTag("managed_room_info")) {
             Column(Modifier.padding(start = 12.dp, top = 8.dp, bottom = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

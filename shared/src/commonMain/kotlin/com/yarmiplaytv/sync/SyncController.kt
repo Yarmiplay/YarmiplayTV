@@ -284,19 +284,20 @@ class SyncController(
     /** As an operator: marks [username] ready or not ready. */
     fun setOthersReady(username: String, isReady: Boolean) = clientFlow.value?.setOthersReady(username, isReady)
 
-    /** The saved operator password for [room] on the current server, e.g. to show it to its operator. */
-    fun savedOperatorPassword(room: String): String? = passwordKey(room)?.let { operatorPasswords?.get(it) }
-
-    private val _operatorPasswordChanges = MutableStateFlow(0)
+    private val _savedOperatorPasswords = MutableStateFlow<Map<String, String>>(emptyMap())
     /**
-     * Counts saved or forgotten operator passwords. The room state can change before a password is saved (the
-     * server confirms an operator before the client's own event is handled), so what shows one watches this too.
+     * Operator passwords saved or forgotten while connected, keyed like [savedOperatorPassword]. The room can
+     * already say we're an operator before the password is stored, so what shows it watches this.
      */
-    val operatorPasswordChanges: StateFlow<Int> = _operatorPasswordChanges.asStateFlow()
+    val savedOperatorPasswords: StateFlow<Map<String, String>> = _savedOperatorPasswords.asStateFlow()
+
+    /** The saved operator password for [room] on the current server, e.g. to show it to its operator. */
+    fun savedOperatorPassword(room: String, saved: Map<String, String> = _savedOperatorPasswords.value): String? =
+        passwordKey(room)?.let { saved[it] ?: operatorPasswords?.get(it) }
 
     private fun savePassword(key: String, password: String?) {
         operatorPasswords?.save(key, password)
-        _operatorPasswordChanges.update { it + 1 }
+        _savedOperatorPasswords.update { if (password.isNullOrEmpty()) it - key else it + (key to password) }
     }
 
     /** "host:port/+name:HASH": where [room]'s operator password is kept, like room playlists. */
