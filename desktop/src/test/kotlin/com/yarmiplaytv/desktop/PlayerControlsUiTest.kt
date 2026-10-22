@@ -208,8 +208,11 @@ class PlayerControlsUiTest {
         onNodeWithTag("seek_preview").assertExists()
         bubbleText("5:00").assertExists()
         screenshot("seek_time")
-        assertTrue("a stream isn't previewed", frames.asked.isEmpty())
-        assertTrue(onAllNodesWithTag("seek_frame").fetchSemanticsNodes().isEmpty())
+        waitUntil("the stream frame", timeoutMillis = 5_000) { frames.asked.isNotEmpty() }
+        assertTrue(frames.asked.last().first.startsWith("https://example.com/"))
+        assertEquals(300.0, frames.asked.last().second, 3.0)
+        waitUntil("the stream picture", timeoutMillis = 5_000) { onAllNodesWithTag("seek_frame").fetchSemanticsNodes().isNotEmpty() }
+        frames.asked.clear()
 
         onNodeWithTag("seek_slider").performMouseInput { moveTo(Offset(width * 0.5f, -200f)) }
         settle()
