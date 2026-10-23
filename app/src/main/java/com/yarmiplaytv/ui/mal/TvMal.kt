@@ -1,6 +1,7 @@
 package com.yarmiplaytv.ui.mal
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,7 +34,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -112,6 +115,18 @@ fun MalLoginScreen(container: AppContainer, nav: Navigator) {
 private val TV_LOOK_UP_EPISODES = setOf(MalStatus.WATCHING, MalStatus.PLAN_TO_WATCH, MalStatus.ON_HOLD)
 
 /**
+ * Keeps Left/Right inside one show's buttons (stop at the ends) so focus cannot jump to the list tabs or search.
+ * Up and Down still leave the group.
+ */
+private fun Modifier.malShowButtonsFocus(): Modifier = focusProperties {
+    onExit = {
+        if (requestedFocusDirection == FocusDirection.Left || requestedFocusDirection == FocusDirection.Right) {
+            cancelFocusChange()
+        }
+    }
+}.focusGroup()
+
+/**
  * One entry of your list on TV: progress to change, and when the library has the next episode, Play and Add to
  * playlist for it. Episodes opens every episode of the entry the library has, under the entry.
  */
@@ -131,7 +146,7 @@ private fun TvMalListRow(
     val room by container.sync.room.collectAsStateWithLifecycle()
     val inRoom = room.status == ConnectionStatus.CONNECTED
     val next = episodes?.let { nextEpisode(it, entry.watchedEpisodes) }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.malShowButtonsFocus(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Cover(anime, Modifier.width(44.dp).height(62.dp))
             Column(Modifier.weight(1f)) {
@@ -383,7 +398,7 @@ private fun TvMalSearch(model: MalSearchModel) {
 @Composable
 private fun TvMalFoundRow(model: MalSearchModel, anime: MalAnime) {
     val list = anime.myListStatus
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("mal_found_${anime.id}")) {
+    Column(Modifier.malShowButtonsFocus().testTag("mal_found_${anime.id}"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Cover(anime, Modifier.width(44.dp).height(62.dp))
             Column(Modifier.weight(1f)) {

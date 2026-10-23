@@ -1,5 +1,6 @@
 package com.yarmiplaytv.ui.home
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Bookmarks
@@ -34,19 +37,24 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -90,6 +98,7 @@ import com.yarmiplaytv.update.StoreUpdates
 import com.yarmiplaytv.update.UpdateState
 import com.yarmiplaytv.update.openStoreApp
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(container: AppContainer, nav: Navigator) {
@@ -269,27 +278,80 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
     }
 }
 
+/**
+ * Continue watching / recently added as a library-style grid: Adaptive(130.dp) lands 6+ landscape
+ * posters per row; the home LazyColumn scrolls vertically; focus brings each card fully on screen.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RecentRow(container: AppContainer, nav: Navigator, title: String, items: List<MediaItem>, source: MediaSource?) {
     Column {
         SectionTitle(title, Modifier.padding(horizontal = 48.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp), contentPadding = PaddingValues(horizontal = 48.dp, vertical = 8.dp)) {
-            items(items, key = { it.uniqueKey }) { item ->
-                PosterCard(
-                    title = item.seriesName ?: item.name,
-                    subtitle = if (item.type == MediaItemType.EPISODE) item.displayTitle else item.year?.toString(),
-                    imageUrl = source?.imageUrl(item, 480),
-                    aspectRatio = 16f / 9f,
-                    placeholderIcon = Icons.Filled.Movie,
-                    onClick = { openItem(container, nav, item) },
-                    modifier = Modifier.width(260.dp),
-                    titleLines = Int.MAX_VALUE,
-                    subtitleLines = Int.MAX_VALUE,
-                )
+        RecentPosterGrid(Modifier.fillMaxWidth().padding(horizontal = 48.dp, vertical = 8.dp), items) { item ->
+            val bring = remember(item.uniqueKey) { BringIntoViewRequester() }
+            val scope = rememberCoroutineScope()
+            var size by remember(item.uniqueKey) { mutableStateOf(IntSize.Zero) }
+            PosterCard(
+                title = item.seriesName ?: item.name,
+                subtitle = if (item.type == MediaItemType.EPISODE) item.displayTitle else item.year?.toString(),
+                imageUrl = source?.imageUrl(item, 360),
+                aspectRatio = 16f / 9f,
+                placeholderIcon = Icons.Filled.Movie,
+                onClick = { openItem(container, nav, item) },
+                modifier = Modifier
+                    .bringIntoViewRequester(bring)
+                    .onSizeChanged { size = it }
+                    .onFocusChanged {
+                        if (it.hasFocus && size != IntSize.Zero) {
+                            scope.launch {
+                                // ~half the focusedScale(1.06) growth, so the accent border is not clipped.
+                                val pad = (size.height * 0.04f).coerceAtLeast(4f)
+                                bring.bringIntoView(Rect(-pad, -pad, size.width + pad, size.height + pad))
+                            }
+                        }
+                    },
+            )
+        }
+    }
+}
+
+/** Wraps [items] into rows of Adaptive([RecentGridMin]) cells — same density target as the library grid. */
+@Composable
+private fun RecentPosterGrid(
+    modifier: Modifier,
+    items: List<MediaItem>,
+    itemContent: @Composable (MediaItem) -> Unit,
+) {
+    Layout(
+        content = {
+            items.forEach { item ->
+                key(item.uniqueKey) { itemContent(item) }
+            }
+        },
+        modifier = modifier,
+    ) { measurables, constraints ->
+        val gap = RecentGridGap.roundToPx()
+        val minCell = RecentGridMin.roundToPx()
+        val width = constraints.maxWidth
+        val columns = ((width + gap) / (minCell + gap)).coerceAtLeast(1)
+        val cellWidth = ((width - gap * (columns - 1)) / columns).coerceAtLeast(1)
+        val placeables = measurables.map { it.measure(Constraints.fixedWidth(cellWidth)) }
+        val rows = placeables.chunked(columns)
+        val rowHeights = rows.map { row -> row.maxOf { it.height } }
+        val height = (rowHeights.sum() + gap * (rows.size - 1).coerceAtLeast(0)).coerceAtLeast(0)
+        layout(width, height) {
+            var y = 0
+            rows.forEachIndexed { i, row ->
+                row.forEachIndexed { j, placeable -> placeable.placeRelative(j * (cellWidth + gap), y) }
+                y += rowHeights[i] + gap
             }
         }
     }
 }
+
+/** Same landscape min as BrowseScreen so 1080p TV fits six or more posters per row. */
+private val RecentGridMin = 130.dp
+private val RecentGridGap = 12.dp
 
 /**
  * A newer version. The download-page APK installs it from here: OK downloads it and hands it to Android's
