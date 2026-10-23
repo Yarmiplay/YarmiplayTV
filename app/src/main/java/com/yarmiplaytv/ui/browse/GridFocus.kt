@@ -11,3 +11,33 @@ internal fun sameColumnTarget(focused: Int, columns: Int, rowsDelta: Int, count:
     if (target !in 0 until count.toLong()) return null
     return target.toInt()
 }
+
+/**
+ * How far to scroll (positive = down) so an item of [itemHeight] with top [itemTop] lies fully
+ * inside the viewport. [edgePadding] keeps a little air around a focused, scaled tile.
+ * When the item is taller than the viewport, pin it to the start (or end when it overshoots below).
+ */
+internal fun scrollDeltaToShowFully(
+    itemTop: Int,
+    itemHeight: Int,
+    viewportStart: Int,
+    viewportEnd: Int,
+    edgePadding: Int = 0,
+): Int {
+    if (itemHeight <= 0) return 0
+    val start = viewportStart + edgePadding
+    val end = viewportEnd - edgePadding
+    if (end <= start) return 0
+    val itemBottom = itemTop + itemHeight
+    val viewH = end - start
+    if (itemHeight >= viewH) {
+        return when {
+            itemTop > start -> itemTop - start
+            itemBottom < end -> itemBottom - end
+            else -> 0
+        }
+    }
+    if (itemTop < start) return itemTop - start
+    if (itemBottom > end) return itemBottom - end
+    return 0
+}

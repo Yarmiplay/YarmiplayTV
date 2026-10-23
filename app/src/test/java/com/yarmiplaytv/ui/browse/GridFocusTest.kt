@@ -30,4 +30,16 @@ class GridFocusTest {
         assertNull(sameColumnTarget(focused = 0, columns = 5, rowsDelta = 0, count = 20))
         assertNull(sameColumnTarget(focused = -1, columns = 5, rowsDelta = 1, count = 20))
     }
+
+    @Test
+    fun `scroll delta brings a clipped item fully on screen`() {
+        // Viewport 0..500; item mostly below the fold.
+        assertEquals(80, scrollDeltaToShowFully(itemTop = 400, itemHeight = 180, viewportStart = 0, viewportEnd = 500))
+        // Item clipped at the top.
+        assertEquals(-40, scrollDeltaToShowFully(itemTop = -40, itemHeight = 180, viewportStart = 0, viewportEnd = 500))
+        // Already fully visible.
+        assertEquals(0, scrollDeltaToShowFully(itemTop = 100, itemHeight = 180, viewportStart = 0, viewportEnd = 500))
+        // Edge padding for a focused scale bump.
+        assertEquals(20, scrollDeltaToShowFully(itemTop = 400, itemHeight = 100, viewportStart = 0, viewportEnd = 500, edgePadding = 20))
+    }
 }
