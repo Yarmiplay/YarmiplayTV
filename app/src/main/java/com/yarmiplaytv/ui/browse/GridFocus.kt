@@ -12,6 +12,13 @@ internal fun sameColumnTarget(focused: Int, columns: Int, rowsDelta: Int, count:
     return target.toInt()
 }
 
+/** Index to focus after returning to a grid: the item that was opened, else the first cell. */
+internal fun restoreFocusIndex(itemKeys: List<String>, restoreKey: String?): Int {
+    if (itemKeys.isEmpty()) return 0
+    val at = restoreKey?.let { key -> itemKeys.indexOf(key) } ?: -1
+    return if (at >= 0) at else 0
+}
+
 /**
  * How far to scroll (positive = down) so an item of [itemHeight] with top [itemTop] lies fully
  * inside the viewport. [edgePadding] keeps a little air around a focused, scaled tile.

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Tv
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -92,16 +93,35 @@ private fun ItemGrid(
     items: List<MediaItem>,
     onClick: (MediaItem) -> Unit,
     modifier: Modifier = Modifier,
-    firstFocus: FocusRequester? = null,
+    /** uniqueKey of the poster to focus when this grid appears (Back from a child, or after a dialog). */
+    restoreKey: String? = null,
+    onFocusedKeyChange: (String) -> Unit = {},
+    /** Bumped when focus must be re-applied (e.g. action sheet closed) without changing [restoreKey]. */
+    refocusToken: Int = 0,
     showServer: Boolean = false,
 ) {
     val source by container.mediaSource.collectAsStateWithLifecycle()
     val aspect = aspectFor(items)
+    val itemKeys = remember(items) { items.map { it.uniqueKey } }
     // Keep the next and previous row composed. A row that is not on screen yet is brought in
     // one cell at a time, and that cell is column 0, so Down would land there.
     val gridState = rememberLazyGridState(cacheWindow = LazyLayoutCacheWindow(ahead = 800.dp, behind = 400.dp))
     val scope = rememberCoroutineScope()
-    val focus = remember(items) { ShowGridFocus(items.size) }
+    val focus = remember(itemKeys) { ShowGridFocus(items.size) }
+    // After Back (or closing the play sheet), put focus on the poster that was opened — not an empty
+    // focusRestorer group (Left/Right/Up then do nothing; only our Down handler could recover).
+    LaunchedEffect(itemKeys, restoreKey, refocusToken) {
+        if (items.isEmpty()) return@LaunchedEffect
+        val index = restoreFocusIndex(itemKeys, restoreKey)
+        ensureItemFullyVisible(gridState, index)
+        repeat(12) {
+            if (focus.request(index)) {
+                ensureItemFullyVisible(gridState, index)
+                return@LaunchedEffect
+            }
+            delay(32)
+        }
+    }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(if (aspect < 1f) GridMinPortrait else GridMinLandscape),
         state = gridState,
@@ -154,13 +174,16 @@ private fun ItemGrid(
                     else -> Icons.Filled.Folder
                 },
                 badge = if (item.played) "Watched" else null,
-                onClick = { onClick(item) },
+                onClick = {
+                    onFocusedKeyChange(item.uniqueKey)
+                    onClick(item)
+                },
                 modifier = Modifier
                     .focusRequester(focus.requesters[index])
-                    .then(if (index == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier)
                     .onFocusChanged {
                         if (it.hasFocus) {
                             focus.arrived(index)
+                            onFocusedKeyChange(item.uniqueKey)
                             scope.launch { ensureItemFullyVisible(gridState, index) }
                         }
                     },
@@ -246,7 +269,15 @@ fun BrowseScreen(container: AppContainer, nav: Navigator, parent: MediaItem) {
     val source by container.mediaSource.collectAsStateWithLifecycle()
     var items by remember { mutableStateOf<List<MediaItem>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    val firstFocus = remember { FocusRequester() }
+    // Survives Back via SaveableStateProvider so nested browse (show → season → back) restores the same poster.
+    var focusedKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var refocusToken by remember { mutableIntStateOf(0) }
+    var actionOpen by remember { mutableStateOf(nav.actionItem != null) }
+    LaunchedEffect(nav.actionItem) {
+        val open = nav.actionItem != null
+        if (actionOpen && !open) refocusToken++
+        actionOpen = open
+    }
 
     LaunchedEffect(parent.uniqueKey, source) {
         val s = source ?: return@LaunchedEffect
@@ -254,7 +285,6 @@ fun BrowseScreen(container: AppContainer, nav: Navigator, parent: MediaItem) {
             .onSuccess { items = it }
             .onFailure { error = it.message }
     }
-    LaunchedEffect(items) { if (!items.isNullOrEmpty()) runCatching { delay(50); firstFocus.requestFocus() } }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(start = GridPadH, top = 28.dp, end = GridPadH), verticalAlignment = Alignment.CenterVertically) {
@@ -287,7 +317,12 @@ fun BrowseScreen(container: AppContainer, nav: Navigator, parent: MediaItem) {
             error != null -> EmptyState("Couldn't load: $error")
             items == null -> EmptyState("Loading…")
             items!!.isEmpty() -> EmptyState("Nothing here")
-            else -> ItemGrid(container, items!!, { openItem(container, nav, it) }, Modifier.fillMaxSize(), firstFocus)
+            else -> ItemGrid(
+                container, items!!, { openItem(container, nav, it) }, Modifier.fillMaxSize(),
+                restoreKey = focusedKey,
+                onFocusedKeyChange = { focusedKey = it },
+                refocusToken = refocusToken,
+            )
         }
     }
 }
@@ -298,6 +333,7 @@ fun SearchScreen(container: AppContainer, nav: Navigator, initialQuery: String, 
     var query by rememberSaveable { mutableStateOf(initialQuery.ifEmpty { pickFor?.let { FileNames.parse(it).title } ?: "" }) }
     var results by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
+    var focusedKey by rememberSaveable { mutableStateOf<String?>(null) }
     val fieldFocus = remember { FocusRequester() }
 
     LaunchedEffect(query, source) {
@@ -324,15 +360,23 @@ fun SearchScreen(container: AppContainer, nav: Navigator, initialQuery: String, 
             source == null -> EmptyState("Connect Jellyfin or Plex first")
             searching && results.isEmpty() -> EmptyState("Searching…")
             query.length >= 2 && results.isEmpty() -> EmptyState("No results")
-            else -> ItemGrid(container, results, { item ->
-                when {
-                    pickFor != null && item.isPlayable -> {
-                        container.playlist.resolveManually(item)
-                        nav.back()
+            else -> ItemGrid(
+                container, results,
+                onClick = { item ->
+                    focusedKey = item.uniqueKey
+                    when {
+                        pickFor != null && item.isPlayable -> {
+                            container.playlist.resolveManually(item)
+                            nav.back()
+                        }
+                        else -> openItem(container, nav, item)
                     }
-                    else -> openItem(container, nav, item)
-                }
-            }, Modifier.fillMaxSize(), showServer = true)
+                },
+                Modifier.fillMaxSize(),
+                restoreKey = focusedKey,
+                onFocusedKeyChange = { focusedKey = it },
+                showServer = true,
+            )
         }
     }
 }

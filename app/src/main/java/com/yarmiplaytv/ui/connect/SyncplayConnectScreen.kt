@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -102,7 +103,9 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
         listOf("Saved rooms" to known.filter { it.saved }, "Recent rooms" to known.filterNot { it.saved }.take(6)).forEach { (title, rooms) ->
             if (rooms.isNotEmpty()) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
+                // End spacers leave room for ActionButton focusedScale so edge tiles are not clipped.
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Spacer(Modifier.width(10.dp))
                     rooms.forEach { r ->
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             ActionButton(savedRoomLabel(r), { model.pick(r); connect() }, Modifier.testTag("known_room_${r.room}"), icon = if (r.saved) Icons.Filled.Star else Icons.Filled.Groups)
@@ -117,6 +120,7 @@ fun SyncplayConnectScreen(container: AppContainer, nav: Navigator) {
                             }
                         }
                     }
+                    Spacer(Modifier.width(10.dp))
                 }
             }
         }
