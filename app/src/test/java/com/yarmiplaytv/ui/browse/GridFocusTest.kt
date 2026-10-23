@@ -42,4 +42,13 @@ class GridFocusTest {
         // Edge padding for a focused scale bump.
         assertEquals(20, scrollDeltaToShowFully(itemTop = 400, itemHeight = 100, viewportStart = 0, viewportEnd = 500, edgePadding = 20))
     }
+
+    @Test
+    fun `restore focus prefers the item that was opened`() {
+        val keys = listOf("a", "b", "c", "d")
+        assertEquals(2, restoreFocusIndex(keys, "c"))
+        assertEquals(0, restoreFocusIndex(keys, null))
+        assertEquals(0, restoreFocusIndex(keys, "gone"))
+        assertEquals(0, restoreFocusIndex(emptyList(), "c"))
+    }
 }
