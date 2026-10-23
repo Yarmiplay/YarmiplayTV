@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Phone/tablet adaptive-icon foreground: ic_logo inset ~9% per side (~18% smaller)
+  so the prism sits in the 66dp safe zone with comfortable padding. TV keeps the
+  unpadded @drawable/ic_logo via mipmap-television-anydpi-v26.
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_logo"
+    android:insetLeft="9%"
+    android:insetTop="9%"
+    android:insetRight="9%"
+    android:insetBottom="9%" />
