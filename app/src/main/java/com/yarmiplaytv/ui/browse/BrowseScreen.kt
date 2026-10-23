@@ -75,6 +75,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+/**
+ * 1080p Android TV is typically ~960dp wide. Adaptive(170.dp) only fit four posters; these mins
+ * land six or more, and with the tighter gaps two full rows fit under the browse header.
+ */
+private val GridMinPortrait = 110.dp
+private val GridMinLandscape = 130.dp
+private val GridGap = 12.dp
+private val GridPadH = 32.dp
+private val GridPadV = 8.dp
+
 @OptIn(ExperimentalComposeUiApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ItemGrid(
@@ -93,7 +103,7 @@ private fun ItemGrid(
     val scope = rememberCoroutineScope()
     val focus = remember(items) { ShowGridFocus(items.size) }
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(if (aspect < 1f) 170.dp else 240.dp),
+        columns = GridCells.Adaptive(if (aspect < 1f) GridMinPortrait else GridMinLandscape),
         state = gridState,
         modifier = modifier.focusRestorer().onPreviewKeyEvent { event ->
             if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -105,30 +115,38 @@ private fun ItemGrid(
             val columns = gridState.layoutInfo.maxSpan
             val from = if (focus.landing >= 0) focus.landing else focus.cursor
             val target = sameColumnTarget(from, columns, rowsDelta, items.size) ?: return@onPreviewKeyEvent false
-            if (focus.request(target)) return@onPreviewKeyEvent true
+            if (focus.request(target)) {
+                scope.launch { ensureItemFullyVisible(gridState, target) }
+                return@onPreviewKeyEvent true
+            }
             focus.landing = target
             focus.job?.cancel()
             focus.job = scope.launch {
                 val goal = target
                 revealRow(gridState, from, goal, columns, rowsDelta)
-                repeat(4) {
+                repeat(6) {
                     // A Left or Right while this row was scrolling in wins over the queued Down.
                     if (!isActive || focus.landing != goal) return@launch
-                    if (focus.request(goal)) return@launch
+                    if (focus.request(goal)) {
+                        ensureItemFullyVisible(gridState, goal)
+                        return@launch
+                    }
                     delay(16)
                 }
+                // Focus may have landed without requestFocus reporting success; still pin the row.
+                if (isActive && focus.landing == goal) ensureItemFullyVisible(gridState, goal)
             }
             true
         },
-        contentPadding = PaddingValues(horizontal = 48.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+        contentPadding = PaddingValues(horizontal = GridPadH, vertical = GridPadV),
+        horizontalArrangement = Arrangement.spacedBy(GridGap),
+        verticalArrangement = Arrangement.spacedBy(GridGap),
     ) {
         itemsIndexed(items, key = { _, item -> item.uniqueKey }) { index, item ->
             PosterCard(
                 title = if (item.type == MediaItemType.EPISODE) item.displayTitle else item.name,
                 subtitle = subtitleFor(item, if (showServer) serverNameOf(source, item) else null),
-                imageUrl = source?.imageUrl(item, if (aspect < 1f) 300 else 480),
+                imageUrl = source?.imageUrl(item, if (aspect < 1f) 240 else 360),
                 aspectRatio = aspect,
                 placeholderIcon = when (item.type) {
                     MediaItemType.SERIES, MediaItemType.SEASON, MediaItemType.EPISODE -> Icons.Filled.Tv
@@ -140,7 +158,12 @@ private fun ItemGrid(
                 modifier = Modifier
                     .focusRequester(focus.requesters[index])
                     .then(if (index == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier)
-                    .onFocusChanged { if (it.hasFocus) focus.arrived(index) },
+                    .onFocusChanged {
+                        if (it.hasFocus) {
+                            focus.arrived(index)
+                            scope.launch { ensureItemFullyVisible(gridState, index) }
+                        }
+                    },
             )
         }
     }
@@ -166,8 +189,8 @@ private class ShowGridFocus(count: Int) {
 }
 
 /**
- * Compose just enough of [target]'s row to focus it, without scrolling the current poster away.
- * One pixel of the row is enough: a vertical grid measures every column of a row together.
+ * Compose [target]'s row and scroll so that whole row can sit on screen (not a one-pixel peek).
+ * Same-column Down used to reveal only 1px of the next row, so focus looked off-screen.
  */
 private suspend fun revealRow(state: LazyGridState, from: Int, target: Int, columns: Int, rowsDelta: Int) {
     val info = state.layoutInfo
@@ -178,15 +201,44 @@ private suspend fun revealRow(state: LazyGridState, from: Int, target: Int, colu
         return
     }
     val spacing = info.mainAxisItemSpacing
+    val stride = anchor.size.height + spacing
     val delta = if (rowsDelta > 0) {
-        val bottom = anchor.offset.y + anchor.size.height
-        (bottom + spacing + 1) - info.viewportEndOffset
+        val nextBottom = anchor.offset.y + anchor.size.height + spacing + anchor.size.height
+        nextBottom - info.viewportEndOffset
     } else {
-        val top = anchor.offset.y
-        info.viewportStartOffset - (top - spacing - 1)
+        val nextTop = anchor.offset.y - spacing - anchor.size.height
+        info.viewportStartOffset - nextTop
     }
-    if (delta > 0) state.scroll { scrollBy(if (rowsDelta > 0) delta.toFloat() else -delta.toFloat()) }
-    else state.scrollToItem(rowStart)
+    when {
+        delta > 0 -> state.scroll { scrollBy(if (rowsDelta > 0) delta.toFloat() else -delta.toFloat()) }
+        // Already enough room; still nudge by a row when the target is not among visible items.
+        info.visibleItemsInfo.none { it.index == target } ->
+            state.scroll { scrollBy(if (rowsDelta > 0) stride.toFloat() else -stride.toFloat()) }
+    }
+}
+
+/** Scroll until [index] is fully inside the viewport (accounts for focused scale with a small pad). */
+private suspend fun ensureItemFullyVisible(state: LazyGridState, index: Int) {
+    repeat(3) {
+        val info = state.layoutInfo
+        val item = info.visibleItemsInfo.firstOrNull { it.index == index }
+        if (item == null) {
+            val columns = info.maxSpan.coerceAtLeast(1)
+            state.scrollToItem(index - index.mod(columns))
+            return@repeat
+        }
+        // ~half the focusedScale(1.06) growth, so the accent border is not clipped.
+        val pad = (item.size.height * 0.04f).toInt().coerceAtLeast(4)
+        val delta = scrollDeltaToShowFully(
+            itemTop = item.offset.y,
+            itemHeight = item.size.height,
+            viewportStart = info.viewportStartOffset,
+            viewportEnd = info.viewportEndOffset,
+            edgePadding = pad,
+        )
+        if (delta == 0) return
+        state.scroll { scrollBy(delta.toFloat()) }
+    }
 }
 
 @Composable
@@ -205,7 +257,7 @@ fun BrowseScreen(container: AppContainer, nav: Navigator, parent: MediaItem) {
     LaunchedEffect(items) { if (!items.isNullOrEmpty()) runCatching { delay(50); firstFocus.requestFocus() } }
 
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.padding(start = 48.dp, top = 32.dp, end = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(start = GridPadH, top = 28.dp, end = GridPadH), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 parent.seriesName?.takeIf { parent.type == MediaItemType.SEASON }?.let {
                     Text(it, style = MaterialTheme.typography.titleMedium, color = AppColors.TextDim)
@@ -229,7 +281,7 @@ fun BrowseScreen(container: AppContainer, nav: Navigator, parent: MediaItem) {
             ActionButton("Search", { nav.push(Screen.Search()) }, icon = Icons.Filled.Search)
         }
         parent.overview?.takeIf { parent.type == MediaItemType.SERIES && it.isNotBlank() }?.let {
-            Text(it, color = AppColors.TextDim, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 48.dp, vertical = 8.dp).width(1100.dp))
+            Text(it, color = AppColors.TextDim, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = GridPadH, vertical = 6.dp).width(1100.dp))
         }
         when {
             error != null -> EmptyState("Couldn't load: $error")
@@ -259,7 +311,7 @@ fun SearchScreen(container: AppContainer, nav: Navigator, initialQuery: String, 
     LaunchedEffect(Unit) { runCatching { fieldFocus.requestFocus() } }
 
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.padding(start = 48.dp, top = 32.dp, end = 48.dp)) {
+        Column(Modifier.padding(start = GridPadH, top = 28.dp, end = GridPadH)) {
             if (pickFor != null) {
                 Text("Pick the item to play for", color = AppColors.TextDim)
                 Text(pickFor, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
