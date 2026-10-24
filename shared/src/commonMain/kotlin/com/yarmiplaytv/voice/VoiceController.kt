@@ -50,6 +50,12 @@ class VoiceController(
     private var lastFailAtMs = 0L
 
     init {
+        engine.onDeviceLost = { input ->
+            scope.launch {
+                if (input) settingsStore.saveVoiceInputDeviceId("")
+                else settingsStore.saveVoiceOutputDeviceId("")
+            }
+        }
         settingsStore.settings.onEach { settings.value = it }.launchIn(scope)
 
         combine(
@@ -83,6 +89,29 @@ class VoiceController(
                 engine.setOutputGain(output)
             }
             .launchIn(scope)
+
+        settings
+            .map { it.voiceInputDeviceId to it.voiceOutputDeviceId }
+            .distinctUntilChanged()
+            .onEach { (input, output) ->
+                engine.setInputDeviceId(input.ifEmpty { null })
+                engine.setOutputDeviceId(output.ifEmpty { null })
+            }
+            .launchIn(scope)
+    }
+
+    /** Mic routes for the voice settings picker (includes System default). */
+    fun listInputDevices(): List<VoiceAudioDevice> = engine.listInputDevices()
+
+    /** Speaker routes for the voice settings picker (includes System default). */
+    fun listOutputDevices(): List<VoiceAudioDevice> = engine.listOutputDevices()
+
+    fun setInputDeviceId(id: String) {
+        scope.launch { settingsStore.saveVoiceInputDeviceId(id) }
+    }
+
+    fun setOutputDeviceId(id: String) {
+        scope.launch { settingsStore.saveVoiceOutputDeviceId(id) }
     }
 
     fun setSelfMuted(muted: Boolean) {

@@ -142,6 +142,11 @@ data class VoiceMediaParams(
     val clockRate: Int = 48_000,
     val channels: Int = 1,
     val ptimeMs: Int = 20,
+    /**
+     * Skip UDP and open the fingerprint-pinned TLS TCP path immediately.
+     * Used when UDP is known blocked, and by e2e tests of the fallback.
+     */
+    val forceTcp: Boolean = false,
 )
 
 /** Why the server closed our voice seat. */

@@ -34,8 +34,11 @@ export class VoiceController {
   private readonly engine = new WebVoiceEngine();
   private enabled = true;
   private unsubs: Array<() => void> = [];
+  private onDeviceLostClear: ((input: boolean) => void) | null = null;
 
-  constructor(private readonly client: () => SyncplayClient | null) {}
+  constructor(private readonly client: () => SyncplayClient | null) {
+    this.engine.onDeviceLost = (input) => this.onDeviceLostClear?.(input);
+  }
 
   start() {
     this.stop();
@@ -58,6 +61,26 @@ export class VoiceController {
   setEnabled(on: boolean) {
     this.enabled = on;
     this.reconcile();
+  }
+
+  setOnDeviceLost(handler: ((input: boolean) => void) | null) {
+    this.onDeviceLostClear = handler;
+  }
+
+  listInputDevices() {
+    return this.engine.listInputDevices();
+  }
+
+  listOutputDevices() {
+    return this.engine.listOutputDevices();
+  }
+
+  setInputDeviceId(id: string | null) {
+    this.engine.setInputDeviceId(id);
+  }
+
+  setOutputDeviceId(id: string | null) {
+    this.engine.setOutputDeviceId(id);
   }
 
   setSelfMuted(muted: boolean) {

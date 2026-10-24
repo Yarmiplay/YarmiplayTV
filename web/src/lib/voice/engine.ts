@@ -1,3 +1,4 @@
+import { listInputDevices, listOutputDevices } from "./devices";
 import { decodeKeyBase64, open, parseTokenHex, seal, YV1 } from "./yv1";
 
 export type VoiceJoinedSeat = {
@@ -11,9 +12,16 @@ export type VoiceJoinedSeat = {
   maxBitrate?: number;
 };
 
+export type VoiceAudioDevice = {
+  id: string;
+  label: string;
+  isDefault?: boolean;
+};
+
 /**
  * Browser voice media: binary WebSocket to `/yarmiplay/voice?t=<token>`, AES-GCM `yv1`
  * frames, Opus via WebCodecs when available.
+ * Mic list via `enumerateDevices`; speaker via `setSinkId` where the browser supports it.
  */
 export class WebVoiceEngine {
   private ws: WebSocket | null = null;
@@ -34,6 +42,11 @@ export class WebVoiceEngine {
   private peerGain = new Map<string, { muted: boolean; volume: number }>();
   private outputGain = 1;
   private inputGain = 1;
+  private inputDeviceId: string | null = null;
+  private outputDeviceId: string | null = null;
+  private maxBitrate = 32_000;
+  private deviceChangeHandler: (() => void) | null = null;
+  onDeviceLost: ((input: boolean) => void) | null = null;
   private onSpeaking: ((speaking: boolean) => void) | null = null;
 
   async connect(seat: VoiceJoinedSeat, onSpeaking?: (speaking: boolean) => void): Promise<boolean> {
@@ -51,7 +64,9 @@ export class WebVoiceEngine {
       await this.openSocket(url);
       await this.sendKeepalive();
       this.keepaliveTimer = setInterval(() => void this.sendKeepalive(), 5000);
-      await this.startCapture(seat.maxBitrate ?? 32_000);
+      this.maxBitrate = seat.maxBitrate ?? 32_000;
+      await this.startCapture(this.maxBitrate);
+      this.listenDeviceChanges();
       return true;
     } catch {
       this.disconnect();
@@ -61,6 +76,7 @@ export class WebVoiceEngine {
 
   disconnect() {
     this.closed = true;
+    this.unlistenDeviceChanges();
     if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
     this.keepaliveTimer = null;
     void this.sendBye();
@@ -119,6 +135,97 @@ export class WebVoiceEngine {
     this.peerGain.set(participantId, { ...cur, volume: Math.min(2, Math.max(0, volume)) });
   }
 
+  listInputDevices(): Promise<VoiceAudioDevice[]> {
+    return listInputDevices();
+  }
+
+  listOutputDevices(): Promise<VoiceAudioDevice[]> {
+    return listOutputDevices();
+  }
+
+  setInputDeviceId(id: string | null) {
+    const next = id && id.length ? id : null;
+    if (this.inputDeviceId === next) return;
+    this.inputDeviceId = next;
+    if (!this.closed) void this.restartCapture();
+  }
+
+  setOutputDeviceId(id: string | null) {
+    const next = id && id.length ? id : null;
+    if (this.outputDeviceId === next) return;
+    this.outputDeviceId = next;
+    void this.applyOutputSink();
+  }
+
+  private listenDeviceChanges() {
+    if (!navigator.mediaDevices?.addEventListener) return;
+    this.unlistenDeviceChanges();
+    this.deviceChangeHandler = () => void this.onDevicesChanged();
+    navigator.mediaDevices.addEventListener("devicechange", this.deviceChangeHandler);
+  }
+
+  private unlistenDeviceChanges() {
+    if (this.deviceChangeHandler && navigator.mediaDevices?.removeEventListener) {
+      navigator.mediaDevices.removeEventListener("devicechange", this.deviceChangeHandler);
+    }
+    this.deviceChangeHandler = null;
+  }
+
+  private async onDevicesChanged() {
+    if (this.inputDeviceId) {
+      const inputs = await this.listInputDevices();
+      if (!inputs.some((d) => d.id === this.inputDeviceId)) {
+        this.inputDeviceId = null;
+        this.onDeviceLost?.(true);
+        if (!this.closed) await this.restartCapture();
+      }
+    }
+    if (this.outputDeviceId) {
+      const outputs = await this.listOutputDevices();
+      if (!outputs.some((d) => d.id === this.outputDeviceId)) {
+        this.outputDeviceId = null;
+        this.onDeviceLost?.(false);
+        await this.applyOutputSink();
+      }
+    }
+  }
+
+  private async restartCapture() {
+    this.stopCapture();
+    if (this.closed) return;
+    try {
+      await this.startCapture(this.maxBitrate);
+    } catch {
+      if (this.inputDeviceId) {
+        this.inputDeviceId = null;
+        this.onDeviceLost?.(true);
+        try {
+          await this.startCapture(this.maxBitrate);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+
+  private async applyOutputSink() {
+    const ctx = this.playCtx as (AudioContext & { setSinkId?: (id: string) => Promise<void> }) | null;
+    if (!ctx?.setSinkId) return;
+    try {
+      await ctx.setSinkId(this.outputDeviceId ?? "");
+    } catch {
+      if (this.outputDeviceId) {
+        this.outputDeviceId = null;
+        this.onDeviceLost?.(false);
+        try {
+          await ctx.setSinkId("");
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+
   private openSocket(url: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(url);
@@ -171,10 +278,28 @@ export class WebVoiceEngine {
 
   private async startCapture(bitrate: number) {
     if (typeof AudioEncoder === "undefined") return;
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, sampleRate: 48000, echoCancellation: true, noiseSuppression: true },
-      video: false,
-    });
+    const audio: MediaTrackConstraints = {
+      channelCount: 1,
+      sampleRate: 48000,
+      echoCancellation: true,
+      noiseSuppression: true,
+    };
+    if (this.inputDeviceId) audio.deviceId = { exact: this.inputDeviceId };
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+    } catch (err) {
+      if (this.inputDeviceId) {
+        this.inputDeviceId = null;
+        this.onDeviceLost?.(true);
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, sampleRate: 48000, echoCancellation: true, noiseSuppression: true },
+          video: false,
+        });
+      } else {
+        throw err;
+      }
+    }
     this.captureStream = stream;
     const ctx = new AudioContext({ sampleRate: 48000 });
     this.captureCtx = ctx;
@@ -260,7 +385,10 @@ export class WebVoiceEngine {
 
   private async playOpus(senderKey: string, opus: Uint8Array, gain: number) {
     if (typeof AudioDecoder === "undefined") return;
-    if (!this.playCtx) this.playCtx = new AudioContext({ sampleRate: 48000 });
+    if (!this.playCtx) {
+      this.playCtx = new AudioContext({ sampleRate: 48000 });
+      void this.applyOutputSink();
+    }
     let decoder = this.decoders.get(senderKey);
     if (!decoder) {
       const ctx = this.playCtx;

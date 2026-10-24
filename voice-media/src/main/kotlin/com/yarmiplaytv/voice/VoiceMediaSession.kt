@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /**
  * Shared encode/decode + `yv1` transport. Platforms feed PCM via [offerCapturePcm] and mix
@@ -32,12 +33,32 @@ class VoiceMediaSession(
     private var decodeJob: Job? = null
     private var inbound = Channel<Pair<Long, ByteArray>>(Channel.UNLIMITED)
     private val mixBuf = ShortArray(960)
+    private val receivedFrames = AtomicBoolean(false)
+    private val lastRms = java.util.concurrent.atomic.AtomicReference(0.0)
+    private val lastSender = java.util.concurrent.atomic.AtomicLong(Long.MIN_VALUE)
 
     val frameSamples: Int get() = codec?.frameSamples ?: 960
     val running: Boolean get() = transport != null
+    val usingTcp: Boolean get() = transport?.usingTcp == true
+    /** Any decrypted packet on the media socket (audio or otherwise). */
+    val receivedInbound: Boolean get() = transport?.receivedInbound == true
+    /** Decoded an Opus audio frame since the last [resetReceiveStats]. */
+    val decodedAudio: Boolean get() = receivedFrames.get()
+    /** RMS of the last decoded remote frame (after peer volume / mute). */
+    val lastRemoteRms: Double get() = lastRms.get()
+    /** Connection id from the last decoded remote audio packet, or null if none yet. */
+    val lastRemoteSender: Long? get() = lastSender.get().takeUnless { it == Long.MIN_VALUE }
+
+    /** Clear decode stats between assertions (e2e). */
+    fun resetReceiveStats() {
+        receivedFrames.set(false)
+        lastRms.set(0.0)
+    }
 
     suspend fun connect(seat: VoiceMediaParams): Boolean {
         disconnect()
+        receivedFrames.set(false)
+        lastRms.set(0.0)
         val token = Yv1Packet.parseTokenHex(seat.token) ?: return false
         val key = Yv1Packet.decodeKeyBase64(seat.key) ?: return false
         val opus = OpusCodec(seat.maxBitrate, seat.fec, seat.dtx, seat.clockRate, seat.channels)
@@ -52,6 +73,7 @@ class VoiceMediaSession(
             key = key,
             fingerprintHex = seat.fingerprint,
             scope = scope,
+            forceTcp = seat.forceTcp,
             onAudio = { sender, frame, _, _ -> frames.trySend(sender to frame) },
         )
         if (!t.start()) {
@@ -100,6 +122,10 @@ class VoiceMediaSession(
         peerVolume[senderId] = volume.coerceIn(0f, 2f)
     }
 
+    /** Test/helper: effective playback gain for [senderId] (peer volume × output gain). */
+    fun peerGainFor(senderId: Long): Float =
+        peerVolume.getOrDefault(senderId, 1f) * outputGain
+
     /**
      * Encode one 20 ms capture frame and send when transmitting.
      * Applies [inputGain]. Returns false if not connected or frame size wrong.
@@ -133,12 +159,22 @@ class VoiceMediaSession(
     private suspend fun decodeLoop(opus: OpusCodec, frames: Channel<Pair<Long, ByteArray>>) {
         while (scope.isActive) {
             val (sender, frame) = frames.receiveCatching().getOrNull() ?: break
-            if (peerMuted[sender] == true) continue
+            // Always decode so the Opus state stays warm across local mute; drop after decode.
             val pcm = opus.decode(frame) ?: continue
-            val vol = (peerVolume[sender] ?: 1f) * outputGain
-            val scaled = if (vol == 1f) pcm else ShortArray(pcm.size) { i ->
-                (pcm[i] * vol).roundToInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+            lastSender.set(sender)
+            if (peerMuted[sender] == true) continue
+            val vol = peerVolume.getOrDefault(sender, 1f) * outputGain
+            val scaled = when {
+                vol <= 0f -> ShortArray(pcm.size)
+                vol == 1f -> pcm
+                else -> ShortArray(pcm.size) { i ->
+                    (pcm[i] * vol).roundToInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                }
             }
+            var sumSq = 0.0
+            for (s in scaled) sumSq += s.toDouble() * s.toDouble()
+            lastRms.set(sqrt(sumSq / scaled.size.coerceAtLeast(1)))
+            receivedFrames.set(true)
             onRemotePcm?.invoke(sender, scaled)
             if (onRemotePcm == null) {
                 lock.withLock {

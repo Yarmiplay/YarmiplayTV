@@ -70,6 +70,12 @@ export interface Settings {
   showChat: boolean;
   /** Chat messages pop up over the video as they arrive; off keeps them to the chat panel. */
   chatOnVideo: boolean;
+  /** Join room voice on YarmiplayServerTV when the server has it on. */
+  voiceChat: boolean;
+  /** `enumerateDevices` mic id; empty = system default. */
+  voiceInputDeviceId: string;
+  /** `setSinkId` speaker id when supported; empty = system default. */
+  voiceOutputDeviceId: string;
   theme: ThemeKey;
   acceptedRoomRules: boolean;
   playback: PlaybackPrefs;
@@ -134,6 +140,9 @@ export function load(): Settings {
     autosavePlaylists: bool("autosave_playlists", true),
     showChat: bool("chat_show", true),
     chatOnVideo: bool("chat_on_video", false),
+    voiceChat: bool("voice_chat", true),
+    voiceInputDeviceId: text("voice_input_device", ""),
+    voiceOutputDeviceId: text("voice_output_device", ""),
     theme: themeOf(read("app_theme")),
     acceptedRoomRules: bool("room_rules_accepted", false),
     playback: {
@@ -180,6 +189,9 @@ export function save(settings: Settings) {
   write("autosave_playlists", String(settings.autosavePlaylists));
   write("chat_show", String(settings.showChat));
   write("chat_on_video", String(settings.chatOnVideo));
+  write("voice_chat", String(settings.voiceChat));
+  write("voice_input_device", settings.voiceInputDeviceId);
+  write("voice_output_device", settings.voiceOutputDeviceId);
   write("app_theme", settings.theme);
   write("room_rules_accepted", String(settings.acceptedRoomRules));
   const p = settings.playback;

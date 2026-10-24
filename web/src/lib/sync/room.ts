@@ -197,6 +197,7 @@ export class RoomSession {
     library.subscribe(() => this.relay.refresh());
     this.locator = new MediaLocator<RelayFile>(library, servers, (name) => findRelayFile(this.room.value, name));
     this.locator.preferredServer = settings.preferredServer;
+    this.applyVoiceSettings(settings);
   }
 
   get isActive(): boolean {
@@ -218,6 +219,7 @@ export class RoomSession {
     if (this.client) this.client.settings = settings.sync;
     this.locator.preferredServer = settings.preferredServer;
     if (sharingChanged) this.relay.refresh();
+    this.applyVoiceSettings(settings);
   }
 
   /** The server's chat message limit (it cuts longer messages off), or Syncplay's default before joining. */
@@ -258,6 +260,14 @@ export class RoomSession {
     this.saveNextAs = options.saveAs ?? null;
     this.unsubscribe = [client.subscribe((s) => this.onRoomState(s)), client.onEvent((e) => this.onEvent(e))];
     client.start();
+    this.voice.setOnDeviceLost((input) => {
+      this.changeSettings({
+        ...this.settings,
+        voiceInputDeviceId: input ? "" : this.settings.voiceInputDeviceId,
+        voiceOutputDeviceId: input ? this.settings.voiceOutputDeviceId : "",
+      });
+    });
+    this.applyVoiceSettings(this.settings);
     this.voice.start();
     if (this.reportedFile) client.fileLoaded(this.reportedFile, false);
   }
@@ -450,6 +460,12 @@ export class RoomSession {
     this.settings = settings;
     Settings.save(settings);
     this.onSettingsChanged(settings);
+  }
+
+  private applyVoiceSettings(settings: Settings.Settings) {
+    this.voice.setEnabled(settings.voiceChat);
+    this.voice.setInputDeviceId(settings.voiceInputDeviceId || null);
+    this.voice.setOutputDeviceId(settings.voiceOutputDeviceId || null);
   }
 
   private autosave(state: RoomState) {

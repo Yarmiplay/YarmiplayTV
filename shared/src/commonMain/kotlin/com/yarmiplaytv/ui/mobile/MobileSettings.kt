@@ -36,6 +36,9 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +49,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -89,6 +93,8 @@ import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.AppTheme
 import com.yarmiplaytv.ui.theme.Palette
 import com.yarmiplaytv.ui.theme.THEME_NOTE
+import com.yarmiplaytv.voice.VoiceAudioDevice
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -98,7 +104,7 @@ import kotlinx.coroutines.launch
 private enum class SettingsCategory(val title: String, val icon: ImageVector, val summary: String) {
     MEDIA("Media", Icons.Filled.VideoLibrary, "Media servers, media folders, sharing your files, where files are saved"),
     MAL("MyAnimeList", Icons.Filled.Tv, "Your account and list updates"),
-    SYNCING("Syncing", Icons.Filled.Sync, "Unpausing, catching up, readiness, playlists, chat, your device's name"),
+    SYNCING("Syncing", Icons.Filled.Sync, "Unpausing, catching up, readiness, playlists, chat, voice devices, your device's name"),
     PLAYBACK("Playback", Icons.Filled.PlayCircle, "Decoding, picture-in-picture, openings and endings, seeking, languages"),
     APPEARANCE("Appearance", Icons.Filled.Palette, "Theme: dark, noire, monochrome, light, or as your device is set"),
     UPDATES("Updates", Icons.Filled.SystemUpdate, "Checking for and installing new versions"),
@@ -335,6 +341,9 @@ private fun SyncingSettings(container: AppContainer) {
         settings.voiceChat,
         Modifier.testTag("toggle_voice_chat"),
     ) { container.scope.launch { container.settingsStore.saveVoiceChat(it) } }
+    if (settings.voiceChat) {
+        VoiceDeviceSettings(container)
+    }
     if (container.supportsDeviceAccess) {
         SettingTextField(
             settings.deviceName,
@@ -344,6 +353,85 @@ private fun SyncingSettings(container: AppContainer) {
             "Shown to YarmiplayServerTV hosts when you ask for access",
             Modifier.testTag("device_name"),
         )
+    }
+}
+
+/** Mic and speaker pickers; lists refresh so unplugged devices disappear and selection falls back to default. */
+@Composable
+private fun VoiceDeviceSettings(container: AppContainer) {
+    val settings by container.settings.collectAsStateWithLifecycle()
+    var inputs by remember { mutableStateOf(container.voice.listInputDevices()) }
+    var outputs by remember { mutableStateOf(container.voice.listOutputDevices()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            inputs = container.voice.listInputDevices()
+            outputs = container.voice.listOutputDevices()
+            delay(2_000)
+        }
+    }
+    VoiceDevicePicker(
+        title = "Microphone",
+        subtitle = "Input for voice chat; changes apply without leaving the room",
+        devices = inputs,
+        selectedId = settings.voiceInputDeviceId,
+        testTag = "voice_input_device",
+        onSelect = { container.voice.setInputDeviceId(it) },
+    )
+    VoiceDevicePicker(
+        title = "Speaker",
+        subtitle = "Output for voice chat; changes apply without leaving the room",
+        devices = outputs,
+        selectedId = settings.voiceOutputDeviceId,
+        testTag = "voice_output_device",
+        onSelect = { container.voice.setOutputDeviceId(it) },
+    )
+}
+
+@Composable
+private fun VoiceDevicePicker(
+    title: String,
+    subtitle: String,
+    devices: List<VoiceAudioDevice>,
+    selectedId: String,
+    testTag: String,
+    onSelect: (String) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    val selected = devices.firstOrNull { it.id == selectedId } ?: devices.firstOrNull()
+    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { open = true }
+                .padding(vertical = 8.dp)
+                .testTag(testTag),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                Text(subtitle, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    selected?.label ?: "System default",
+                    color = AppColors.Accent,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 2.dp).testTag("${testTag}_value"),
+                )
+            }
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = AppColors.TextDim)
+        }
+        DropdownMenu(open, { open = false }) {
+            devices.forEach { device ->
+                DropdownMenuItem(
+                    text = { Text(device.label) },
+                    onClick = {
+                        open = false
+                        onSelect(device.id)
+                    },
+                    modifier = Modifier.testTag("${testTag}_${device.id.ifEmpty { "default" }}"),
+                )
+            }
+        }
     }
 }
 

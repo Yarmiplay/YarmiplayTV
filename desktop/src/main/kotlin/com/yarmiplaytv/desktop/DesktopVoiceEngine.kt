@@ -1,6 +1,8 @@
 package com.yarmiplaytv.desktop
 
 import com.yarmiplaytv.syncplay.VoiceMediaParams
+import com.yarmiplaytv.voice.JvmVoiceDevices
+import com.yarmiplaytv.voice.VoiceAudioDevice
 import com.yarmiplaytv.voice.VoiceCaptureKind
 import com.yarmiplaytv.voice.VoiceEngine
 import com.yarmiplaytv.voice.VoiceMediaSession
@@ -8,10 +10,8 @@ import com.yarmiplaytv.voice.VoiceSound
 import com.yarmiplaytv.voice.participantSenderId
 import java.io.BufferedInputStream
 import java.util.concurrent.atomic.AtomicReference
-import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.Clip
-import javax.sound.sampled.DataLine
 import javax.sound.sampled.FloatControl
 import javax.sound.sampled.SourceDataLine
 import javax.sound.sampled.TargetDataLine
@@ -19,13 +19,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.concurrent.thread
 
 /**
  * Desktop/macOS capture + `yv1` Opus media (UDP, TLS TCP fallback).
- * Prefers a non-default mixer that looks like a headset when enumerating inputs.
+ * Lists real Java Sound mixers and switches mic/speaker live without rejoining.
  */
 class DesktopVoiceEngine : VoiceEngine {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -37,19 +38,22 @@ class DesktopVoiceEngine : VoiceEngine {
     private var inputDeviceId: String? = null
     private var outputDeviceId: String? = null
     private var playbackJob: Job? = null
+    private var watchJob: Job? = null
+    private var frameSamples: Int = 960
+    override var onDeviceLost: ((input: Boolean) -> Unit)? = null
 
     override suspend fun detectCapture(): VoiceCaptureKind {
-        return runCatching {
-            val format = AudioFormat(48000f, 16, 1, true, false)
-            val info = DataLine.Info(TargetDataLine::class.java, format)
-            if (!AudioSystem.isLineSupported(info)) {
-                val stereo = AudioFormat(48000f, 16, 2, true, false)
-                if (!AudioSystem.isLineSupported(DataLine.Info(TargetDataLine::class.java, stereo))) {
-                    return VoiceCaptureKind.NONE
-                }
-            }
+        return if (JvmVoiceDevices.listInputs().any { it.id.isNotEmpty() } ||
+            runCatching {
+                val line = JvmVoiceDevices.openCapture(null, 960)
+                line?.close()
+                line != null
+            }.getOrDefault(false)
+        ) {
             VoiceCaptureKind.OPEN
-        }.getOrDefault(VoiceCaptureKind.NONE)
+        } else {
+            VoiceCaptureKind.NONE
+        }
     }
 
     override suspend fun connect(params: VoiceMediaParams): Boolean {
@@ -57,22 +61,24 @@ class DesktopVoiceEngine : VoiceEngine {
         val media = VoiceMediaSession(scope)
         if (!media.connect(params)) return false
         session.set(media)
-        openPlayback(media.frameSamples)
+        frameSamples = media.frameSamples
+        openPlayback()
         startCapture(media)
         startMixPump(media)
+        startDeviceWatch()
         return true
     }
 
     override fun disconnect() {
+        watchJob?.cancel()
+        watchJob = null
         captureThread?.interrupt()
         captureThread = null
         playbackJob?.cancel()
         playbackJob = null
         session.getAndSet(null)?.disconnect()
-        runCatching { captureLine?.stop(); captureLine?.close() }
-        captureLine = null
-        runCatching { playbackLine?.stop(); playbackLine?.close() }
-        playbackLine = null
+        closeCaptureLine()
+        closePlaybackLine()
         runCatching { clip?.close() }
         clip = null
     }
@@ -103,12 +109,25 @@ class DesktopVoiceEngine : VoiceEngine {
         session.get()?.setPeerVolume(id, volume)
     }
 
+    override fun listInputDevices(): List<VoiceAudioDevice> =
+        JvmVoiceDevices.listInputs().map { VoiceAudioDevice(it.id, it.label, it.id.isEmpty()) }
+
+    override fun listOutputDevices(): List<VoiceAudioDevice> =
+        JvmVoiceDevices.listOutputs().map { VoiceAudioDevice(it.id, it.label, it.id.isEmpty()) }
+
     override fun setInputDeviceId(id: String?) {
-        inputDeviceId = id
+        val next = id?.takeIf { it.isNotEmpty() }
+        if (inputDeviceId == next) return
+        inputDeviceId = next
+        val media = session.get() ?: return
+        startCapture(media)
     }
 
     override fun setOutputDeviceId(id: String?) {
-        outputDeviceId = id
+        val next = id?.takeIf { it.isNotEmpty() }
+        if (outputDeviceId == next) return
+        outputDeviceId = next
+        if (session.get() != null) openPlayback()
     }
 
     override fun playSound(kind: VoiceSound, volume: Float) {
@@ -138,12 +157,16 @@ class DesktopVoiceEngine : VoiceEngine {
         }
     }
 
-    private fun openPlayback(frameSamples: Int) {
-        val format = AudioFormat(48000f, 16, 1, true, false)
-        val info = DataLine.Info(SourceDataLine::class.java, format)
-        val line = (AudioSystem.getLine(info) as SourceDataLine)
-        line.open(format, frameSamples * 2 * 8)
-        line.start()
+    private fun openPlayback() {
+        closePlaybackLine()
+        var id = outputDeviceId
+        var line = JvmVoiceDevices.openPlayback(id, frameSamples)
+        if (line == null && !id.isNullOrEmpty()) {
+            outputDeviceId = null
+            onDeviceLost?.invoke(false)
+            id = null
+            line = JvmVoiceDevices.openPlayback(null, frameSamples)
+        }
         playbackLine = line
     }
 
@@ -153,17 +176,17 @@ class DesktopVoiceEngine : VoiceEngine {
         playbackJob = scope.launch(Dispatchers.IO) {
             while (isActive && session.get() === media) {
                 val n = media.pollMixedPcm(out)
-                if (n > 0) {
+                val line = playbackLine
+                if (n > 0 && line != null) {
                     for (i in 0 until n) {
                         val s = out[i].toInt()
                         bytes[i * 2] = (s and 0xff).toByte()
                         bytes[i * 2 + 1] = (s shr 8).toByte()
                     }
-                    runCatching { playbackLine?.write(bytes, 0, n * 2) }
+                    runCatching { line.write(bytes, 0, n * 2) }
                 } else {
-                    // Idle: write a short silence so the device stays open.
                     bytes.fill(0)
-                    runCatching { playbackLine?.write(bytes, 0, minOf(bytes.size, 480)) }
+                    runCatching { line?.write(bytes, 0, minOf(bytes.size, 480)) }
                     Thread.sleep(5)
                 }
             }
@@ -171,11 +194,18 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     private fun startCapture(media: VoiceMediaSession) {
-        val format = AudioFormat(48000f, 16, 1, true, false)
-        val info = DataLine.Info(TargetDataLine::class.java, format)
-        val line = runCatching { AudioSystem.getLine(info) as TargetDataLine }.getOrNull() ?: return
-        line.open(format, media.frameSamples * 2 * 8)
-        line.start()
+        captureThread?.interrupt()
+        captureThread = null
+        closeCaptureLine()
+        var id = inputDeviceId
+        var line = JvmVoiceDevices.openCapture(id, media.frameSamples)
+        if (line == null && !id.isNullOrEmpty()) {
+            inputDeviceId = null
+            onDeviceLost?.invoke(true)
+            id = null
+            line = JvmVoiceDevices.openCapture(null, media.frameSamples)
+        }
+        if (line == null) return
         captureLine = line
         val frameBytes = media.frameSamples * 2
         val buf = ByteArray(frameBytes)
@@ -194,11 +224,40 @@ class DesktopVoiceEngine : VoiceEngine {
                         val hi = buf[i * 2 + 1].toInt()
                         pcm[i] = ((hi shl 8) or lo).toShort()
                     }
-                    // offerCapturePcm is suspend; run blocking on this IO thread via runBlocking-free launch.
                     kotlinx.coroutines.runBlocking { media.offerCapturePcm(pcm) }
                 }
             } catch (_: Exception) {
             }
         }
+    }
+
+    private fun startDeviceWatch() {
+        watchJob?.cancel()
+        watchJob = scope.launch(Dispatchers.IO) {
+            while (isActive && session.get() != null) {
+                delay(1_500)
+                val media = session.get() ?: break
+                if (!JvmVoiceDevices.isAvailable(inputDeviceId, target = true)) {
+                    inputDeviceId = null
+                    onDeviceLost?.invoke(true)
+                    startCapture(media)
+                }
+                if (!JvmVoiceDevices.isAvailable(outputDeviceId, target = false)) {
+                    outputDeviceId = null
+                    onDeviceLost?.invoke(false)
+                    openPlayback()
+                }
+            }
+        }
+    }
+
+    private fun closeCaptureLine() {
+        runCatching { captureLine?.stop(); captureLine?.close() }
+        captureLine = null
+    }
+
+    private fun closePlaybackLine() {
+        runCatching { playbackLine?.stop(); playbackLine?.close() }
+        playbackLine = null
     }
 }

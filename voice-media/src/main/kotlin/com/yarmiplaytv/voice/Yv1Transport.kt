@@ -37,6 +37,7 @@ class Yv1Transport(
     private val key: ByteArray,
     private val fingerprintHex: String,
     private val scope: CoroutineScope,
+    private val forceTcp: Boolean = false,
     private val onAudio: (sender: Long, opus: ByteArray, sequence: Int, timestamp: Int) -> Unit,
 ) {
     private val seq = AtomicInteger((Math.random() * Int.MAX_VALUE).toInt())
@@ -52,10 +53,27 @@ class Yv1Transport(
     private var tcpOut: DataOutputStream? = null
     private var jobs = mutableListOf<Job>()
 
+    /** True once send/receive is on the TLS TCP path. */
+    val usingTcp: Boolean get() = useTcp.get()
+
+    /** True after any inbound media/keepalive packet was decrypted. */
+    val receivedInbound: Boolean get() = receivedAny.get()
+
     suspend fun start(): Boolean = withContext(Dispatchers.IO) {
         if (closed.get()) return@withContext false
         val addr = runCatching { InetAddress.getByName(host) }.getOrNull() ?: return@withContext false
         udpAddress = addr
+        if (forceTcp) {
+            openTcpFallback()
+            if (!useTcp.get()) return@withContext false
+            jobs += scope.launch {
+                while (isActive && !closed.get()) {
+                    delay(5_000)
+                    sendKeepalive()
+                }
+            }
+            return@withContext true
+        }
         val sock = DatagramSocket().also { it.soTimeout = 0 }
         udp = sock
         jobs += scope.launch(Dispatchers.IO) { udpReceiveLoop(sock) }

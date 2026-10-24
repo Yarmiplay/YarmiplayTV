@@ -4,6 +4,16 @@ import com.yarmiplaytv.data.VoiceTalkMode
 import com.yarmiplaytv.syncplay.VoiceDescriptor
 import com.yarmiplaytv.syncplay.VoicePeer
 
+/**
+ * A selectable mic or speaker route in voice settings.
+ * [id] empty means the platform/system default; engines fall back to that when a device is unplugged.
+ */
+data class VoiceAudioDevice(
+    val id: String,
+    val label: String,
+    val isDefault: Boolean = id.isEmpty(),
+)
+
 /** Whether we can capture mic audio on this device right now. */
 enum class VoiceCaptureKind {
     /** Continuous mic (phone/desktop headset or built-in). */

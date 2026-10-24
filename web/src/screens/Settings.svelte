@@ -4,6 +4,8 @@
   import { keepsFolders, type MediaFolder } from "../lib/local/library";
   import { UnpauseMode } from "../lib/syncplay/models";
   import { THEME_NOTE, THEMES } from "../lib/ui/theme";
+  import { listInputDevices, listOutputDevices, supportsSinkId } from "../lib/voice/devices";
+  import type { VoiceAudioDevice } from "../lib/voice/engine";
   import Icon from "../components/Icon.svelte";
 
   /**
@@ -32,6 +34,32 @@
 
   let folders: MediaFolder[] = $state(library.mediaFolders);
   $effect(() => library.subscribe(() => (folders = [...library.mediaFolders])));
+
+  let voiceInputs: VoiceAudioDevice[] = $state([{ id: "", label: "System default", isDefault: true }]);
+  let voiceOutputs: VoiceAudioDevice[] = $state([{ id: "", label: "System default", isDefault: true }]);
+  let sinkSupported = $state(supportsSinkId());
+
+  async function refreshVoiceDevices() {
+    try {
+      voiceInputs = await listInputDevices();
+      voiceOutputs = await listOutputDevices();
+      sinkSupported = supportsSinkId();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  $effect(() => {
+    if (shown !== "syncing") return;
+    void refreshVoiceDevices();
+    const id = setInterval(() => void refreshVoiceDevices(), 2000);
+    const onChange = () => void refreshVoiceDevices();
+    navigator.mediaDevices?.addEventListener?.("devicechange", onChange);
+    return () => {
+      clearInterval(id);
+      navigator.mediaDevices?.removeEventListener?.("devicechange", onChange);
+    };
+  });
 
   const set = changeSettings;
   const s = $derived($settings);
@@ -137,6 +165,49 @@
           <label class="switch"><input type="checkbox" checked={s.showChat} onchange={(e) => set((x) => ({ ...x, showChat: (e.target as HTMLInputElement).checked }))} /> Show chat</label>
           {#if s.showChat}
             <label class="switch"><input type="checkbox" checked={s.chatOnVideo} onchange={(e) => set((x) => ({ ...x, chatOnVideo: (e.target as HTMLInputElement).checked }))} /> Chat on the video</label>
+          {/if}
+          <label class="switch" data-testid="toggle_voice_chat">
+            <input
+              type="checkbox"
+              checked={s.voiceChat}
+              onchange={(e) => set((x) => ({ ...x, voiceChat: (e.target as HTMLInputElement).checked }))}
+            />
+            Voice chat<br /><span class="dim small">Talk in rooms on a YarmiplayServerTV server that has voice on; off hides the controls and disconnects</span>
+          </label>
+          {#if s.voiceChat}
+            <label data-testid="voice_input_device">
+              Microphone
+              <select
+                value={s.voiceInputDeviceId}
+                onchange={(e) => set((x) => ({ ...x, voiceInputDeviceId: (e.target as HTMLSelectElement).value }))}
+                onfocus={() => void refreshVoiceDevices()}
+              >
+                {#each voiceInputs as d (d.id || "default")}
+                  <option value={d.id}>{d.label}</option>
+                {/each}
+              </select>
+              <span class="dim small">Uses this browser's enumerateDevices list; changes apply without leaving the room</span>
+            </label>
+            <label data-testid="voice_output_device">
+              Speaker
+              <select
+                value={s.voiceOutputDeviceId}
+                disabled={!sinkSupported && voiceOutputs.length <= 1}
+                onchange={(e) => set((x) => ({ ...x, voiceOutputDeviceId: (e.target as HTMLSelectElement).value }))}
+                onfocus={() => void refreshVoiceDevices()}
+              >
+                {#each voiceOutputs as d (d.id || "default")}
+                  <option value={d.id}>{d.label}</option>
+                {/each}
+              </select>
+              <span class="dim small">
+                {#if sinkSupported}
+                  Routes output with setSinkId when this browser supports it
+                {:else}
+                  This browser has no setSinkId; system default output is used
+                {/if}
+              </span>
+            </label>
           {/if}
           <label>
             Device name (what the host sees)
