@@ -135,6 +135,17 @@ class UpdateSourceTest {
     }
 
     @Test
+    fun `the windows setup exe uses jpackage quiet not custom silent flags`() {
+        val updater = WindowsUpdater(exe, listOf("keep"))
+        val script = updater.exeScript(File("C:/Temp/YarmiplayTV-2.7.2-setup.exe"), listOf(1, 2), relaunch = true)
+        assertTrue(script.contains("/quiet"))
+        assertFalse("jpackage Exe rejects --silent", script.contains("--silent"))
+        assertFalse("relaunch is done by the updater, not the installer", script.contains("--relaunch"))
+        assertTrue(script.contains("Wait-Process -Id 1,2"))
+        assertTrue(script.contains("YARMIPLAYTV_UPDATE_FAILED"))
+    }
+
+    @Test
     fun `a download of unknown length is not reported as zero`() = runBlocking {
         val body = "the package".toByteArray()
         val sha = MessageDigest.getInstance("SHA-256").digest(body).joinToString("") { "%02x".format(it) }

@@ -8,8 +8,9 @@ share one APK), each with its download and install steps.
 
 Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .exe/.zip: Windows,
 .dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as YarmiplayTV.apk, so links
-keep working across builds. The Windows .msi stays on the GitHub release for upgrades; the download page does
-not offer it. <site>/a/ redirects to the APK for TV apps like Downloader, <site>/privacy/
+keep working across builds. The Windows .msi is copied for in-app updates (`version.json`) but is not linked
+on the download page (Store, setup .exe, portable zip only). <site>/a/ redirects to the APK for TV apps like
+Downloader, <site>/privacy/
 is docs/privacy.md (the Play Store privacy policy), <site>/terms/ is docs/terms.md (the community rules the
 apps ask users to agree to), <site>/test/ is docs/testers.md (how to join the Google Play
 test), <site>/manual/ is docs/manual.md (the user manual, with a table of contents and the store screenshots),
@@ -156,7 +157,7 @@ def either(items):
 
 # Lower-case extension -> platforms it installs on and the button label. Store listings (STORE_LINKS) are
 # rendered first as the primary button; files follow in this order. A missing extension is omitted (no dead
-# links). Windows .msi is intentionally absent: GitHub release only.
+# links). Windows .msi is not listed here: see UPDATE_ONLY_EXTENSIONS.
 EXTENSIONS = {
     ".apk": (("android",), "APK"),
     ".exe": (("windows",), "Installer (.exe)"),
@@ -168,11 +169,18 @@ EXTENSIONS = {
     ".appimage": (("linux",), "AppImage"),
 }
 
-# version.json: the package each platform's update check offers, by preference. Windows offers the setup
-# .exe only; the portable app replaces its files from the portable zip.
+# Copied into the site (stable name) and eligible for version.json, but never shown as a download button or
+# SHA-256 row. Windows .msi must stay fetchable so installed 2.6.x / 2.7.0 copies keep updating via msiexec;
+# those updaters expect an .msi URL (2.7.0's .exe path passed --silent/--relaunch that jpackage Exe rejects).
+UPDATE_ONLY_EXTENSIONS = {
+    ".msi": "Installer (.msi)",
+}
+
+# version.json: the package each platform's update check offers, by preference. Windows keeps the .msi so
+# every shipped updater can install it; the portable app replaces its files from the portable zip.
 UPDATE_PACKAGES = {
     "android": (".apk",),
-    "windows": (".exe",),
+    "windows": (".msi",),
     "windows-portable": (".zip",),
     "macos": (".dmg", ".pkg"),
     "linux": (".deb", ".rpm", ".appimage"),
@@ -1033,11 +1041,12 @@ def sitemap(site_url, paths, day):
 
 def build(dist, out, version, site_url, desktop_version=None, google_verification=None, indexnow_key=None,
           stores=()):
+    copy_exts = {**EXTENSIONS, **{ext: (("windows",), label) for ext, label in UPDATE_ONLY_EXTENSIONS.items()}}
     found = {}
     for name in sorted(os.listdir(dist)):
         path = os.path.join(dist, name)
         ext = os.path.splitext(name)[1].lower()
-        if not os.path.isfile(path) or ext not in EXTENSIONS:
+        if not os.path.isfile(path) or ext not in copy_exts:
             continue
         if ext in found:
             sys.exit(f"two {ext} files in {dist}: {found[ext]} and {name}")
@@ -1051,8 +1060,10 @@ def build(dist, out, version, site_url, desktop_version=None, google_verificatio
         src = os.path.join(dist, name)
         target = NAME + os.path.splitext(name)[1]
         shutil.copyfile(src, os.path.join(out, target))
-        downloads[ext] = Download(target, EXTENSIONS[ext][1], os.path.getsize(src), sha256_of(src))
-        print(f"  {name} -> {target}")
+        label = EXTENSIONS[ext][1] if ext in EXTENSIONS else UPDATE_ONLY_EXTENSIONS[ext]
+        downloads[ext] = Download(target, label, os.path.getsize(src), sha256_of(src))
+        note = " (updates only)" if ext in UPDATE_ONLY_EXTENSIONS else ""
+        print(f"  {name} -> {target}{note}")
 
     short_link = None
     if ".apk" in downloads:

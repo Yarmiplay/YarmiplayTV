@@ -45,9 +45,14 @@ internal fun psRelaunch(launcher: File, args: List<String>, version: String): St
 }
 
 /**
- * Installs updates from the download page's Windows package: prefers the branded `.exe` setup
- * (`--silent --relaunch`, [WindowsSetupUi] inside the installer), and still accepts `.msi`
- * (`msiexec /passive`) for older releases / UpgradeCode migration.
+ * Installs updates from the download page's Windows package.
+ *
+ * Prefer the `.msi` URL in `version.json` (`msiexec /passive`): every release since 2.6.x's updater only
+ * knows that path, and 2.7.0's `.exe` path passed `--silent` / `--relaunch`, which jpackage's Exe installer
+ * does not accept (Benny's "installer didn't finish" after 2.7.1 pointed `version.json` at `.exe`).
+ *
+ * When the URL is still an `.exe` (manual / future), run jpackage's silent flag (`/quiet`) and relaunch
+ * ourselves — never pass `--relaunch` into the installer.
  */
 internal class WindowsUpdater(
     private val launcher: File,
@@ -78,19 +83,17 @@ internal class WindowsUpdater(
         )
     }
 
-    /** Branded setup: wait for this process, then run the exe with silent + optional relaunch. */
+    /**
+     * jpackage Exe (WiX): `/quiet` is unattended with no UI. Relaunch is done by [psRelaunch], not installer flags.
+     * Do not pass `--silent` / `--relaunch` — those are for a custom bootstrapper that has not shipped.
+     */
     internal fun exeScript(exe: File, pids: List<Long>, relaunch: Boolean): String = buildString {
         append("Wait-Process -Id ${pids.joinToString(",")} -ErrorAction SilentlyContinue; ")
-        val flags = buildList {
-            add("--silent")
-            if (relaunch) add("--relaunch")
-        }
         append("\$p = Start-Process -FilePath ${psQuoted(exe.path)} -Wait -PassThru")
-        if (flags.isNotEmpty()) append(" -ArgumentList ${psQuoted(windowsCommandLine(flags))}")
+        append(" -ArgumentList ${psQuoted(windowsCommandLine(listOf("/quiet")))}")
         append("; ")
         append("Remove-Item -LiteralPath ${psQuoted(exe.path)} -ErrorAction SilentlyContinue; ")
         if (relaunch) {
-            // Installer may already relaunch; if it didn't, start the previous launcher path.
             append("\$ok = \$p.ExitCode -in 0, 3010; ")
             append(psRelaunch(launcher, args, version.orEmpty()))
         }
