@@ -98,10 +98,13 @@ doesn't apply. Answer No to "could unintentionally appeal to children".
 **News app:** No. **Government app:** No. **Financial features:** none. **Health:** none.
 
 **Data safety:**
-- "Does your app collect or share any of the required user data types?" **No.** The developer receives
-  nothing; the app only connects to servers the user enters or picks (and to plex.tv when the user signs in
-  to Plex), like other Syncplay, Jellyfin and Plex clients. Watch progress goes only to the user's own media
-  servers. The Play build (release) doesn't run the download page's update check.
+- "Does your app collect or share any of the required user data types?" Prefer **Yes** once voice chat ships:
+  declare **Audio → Voice or sound recordings** as **shared** (not collected by the developer), purpose App
+  functionality, processed ephemerally (streamed through the user's YarmiplayServerTV host to others in the
+  room; not recorded). Encrypted in transit on the voice path. Optional (Voice chat setting). Also keep the
+  cautious alternative for Name / Messages / plex device id if you already use it.
+- Until voice is in a Play release, the previous answer **No** (developer receives nothing; servers the user
+  picks) remains accurate for that build. The Play build (release) doesn't run the download page's update check.
 - "Is all of the user data collected by your app encrypted in transit?" isn't asked when nothing is
   collected. If you choose to declare the room data instead (see below), answer No: plain Syncplay servers
   and Jellyfin and Plex servers on a home network over HTTP aren't encrypted.
@@ -112,8 +115,9 @@ doesn't apply. Answer No to "could unintentionally appeal to children".
   functionality**; Name and Messages not optional, the device id optional (only with Plex); none processed
   by the developer. Either way, keep it consistent with `docs/privacy.md`.
 
-**Permissions declarations:** none needed (no SMS, call log, location, all-files access or background
-location).
+**Permissions declarations:** `RECORD_AUDIO` for optional room voice chat (not SMS, call log, location,
+all-files access or background location). Declare the microphone hardware feature as not required so TVs
+without a built-in mic stay installable.
 
 ## Advanced settings
 

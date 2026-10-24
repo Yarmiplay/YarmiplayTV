@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.7.0" date="2026-10-24">
+      <description>
+        <p>Voice chat in Syncplay rooms on YarmiplayServerTV: Opus through the server, mute and volume per person, push-to-talk on TV, and a new Windows installer.</p>
+      </description>
+    </release>
     <release version="2.6.3" date="2026-10-23">
       <description>
         <p>On TV, returning to the Jellyfin library restores focus to the opened title, focused Saved/Recent room buttons are no longer clipped, Left/Right on a MyAnimeList show's buttons stays on that show, and Continue watching / Recently added use a vertical library-style grid. On phones and tablets, the launcher icon artwork is a little smaller.</p>

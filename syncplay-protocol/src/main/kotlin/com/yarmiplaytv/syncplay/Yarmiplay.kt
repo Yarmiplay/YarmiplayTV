@@ -84,9 +84,59 @@ data class YarmiplayCapabilities(
     val prefetch: Boolean = false,
     /** Room-wide settings everyone in the room shares ([RoomSettings]); older servers lack them. */
     val roomSettings: Boolean = false,
+    /** Room voice chat on this server (YarmiplayServerTV 2.0+). Older servers omit it. */
+    val voice: Boolean = false,
 ) {
     /** Vanilla mode: the host switched every extension off, and the session token is revoked. */
     val allOff: Boolean get() = !fileRelay && !jellyfin && !https
+}
+
+/**
+ * How to join voice when [YarmiplayCapabilities.voice] is true.
+ * Media is Opus through the server (UDP with TCP fallback; browsers use the session WebSocket).
+ * See docs/plans/VOICE_PROTOCOL-server-draft.md (align when the server revises the draft).
+ */
+data class VoiceDescriptor(
+    val version: Int = 1,
+    val codec: String = "opus",
+    val clockRate: Int = 48_000,
+    val channels: Int = 1,
+    val ptimeMs: Int = 20,
+    val maxBitrate: Int = 32_000,
+    val fec: Boolean = true,
+    val dtx: Boolean = true,
+    /**
+     * Wire for native clients: `opus` (framed Opus on UDP/TCP) or legacy draft `webrtc`.
+     * Browsers always use the session WebSocket for media.
+     */
+    val transport: String = "opus",
+    val udpPort: Int = 9000,
+    val tcpPort: Int = 9000,
+    val maxParticipants: Int = 8,
+)
+
+/** One other person in the voice room, as the server last told us. */
+data class VoicePeer(
+    val participantId: String,
+    val username: String,
+    /** Receive slot / mid when the server assigns one; null until known. */
+    val recvMid: String? = null,
+)
+
+/** Why the server closed our voice seat. */
+enum class VoiceClosedReason {
+    ROOM, TOGGLE_OFF, FULL, REPLACED, ERROR, UNKNOWN;
+
+    companion object {
+        fun parse(value: String?): VoiceClosedReason = when (value) {
+            "room" -> ROOM
+            "toggle", "off", "disabled" -> TOGGLE_OFF
+            "full" -> FULL
+            "replaced" -> REPLACED
+            "error" -> ERROR
+            else -> UNKNOWN
+        }
+    }
 }
 
 /** Settings that are the room's, the same for everyone in it, as the server keeps them. */
@@ -161,11 +211,16 @@ data class YarmiplayInfo(
     val tls: ServerTls? = null,
     /** The current room's shared settings; null until the server sent them (or when it doesn't keep any). */
     val roomSettings: RoomSettings? = null,
+    /** Codec/ports when [capabilities].voice is true; null when voice is off or the server is older. */
+    val voice: VoiceDescriptor? = null,
 ) {
     val relayActive: Boolean get() = session && capabilities.fileRelay
 
     /** Whether the room's settings are shared through the server (else each device decides for itself). */
     val roomSettingsShared: Boolean get() = session && capabilities.roomSettings
+
+    /** Whether this session offers room voice (server capability + descriptor). */
+    val voiceAvailable: Boolean get() = session && capabilities.voice && voice != null
 }
 
 /**

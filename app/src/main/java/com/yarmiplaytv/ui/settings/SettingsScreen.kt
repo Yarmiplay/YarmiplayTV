@@ -167,6 +167,12 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         subtitle = CHAT_ON_VIDEO_NOTE,
                     )
                 }
+                ToggleRow(
+                    "Voice chat",
+                    settings.voiceChat,
+                    { container.scope.launch { container.settingsStore.saveVoiceChat(!settings.voiceChat) } },
+                    subtitle = "Talk in rooms on a YarmiplayServerTV server that has voice on; off hides the controls and disconnects",
+                )
                 if (container.supportsDeviceAccess) {
                     var deviceName by rememberSavedText(settings.deviceName) { name -> container.scope.launch { container.settingsStore.saveDeviceName(name) } }
                     TvTextField(

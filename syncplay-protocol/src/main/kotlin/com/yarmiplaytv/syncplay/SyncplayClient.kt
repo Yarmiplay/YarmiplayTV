@@ -681,14 +681,18 @@ class SyncplayClient(
                 tls = transport?.isTls == true,
                 serverFeatures = features,
                 yarmiplay = when {
-                    marker != null -> ext.copy(
-                        serverKind = ServerKind.YARMIPLAY,
-                        serverVersion = marker.str("version"),
-                        access = marker.str("access"),
-                        approvedDevice = marker.str("device") == "approved",
-                        capabilities = parseCapabilities(marker["capabilities"]) ?: ext.capabilities,
-                        tls = ServerTlsFormat.parse(marker["tls"]),
-                    )
+                    marker != null -> {
+                        val caps = parseCapabilities(marker["capabilities"]) ?: ext.capabilities
+                        ext.copy(
+                            serverKind = ServerKind.YARMIPLAY,
+                            serverVersion = marker.str("version"),
+                            access = marker.str("access"),
+                            approvedDevice = marker.str("device") == "approved",
+                            capabilities = caps,
+                            voice = if (caps.voice) parseVoiceDescriptor(marker["voice"]) ?: ext.voice else null,
+                            tls = ServerTlsFormat.parse(marker["tls"]),
+                        )
+                    }
                     // A challenge already said who this is (it only comes from YarmiplayServerTV).
                     ext.serverKind == ServerKind.YARMIPLAY -> ext
                     else -> ext.copy(serverKind = ServerKind.SYNCPLAY)
@@ -874,16 +878,25 @@ class SyncplayClient(
         }
         val wasRelayOn = state.value.yarmiplay.capabilities.fileRelay
         parseCapabilities(message["capabilities"])?.let { caps ->
+            val voice = when {
+                !caps.voice -> null
+                "voice" in message -> parseVoiceDescriptor(message["voice"])
+                else -> state.value.yarmiplay.voice
+            }
             updateExt {
                 it.copy(
                     capabilities = caps,
                     relayFiles = if (caps.fileRelay) it.relayFiles else emptyList(),
+                    voice = voice,
                     // Vanilla mode revokes with capabilities alone; from then on the connection is plain Syncplay.
                     serverKind = if (caps.allOff && "jellyfin" !in message && "session" !in message) ServerKind.SYNCPLAY else it.serverKind,
                 )
             }
             // The server forgets offers while the relay is off.
             if (!caps.fileRelay) offerSent = null
+        }
+        if ("voice" in message && "capabilities" !in message) {
+            parseVoiceDescriptor(message["voice"])?.let { desc -> updateExt { it.copy(voice = desc) } }
         }
         (message["jellyfin"] as? JsonObject)?.let { j -> updateExt { it.copy(jellyfin = parseSharedJellyfin(j)) } }
         // Present but null: the certificate went away.
@@ -909,6 +922,71 @@ class SyncplayClient(
             val before = state.value.yarmiplay.roomSettings
             updateExt { it.copy(roomSettings = settings) }
             if (settings != before) emit(SyncplayEvent.RoomSettingsChanged(settings, first = before == null))
+        }
+        handleVoiceMessage(message)
+    }
+
+    private fun handleVoiceMessage(message: JsonObject) {
+        (message["voiceJoined"] as? JsonObject)?.let { j ->
+            val id = j.str("participantId")?.takeIf { it.isNotEmpty() } ?: return@let
+            val mids = (j["recvMids"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }.orEmpty()
+            emit(
+                SyncplayEvent.VoiceJoined(
+                    participantId = id,
+                    username = j.str("username").orEmpty(),
+                    room = j.str("room").orEmpty(),
+                    recvMids = mids,
+                    version = (j["version"] as? JsonPrimitive)?.intOrNull ?: 1,
+                ),
+            )
+        }
+        (message["voiceClosed"] as? JsonObject)?.let { c ->
+            emit(SyncplayEvent.VoiceClosed(VoiceClosedReason.parse(c.str("reason"))))
+        }
+        when (val peersEl = message["voicePeers"]) {
+            is JsonObject -> emit(SyncplayEvent.VoicePeersChanged((peersEl["peers"] as? JsonArray)?.mapNotNull { parseVoicePeer(it) }.orEmpty()))
+            is JsonArray -> emit(SyncplayEvent.VoicePeersChanged(peersEl.mapNotNull { parseVoicePeer(it) }))
+            else -> Unit
+        }
+        (message["voiceActivity"] as? JsonObject)?.let { a ->
+            val id = a.str("participantId")?.takeIf { it.isNotEmpty() } ?: return@let
+            emit(SyncplayEvent.VoiceActivity(id, a.str("username"), a.bool("speaking")))
+        }
+        (message["voiceSignal"] as? JsonObject)?.let { s ->
+            val type = s.str("type")?.takeIf { it.isNotEmpty() } ?: return@let
+            val payload = s.str("sdp") ?: s.str("candidate") ?: s.str("payload") ?: return@let
+            emit(SyncplayEvent.VoiceSignal(type, payload))
+        }
+    }
+
+    /** Ask the server for a seat in this Syncplay room's voice channel. */
+    fun joinVoice(version: Int = state.value.yarmiplay.voice?.version ?: 1) {
+        scope.launch {
+            sendYarmiplay { putJsonObject("voiceJoin") { put("version", version) } }
+        }
+    }
+
+    /** Leave voice without leaving the Syncplay room. */
+    fun leaveVoice() {
+        scope.launch { sendYarmiplay { put("voiceLeave", true) } }
+    }
+
+    /** Report local speaking for the room's speaking indicators. */
+    fun sendVoiceActivity(speaking: Boolean) {
+        scope.launch {
+            sendYarmiplay { putJsonObject("voiceActivity") { put("speaking", speaking) } }
+        }
+    }
+
+    /** Forward opaque media signalling (offer/answer/candidate or Opus-channel control). */
+    fun sendVoiceSignal(type: String, payload: String, payloadKey: String = "sdp") {
+        scope.launch {
+            sendYarmiplay {
+                putJsonObject("voiceSignal") {
+                    put("type", type)
+                    put(payloadKey, payload)
+                }
+            }
         }
     }
 
@@ -1319,8 +1397,37 @@ class SyncplayClient(
         internal fun parseCapabilities(element: JsonElement?): YarmiplayCapabilities? {
             val o = element as? JsonObject ?: return null
             return YarmiplayCapabilities(
-                fileRelay = o.bool("fileRelay"), jellyfin = o.bool("jellyfin"), https = o.bool("https"), prefetch = o.bool("prefetch"),
+                fileRelay = o.bool("fileRelay"),
+                jellyfin = o.bool("jellyfin"),
+                https = o.bool("https"),
+                prefetch = o.bool("prefetch"),
                 roomSettings = o.bool("roomSettings"),
+                voice = o.bool("voice"),
+            )
+        }
+
+        private fun parseVoicePeer(element: JsonElement): VoicePeer? {
+            val o = element as? JsonObject ?: return null
+            val id = o.str("participantId")?.takeIf { it.isNotEmpty() } ?: return null
+            return VoicePeer(id, o.str("username").orEmpty(), o.str("recvMid") ?: o.str("mid"))
+        }
+
+        internal fun parseVoiceDescriptor(element: JsonElement?): VoiceDescriptor? {
+            val o = element as? JsonObject ?: return null
+            val version = (o["version"] as? JsonPrimitive)?.intOrNull ?: return null
+            return VoiceDescriptor(
+                version = version,
+                codec = o.str("codec") ?: "opus",
+                clockRate = (o["clockRate"] as? JsonPrimitive)?.intOrNull ?: 48_000,
+                channels = (o["channels"] as? JsonPrimitive)?.intOrNull ?: 1,
+                ptimeMs = (o["ptime"] as? JsonPrimitive)?.intOrNull ?: 20,
+                maxBitrate = (o["maxBitrate"] as? JsonPrimitive)?.intOrNull ?: 32_000,
+                fec = if ("fec" in o) o.bool("fec") else true,
+                dtx = if ("dtx" in o) o.bool("dtx") else true,
+                transport = o.str("transport") ?: "opus",
+                udpPort = (o["udpPort"] as? JsonPrimitive)?.intOrNull ?: 9000,
+                tcpPort = (o["tcpPort"] as? JsonPrimitive)?.intOrNull ?: 9000,
+                maxParticipants = (o["maxParticipants"] as? JsonPrimitive)?.intOrNull ?: 8,
             )
         }
 

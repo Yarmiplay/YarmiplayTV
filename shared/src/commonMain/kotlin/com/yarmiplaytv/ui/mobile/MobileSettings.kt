@@ -329,6 +329,12 @@ private fun SyncingSettings(container: AppContainer) {
             Modifier.testTag("toggle_chat_on_video"),
         ) { container.scope.launch { container.settingsStore.saveChatOnVideo(it) } }
     }
+    SettingsToggle(
+        "Voice chat",
+        "Talk in rooms on a YarmiplayServerTV server that has voice on; off hides the controls and disconnects",
+        settings.voiceChat,
+        Modifier.testTag("toggle_voice_chat"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceChat(it) } }
     if (container.supportsDeviceAccess) {
         SettingTextField(
             settings.deviceName,

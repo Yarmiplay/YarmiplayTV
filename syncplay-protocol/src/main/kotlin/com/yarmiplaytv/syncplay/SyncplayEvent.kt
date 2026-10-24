@@ -67,4 +67,30 @@ sealed interface SyncplayEvent {
     data class RoomSettingsChanged(val settings: RoomSettings, val first: Boolean) : SyncplayEvent
 
     data class JellyfinAuthorized(val code: String, val ok: Boolean, val error: String?) : SyncplayEvent
+
+    // --- Voice (YarmiplayServerTV 2.0+) ------------------------------------------------
+
+    /** We have a seat in the room's voice channel. */
+    data class VoiceJoined(
+        val participantId: String,
+        val username: String,
+        val room: String,
+        val recvMids: List<String>,
+        val version: Int,
+    ) : SyncplayEvent
+
+    /** The server closed our voice seat. */
+    data class VoiceClosed(val reason: VoiceClosedReason) : SyncplayEvent
+
+    /** Who else is in voice right now (full list each time). */
+    data class VoicePeersChanged(val peers: List<VoicePeer>) : SyncplayEvent
+
+    /** Someone started or stopped speaking (relayed client report). */
+    data class VoiceActivity(val participantId: String, val username: String?, val speaking: Boolean) : SyncplayEvent
+
+    /**
+     * Opaque media signalling (SDP/ICE in the WebRTC draft, or framing control in the Opus-channel revision).
+     * The voice stack consumes this; Syncplay only carries the JSON.
+     */
+    data class VoiceSignal(val type: String, val payload: String) : SyncplayEvent
 }

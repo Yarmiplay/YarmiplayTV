@@ -28,10 +28,22 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+
+/** How the mic is gated when sending voice. TV always uses [PUSH_TO_TALK]. */
+enum class VoiceTalkMode { OPEN_MIC, PUSH_TO_TALK }
+
+/** Local-only mute and volume for one Syncplay username's voice. */
+@Serializable
+data class VoicePeerPrefs(
+    val muted: Boolean = false,
+    /** 0–2, 1 = unity. */
+    val volume: Float = 1f,
+)
 
 data class SyncplayProfile(
     val host: String = "syncplay.pl",
@@ -198,6 +210,27 @@ data class AppSettings(
     val showRoomChat: Boolean = true,
     /** Chat messages pop up over the video as they arrive; off keeps them to the chat panel. */
     val chatOnVideo: Boolean = false,
+    /** Join YarmiplayServerTV room voice when the server offers it; off hides all voice UI. */
+    val voiceChat: Boolean = true,
+    /** How we send mic audio: open mic with VAD, or push-to-talk (TV is always push-to-talk). */
+    val voiceTalkMode: VoiceTalkMode = VoiceTalkMode.OPEN_MIC,
+    /** Local mic gain for voice (0–2, 1 = unity). */
+    val voiceInputGain: Float = 1f,
+    /** Playback gain for others' voice (0–2, 1 = unity). */
+    val voiceOutputGain: Float = 1f,
+    /** Platform mic device id; empty means the default. */
+    val voiceInputDeviceId: String = "",
+    /** Platform output device id for voice; empty means the default. */
+    val voiceOutputDeviceId: String = "",
+    /** Play a short sound when someone joins or leaves voice. */
+    val voiceJoinLeaveSounds: Boolean = true,
+    /** Volume of join/leave sounds (0–1). */
+    val voiceJoinLeaveVolume: Float = 0.5f,
+    /**
+     * Per Syncplay username: local voice mute and volume. Persists across reconnects.
+     * Separate from chat block.
+     */
+    val voicePeerPrefs: Map<String, VoicePeerPrefs> = emptyMap(),
     /** The look: "dark", "noire", "monochrome", "light" or "system" (see com.yarmiplaytv.ui.theme.AppTheme). */
     val theme: String = "dark",
     /** The user agreed to the community rules, asked once before the first room join. */
@@ -271,6 +304,7 @@ internal object KnownServers {
 
 private val malMappingsSerializer = MapSerializer(String.serializer(), MalMapping.serializer())
 private val malQueueSerializer = ListSerializer(MalQueued.serializer())
+private val voicePeerPrefsSerializer = MapSerializer(String.serializer(), VoicePeerPrefs.serializer())
 
 class SettingsStore(
     private val dataStore: DataStore<Preferences>,
@@ -302,6 +336,15 @@ class SettingsStore(
         val lastSeenVersion = stringPreferencesKey("last_seen_version")
         val showRoomChat = booleanPreferencesKey("chat_show")
         val chatOnVideo = booleanPreferencesKey("chat_on_video")
+        val voiceChat = booleanPreferencesKey("voice_chat")
+        val voiceTalkMode = stringPreferencesKey("voice_talk_mode")
+        val voiceInputGain = floatPreferencesKey("voice_input_gain")
+        val voiceOutputGain = floatPreferencesKey("voice_output_gain")
+        val voiceInputDeviceId = stringPreferencesKey("voice_input_device")
+        val voiceOutputDeviceId = stringPreferencesKey("voice_output_device")
+        val voiceJoinLeaveSounds = booleanPreferencesKey("voice_join_leave_sounds")
+        val voiceJoinLeaveVolume = floatPreferencesKey("voice_join_leave_volume")
+        val voicePeerPrefs = stringPreferencesKey("voice_peer_prefs")
         val theme = stringPreferencesKey("app_theme")
         val acceptedRoomRules = booleanPreferencesKey("room_rules_accepted")
         /** Followed by "host:port/room"; the value is the playlist, one entry per line. */
@@ -434,6 +477,15 @@ class SettingsStore(
             lastSeenVersion = p[Keys.lastSeenVersion] ?: if (p.asMap().isEmpty()) "" else USED_BEFORE_WHATS_NEW,
             showRoomChat = p[Keys.showRoomChat] ?: true,
             chatOnVideo = p[Keys.chatOnVideo] ?: false,
+            voiceChat = p[Keys.voiceChat] ?: true,
+            voiceTalkMode = p[Keys.voiceTalkMode]?.let { runCatching { VoiceTalkMode.valueOf(it) }.getOrNull() } ?: VoiceTalkMode.OPEN_MIC,
+            voiceInputGain = p[Keys.voiceInputGain] ?: 1f,
+            voiceOutputGain = p[Keys.voiceOutputGain] ?: 1f,
+            voiceInputDeviceId = p[Keys.voiceInputDeviceId] ?: "",
+            voiceOutputDeviceId = p[Keys.voiceOutputDeviceId] ?: "",
+            voiceJoinLeaveSounds = p[Keys.voiceJoinLeaveSounds] ?: true,
+            voiceJoinLeaveVolume = p[Keys.voiceJoinLeaveVolume] ?: 0.5f,
+            voicePeerPrefs = p[Keys.voicePeerPrefs]?.let { runCatching { json.decodeFromString(voicePeerPrefsSerializer, it) }.getOrNull() } ?: emptyMap(),
             theme = p[Keys.theme] ?: defaults.theme,
             acceptedRoomRules = p[Keys.acceptedRoomRules] ?: false,
             deviceName = p[Keys.deviceName] ?: "",
@@ -624,6 +676,35 @@ class SettingsStore(
     suspend fun saveShowRoomChat(on: Boolean) = dataStore.edit { it[Keys.showRoomChat] = on }
 
     suspend fun saveChatOnVideo(on: Boolean) = dataStore.edit { it[Keys.chatOnVideo] = on }
+
+    suspend fun saveVoiceChat(on: Boolean) = dataStore.edit { it[Keys.voiceChat] = on }
+
+    suspend fun saveVoiceTalkMode(mode: VoiceTalkMode) = dataStore.edit { it[Keys.voiceTalkMode] = mode.name }
+
+    suspend fun saveVoiceInputGain(gain: Float) = dataStore.edit { it[Keys.voiceInputGain] = gain.coerceIn(0f, 2f) }
+
+    suspend fun saveVoiceOutputGain(gain: Float) = dataStore.edit { it[Keys.voiceOutputGain] = gain.coerceIn(0f, 2f) }
+
+    suspend fun saveVoiceInputDeviceId(id: String) = dataStore.edit { it[Keys.voiceInputDeviceId] = id }
+
+    suspend fun saveVoiceOutputDeviceId(id: String) = dataStore.edit { it[Keys.voiceOutputDeviceId] = id }
+
+    suspend fun saveVoiceJoinLeaveSounds(on: Boolean) = dataStore.edit { it[Keys.voiceJoinLeaveSounds] = on }
+
+    suspend fun saveVoiceJoinLeaveVolume(volume: Float) = dataStore.edit { it[Keys.voiceJoinLeaveVolume] = volume.coerceIn(0f, 1f) }
+
+    suspend fun saveVoicePeerPrefs(prefs: Map<String, VoicePeerPrefs>) = dataStore.edit {
+        if (prefs.isEmpty()) it.remove(Keys.voicePeerPrefs)
+        else it[Keys.voicePeerPrefs] = json.encodeToString(voicePeerPrefsSerializer, prefs)
+    }
+
+    suspend fun saveVoicePeerPref(username: String, pref: VoicePeerPrefs) {
+        val key = username.trim()
+        if (key.isEmpty()) return
+        val next = current().voicePeerPrefs.toMutableMap()
+        if (!pref.muted && pref.volume == 1f) next.remove(key) else next[key] = pref
+        saveVoicePeerPrefs(next)
+    }
 
     suspend fun saveTheme(key: String) = dataStore.edit { it[Keys.theme] = key }
 
