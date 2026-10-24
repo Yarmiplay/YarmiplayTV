@@ -84,9 +84,88 @@ data class YarmiplayCapabilities(
     val prefetch: Boolean = false,
     /** Room-wide settings everyone in the room shares ([RoomSettings]); older servers lack them. */
     val roomSettings: Boolean = false,
+    /** Room voice chat on this server (YarmiplayServerTV 2.0+). Older servers omit it. */
+    val voice: Boolean = false,
 ) {
     /** Vanilla mode: the host switched every extension off, and the session token is revoked. */
     val allOff: Boolean get() = !fileRelay && !jellyfin && !https
+}
+
+/**
+ * How to join voice when [YarmiplayCapabilities.voice] is true.
+ * Media is Opus `yv1` frames (UDP 9000, TLS TCP fallback; browsers use `/yarmiplay/voice`).
+ * See docs/plans/VOICE_PROTOCOL.md.
+ */
+data class VoiceDescriptor(
+    val version: Int = 1,
+    val codec: String = "opus",
+    val clockRate: Int = 48_000,
+    val channels: Int = 1,
+    val ptimeMs: Int = 20,
+    val maxBitrate: Int = 32_000,
+    val fec: Boolean = true,
+    val dtx: Boolean = true,
+    /** Wire name: `yv1` (version 1). Older draft values are ignored; clients still use yv1. */
+    val transport: String = "yv1",
+    val udpPort: Int = 9000,
+    val tcpPort: Int = 9000,
+    /** Browser media socket path on the Syncplay port. */
+    val wsPath: String = "/yarmiplay/voice",
+    val maxParticipants: Int = 8,
+    /** Lower-case hex SHA-256 of the voice TLS certificate (DER). Empty until the server sends it. */
+    val fingerprint: String = "",
+)
+
+/** One other person in the voice room, as the server last told us. */
+data class VoicePeer(
+    val participantId: String,
+    val username: String,
+    /** Last speaking flag from [voicePeers] / [voiceActivity]. */
+    val speaking: Boolean = false,
+)
+
+/**
+ * Secrets and ports from `voiceJoined` for opening the `yv1` media path.
+ * [host] is the Syncplay host (no port); media uses [udpPort] / [tcpPort].
+ */
+data class VoiceMediaParams(
+    val host: String,
+    val token: String,
+    val key: String,
+    val udpPort: Int = 9000,
+    val tcpPort: Int = 9000,
+    val fingerprint: String = "",
+    val wsPath: String = "/yarmiplay/voice",
+    val maxBitrate: Int = 32_000,
+    val fec: Boolean = true,
+    val dtx: Boolean = true,
+    val clockRate: Int = 48_000,
+    val channels: Int = 1,
+    val ptimeMs: Int = 20,
+    /**
+     * Skip UDP and open the fingerprint-pinned TLS TCP path immediately.
+     * Used when UDP is known blocked, and by e2e tests of the fallback.
+     */
+    val forceTcp: Boolean = false,
+)
+
+/** Why the server closed our voice seat. */
+enum class VoiceClosedReason {
+    LEFT, DISABLED, VANILLA, FULL, ROOM, REPLACED, VERSION, ERROR, UNKNOWN;
+
+    companion object {
+        fun parse(value: String?): VoiceClosedReason = when (value) {
+            "left" -> LEFT
+            "disabled", "toggle", "off" -> DISABLED
+            "vanilla" -> VANILLA
+            "full" -> FULL
+            "room" -> ROOM
+            "replaced" -> REPLACED
+            "version" -> VERSION
+            "error" -> ERROR
+            else -> UNKNOWN
+        }
+    }
 }
 
 /** Settings that are the room's, the same for everyone in it, as the server keeps them. */
@@ -161,11 +240,16 @@ data class YarmiplayInfo(
     val tls: ServerTls? = null,
     /** The current room's shared settings; null until the server sent them (or when it doesn't keep any). */
     val roomSettings: RoomSettings? = null,
+    /** Codec/ports when [capabilities].voice is true; null when voice is off or the server is older. */
+    val voice: VoiceDescriptor? = null,
 ) {
     val relayActive: Boolean get() = session && capabilities.fileRelay
 
     /** Whether the room's settings are shared through the server (else each device decides for itself). */
     val roomSettingsShared: Boolean get() = session && capabilities.roomSettings
+
+    /** Whether this session offers room voice (server capability + descriptor). */
+    val voiceAvailable: Boolean get() = session && capabilities.voice && voice != null
 }
 
 /**

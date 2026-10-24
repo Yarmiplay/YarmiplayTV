@@ -62,6 +62,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.os.SystemClock
+import com.yarmiplaytv.voice.TvVoiceKeys
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -168,9 +170,12 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
     var overlay by remember { mutableStateOf<Overlay>(Overlay.Hidden) }
     var interaction by remember { mutableLongStateOf(0L) }
     var seekFlash by remember { mutableLongStateOf(0L) }
+    var okDownAt by remember { mutableLongStateOf(0L) }
     val rootFocus = remember { FocusRequester() }
     val controlsFocus = remember { FocusRequester() }
+    val micFocus = remember { FocusRequester() }
     val panelFocus = remember { FocusRequester() }
+    val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
     val tabFocus = remember { PanelKind.entries.associateWith { FocusRequester() } }
     val focusManager = LocalFocusManager.current
     val panels = PanelKind.entries.filter { it != PanelKind.MAL || container.mal.client.configured }
@@ -245,7 +250,16 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
             .onPreviewKeyEvent { ev ->
                 interaction = System.currentTimeMillis()
                 val down = ev.type == KeyEventType.KeyDown
+                val up = ev.type == KeyEventType.KeyUp
                 val code = ev.key.nativeKeyCode
+                val firstPress = down && ev.nativeKeyEvent.repeatCount == 0
+                if (voiceUi.showMicButton && TvVoiceKeys.isVoiceToggleKey(code)) {
+                    if (firstPress) {
+                        container.voice.noteRemoteToggleKey(TvVoiceKeys.labelFor(code))
+                        container.voice.toggleTalk()
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 val global = when (code) {
                     AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, AndroidKeyEvent.KEYCODE_SPACE -> { if (down) togglePause(); true }
                     AndroidKeyEvent.KEYCODE_MEDIA_PLAY -> { if (down) player.setPaused(false); true }
@@ -285,8 +299,6 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                         return@onPreviewKeyEvent true
                     }
                 }
-                // Held keys repeat; only the first press toggles, or the bar would flicker.
-                val firstPress = down && ev.nativeKeyEvent.repeatCount == 0
                 // Menu shows and hides the controls, and closes a panel.
                 if (overlay != Overlay.Hidden && code == AndroidKeyEvent.KEYCODE_MENU) {
                     if (firstPress) overlay = Overlay.Hidden
@@ -306,10 +318,29 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 }
                 if (overlay != Overlay.Hidden) return@onPreviewKeyEvent false
                 // While the Skip button shows, OK presses it instead of opening the controls.
-                val ok = code == AndroidKeyEvent.KEYCODE_DPAD_CENTER || code == AndroidKeyEvent.KEYCODE_ENTER || code == AndroidKeyEvent.KEYCODE_NUMPAD_ENTER
+                val ok = TvVoiceKeys.isOkKey(code)
                 if (ok && skipPrompt != null) {
                     if (firstPress) container.skips.skip()
                     return@onPreviewKeyEvent true
+                }
+                // Long-press OK = mic toggle shortcut; short press opens controls. Prefer the Mic button.
+                if (ok && voiceUi.showMicButton) {
+                    if (firstPress) {
+                        okDownAt = SystemClock.uptimeMillis()
+                        return@onPreviewKeyEvent true
+                    }
+                    if (down) return@onPreviewKeyEvent true
+                    if (up) {
+                        val held = SystemClock.uptimeMillis() - okDownAt
+                        okDownAt = 0L
+                        if (held >= TvVoiceKeys.OK_LONG_PRESS_MS) {
+                            container.voice.noteRemoteToggleKey("OK (long-press)")
+                            container.voice.toggleTalk()
+                        } else {
+                            overlay = Overlay.Controls
+                        }
+                        return@onPreviewKeyEvent true
+                    }
                 }
                 when (code) {
                     AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
@@ -363,6 +394,14 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 val toasts = remember(container) { container.sync.toasts.filter { it.showsOnVideo(container.settings.value.chatOnVideo) } }
                 ToastHost(toasts, Modifier.align(Alignment.TopStart).padding(32.dp))
                 TvMalNotice(container, Modifier.align(Alignment.TopEnd).padding(32.dp))
+                TvMicLiveBadge(voiceUi, Modifier.align(Alignment.TopCenter).padding(top = 32.dp))
+                if (voiceUi.showMicHint) {
+                    LaunchedEffect(voiceUi.showMicHint) {
+                        delay(12_000)
+                        container.voice.dismissMicHint()
+                    }
+                    TvMicHint(voiceUi, Modifier.align(Alignment.BottomCenter).padding(horizontal = 48.dp).padding(bottom = 120.dp))
+                }
                 // One place, controls or not: just above the controls bar, so it never jumps. OK presses it while the
                 // controls are hidden; with them open, OK belongs to the focused control.
                 if (overlay == Overlay.Hidden || overlay == Overlay.Controls) {
@@ -391,6 +430,8 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                         container = container,
                         title = nowPlaying?.title ?: "Nothing playing",
                         controlsFocus = controlsFocus,
+                        micFocus = micFocus,
+                        voiceUi = voiceUi,
                         pip = pip,
                         onTogglePause = ::togglePause,
                         onSeek = ::seekBy,
@@ -609,6 +650,8 @@ private fun ControlsBar(
     container: AppContainer,
     title: String,
     controlsFocus: FocusRequester,
+    micFocus: FocusRequester,
+    voiceUi: com.yarmiplaytv.voice.VoiceUiState,
     pip: PictureInPicture,
     onTogglePause: () -> Unit,
     onSeek: (Double) -> Unit,
@@ -672,6 +715,8 @@ private fun ControlsBar(
                     container = ON_VIDEO_BUTTON,
                 )
             }
+            // Every remote can focus this and press OK — primary TV talk control (tap toggle).
+            TvMicButton(voiceUi, onToggle = { container.voice.toggleTalk() }, focusRequester = micFocus, onVideo = true)
         }, end = {
             rememberRelaySave(container)?.let { save ->
                 IconAction(

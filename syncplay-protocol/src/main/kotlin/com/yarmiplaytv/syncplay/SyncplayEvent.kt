@@ -67,4 +67,38 @@ sealed interface SyncplayEvent {
     data class RoomSettingsChanged(val settings: RoomSettings, val first: Boolean) : SyncplayEvent
 
     data class JellyfinAuthorized(val code: String, val ok: Boolean, val error: String?) : SyncplayEvent
+
+    // --- Voice (YarmiplayServerTV 2.0+) ------------------------------------------------
+
+    /** We have a seat in the room's voice channel ([VOICE_PROTOCOL] §5.2). */
+    data class VoiceJoined(
+        val participantId: String,
+        val username: String,
+        val room: String,
+        val version: Int,
+        /** 16 lower-case hex characters (big-endian u64 seat token). */
+        val token: String,
+        /** Standard base64 of the 32-byte AES-256-GCM key for this seat. */
+        val key: String,
+        val udpPort: Int,
+        val tcpPort: Int,
+        val wsPath: String,
+        /** Lower-case hex SHA-256 of the voice TLS certificate (DER). */
+        val fingerprint: String,
+        val clockRate: Int = 48_000,
+        val channels: Int = 1,
+        val ptimeMs: Int = 20,
+        val maxBitrate: Int = 32_000,
+        val fec: Boolean = true,
+        val dtx: Boolean = true,
+    ) : SyncplayEvent
+
+    /** The server closed our voice seat. */
+    data class VoiceClosed(val reason: VoiceClosedReason) : SyncplayEvent
+
+    /** Who else is in voice right now (full list each time). */
+    data class VoicePeersChanged(val peers: List<VoicePeer>) : SyncplayEvent
+
+    /** Someone started or stopped speaking (relayed client report). */
+    data class VoiceActivity(val participantId: String, val username: String?, val speaking: Boolean) : SyncplayEvent
 }

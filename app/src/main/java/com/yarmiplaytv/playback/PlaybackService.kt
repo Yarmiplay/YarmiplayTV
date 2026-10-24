@@ -18,13 +18,17 @@ import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.MainActivity
 import com.yarmiplaytv.YarmiplayTvApp
+import com.yarmiplaytv.data.VoiceTalkMode
 import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.sync.NowPlaying
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.RoomState
+import com.yarmiplaytv.voice.VoiceConnection
+import com.yarmiplaytv.voice.VoiceUiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,11 +36,17 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
+/**
+ * Keeps playback (and on phone/tablet, room voice) alive in the background with a media notification.
+ * Voice actions appear only on phone/tablet while voice is active — not on TV.
+ */
 class PlaybackService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var wakeLock: PowerManager.WakeLock? = null
     private var mediaSession: MediaSession? = null
     private val container get() = (application as YarmiplayTvApp).container
+    private val isPhoneOrTablet get() =
+        container.deviceKind == DeviceKind.PHONE || container.deviceKind == DeviceKind.TABLET
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -51,18 +61,13 @@ class PlaybackService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> {
-                startInForeground()
-            }
-            ACTION_TOGGLE_PLAY_PAUSE -> {
-                handleTogglePlayPause()
-            }
-            ACTION_PREVIOUS -> {
-                handlePrevious()
-            }
-            ACTION_NEXT -> {
-                handleNext()
-            }
+            ACTION_START -> startInForeground()
+            ACTION_TOGGLE_PLAY_PAUSE -> handleTogglePlayPause()
+            ACTION_PREVIOUS -> handlePrevious()
+            ACTION_NEXT -> handleNext()
+            ACTION_VOICE_MUTE -> if (isPhoneOrTablet) container.voice.toggleSelfMuted()
+            ACTION_VOICE_TALK -> if (isPhoneOrTablet) handleVoiceTalk()
+            ACTION_VOICE_LEAVE -> if (isPhoneOrTablet) container.voice.leave()
             ACTION_STOP -> {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -74,6 +79,15 @@ class PlaybackService : Service() {
             }
         }
         return START_NOT_STICKY
+    }
+
+    private fun handleVoiceTalk() {
+        val ui = container.voice.ui.value
+        when (ui.talkMode) {
+            VoiceTalkMode.TOGGLE -> container.voice.toggleTalk()
+            VoiceTalkMode.PUSH_TO_TALK -> container.voice.setPushToTalkHeld(!ui.talking)
+            VoiceTalkMode.OPEN_MIC -> container.voice.toggleSelfMuted()
+        }
     }
 
     private fun initMediaSession() {
@@ -176,7 +190,7 @@ class PlaybackService : Service() {
                 "Playback & Room Sync",
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "Shows playback controls and keeps room synchronization active"
+                description = "Shows playback and voice controls and keeps room synchronization active"
                 setShowBadge(false)
             }
             val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -184,14 +198,23 @@ class PlaybackService : Service() {
         }
     }
 
+    private fun foregroundTypes(voice: VoiceUiState): Int {
+        var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+        if (isPhoneOrTablet && voice.showUi && voice.connection == VoiceConnection.CONNECTED) {
+            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        }
+        return types
+    }
+
     private fun startInForeground() {
         val playerState = container.player.state.value
         val room = container.sync.room.value
         val nowPlaying = container.playlist.nowPlaying.value
-        updateSession(playerState, room, nowPlaying)
-        val notification = buildNotification(playerState, room, nowPlaying)
+        val voice = container.voice.ui.value
+        updateSession(playerState, room, nowPlaying, voice)
+        val notification = buildNotification(playerState, room, nowPlaying, voice)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            startForeground(NOTIFICATION_ID, notification, foregroundTypes(voice))
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
@@ -204,12 +227,21 @@ class PlaybackService : Service() {
                 container.player.state,
                 container.sync.room,
                 container.playlist.nowPlaying,
-            ) { settings, playerState, room, nowPlaying ->
-                StateUpdate(settings.playback.stayConnectedMinimized, playerState, room, nowPlaying)
+                container.voice.ui,
+            ) { settings, playerState, room, nowPlaying, voice ->
+                StateUpdate(settings.playback.stayConnectedMinimized, playerState, room, nowPlaying, voice)
             }.collect { update ->
                 val inRoom = update.room.status == ConnectionStatus.CONNECTED
                 val isLoaded = update.playerState.fileLoaded
-                if (!update.stayConnected || (!isLoaded && !inRoom)) {
+                val voiceKeepsAlive = isPhoneOrTablet &&
+                    update.voice.showUi &&
+                    update.voice.connection == VoiceConnection.CONNECTED
+                if (!update.stayConnected && !voiceKeepsAlive) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                    return@collect
+                }
+                if (update.stayConnected && !isLoaded && !inRoom && !voiceKeepsAlive) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                     return@collect
@@ -219,14 +251,18 @@ class PlaybackService : Service() {
                         wakeLock?.acquire(10 * 60 * 1000L)
                     }
                 }
-                updateSession(update.playerState, update.room, update.nowPlaying)
-                val notification = buildNotification(update.playerState, update.room, update.nowPlaying)
-                NotificationManagerCompat.from(this@PlaybackService).notify(NOTIFICATION_ID, notification)
+                updateSession(update.playerState, update.room, update.nowPlaying, update.voice)
+                val notification = buildNotification(update.playerState, update.room, update.nowPlaying, update.voice)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(NOTIFICATION_ID, notification, foregroundTypes(update.voice))
+                } else {
+                    NotificationManagerCompat.from(this@PlaybackService).notify(NOTIFICATION_ID, notification)
+                }
             }
         }
     }
 
-    private fun updateSession(playerState: PlaybackState, room: RoomState, nowPlaying: NowPlaying?) {
+    private fun updateSession(playerState: PlaybackState, room: RoomState, nowPlaying: NowPlaying?, voice: VoiceUiState) {
         val inRoom = room.status == ConnectionStatus.CONNECTED
         val isAudio = FileNames.isAudio(nowPlaying?.fileName ?: playerState.url.orEmpty())
         val title = nowPlaying?.title
@@ -235,7 +271,8 @@ class PlaybackService : Service() {
             }
         val series = nowPlaying?.episode?.seriesName
         val roomInfo = if (inRoom) "Room: ${room.room} (${room.users.size} viewers)" else null
-        val subtitle = listOfNotNull(series, roomInfo).joinToString(" · ").ifEmpty {
+        val voiceInfo = voiceSubtitle(voice)
+        val subtitle = listOfNotNull(series, roomInfo, voiceInfo).joinToString(" · ").ifEmpty {
             if (isAudio) "Music" else "Playback active"
         }
 
@@ -251,6 +288,19 @@ class PlaybackService : Service() {
         mediaSession?.setMetadata(metadata)
 
         updatePlaybackState(playerState)
+    }
+
+    private fun voiceSubtitle(voice: VoiceUiState): String? {
+        if (!isPhoneOrTablet || !voice.showUi) return null
+        return when {
+            voice.connection == VoiceConnection.CONNECTING -> "Voice connecting"
+            voice.connection == VoiceConnection.FAILED -> "Voice failed"
+            voice.listenOnly -> "Voice: listening only"
+            voice.micLive || (voice.talkMode == VoiceTalkMode.OPEN_MIC && !voice.selfMuted && voice.connection == VoiceConnection.CONNECTED) ->
+                "Voice: mic on"
+            voice.connection == VoiceConnection.CONNECTED -> "Voice connected"
+            else -> null
+        }
     }
 
     private fun updatePlaybackState(playerState: PlaybackState, targetPosition: Double? = null) {
@@ -279,6 +329,7 @@ class PlaybackService : Service() {
         playerState: PlaybackState,
         room: RoomState,
         nowPlaying: NowPlaying?,
+        voice: VoiceUiState,
     ): Notification {
         val inRoom = room.status == ConnectionStatus.CONNECTED
         val isAudio = FileNames.isAudio(nowPlaying?.fileName ?: playerState.url.orEmpty())
@@ -288,7 +339,8 @@ class PlaybackService : Service() {
             }
         val series = nowPlaying?.episode?.seriesName
         val roomInfo = if (inRoom) "Room: ${room.room} (${room.users.size} viewers)" else null
-        val subtitle = listOfNotNull(series, roomInfo).joinToString(" · ").ifEmpty {
+        val voiceInfo = voiceSubtitle(voice)
+        val subtitle = listOfNotNull(series, roomInfo, voiceInfo).joinToString(" · ").ifEmpty {
             if (isAudio) "Music" else "Playback active"
         }
 
@@ -301,47 +353,32 @@ class PlaybackService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        val prevIntent = PendingIntent.getService(
+        fun servicePending(requestCode: Int, action: String) = PendingIntent.getService(
             this,
-            2,
-            Intent(this, PlaybackService::class.java).setAction(ACTION_PREVIOUS),
+            requestCode,
+            Intent(this, PlaybackService::class.java).setAction(action),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        val togglePlayIntent = PendingIntent.getService(
-            this,
-            1,
-            Intent(this, PlaybackService::class.java).setAction(ACTION_TOGGLE_PLAY_PAUSE),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-
-        val nextIntent = PendingIntent.getService(
-            this,
-            3,
-            Intent(this, PlaybackService::class.java).setAction(ACTION_NEXT),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-
-        val exitIntent = PendingIntent.getService(
-            this,
-            4,
-            Intent(this, PlaybackService::class.java).setAction(ACTION_EXIT),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val prevIntent = servicePending(2, ACTION_PREVIOUS)
+        val togglePlayIntent = servicePending(1, ACTION_TOGGLE_PLAY_PAUSE)
+        val nextIntent = servicePending(3, ACTION_NEXT)
+        val exitIntent = servicePending(4, ACTION_EXIT)
 
         val playPauseIcon = if (playerState.paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
         val playPauseLabel = if (playerState.paused) "Play" else "Pause"
 
+        val showVoice = isPhoneOrTablet && voice.showUi && voice.connection == VoiceConnection.CONNECTED
         val mediaStyle = Notification.MediaStyle()
         mediaSession?.let { mediaStyle.setMediaSession(it.sessionToken) }
         mediaStyle.setShowActionsInCompactView(0, 1, 2)
 
-        return Notification.Builder(this, CHANNEL_ID)
+        val builder = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(subtitle)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(contentIntent)
-            .setOngoing(!playerState.paused)
+            .setOngoing(!playerState.paused || showVoice)
             .setDeleteIntent(exitIntent)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setCategory(Notification.CATEGORY_TRANSPORT)
@@ -367,19 +404,46 @@ class PlaybackService : Service() {
                     nextIntent,
                 ).build(),
             )
-            .addAction(
+
+        if (showVoice) {
+            val micAction = when (voice.talkMode) {
+                VoiceTalkMode.OPEN_MIC ->
+                    (if (voice.selfMuted) "Unmute" else "Mute") to ACTION_VOICE_MUTE
+                VoiceTalkMode.TOGGLE, VoiceTalkMode.PUSH_TO_TALK ->
+                    (if (voice.micLive || voice.talking) "Mic off" else "Mic on") to ACTION_VOICE_TALK
+            }
+            builder.addAction(
                 Notification.Action.Builder(
-                    Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
-                    "Exit",
-                    exitIntent,
+                    Icon.createWithResource(this, android.R.drawable.ic_btn_speak_now),
+                    micAction.first,
+                    servicePending(5, micAction.second),
                 ).build(),
             )
-            .build()
+            builder.addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
+                    "Leave voice",
+                    servicePending(7, ACTION_VOICE_LEAVE),
+                ).build(),
+            )
+        }
+
+        builder.addAction(
+            Notification.Action.Builder(
+                Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
+                "Exit",
+                exitIntent,
+            ).build(),
+        )
+        return builder.build()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        if (!container.settings.value.playback.stayConnectedMinimized) {
+        val voiceKeepsAlive = isPhoneOrTablet &&
+            container.voice.ui.value.showUi &&
+            container.voice.ui.value.connection == VoiceConnection.CONNECTED
+        if (!container.settings.value.playback.stayConnectedMinimized && !voiceKeepsAlive) {
             handleExit()
         }
     }
@@ -405,6 +469,9 @@ class PlaybackService : Service() {
         const val ACTION_TOGGLE_PLAY_PAUSE = "com.yarmiplaytv.action.PLAYBACK_PLAY_PAUSE"
         const val ACTION_PREVIOUS = "com.yarmiplaytv.action.PLAYBACK_PREVIOUS"
         const val ACTION_NEXT = "com.yarmiplaytv.action.PLAYBACK_NEXT"
+        const val ACTION_VOICE_MUTE = "com.yarmiplaytv.action.VOICE_MUTE"
+        const val ACTION_VOICE_TALK = "com.yarmiplaytv.action.VOICE_TALK"
+        const val ACTION_VOICE_LEAVE = "com.yarmiplaytv.action.VOICE_LEAVE"
 
         fun start(context: Context) {
             val intent = Intent(context, PlaybackService::class.java).setAction(ACTION_START)
@@ -422,5 +489,6 @@ class PlaybackService : Service() {
         val playerState: PlaybackState,
         val room: RoomState,
         val nowPlaying: NowPlaying?,
+        val voice: VoiceUiState,
     )
 }

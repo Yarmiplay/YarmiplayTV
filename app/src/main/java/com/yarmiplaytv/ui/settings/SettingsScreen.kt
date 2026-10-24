@@ -87,6 +87,8 @@ import com.yarmiplaytv.ui.theme.THEME_NOTE
 import com.yarmiplaytv.update.UpdateCheck
 import com.yarmiplaytv.update.UpdateState
 import com.yarmiplaytv.update.openStoreApp
+import com.yarmiplaytv.voice.VoiceAudioDevice
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -166,6 +168,15 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         { container.scope.launch { container.settingsStore.saveChatOnVideo(!settings.chatOnVideo) } },
                         subtitle = CHAT_ON_VIDEO_NOTE,
                     )
+                }
+                ToggleRow(
+                    "Voice chat",
+                    settings.voiceChat,
+                    { container.scope.launch { container.settingsStore.saveVoiceChat(!settings.voiceChat) } },
+                    subtitle = "Talk in rooms on a YarmiplayServerTV server that has voice on; off hides the controls and disconnects",
+                )
+                if (settings.voiceChat) {
+                    TvVoiceDeviceRows(container)
                 }
                 if (container.supportsDeviceAccess) {
                     var deviceName by rememberSavedText(settings.deviceName) { name -> container.scope.launch { container.settingsStore.saveDeviceName(name) } }
@@ -399,6 +410,60 @@ private fun UpdatesSection(container: AppContainer, showLink: (AboutLink) -> Uni
             subtitle = "Look for a new version on the download page (GitHub)",
         )
     }
+}
+
+/** Mic/speaker routes; each click advances to the next available device (including System default). */
+@Composable
+private fun TvVoiceDeviceRows(container: AppContainer) {
+    val settings by container.settings.collectAsStateWithLifecycle()
+    var inputs by remember { mutableStateOf(container.voice.listInputDevices()) }
+    var outputs by remember { mutableStateOf(container.voice.listOutputDevices()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            inputs = container.voice.listInputDevices()
+            outputs = container.voice.listOutputDevices()
+            delay(2_000)
+        }
+    }
+    TvVoiceDeviceRow(
+        title = "Microphone",
+        subtitle = "Input for voice chat; changes apply without leaving the room",
+        devices = inputs,
+        selectedId = settings.voiceInputDeviceId,
+        testTag = "voice_input_device",
+        onSelect = { container.voice.setInputDeviceId(it) },
+    )
+    TvVoiceDeviceRow(
+        title = "Speaker",
+        subtitle = "Output for voice chat; changes apply without leaving the room",
+        devices = outputs,
+        selectedId = settings.voiceOutputDeviceId,
+        testTag = "voice_output_device",
+        onSelect = { container.voice.setOutputDeviceId(it) },
+    )
+}
+
+@Composable
+private fun TvVoiceDeviceRow(
+    title: String,
+    subtitle: String,
+    devices: List<VoiceAudioDevice>,
+    selectedId: String,
+    testTag: String,
+    onSelect: (String) -> Unit,
+) {
+    val selected = devices.firstOrNull { it.id == selectedId } ?: devices.firstOrNull()
+    ValueRow(
+        title,
+        selected?.label ?: "System default",
+        {
+            if (devices.isEmpty()) return@ValueRow
+            val idx = devices.indexOfFirst { it.id == selectedId }.let { if (it < 0) 0 else it }
+            onSelect(devices[(idx + 1) % devices.size].id)
+        },
+        Modifier.testTag(testTag),
+        subtitle = subtitle,
+    )
 }
 
 /** 0 is "Never"; after it the row offers "Custom", which shows a field for any number of seconds. */

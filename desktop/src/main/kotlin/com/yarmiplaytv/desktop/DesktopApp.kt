@@ -174,6 +174,7 @@ private fun createContainer(configDir: File, store: SettingsStore): AppContainer
         seekFrames = MpvSeekFrames,
         malClientId = MAL_CLIENT_ID,
         audioDecoder = MpvAudioDecoder,
+        voiceEngine = DesktopVoiceEngine(),
     ).also { it.deviceKind = DeviceKind.DESKTOP }
 }
 

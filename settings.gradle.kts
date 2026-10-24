@@ -33,6 +33,7 @@ val desktopOnly = providers.gradleProperty("desktopOnly").isPresent
 
 if (!desktopOnly) include(":app")
 include(":syncplay-protocol")
+include(":voice-media")
 include(":media-source")
 include(":player-api")
 if (!desktopOnly) include(":player-mpv")

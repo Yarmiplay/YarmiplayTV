@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -30,6 +31,7 @@ import com.yarmiplaytv.ui.mobile.appPalette
 import com.yarmiplaytv.ui.mobile.pipParams
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.YarmiplayTvTheme
+import com.yarmiplaytv.voice.TvVoiceKeys
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -107,6 +109,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * TV mic / voice keys toggle room talk when the system delivers them to the app
+     * (see [TvVoiceKeys]). The focusable Mic button remains the path every remote can use.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (deviceKind == DeviceKind.TV &&
+            event.action == KeyEvent.ACTION_DOWN &&
+            event.repeatCount == 0 &&
+            TvVoiceKeys.isVoiceToggleKey(event.keyCode)
+        ) {
+            val voice = container.voice.ui.value
+            if (voice.showMicButton) {
+                container.voice.noteRemoteToggleKey(TvVoiceKeys.labelFor(event.keyCode))
+                container.voice.toggleTalk()
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onStart() {
         super.onStart()
         PlaybackService.stop(this)
@@ -120,7 +142,11 @@ class MainActivity : ComponentActivity() {
             val playerState = container.player.state.value
             val inRoom = container.sync.room.value.status == ConnectionStatus.CONNECTED
             val isLoaded = playerState.fileLoaded
-            if (settings.playback.stayConnectedMinimized && (isLoaded || inRoom)) {
+            val voiceActive = (deviceKind == DeviceKind.PHONE || deviceKind == DeviceKind.TABLET) &&
+                container.voice.ui.value.showUi &&
+                container.voice.ui.value.connection == com.yarmiplaytv.voice.VoiceConnection.CONNECTED
+            // Phones/tablets keep the FGS up while room voice is connected so talk continues in the background.
+            if (voiceActive || (settings.playback.stayConnectedMinimized && (isLoaded || inRoom))) {
                 PlaybackService.start(this)
             }
         }

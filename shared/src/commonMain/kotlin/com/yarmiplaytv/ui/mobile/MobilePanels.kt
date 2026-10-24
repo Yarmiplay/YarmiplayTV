@@ -30,6 +30,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -41,6 +43,8 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MeetingRoom
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Remove
@@ -56,10 +60,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.yarmiplaytv.data.VoiceTalkMode
+import com.yarmiplaytv.voice.VoiceCaptureKind
+import com.yarmiplaytv.voice.VoiceConnection
+import com.yarmiplaytv.voice.peerPrefs
+import com.yarmiplaytv.voice.voiceBanner
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -368,26 +378,77 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
         ReadyChip(room.isReady == true, { container.sync.toggleReady() }, Modifier.testTag("ready_toggle"))
         val skip by container.roomAutoSkip.state.collectAsStateWithLifecycle()
         RoomSkipToggle(skip) { container.roomAutoSkip.set(it) }
+        val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
+        val settings by container.settings.collectAsStateWithLifecycle()
+        voiceBanner(voiceUi)?.let {
+            Text(it, color = if (voiceUi.micLive) AppColors.Ready else AppColors.TextDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("voice_banner"))
+        }
+        if (voiceUi.showMicButton) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                IconButton(
+                    {
+                        when (voiceUi.talkMode) {
+                            VoiceTalkMode.TOGGLE -> container.voice.toggleTalk()
+                            VoiceTalkMode.PUSH_TO_TALK -> Unit // hold handled elsewhere
+                            VoiceTalkMode.OPEN_MIC -> container.voice.toggleSelfMuted()
+                        }
+                    },
+                    Modifier.testTag("voice_self_mic"),
+                ) {
+                    val live = when (voiceUi.talkMode) {
+                        VoiceTalkMode.OPEN_MIC -> !voiceUi.selfMuted && voiceUi.connection == VoiceConnection.CONNECTED
+                        else -> voiceUi.micLive
+                    }
+                    Icon(
+                        if (live) Icons.Filled.Mic else Icons.Filled.MicOff,
+                        if (live) "Mute microphone" else "Unmute microphone",
+                        tint = if (live) AppColors.Ready else AppColors.TextDim,
+                    )
+                }
+                Text(
+                    when {
+                        voiceUi.talkMode == VoiceTalkMode.OPEN_MIC && voiceUi.selfMuted -> "Mic muted"
+                        voiceUi.micLive || (voiceUi.talkMode == VoiceTalkMode.OPEN_MIC && !voiceUi.selfMuted) -> "Mic on"
+                        else -> "Mic off"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                if (voiceUi.talkMode == VoiceTalkMode.PUSH_TO_TALK && voiceUi.capture != VoiceCaptureKind.NONE) {
+                    TextButton(
+                        onClick = { container.voice.setPushToTalkHeld(!voiceUi.talking) },
+                        modifier = Modifier.testTag("voice_ptt"),
+                    ) { Text(if (voiceUi.talking) "Release" else "Hold to talk") }
+                }
+                TextButton({ container.voice.leave() }, Modifier.testTag("voice_leave")) { Text("Leave voice") }
+            }
+        }
         val blocked by container.sync.blocked.collectAsStateWithLifecycle()
         val me = room.users.firstOrNull { it.name == room.username }
         room.users.forEach { user ->
             val isMe = user.name == room.username
             val difference = if (isMe) null else fileDifferenceNote(user.file, me?.file)
             val mismatch = difference != null
+            val peerId = voiceUi.peers.firstOrNull { it.username == user.name }?.participantId
+            val speaking = voiceUi.showUi && peerId != null && peerId in voiceUi.speakingIds
+            val prefs = settings.peerPrefs(user.name)
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier.size(10.dp).clip(CircleShape).background(
-                        when (user.isReady) {
-                            true -> AppColors.Ready
-                            false -> AppColors.NotReady
-                            null -> AppColors.TextDim
+                        when {
+                            speaking -> AppColors.Accent
+                            user.isReady == true -> AppColors.Ready
+                            user.isReady == false -> AppColors.NotReady
+                            else -> AppColors.TextDim
                         },
                     ),
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★ operator" else "") + (if (user.name in streamingFrom) " · streaming" else ""),
+                        user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★ operator" else "") +
+                            (if (user.name in streamingFrom) " · streaming" else "") +
+                            (if (speaking) " · speaking" else ""),
                         style = MaterialTheme.typography.titleSmall,
                         modifier = if (user.name in streamingFrom) Modifier.testTag("relay_status") else Modifier,
                     )
@@ -401,6 +462,35 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
                     if (difference != null) Text(difference, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
                     relayNote(room, user)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall) }
                     if (user.name in blocked) Text(BLOCKED_NOTE, color = AppColors.Error, style = MaterialTheme.typography.labelSmall)
+                    if (voiceUi.showUi && !isMe) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Voice", color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
+                            Slider(
+                                value = if (prefs.muted) 0f else prefs.volume.coerceIn(0f, 2f),
+                                onValueChange = { v ->
+                                    if (v <= 0.01f) container.voice.setPeerMuted(user.name, true)
+                                    else {
+                                        if (prefs.muted) container.voice.setPeerMuted(user.name, false)
+                                        container.voice.setPeerVolume(user.name, v)
+                                    }
+                                },
+                                valueRange = 0f..2f,
+                                modifier = Modifier.weight(1f).testTag("voice_vol_${user.name}"),
+                            )
+                        }
+                    }
+                }
+                if (voiceUi.showUi && !isMe) {
+                    IconButton(
+                        { container.voice.setPeerMuted(user.name, !prefs.muted) },
+                        Modifier.testTag("voice_mute_${user.name}"),
+                    ) {
+                        Icon(
+                            if (prefs.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                            if (prefs.muted) "Unmute ${user.name}'s voice" else "Mute ${user.name}'s voice (local only)",
+                            tint = if (prefs.muted) AppColors.Error else AppColors.TextDim,
+                        )
+                    }
                 }
                 if (!isMe && room.isOperator) {
                     val markReady = user.isReady != true

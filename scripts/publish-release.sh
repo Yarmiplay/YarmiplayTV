@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Attaches files to the GitHub release of the tag being built ($GITHUB_REF_NAME), creating the release if it
-# doesn't exist yet. release.yml's Windows and Linux jobs both call it, in either order or at the same time.
+# doesn't exist yet. release.yml's Windows, macOS and Linux jobs all call it, in either order or at the same time.
 #
 #   scripts/publish-release.sh FILE...
 #
@@ -17,7 +17,7 @@ notes() {
   [ -n "${FLATHUB_REPO:-}" ] && linux="$linux, Flathub: https://flathub.org/apps/${FLATHUB_REPO##*/}"
   [ -n "${SNAP_NAME:-}" ] && linux="$linux, Snap Store: https://snapcraft.io/$SNAP_NAME"
   [ -n "${AUR_PACKAGE:-}" ] && linux="$linux, AUR: https://aur.archlinux.org/packages/$AUR_PACKAGE"
-  echo "YarmiplayTV $VERSION for Windows: the installer (.msi${WINGET_ID:+, or \`winget install $WINGET_ID\`}) and a portable zip. Microsoft Store: https://apps.microsoft.com/detail/9PDBVR6W069J. Linux: $linux. Other platforms: https://tv.yarmiplay.com/"
+  echo "YarmiplayTV $VERSION for Windows: the installer (.msi${WINGET_ID:+, or \`winget install $WINGET_ID\`}) and a portable zip. Microsoft Store: https://apps.microsoft.com/detail/9PDBVR6W069J. macOS: the disk image (.dmg; needs Homebrew mpv: \`brew install mpv\`). Linux: $linux. Other platforms: https://tv.yarmiplay.com/"
   if [ "${SIGNED:-}" = true ]; then
     echo
     echo "Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See the [code signing policy](https://github.com/$repo#code-signing-policy)."

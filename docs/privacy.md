@@ -1,7 +1,7 @@
 # YarmiplayTV privacy policy
 
-Effective 12 October 2026. This policy covers the YarmiplayTV app for Android TV, Android phones and tablets,
-and desktop.
+Effective 24 October 2026. This policy covers the YarmiplayTV app for Android TV, Android phones and tablets,
+desktop (Windows, Linux and macOS), and the browser player.
 
 ## Summary
 
@@ -34,6 +34,11 @@ unless you turn it off, to GitHub to check for a new version.
   - *Shared media servers:* when the host shares their Jellyfin server, the app adds it to your servers and
     signs in with a Quick Connect code that the Syncplay server approves for you. Turn this off with
     **Add media servers shared by Syncplay hosts** in Settings.
+  - *Voice chat, when the host turned it on:* if you leave **Voice chat** on in Settings, the app can send
+    your microphone audio through that Syncplay server to the other people in the same room, and play theirs
+    to you. The audio is streamed only while you are in the room; the app does not record it or keep it, and
+    (per the server) neither does the host's software. A stock Syncplay server never receives voice. Turn voice
+    off with **Voice chat** in Settings to hide the controls and stop sending or receiving audio.
 - **Jellyfin servers you sign in to:** your Jellyfin user name and password (or a Quick Connect code) to sign
   in, then requests to browse, search and stream your library. Jellyfin shows the app as "YarmiplayTV" in its
   list of devices. You can sign in to several Jellyfin and Plex servers; each one only gets the requests for
@@ -116,13 +121,17 @@ next to `YarmiplayTV.exe`), `~/Library/Application Support/YarmiplayTV` (macOS) 
   and to look for servers on the local network only over Wi-Fi or Ethernet.
 - **Wi-Fi multicast:** to find Jellyfin and YarmiplayServerTV servers on the local network.
 - **Wake lock:** to keep the screen on during playback.
+- **Microphone:** only when you use voice chat in a room on a YarmiplayServerTV server. The app asks the first
+  time you try to talk (listening alone does not need the microphone). On Android TV you tap Mic to talk
+  (toggle on/off); a headset mic is preferred when connected. If the TV has no usable mic the app stays
+  listen-only — join from your phone to talk.
 - **Files:** only the videos and folders you pick in the system file picker.
 
 ## Children
 
-The app isn't directed at children. Rooms include chat with other people, so it is rated for ages 13 and up.
-The [community rules](https://tv.yarmiplay.com/terms/) say what's not allowed in rooms and how to block names
-or hide chat.
+The app isn't directed at children. Rooms include chat and optional voice with other people, so it is rated
+for ages 13 and up. The [community rules](https://tv.yarmiplay.com/terms/) say what's not allowed in rooms and
+how to block names, mute someone's voice on your device, or hide chat.
 
 ## Changes and contact
 

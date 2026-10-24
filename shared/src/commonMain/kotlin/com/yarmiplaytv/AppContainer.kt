@@ -57,6 +57,9 @@ import com.yarmiplaytv.tracking.detect.FingerprintCache
 import com.yarmiplaytv.tracking.detect.SkipDetector
 import com.yarmiplaytv.update.Updates
 import com.yarmiplaytv.update.WhatsNew
+import com.yarmiplaytv.voice.NullVoiceEngine
+import com.yarmiplaytv.voice.VoiceController
+import com.yarmiplaytv.voice.VoiceEngine
 import java.io.File
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -99,6 +102,8 @@ class AppContainer(
     malClientId: String = "",
     /** Reads videos' sound, for finding openings and endings by listening (kept under [cacheDir]); without it, no listening. */
     audioDecoder: AudioDecoder? = null,
+    /** Mic/speaker + Opus path for room voice; platforms pass a real engine, tests can omit it. */
+    voiceEngine: VoiceEngine = NullVoiceEngine(),
 ) {
     val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.Main.immediate +
@@ -224,6 +229,9 @@ class AppContainer(
     )
     /** Starts checking only when the host calls [Updates.checkOnLaunch]. */
     val updates = Updates(scope, settingsStore, appVersion)
+
+    /** Room voice chat on YarmiplayServerTV; idle when the server or client setting is off. */
+    val voice = VoiceController(sync, settingsStore, scope, voiceEngine) { deviceKind }
 
     /** Called when the person or platform requests shutting down the application. */
     var onExitApp: (() -> Unit)? = null
