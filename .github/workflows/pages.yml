@@ -66,12 +66,12 @@ jobs:
           gh run download "${{ steps.run.outputs.id }}" -R "$GITHUB_REPOSITORY" -p 'yarmiplaytv-*' -D artifacts
           mkdir dist
           find artifacts -type f -exec mv -t dist {} +
-          # Release assets replace main's by extension. The download page does not offer the Windows .msi
-          # (GitHub release only); setup .exe / zip / dmg / deb each download if present so a release without
-          # setup.exe still refreshes the other platforms and leaves main's .exe when the release has none.
+          # Release assets replace main's by extension. The .msi is kept for version.json (in-app updates from
+          # older installs) but the page UI only links Store / setup .exe / portable zip. Each pattern is
+          # optional so a release without setup.exe still refreshes the other platforms.
           mkdir -p release
           any=
-          for pat in '*-setup.exe' '*-portable.zip' '*.dmg' '*_amd64.deb'; do
+          for pat in '*-setup.exe' '*.msi' '*-portable.zip' '*.dmg' '*_amd64.deb'; do
             if gh release download -R "$GITHUB_REPOSITORY" -p "$pat" -D release; then
               any=1
             fi
@@ -82,8 +82,6 @@ jobs:
           else
             echo "::warning::No release packages; the page offers the ones from main"
           fi
-          # Drop Windows .msi from the site tree even if a Build artifact left one in dist.
-          rm -f dist/*.msi
           ls -l dist
 
       - id: pages

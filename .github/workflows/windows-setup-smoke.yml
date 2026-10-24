@@ -1,0 +1,152 @@
+name: Windows setup smoke
+
+# Proves setup.exe installs with the flags WindowsUpdater uses, and that the MSI updater path
+# (version.json → msiexec /passive) can upgrade an installed copy — the Benny 2.7.1 failure mode.
+on:
+  workflow_dispatch:
+    inputs:
+      setup_url:
+        description: URL of YarmiplayTV-*-setup.exe (empty = build this commit)
+        type: string
+        required: false
+        default: ""
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/windows-setup-smoke.yml"
+      - ".github/workflows/release.yml"
+      - "scripts/download_site.py"
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - ".github/workflows/windows-setup-smoke.yml"
+      - ".github/workflows/release.yml"
+      - "scripts/download_site.py"
+
+permissions:
+  contents: read
+
+jobs:
+  setup-install:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Resolve setup.exe and MSI
+        id: pkg
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SETUP_URL: ${{ inputs.setup_url }}
+        run: |
+          chmod +x gradlew
+          version=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' desktop/build.gradle.kts)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          mkdir -p setup
+          if [ -n "$SETUP_URL" ]; then
+            curl -fsSL -o "setup/YarmiplayTV-${version}-setup.exe" "$SETUP_URL"
+          else
+            ./gradlew --stacktrace -PdesktopOnly :desktop:packageExe :desktop:packageMsi
+            cp "desktop/build/compose/binaries/main/exe/YarmiplayTV-${version}.exe" \
+              "setup/YarmiplayTV-${version}-setup.exe"
+            cp "desktop/build/compose/binaries/main/msi/YarmiplayTV-${version}.msi" setup/
+          fi
+          if [ ! -f "setup/YarmiplayTV-${version}.msi" ]; then
+            ./gradlew --stacktrace -PdesktopOnly :desktop:packageMsi
+            cp "desktop/build/compose/binaries/main/msi/YarmiplayTV-${version}.msi" setup/
+          fi
+          ls -l setup/
+          echo "setup=$PWD/setup/YarmiplayTV-${version}-setup.exe" >> "$GITHUB_OUTPUT"
+          echo "msi=$PWD/setup/YarmiplayTV-${version}.msi" >> "$GITHUB_OUTPUT"
+
+      - name: Document Benny failure — --silent/--relaunch on jpackage Exe
+        shell: pwsh
+        run: |
+          $setup = "${{ steps.pkg.outputs.setup }}"
+          $logDir = Join-Path $env:RUNNER_TEMP "setup-logs"
+          New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+          $broken = Start-Process -FilePath $setup -ArgumentList @("--silent", "--relaunch") -Wait -PassThru
+          "legacy-2.7.0-flags exit=$($broken.ExitCode)" | Tee-Object -FilePath (Join-Path $logDir "legacy-flags.txt")
+          # Expected: non-zero. If jpackage starts accepting these, the test still continues with /quiet.
+
+      - name: Fresh install via setup.exe /quiet (2.7.2 exe updater path)
+        shell: pwsh
+        run: |
+          $setup = "${{ steps.pkg.outputs.setup }}"
+          $p = Start-Process -FilePath $setup -ArgumentList @("/quiet") -Wait -PassThru
+          "quiet exit=$($p.ExitCode)" | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/quiet.txt"
+          if ($p.ExitCode -notin 0, 3010) { throw "setup.exe /quiet failed: $($p.ExitCode)" }
+
+      - name: Launch installed app --version
+        id: app
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs", "$env:LOCALAPPDATA" `
+            -Recurse -Filter "YarmiplayTV.exe" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '\\runtime\\' } |
+            Select-Object -First 1
+          if (-not $exe) { throw "YarmiplayTV.exe not found after setup.exe /quiet" }
+          $exe.FullName | Tee-Object -FilePath "$env:RUNNER_TEMP/installed-path.txt"
+          $ver = & $exe.FullName --version
+          "$ver" | Tee-Object -FilePath "$env:RUNNER_TEMP/version.txt"
+          if ("$ver" -notmatch 'YarmiplayTV (\d+\.\d+\.\d+)') { throw "unexpected --version: $ver" }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "exe=$($exe.FullName)"
+
+      - name: MSI upgrade path (launch-time / prompt updater for 2.6.x and 2.7.0)
+        shell: pwsh
+        run: |
+          # Same sequence WindowsUpdater.msiScript runs after the app exits: msiexec /passive, then relaunch.
+          $msi = "${{ steps.pkg.outputs.msi }}"
+          $exe = "${{ steps.app.outputs.exe }}"
+          $version = "${{ steps.pkg.outputs.version }}"
+          $hold = Start-Process -FilePath $exe -ArgumentList "--version" -PassThru -WindowStyle Hidden
+          Start-Sleep -Milliseconds 300
+          $script = @"
+          Wait-Process -Id $($hold.Id) -ErrorAction SilentlyContinue
+          `$p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList ('/i "' + '$msi' + '" /passive /norestart')
+          Remove-Item -LiteralPath '$msi' -ErrorAction SilentlyContinue
+          `$ok = `$p.ExitCode -in 0, 3010
+          if (-not `$ok) { throw "msiexec failed: `$(`$p.ExitCode)" }
+          `$out = & '$exe' --version
+          Write-Host `$out
+          if (`$out -notmatch 'YarmiplayTV $version') { throw "after MSI upgrade: `$out" }
+          "@
+          $script | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/msi-upgrade.ps1"
+          powershell.exe -NoProfile -NonInteractive -Command $script
+
+      - name: setup.exe /quiet over the MSI install
+        shell: pwsh
+        run: |
+          $setup = "${{ steps.pkg.outputs.setup }}"
+          $exe = "${{ steps.app.outputs.exe }}"
+          $version = "${{ steps.pkg.outputs.version }}"
+          $p = Start-Process -FilePath $setup -ArgumentList @("/quiet") -Wait -PassThru
+          "re-quiet exit=$($p.ExitCode)" | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/re-quiet.txt"
+          if ($p.ExitCode -notin 0, 3010) { throw "setup.exe /quiet upgrade failed: $($p.ExitCode)" }
+          $out = & $exe --version
+          "$out"
+          if ("$out" -notmatch "YarmiplayTV $version") { throw "after exe upgrade: $out" }
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-setup-smoke-logs
+          path: |
+            ${{ runner.temp }}/setup-logs/
+            ${{ runner.temp }}/installed-path.txt
+            ${{ runner.temp }}/version.txt
+          if-no-files-found: ignore
