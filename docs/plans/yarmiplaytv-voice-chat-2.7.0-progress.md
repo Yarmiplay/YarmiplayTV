@@ -11,7 +11,7 @@
 - Phones: voice continues in the **background**; media notification gets voice controls (not TV).
 - Web voice + **macOS** app/build with voice are in scope.
 - Branded **.exe** Windows setup (non–MS Store).
-- Softer join/leave tones (regenerated); mic-on/off cue sounds; client voice toggle **on by default**.
+- Join/leave tones (**approved final** softer `voice_join` / `voice_leave`); mic-on/off cue sounds; client voice toggle **on by default**.
 - Privacy policy updated.
 
 ## TV mic keys (for real-device testing)
