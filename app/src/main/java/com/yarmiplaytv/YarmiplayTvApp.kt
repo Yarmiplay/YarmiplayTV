@@ -17,6 +17,7 @@ import com.yarmiplaytv.screenshot.AndroidScreenshotStore
 import com.yarmiplaytv.tracking.detect.AndroidAudioDecoder
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.update.UpdateSetup
+import com.yarmiplaytv.voice.AndroidVoiceEngine
 
 private val Context.dataStore by preferencesDataStore("settings")
 
@@ -56,6 +57,7 @@ class YarmiplayTvApp : Application() {
             seekFrames = AndroidSeekFrames(this),
             malClientId = BuildConfig.MAL_CLIENT_ID,
             audioDecoder = AndroidAudioDecoder(this),
+            voiceEngine = AndroidVoiceEngine(this, isTv = isTv),
         )
         // The download page's APK (debug) installs its own updates; the Play build (release) leaves them to Play.
         UpdateSetup.install(this, container)

@@ -34,8 +34,11 @@ import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
-/** How the mic is gated when sending voice. TV always uses [PUSH_TO_TALK]. */
-enum class VoiceTalkMode { OPEN_MIC, PUSH_TO_TALK }
+/**
+ * How the mic is gated when sending voice.
+ * TV always uses [TOGGLE] (one press open, next press close). Phones/desktop use [OPEN_MIC] or [PUSH_TO_TALK].
+ */
+enum class VoiceTalkMode { OPEN_MIC, PUSH_TO_TALK, TOGGLE }
 
 /** Local-only mute and volume for one Syncplay username's voice. */
 @Serializable
@@ -212,7 +215,7 @@ data class AppSettings(
     val chatOnVideo: Boolean = false,
     /** Join YarmiplayServerTV room voice when the server offers it; off hides all voice UI. */
     val voiceChat: Boolean = true,
-    /** How we send mic audio: open mic with VAD, or push-to-talk (TV is always push-to-talk). */
+    /** How we send mic audio: open mic with VAD, or push-to-talk (TV is always toggle). */
     val voiceTalkMode: VoiceTalkMode = VoiceTalkMode.OPEN_MIC,
     /** Local mic gain for voice (0–2, 1 = unity). */
     val voiceInputGain: Float = 1f,
@@ -231,6 +234,10 @@ data class AppSettings(
      * Separate from chat block.
      */
     val voicePeerPrefs: Map<String, VoicePeerPrefs> = emptyMap(),
+    /** TV: the one-time “how to talk” mic hint has been shown. */
+    val voiceTvMicHintShown: Boolean = false,
+    /** TV: friendly label of a remote key that successfully toggled the mic, when known. */
+    val voiceTvRemoteKeyLabel: String = "",
     /** The look: "dark", "noire", "monochrome", "light" or "system" (see com.yarmiplaytv.ui.theme.AppTheme). */
     val theme: String = "dark",
     /** The user agreed to the community rules, asked once before the first room join. */
@@ -345,6 +352,8 @@ class SettingsStore(
         val voiceJoinLeaveSounds = booleanPreferencesKey("voice_join_leave_sounds")
         val voiceJoinLeaveVolume = floatPreferencesKey("voice_join_leave_volume")
         val voicePeerPrefs = stringPreferencesKey("voice_peer_prefs")
+        val voiceTvMicHintShown = booleanPreferencesKey("voice_tv_mic_hint_shown")
+        val voiceTvRemoteKeyLabel = stringPreferencesKey("voice_tv_remote_key_label")
         val theme = stringPreferencesKey("app_theme")
         val acceptedRoomRules = booleanPreferencesKey("room_rules_accepted")
         /** Followed by "host:port/room"; the value is the playlist, one entry per line. */
@@ -486,6 +495,8 @@ class SettingsStore(
             voiceJoinLeaveSounds = p[Keys.voiceJoinLeaveSounds] ?: true,
             voiceJoinLeaveVolume = p[Keys.voiceJoinLeaveVolume] ?: 0.5f,
             voicePeerPrefs = p[Keys.voicePeerPrefs]?.let { runCatching { json.decodeFromString(voicePeerPrefsSerializer, it) }.getOrNull() } ?: emptyMap(),
+            voiceTvMicHintShown = p[Keys.voiceTvMicHintShown] ?: false,
+            voiceTvRemoteKeyLabel = p[Keys.voiceTvRemoteKeyLabel] ?: "",
             theme = p[Keys.theme] ?: defaults.theme,
             acceptedRoomRules = p[Keys.acceptedRoomRules] ?: false,
             deviceName = p[Keys.deviceName] ?: "",
@@ -705,6 +716,10 @@ class SettingsStore(
         if (!pref.muted && pref.volume == 1f) next.remove(key) else next[key] = pref
         saveVoicePeerPrefs(next)
     }
+
+    suspend fun saveVoiceTvMicHintShown(shown: Boolean) = dataStore.edit { it[Keys.voiceTvMicHintShown] = shown }
+
+    suspend fun saveVoiceTvRemoteKeyLabel(label: String) = dataStore.edit { it[Keys.voiceTvRemoteKeyLabel] = label }
 
     suspend fun saveTheme(key: String) = dataStore.edit { it[Keys.theme] = key }
 

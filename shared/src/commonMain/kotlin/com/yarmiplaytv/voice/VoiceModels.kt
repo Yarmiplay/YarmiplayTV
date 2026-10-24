@@ -30,6 +30,11 @@ data class VoiceUiState(
     val connection: VoiceConnection = VoiceConnection.OFF,
     val selfMuted: Boolean = false,
     val talking: Boolean = false,
+    /**
+     * TV toggle latch (and any future toggle UI): true means the mic is armed open until toggled off.
+     * Distinct from [talking], which is the actual TX gate after mute/connection checks.
+     */
+    val talkLatched: Boolean = false,
     val capture: VoiceCaptureKind = VoiceCaptureKind.NONE,
     val talkMode: VoiceTalkMode = VoiceTalkMode.OPEN_MIC,
     val participantId: String? = null,
@@ -38,7 +43,15 @@ data class VoiceUiState(
     val descriptor: VoiceDescriptor? = null,
     /** Short status for the room UI (e.g. "Listening only — no mic"). */
     val statusLine: String? = null,
+    /** One-time TV tip naming the mic button / remote key. */
+    val showMicHint: Boolean = false,
+    /** Last remote key label that toggled the mic (e.g. "mic button"), when known. */
+    val remoteKeyLabel: String = "",
 ) {
     val showUi: Boolean get() = available && enabledByClient
     val listenOnly: Boolean get() = showUi && capture == VoiceCaptureKind.NONE
+    /** Show the focusable Mic control (hidden in listen-only). */
+    val showMicButton: Boolean get() = showUi && !listenOnly
+    /** Clear on-screen “mic is open” affordance. */
+    val micLive: Boolean get() = showUi && !listenOnly && talking
 }

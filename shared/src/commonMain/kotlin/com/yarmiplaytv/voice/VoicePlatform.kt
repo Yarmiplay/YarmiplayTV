@@ -4,7 +4,10 @@ import com.yarmiplaytv.syncplay.VoiceDescriptor
 
 /** Platform mic/speaker + Opus send/receive. Expect/actual filled in android/desktop; web uses JS. */
 interface VoiceEngine {
-    /** Probe inputs; update what talk modes are possible. */
+    /**
+     * Probe inputs. Prefer a wired/BT headset mic when present.
+     * [VoiceCaptureKind.NONE] means listen-only (no mic button).
+     */
     suspend fun detectCapture(): VoiceCaptureKind
 
     /** Open the media path after [voiceJoined]. Returns false if it could not connect. */
@@ -17,7 +20,7 @@ interface VoiceEngine {
 
     fun disconnect()
 
-    /** Start/stop capturing (open-mic gate or PTT hold). */
+    /** Start/stop capturing (open-mic, PTT hold, or TV toggle latch). */
     fun setTransmitting(on: Boolean)
 
     fun setSelfMuted(muted: Boolean)
@@ -35,14 +38,14 @@ interface VoiceEngine {
 
     fun setOutputDeviceId(id: String?)
 
-    /** Opaque signal from the server (SDP or Opus-channel control). */
+    /** Opaque signal from the server (Opus-channel control). */
     fun onSignalIn(type: String, payload: String)
 
-    /** Play a short UI sound (join/leave). [volume] 0–1. */
+    /** Play a short UI sound (join/leave/mic). [volume] 0–1. */
     fun playSound(kind: VoiceSound, volume: Float)
 }
 
-enum class VoiceSound { JOIN, LEAVE }
+enum class VoiceSound { JOIN, LEAVE, MIC_ON, MIC_OFF }
 
 /** No-op engine until a platform implementation is wired. */
 class NullVoiceEngine : VoiceEngine {

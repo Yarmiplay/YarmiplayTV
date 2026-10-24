@@ -122,8 +122,9 @@ next to `YarmiplayTV.exe`), `~/Library/Application Support/YarmiplayTV` (macOS) 
 - **Wi-Fi multicast:** to find Jellyfin and YarmiplayServerTV servers on the local network.
 - **Wake lock:** to keep the screen on during playback.
 - **Microphone:** only when you use voice chat in a room on a YarmiplayServerTV server. The app asks the first
-  time you try to talk (listening alone does not need the microphone). On Android TV the remote's microphone
-  may be used for push-to-talk when the device exposes it; otherwise the app stays listen-only.
+  time you try to talk (listening alone does not need the microphone). On Android TV you tap Mic to talk
+  (toggle on/off); a headset mic is preferred when connected. If the TV has no usable mic the app stays
+  listen-only — join from your phone to talk.
 - **Files:** only the videos and folders you pick in the system file picker.
 
 ## Children

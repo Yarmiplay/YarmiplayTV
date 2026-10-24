@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MeetingRoom
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.SortByAlpha
@@ -38,6 +39,8 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -78,6 +81,10 @@ import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
 import com.yarmiplaytv.ui.shared.ROOM_SKIP_TITLE
 import com.yarmiplaytv.ui.shared.connectionRouteLine
 import com.yarmiplaytv.ui.shared.relayNote
+import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.voice.peerPrefs
+import com.yarmiplaytv.voice.steppedVoiceVolume
+import com.yarmiplaytv.voice.voiceBanner
 import com.yarmiplaytv.ui.shared.roomSkipSubtitle
 import com.yarmiplaytv.ui.shared.roomsOnServer
 import com.yarmiplaytv.ui.shared.savedRoomLabel
@@ -87,7 +94,6 @@ import com.yarmiplaytv.ui.mobile.SubtitleAdjustments
 import com.yarmiplaytv.ui.mobile.SubtitleSizeControls
 import com.yarmiplaytv.ui.mobile.SubtitleTimingControls
 import com.yarmiplaytv.ui.mobile.VideoAdjustments
-import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
 @Composable
@@ -192,11 +198,18 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
         val current by relay.status.collectAsStateWithLifecycle()
         current
     }
+    val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { RoomPanelTop(container, room, relayStatus, skip, focus) }
+        item {
+            voiceBanner(voiceUi)?.let { Text(it, color = if (voiceUi.micLive) AppColors.Ready else AppColors.TextDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("tv_voice_banner")) }
+            if (voiceUi.showMicButton) {
+                TvMicButton(voiceUi, onToggle = { container.voice.toggleTalk() })
+            }
+        }
         val me = room.users.firstOrNull { it.name == room.username }
         val streamingFrom = relayStatus?.takeIf { !it.downloading && !it.complete }?.seeders?.toSet().orEmpty()
-        items(room.users, key = { it.name }) { user -> RoomUserRow(container, room, user, me, blocked, streamingFrom) }
+        items(room.users, key = { it.name }) { user -> RoomUserRow(container, room, user, me, blocked, streamingFrom, voiceUi) }
         item { RoomPanelBottom(container, room, settings) }
     }
 }
@@ -239,22 +252,31 @@ private fun RoomUserRow(
     me: com.yarmiplaytv.syncplay.RoomUser?,
     blocked: Set<String>,
     streamingFrom: Set<String>,
+    voiceUi: com.yarmiplaytv.voice.VoiceUiState,
 ) {
     val isMe = user.name == room.username
     val difference = if (isMe) null else fileDifferenceNote(user.file, me?.file)
     val mismatch = difference != null
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val peerId = voiceUi.peers.firstOrNull { it.username == user.name }?.participantId
+    val speaking = voiceUi.showUi && peerId != null && peerId in voiceUi.speakingIds
+    val prefs = settings.peerPrefs(user.name)
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Dot(
-            when (user.isReady) {
-                true -> AppColors.Ready
-                false -> AppColors.NotReady
-                null -> AppColors.TextDim
+            when {
+                speaking -> AppColors.Accent
+                user.isReady == true -> AppColors.Ready
+                user.isReady == false -> AppColors.NotReady
+                else -> AppColors.TextDim
             },
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★ operator" else "") + (if (user.name in streamingFrom) " · streaming" else ""),
+                user.name + (if (isMe) " (you)" else "") + (if (user.isController) " ★ operator" else "") +
+                    (if (user.name in streamingFrom) " · streaming" else "") +
+                    (if (speaking) " · speaking" else "") +
+                    (if (isMe && voiceUi.micLive) " · mic live" else ""),
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
@@ -267,6 +289,36 @@ private fun RoomUserRow(
             if (difference != null) Text(difference, color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall)
             relayNote(room, user)?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall) }
             if (user.name in blocked) Text(BLOCKED_NOTE, color = AppColors.Error, style = MaterialTheme.typography.labelSmall)
+        }
+        if (voiceUi.showUi && !isMe) {
+            IconAction(
+                if (prefs.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                if (prefs.muted) "Unmute ${user.name}'s voice" else "Mute ${user.name}'s voice (local only)",
+                { container.voice.setPeerMuted(user.name, !prefs.muted) },
+                Modifier.testTag("voice_mute_${user.name}"),
+                tint = if (prefs.muted) AppColors.Error else AppColors.TextDim,
+            )
+            IconAction(
+                Icons.Filled.ArrowUpward,
+                "Louder ${user.name}",
+                { container.voice.setPeerVolume(user.name, steppedVoiceVolume(prefs.volume, up = true)) },
+                tint = AppColors.TextDim,
+            )
+            IconAction(
+                Icons.Filled.ArrowDownward,
+                "Quieter ${user.name}",
+                { container.voice.setPeerVolume(user.name, steppedVoiceVolume(prefs.volume, up = false)) },
+                tint = AppColors.TextDim,
+            )
+        }
+        if (isMe && voiceUi.showMicButton) {
+            IconAction(
+                Icons.Filled.Mic,
+                if (voiceUi.micLive) "Mic live — press to mute" else "Mic off — press to talk",
+                { container.voice.toggleTalk() },
+                Modifier.testTag("tv_mic_toggle_row"),
+                tint = if (voiceUi.micLive) AppColors.Ready else AppColors.TextDim,
+            )
         }
         if (!isMe && room.isOperator) {
             val markReady = user.isReady != true
