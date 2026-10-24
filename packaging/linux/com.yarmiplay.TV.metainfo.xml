@@ -88,7 +88,7 @@
   <releases>
     <release version="2.7.0" date="2026-10-24">
       <description>
-        <p>Voice chat in Syncplay rooms on YarmiplayServerTV: Opus through the server, mute and volume per person, push-to-talk on TV, and a new Windows installer.</p>
+        <p>Voice chat in Syncplay rooms on YarmiplayServerTV: Opus through the server, mute and volume per person, tap-to-talk on TV, mic and speaker pickers on every platform, and a new Windows installer.</p>
       </description>
     </release>
     <release version="2.6.3" date="2026-10-23">

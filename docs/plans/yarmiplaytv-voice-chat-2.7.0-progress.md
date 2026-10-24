@@ -1,6 +1,6 @@
 # YarmiplayTV 2.7.0 voice — build progress
 
-**Do not tag or release until the owner confirms.**
+**Release gate (owner-approved sequencing):** merge and tag **v2.7.0** once backward-compat (1.9.6 + vanilla Syncplay) passes and CI is green — do **not** wait for server 2.0.0. If compat fails, fix first; do not release.
 
 ## Approved decisions (locked in)
 
@@ -49,11 +49,17 @@ If the system opens Assistant instead of delivering a key, use the on-screen Mic
 - Privacy + Play data-safety notes.
 - Unit tests: `VoiceProtocolTest`, `Yv1PacketTest`, `TvVoiceKeysTest`, web `yv1.test.ts`.
 
-## Still open (not blocking real-device UI / media smoke)
+## Merge / release gate
+
+- E2E against live YarmiplayServerTV voice passed (UDP/TCP, mute/volume, speaking, 9th seat, toggles, vanilla, room change, device pickers).
+- Backward-compat E2E (`BackwardCompatE2ETest`): 1.9.6 + vanilla Syncplay — no voice UI, no port-9000 traffic; sync/chat/playlist OK.
+- CI green on the PR branch; release.yml attaches Windows, **macOS .dmg**, and Linux; pages.yml prefers release `.dmg`.
+- Owner approved: merge PR #8 and release **v2.7.0** without waiting for server 2.0.0 once this gate clears.
+
+## Still open (not blocking merge)
 
 1. SignPath / CI publish of branded `YarmiplayTV-*-setup.exe` (jpackage Exe ships meanwhile).
 2. Polished web room mic/peer UI (engine + controller are wired; chrome can follow).
-3. End-to-end against a live YarmiplayServerTV 2.0.0 voice build.
 
 ## What to test on real hardware (debug / sideload build — no release tag)
 

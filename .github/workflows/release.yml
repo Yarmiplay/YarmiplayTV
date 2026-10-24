@@ -13,6 +13,8 @@ name: Release
 #   submitted to Partner Center for certification;
 # - with the variable WINGET_PACKAGE_ID and the secret WINGET_TOKEN, a pull request to microsoft/winget-pkgs
 #   with the release's .msi;
+# - the macOS disk image (.dmg), attached to the release (Apple Silicon; needs Homebrew mpv). The download page
+#   takes it from the release the same way as the Windows and Linux installers;
 # - the Linux .deb (yarmiplaytv_<desktop version>_amd64.deb and its .sha256), attached to the release. The
 #   metainfo (packaging/linux) needs a <release> for the desktop version (scripts/bump-version.py adds it). From
 #   the release's .deb, each switched on by its variable:
@@ -422,6 +424,64 @@ jobs:
           SNAP_NAME: ${{ vars.SNAP_NAME }}
           FLATHUB_REPO: ${{ vars.FLATHUB_REPO }}
         run: bash scripts/publish-release.sh linux/*
+
+  # The macOS .dmg (Apple Silicon), attached to the tag's release for the download page.
+  macos-installers:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the tag against appVersion
+        id: version
+        run: |
+          version=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' app/build.gradle.kts)
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match appVersion $version"; exit 1
+          fi
+          desktop=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' desktop/build.gradle.kts)
+          echo "desktop appVersion $desktop"
+          echo "VERSION=$desktop" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: .dmg
+        run: |
+          chmod +x gradlew
+          ./gradlew --stacktrace -PdesktopOnly :desktop:packageDmg
+          mkdir macos
+          cp desktop/build/compose/binaries/main/dmg/*.dmg macos/
+          ls -l macos
+
+      - name: jpackage logs
+        if: failure()
+        run: cat desktop/build/compose/logs/*/*.txt || true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-dmg-${{ env.VERSION }}
+          path: macos/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attach the .dmg to the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WINGET_ID: ${{ vars.WINGET_PACKAGE_ID }}
+          AUR_PACKAGE: ${{ vars.AUR_PACKAGE }}
+          SNAP_NAME: ${{ vars.SNAP_NAME }}
+          FLATHUB_REPO: ${{ vars.FLATHUB_REPO }}
+        run: bash scripts/publish-release.sh macos/*
 
   # Builds the package from the release's .deb in Arch Linux, installs it and plays a clip, then pushes the
   # PKGBUILD and .SRCINFO to the AUR. The first push creates the package. AUR_PACKAGE has to be the PKGBUILD's
