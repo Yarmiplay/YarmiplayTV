@@ -24,13 +24,18 @@ on:
       - ".github/workflows/release.yml"
       - "scripts/download_site.py"
 
+concurrency:
+  group: windows-setup-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
+  actions: write
 
 jobs:
   setup-install:
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     defaults:
       run:
         shell: bash
@@ -48,6 +53,7 @@ jobs:
 
       - name: Resolve setup.exe and MSI
         id: pkg
+        timeout-minutes: 12
         env:
           GH_TOKEN: ${{ github.token }}
           SETUP_URL: ${{ inputs.setup_url }}
@@ -68,39 +74,29 @@ jobs:
             ./gradlew --stacktrace -PdesktopOnly :desktop:packageMsi
             cp "desktop/build/compose/binaries/main/msi/YarmiplayTV-${version}.msi" setup/
           fi
+          test -f "setup/YarmiplayTV-${version}-setup.exe"
+          test -f "setup/YarmiplayTV-${version}.msi"
           ls -l setup/
-          # Windows paths for Start-Process (bash $PWD is /d/a/... which PowerShell cannot open).
-          echo "setup=${GITHUB_WORKSPACE}\\setup\\YarmiplayTV-${version}-setup.exe" >> "$GITHUB_OUTPUT"
-          echo "msi=${GITHUB_WORKSPACE}\\setup\\YarmiplayTV-${version}.msi" >> "$GITHUB_OUTPUT"
-
-      - name: Document Benny failure — --silent/--relaunch on jpackage Exe
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          # Documentary only: 2.7.0's updater passed these into jpackage Exe. Must not fail the job.
-          $setup = "${{ steps.pkg.outputs.setup }}"
-          $logDir = Join-Path $env:RUNNER_TEMP "setup-logs"
-          New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-          try {
-            $broken = Start-Process -FilePath $setup -ArgumentList @("--silent", "--relaunch") -Wait -PassThru
-            "legacy-2.7.0-flags exit=$($broken.ExitCode)" | Tee-Object -FilePath (Join-Path $logDir "legacy-flags.txt")
-          } catch {
-            "legacy-2.7.0-flags error=$($_.Exception.Message)" | Tee-Object -FilePath (Join-Path $logDir "legacy-flags.txt")
-          }
 
       - name: Fresh install via setup.exe /quiet (2.7.2 exe updater path)
+        timeout-minutes: 5
         shell: pwsh
         run: |
-          $setup = "${{ steps.pkg.outputs.setup }}"
+          $setup = Join-Path $env:GITHUB_WORKSPACE "setup\YarmiplayTV-${{ steps.pkg.outputs.version }}-setup.exe"
           if (-not (Test-Path -LiteralPath $setup)) { throw "setup.exe missing: $setup" }
           $logDir = Join-Path $env:RUNNER_TEMP "setup-logs"
           New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-          $p = Start-Process -FilePath $setup -ArgumentList @("/quiet") -Wait -PassThru
+          $p = Start-Process -FilePath $setup -ArgumentList @("/quiet") -PassThru
+          if (-not $p.WaitForExit(300000)) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw "setup.exe /quiet timed out after 5 minutes"
+          }
           "quiet exit=$($p.ExitCode)" | Tee-Object -FilePath (Join-Path $logDir "quiet.txt")
           if ($p.ExitCode -notin 0, 3010) { throw "setup.exe /quiet failed: $($p.ExitCode)" }
 
       - name: Launch installed app --version
         id: app
+        timeout-minutes: 3
         shell: pwsh
         run: |
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs", "$env:LOCALAPPDATA" `
@@ -115,19 +111,22 @@ jobs:
           Add-Content -Path $env:GITHUB_OUTPUT -Value "exe=$($exe.FullName)"
 
       - name: MSI upgrade path (launch-time / prompt updater for 2.6.x and 2.7.0)
+        timeout-minutes: 5
         shell: pwsh
         run: |
           # Same sequence WindowsUpdater.msiScript runs after the app exits: msiexec /passive, then relaunch.
-          $msi = "${{ steps.pkg.outputs.msi }}"
+          $msi = Join-Path $env:GITHUB_WORKSPACE "setup\YarmiplayTV-${{ steps.pkg.outputs.version }}.msi"
           $exe = "${{ steps.app.outputs.exe }}"
           $version = "${{ steps.pkg.outputs.version }}"
           if (-not (Test-Path -LiteralPath $msi)) { throw "msi missing: $msi" }
           $hold = Start-Process -FilePath $exe -ArgumentList "--version" -PassThru -WindowStyle Hidden
           Start-Sleep -Milliseconds 300
-          Wait-Process -Id $hold.Id -ErrorAction SilentlyContinue
-          $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList (@("/i", $msi, "/passive", "/norestart") -join ' ')
-          # ArgumentList as single string is wrong for msiexec; pass array:
-          $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$msi`" /passive /norestart"
+          Wait-Process -Id $hold.Id -ErrorAction SilentlyContinue -Timeout 60
+          $p = Start-Process msiexec.exe -PassThru -ArgumentList "/i `"$msi`" /passive /norestart"
+          if (-not $p.WaitForExit(300000)) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw "msiexec timed out after 5 minutes"
+          }
           "msiexec exit=$($p.ExitCode)" | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/msi-upgrade.txt"
           if ($p.ExitCode -notin 0, 3010) { throw "msiexec failed: $($p.ExitCode)" }
           $out = & $exe --version
@@ -135,12 +134,17 @@ jobs:
           if ("$out" -notmatch "YarmiplayTV $version") { throw "after MSI upgrade: $out" }
 
       - name: setup.exe /quiet over the MSI install
+        timeout-minutes: 5
         shell: pwsh
         run: |
-          $setup = "${{ steps.pkg.outputs.setup }}"
+          $setup = Join-Path $env:GITHUB_WORKSPACE "setup\YarmiplayTV-${{ steps.pkg.outputs.version }}-setup.exe"
           $exe = "${{ steps.app.outputs.exe }}"
           $version = "${{ steps.pkg.outputs.version }}"
-          $p = Start-Process -FilePath $setup -ArgumentList @("/quiet") -Wait -PassThru
+          $p = Start-Process -FilePath $setup -ArgumentList @("/quiet") -PassThru
+          if (-not $p.WaitForExit(300000)) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw "setup.exe /quiet upgrade timed out after 5 minutes"
+          }
           "re-quiet exit=$($p.ExitCode)" | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/re-quiet.txt"
           if ($p.ExitCode -notin 0, 3010) { throw "setup.exe /quiet upgrade failed: $($p.ExitCode)" }
           $out = & $exe --version
@@ -149,6 +153,7 @@ jobs:
 
       - name: Upload logs
         if: always()
+        timeout-minutes: 2
         uses: actions/upload-artifact@v7
         with:
           name: windows-setup-smoke-logs
