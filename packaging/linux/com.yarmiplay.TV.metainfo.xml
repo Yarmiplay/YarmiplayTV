@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.7.1" date="2026-10-24">
+      <description>
+        <p>Windows branded setup.exe on the GitHub release and download page (jpackage Exe), alongside the MSI, portable zip, macOS dmg and Linux deb.</p>
+      </description>
+    </release>
     <release version="2.7.0" date="2026-10-24">
       <description>
         <p>Voice chat in Syncplay rooms on YarmiplayServerTV: Opus through the server, mute and volume per person, tap-to-talk on TV, mic and speaker pickers on every platform, and a new Windows installer.</p>

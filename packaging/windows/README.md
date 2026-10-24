@@ -28,4 +28,4 @@ Microsoft Store builds stay on MSIX (`desktop/msix`, `scripts/make-msix.ps1`).
 
 ## Signing / CI
 
-Until the custom bootstrapper fat-binary lands, CI can ship jpackage’s `.exe` under the setup name and keep MSI for UpgradeCode tests. SignPath artifact config should list the `.exe` next to (then instead of) the `.msi`.
+Until the custom bootstrapper fat-binary lands, CI ships jpackage’s `.exe` as `YarmiplayTV-<version>-setup.exe` (release.yml / build.yml) and keeps the MSI for UpgradeCode tests. SignPath signs the setup `.exe`, the `.msi`, and the portable zip launcher. The download page and `version.json` prefer `.exe` over `.msi`.

@@ -6,7 +6,7 @@ share one APK), each with its download and install steps.
   python scripts/download_site.py --dist dist --out _site [--version 0.1.0] [--site-url URL]
       [--google-verification TOKEN] [--indexnow-key KEY] [--flathub-id ID] [--snap-name NAME] [--aur-package NAME]
 
-Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .msi/.zip: Windows,
+Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .exe/.msi/.zip: Windows,
 .dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as YarmiplayTV.apk, so links
 keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader, <site>/privacy/
 is docs/privacy.md (the Play Store privacy policy), <site>/terms/ is docs/terms.md (the community rules the
@@ -157,6 +157,7 @@ def either(items):
 # file is the platform's main button.
 EXTENSIONS = {
     ".apk": (("android",), "APK"),
+    ".exe": (("windows",), "Installer (.exe)"),
     ".msi": (("windows",), "Installer (.msi)"),
     ".zip": (("windows",), "Portable (.zip)"),
     ".dmg": (("macos",), "Disk image (.dmg)"),
@@ -166,11 +167,11 @@ EXTENSIONS = {
     ".appimage": (("linux",), "AppImage"),
 }
 
-# version.json: the package each platform's update check offers, by preference. Windows installs the .msi
-# itself (msiexec), so only that counts there; the portable app replaces its files from the portable zip.
+# version.json: the package each platform's update check offers, by preference. Windows prefers the branded
+# setup .exe (falls back to .msi); the portable app replaces its files from the portable zip.
 UPDATE_PACKAGES = {
     "android": (".apk",),
-    "windows": (".msi",),
+    "windows": (".exe", ".msi"),
     "windows-portable": (".zip",),
     "macos": (".dmg", ".pkg"),
     "linux": (".deb", ".rpm", ".appimage"),

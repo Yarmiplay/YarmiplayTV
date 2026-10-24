@@ -4,8 +4,9 @@ name: Release
 # - the Play upload bundle, signed with the upload key from the secrets YARMIPLAYTV_KEYSTORE_BASE64,
 #   YARMIPLAYTV_KEYSTORE_PASSWORD, YARMIPLAYTV_KEY_ALIAS and YARMIPLAYTV_KEY_PASSWORD; with the variable
 #   PLAY_TRACK and the secret PLAY_SERVICE_ACCOUNT_JSON it is uploaded to that Play Console track;
-# - the Windows installer (.msi) and portable zip, attached to the tag's GitHub release, where the download
-#   page and winget take them from. They are released unsigned for now; once the variable
+# - the Windows installers (branded YarmiplayTV-<version>-setup.exe from jpackage Exe, the .msi for UpgradeCode
+#   migration, and the portable zip), attached to the tag's GitHub release, where the download page takes them
+#   from (and winget the .msi until it points at the .exe). They are released unsigned for now; once the variable
 #   SIGNPATH_ORGANIZATION_ID and the secret SIGNPATH_API_TOKEN are set, they are first code signed through
 #   SignPath (certificate by SignPath Foundation) after an approver accepts the signing request;
 # - the Microsoft Store package (.msix, unsigned: the Store signs it), attached to the run; with the variables
@@ -178,6 +179,7 @@ jobs:
           desktop=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' desktop/build.gradle.kts)
           echo "desktop appVersion $desktop"
           echo "version=$desktop" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$desktop" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@v6
         with:
@@ -188,14 +190,17 @@ jobs:
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
-      # SignPath's artifact configuration (.github/signpath/artifact-configuration.xml) expects the .msi and
-      # the portable zip at the root of the artifact.
+      # SignPath's artifact configuration (.github/signpath/artifact-configuration.xml) expects the setup
+      # .exe, the .msi and the portable zip at the root of the artifact.
       - name: Installers
         run: |
           chmod +x gradlew
-          ./gradlew --stacktrace :desktop:packageMsi :desktop:packagePortableZip
+          ./gradlew --stacktrace :desktop:packageExe :desktop:packageMsi :desktop:packagePortableZip
           mkdir windows
           cp desktop/build/compose/binaries/main/msi/*.msi desktop/build/compose/binaries/main/portable/*.zip windows/
+          # Download page / WindowsUpdater name: jpackage writes YarmiplayTV-<version>.exe.
+          cp "desktop/build/compose/binaries/main/exe/YarmiplayTV-${VERSION}.exe" \
+            "windows/YarmiplayTV-${VERSION}-setup.exe"
           ls -l windows
 
       - name: jpackage logs
@@ -279,8 +284,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Attaches the .msi and portable zip to the tag's release: the signed ones when SignPath is set up, checked
-  # the way Windows does (the .msi and the launcher inside each), otherwise the unsigned ones.
+  # Attaches the setup .exe, .msi and portable zip to the tag's release: the signed ones when SignPath is set
+  # up, checked the way Windows does (the setup .exe, the .msi and the launcher inside each), otherwise the
+  # unsigned ones.
   publish-windows:
     needs: [windows-installers, sign-windows]
     if: >-
@@ -306,11 +312,12 @@ jobs:
         if: env.SIGNED == 'true'
         shell: pwsh
         run: |
+          $setup = Get-Item windows\*-setup.exe
           $msi = Get-Item windows\*.msi
           Start-Process msiexec -Wait -ArgumentList "/a `"$($msi.FullName)`" /qn TARGETDIR=`"$env:RUNNER_TEMP\msi`""
           Expand-Archive (Get-Item windows\*.zip).FullName "$env:RUNNER_TEMP\zip"
-          $files = @($msi) + @(Get-ChildItem "$env:RUNNER_TEMP\msi", "$env:RUNNER_TEMP\zip" -Recurse -Filter YarmiplayTV.exe)
-          if ($files.Count -ne 3) { throw "expected the .msi and the launchers inside the .msi and the zip, found $($files.Count) files" }
+          $files = @($setup, $msi) + @(Get-ChildItem "$env:RUNNER_TEMP\msi", "$env:RUNNER_TEMP\zip" -Recurse -Filter YarmiplayTV.exe)
+          if ($files.Count -ne 4) { throw "expected the setup .exe, the .msi and the launchers inside the .msi and the zip, found $($files.Count) files" }
           foreach ($file in $files) {
             $sig = Get-AuthenticodeSignature $file.FullName
             "{0}: {1}, {2}" -f $file.Name, $sig.Status, $sig.SignerCertificate.Subject

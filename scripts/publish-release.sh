@@ -17,7 +17,7 @@ notes() {
   [ -n "${FLATHUB_REPO:-}" ] && linux="$linux, Flathub: https://flathub.org/apps/${FLATHUB_REPO##*/}"
   [ -n "${SNAP_NAME:-}" ] && linux="$linux, Snap Store: https://snapcraft.io/$SNAP_NAME"
   [ -n "${AUR_PACKAGE:-}" ] && linux="$linux, AUR: https://aur.archlinux.org/packages/$AUR_PACKAGE"
-  echo "YarmiplayTV $VERSION for Windows: the installer (.msi${WINGET_ID:+, or \`winget install $WINGET_ID\`}) and a portable zip. Microsoft Store: https://apps.microsoft.com/detail/9PDBVR6W069J. macOS: the disk image (.dmg; needs Homebrew mpv: \`brew install mpv\`). Linux: $linux. Other platforms: https://tv.yarmiplay.com/"
+  echo "YarmiplayTV $VERSION for Windows: the setup (.exe${WINGET_ID:+; or \`winget install $WINGET_ID\`}), the .msi and a portable zip. Microsoft Store: https://apps.microsoft.com/detail/9PDBVR6W069J. macOS: the disk image (.dmg; needs Homebrew mpv: \`brew install mpv\`). Linux: $linux. Other platforms: https://tv.yarmiplay.com/"
   if [ "${SIGNED:-}" = true ]; then
     echo
     echo "Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See the [code signing policy](https://github.com/$repo#code-signing-policy)."
