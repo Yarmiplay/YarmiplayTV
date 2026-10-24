@@ -38,7 +38,7 @@ If the system opens Assistant instead of delivering a key, use the on-screen Mic
 - Settings: voice master toggle, talk mode (TV forced `TOGGLE`), gains, devices, join/leave sounds, persisted `voicePeerPrefs`, TV mic hint flags.
 - `VoiceController` + Android stub `VoiceEngine` (capture probe + cue WAVs; Opus media pending server doc).
 - TV UI: Mic button, mic-live badge + cue, one-time hint, listen-only banner, peer mute/volume steps, remote key toggle.
-- Softer join/leave WAVs + mic on/off cues (`voice_join` / `voice_leave` / `voice_mic_on` / `voice_mic_off`).
+- Join/leave WAVs **locked** (user approved softer pair) + mic on/off cues (`voice_join` / `voice_leave` / `voice_mic_on` / `voice_mic_off`).
 - `RECORD_AUDIO` + optional `microphone` feature + FGS microphone permission.
 - Privacy + Play data-safety notes.
 - Unit tests: `VoiceProtocolTest`.
