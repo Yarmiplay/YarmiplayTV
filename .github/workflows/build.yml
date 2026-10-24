@@ -191,6 +191,7 @@ jobs:
         with:
           name: yarmiplaytv-desktop-${{ runner.os }}
           path: |
+            desktop/build/compose/binaries/main/exe/*.exe
             desktop/build/compose/binaries/main/msi/*.msi
             desktop/build/compose/binaries/main/portable/*.zip
             desktop/build/compose/binaries/main/dmg/*.dmg

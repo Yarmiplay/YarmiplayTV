@@ -50,3 +50,4 @@ flatpak_app/
 __pycache__/
 /_site/
 /scratch/
+tmp/

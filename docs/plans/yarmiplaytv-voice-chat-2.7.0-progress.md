@@ -58,7 +58,7 @@ If the system opens Assistant instead of delivering a key, use the on-screen Mic
 
 ## Still open (not blocking merge)
 
-1. SignPath / CI publish of branded `YarmiplayTV-*-setup.exe` (jpackage Exe ships meanwhile).
+1. Custom bootstrapper fat-binary that hosts `WindowsSetupUi` for silent installs (2.7.1 ships jpackage Exe as `YarmiplayTV-*-setup.exe` meanwhile).
 2. Polished web room mic/peer UI (engine + controller are wired; chrome can follow).
 
 ## What to test on real hardware (debug / sideload build — no release tag)
