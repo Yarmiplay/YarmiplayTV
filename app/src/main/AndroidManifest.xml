@@ -64,6 +64,6 @@
         <service
             android:name=".playback.PlaybackService"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
+            android:foregroundServiceType="mediaPlayback|microphone" />
     </application>
 </manifest>

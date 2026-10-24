@@ -142,7 +142,11 @@ class MainActivity : ComponentActivity() {
             val playerState = container.player.state.value
             val inRoom = container.sync.room.value.status == ConnectionStatus.CONNECTED
             val isLoaded = playerState.fileLoaded
-            if (settings.playback.stayConnectedMinimized && (isLoaded || inRoom)) {
+            val voiceActive = (deviceKind == DeviceKind.PHONE || deviceKind == DeviceKind.TABLET) &&
+                container.voice.ui.value.showUi &&
+                container.voice.ui.value.connection == com.yarmiplaytv.voice.VoiceConnection.CONNECTED
+            // Phones/tablets keep the FGS up while room voice is connected so talk continues in the background.
+            if (voiceActive || (settings.playback.stayConnectedMinimized && (isLoaded || inRoom))) {
                 PlaybackService.start(this)
             }
         }

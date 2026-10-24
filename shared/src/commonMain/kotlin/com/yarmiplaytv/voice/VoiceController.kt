@@ -8,9 +8,11 @@ import com.yarmiplaytv.data.VoiceTalkMode
 import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.syncplay.SyncplayEvent
 import com.yarmiplaytv.syncplay.VoiceClosedReason
+import com.yarmiplaytv.syncplay.VoiceMediaParams
 import com.yarmiplaytv.syncplay.VoicePeer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,10 +41,13 @@ class VoiceController(
 
     private val settings = MutableStateFlow(AppSettings())
     private var connectJob: Job? = null
+    private var retryJob: Job? = null
     private var lastPeers: List<VoicePeer> = emptyList()
     private var pttHeld = false
     private var talkLatched = false
     private var selfMuted = false
+    private var awaitingReplace = false
+    private var lastFailAtMs = 0L
 
     init {
         settingsStore.settings.onEach { settings.value = it }.launchIn(scope)
@@ -192,6 +197,7 @@ class VoiceController(
             }
             return
         }
+        if (awaitingReplace) return
         if (state.connection == VoiceConnection.OFF || state.connection == VoiceConnection.FAILED) {
             join()
         }
@@ -200,8 +206,9 @@ class VoiceController(
     private fun join() {
         val client = sync.client ?: return
         val desc = sync.room.value.yarmiplay.voice ?: return
+        val now = System.currentTimeMillis()
+        if (now - lastFailAtMs < 10_000L && _ui.value.connection == VoiceConnection.FAILED) return
         connectJob?.cancel()
-        // Mic always starts off when joining.
         talkLatched = false
         pttHeld = false
         connectJob = scope.launch {
@@ -213,7 +220,6 @@ class VoiceController(
                     talking = false,
                 )
             }
-            // Prefer headset when the engine reports one; do not force PTT capture on TV.
             val capture = engine.detectCapture()
             _ui.update {
                 it.copy(
@@ -237,40 +243,100 @@ class VoiceController(
     private fun onEvent(event: SyncplayEvent) {
         when (event) {
             is SyncplayEvent.VoiceJoined -> scope.launch { onJoined(event) }
-            is SyncplayEvent.VoiceClosed -> tearDown(
-                VoiceConnection.OFF,
-                when (event.reason) {
-                    VoiceClosedReason.FULL -> "Voice room is full"
-                    VoiceClosedReason.TOGGLE_OFF -> "Voice chat turned off on the server"
-                    VoiceClosedReason.ROOM -> null
-                    else -> "Voice disconnected"
-                },
-            )
+            is SyncplayEvent.VoiceClosed -> onClosed(event.reason)
             is SyncplayEvent.VoicePeersChanged -> onPeers(event.peers)
             is SyncplayEvent.VoiceActivity -> _ui.update {
                 val next = if (event.speaking) it.speakingIds + event.participantId else it.speakingIds - event.participantId
                 it.copy(speakingIds = next)
             }
-            is SyncplayEvent.VoiceSignal -> engine.onSignalIn(event.type, event.payload)
             is SyncplayEvent.Disconnected, SyncplayEvent.SessionEnded -> tearDown(VoiceConnection.OFF, null)
             else -> Unit
         }
     }
 
-    private suspend fun onJoined(event: SyncplayEvent.VoiceJoined) {
-        val desc = sync.room.value.yarmiplay.voice ?: return
-        val hostOnly = sync.server?.substringBefore(':')?.takeIf { it.isNotEmpty() } ?: return
-        val token = sync.session.value?.token
-        val client = sync.client ?: return
-        val ok = engine.connect(hostOnly, desc, token) { type, payload, key ->
-            client.sendVoiceSignal(type, payload, key)
+    private fun onClosed(reason: VoiceClosedReason) {
+        when (reason) {
+            VoiceClosedReason.REPLACED -> {
+                // Wait for the next voiceJoined with new token/key; keep UI in CONNECTING.
+                awaitingReplace = true
+                engine.disconnect()
+                _ui.update {
+                    it.copy(
+                        connection = VoiceConnection.CONNECTING,
+                        statusLine = "Reconnecting voice…",
+                        talking = false,
+                        talkLatched = false,
+                    )
+                }
+            }
+            VoiceClosedReason.ROOM -> {
+                tearDown(VoiceConnection.OFF, null)
+                // Retry immediately in the new Syncplay room if we still want voice.
+                if (sync.room.value.yarmiplay.voiceAvailable && settings.value.voiceChat) {
+                    join()
+                }
+            }
+            VoiceClosedReason.FULL -> {
+                lastFailAtMs = System.currentTimeMillis()
+                tearDown(VoiceConnection.FAILED, "Voice room is full")
+            }
+            VoiceClosedReason.DISABLED, VoiceClosedReason.VANILLA ->
+                tearDown(VoiceConnection.OFF, "Voice chat turned off on the server")
+            VoiceClosedReason.VERSION -> {
+                lastFailAtMs = System.currentTimeMillis()
+                tearDown(VoiceConnection.FAILED, "Voice version not supported")
+            }
+            VoiceClosedReason.ERROR -> {
+                lastFailAtMs = System.currentTimeMillis()
+                tearDown(VoiceConnection.FAILED, "Voice disconnected")
+                scheduleRetry()
+            }
+            VoiceClosedReason.LEFT -> tearDown(VoiceConnection.OFF, "Left voice")
+            VoiceClosedReason.UNKNOWN -> tearDown(VoiceConnection.OFF, "Voice disconnected")
         }
+    }
+
+    private fun scheduleRetry() {
+        retryJob?.cancel()
+        retryJob = scope.launch {
+            delay(10_000)
+            if (_ui.value.connection == VoiceConnection.FAILED &&
+                sync.room.value.yarmiplay.voiceAvailable &&
+                settings.value.voiceChat
+            ) {
+                join()
+            }
+        }
+    }
+
+    private suspend fun onJoined(event: SyncplayEvent.VoiceJoined) {
+        awaitingReplace = false
+        val hostOnly = sync.server?.substringBefore(':')?.takeIf { it.isNotEmpty() } ?: return
+        val client = sync.client ?: return
+        val desc = sync.room.value.yarmiplay.voice
+        val params = VoiceMediaParams(
+            host = hostOnly,
+            token = event.token,
+            key = event.key,
+            udpPort = event.udpPort,
+            tcpPort = event.tcpPort,
+            fingerprint = event.fingerprint.ifEmpty { desc?.fingerprint.orEmpty() },
+            wsPath = event.wsPath,
+            maxBitrate = event.maxBitrate,
+            fec = event.fec,
+            dtx = event.dtx,
+            clockRate = event.clockRate,
+            channels = event.channels,
+            ptimeMs = event.ptimeMs,
+        )
+        val ok = engine.connect(params)
         if (!ok) {
+            lastFailAtMs = System.currentTimeMillis()
             tearDown(VoiceConnection.FAILED, "Couldn't connect voice")
             client.leaveVoice()
+            scheduleRetry()
             return
         }
-        // Stay off until the user toggles (TV) or open-mic / PTT engages.
         talkLatched = false
         engine.setSelfMuted(selfMuted)
         val devices = settings.value
@@ -294,15 +360,19 @@ class VoiceController(
 
     private fun onPeers(peers: List<VoicePeer>) {
         val s = settings.value
+        val selfId = _ui.value.participantId
+        val othersBefore = lastPeers.map { it.participantId }.filter { it != selfId }.toSet()
+        val othersAfter = peers.map { it.participantId }.filter { it != selfId }.toSet()
         if (s.voiceJoinLeaveSounds) {
-            val before = lastPeers.map { it.participantId }.toSet()
-            val after = peers.map { it.participantId }.toSet()
             val vol = s.voiceJoinLeaveVolume
-            if ((after - before).isNotEmpty()) engine.playSound(VoiceSound.JOIN, vol)
-            if ((before - after).isNotEmpty() && lastPeers.isNotEmpty()) engine.playSound(VoiceSound.LEAVE, vol)
+            if ((othersAfter - othersBefore).isNotEmpty()) engine.playSound(VoiceSound.JOIN, vol)
+            if ((othersBefore - othersAfter).isNotEmpty() && lastPeers.isNotEmpty()) {
+                engine.playSound(VoiceSound.LEAVE, vol)
+            }
         }
         lastPeers = peers
-        _ui.update { it.copy(peers = peers) }
+        val speaking = peers.filter { it.speaking }.map { it.participantId }.toSet()
+        _ui.update { it.copy(peers = peers, speakingIds = speaking) }
         peers.forEach { applyPeerAudio(it.username, it.participantId) }
     }
 
@@ -345,6 +415,7 @@ class VoiceController(
     private fun tearDown(connection: VoiceConnection, status: String?) {
         connectJob?.cancel()
         connectJob = null
+        awaitingReplace = false
         engine.disconnect()
         lastPeers = emptyList()
         pttHeld = false

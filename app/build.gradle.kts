@@ -118,6 +118,7 @@ kotlin {
 
 dependencies {
     implementation(project(":syncplay-protocol"))
+    implementation(project(":voice-media"))
     implementation(project(":media-source"))
     implementation(project(":player-mpv"))
     implementation(project(":shared"))

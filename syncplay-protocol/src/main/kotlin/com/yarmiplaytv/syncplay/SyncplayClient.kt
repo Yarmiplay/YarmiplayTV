@@ -929,14 +929,28 @@ class SyncplayClient(
     private fun handleVoiceMessage(message: JsonObject) {
         (message["voiceJoined"] as? JsonObject)?.let { j ->
             val id = j.str("participantId")?.takeIf { it.isNotEmpty() } ?: return@let
-            val mids = (j["recvMids"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }.orEmpty()
+            val token = j.str("token")?.takeIf { it.length == 16 } ?: return@let
+            val key = j.str("key")?.takeIf { it.isNotEmpty() } ?: return@let
             emit(
                 SyncplayEvent.VoiceJoined(
                     participantId = id,
                     username = j.str("username").orEmpty(),
                     room = j.str("room").orEmpty(),
-                    recvMids = mids,
                     version = (j["version"] as? JsonPrimitive)?.intOrNull ?: 1,
+                    token = token,
+                    key = key,
+                    udpPort = (j["udpPort"] as? JsonPrimitive)?.intOrNull ?: 9000,
+                    tcpPort = (j["tcpPort"] as? JsonPrimitive)?.intOrNull ?: 9000,
+                    wsPath = j.str("wsPath") ?: "/yarmiplay/voice",
+                    fingerprint = j.str("fingerprint").orEmpty(),
+                    clockRate = (j["clockRate"] as? JsonPrimitive)?.intOrNull ?: 48_000,
+                    channels = (j["channels"] as? JsonPrimitive)?.intOrNull ?: 1,
+                    ptimeMs = (j["ptime"] as? JsonPrimitive)?.intOrNull ?: 20,
+                    maxBitrate = (j["maxBitrate"] as? JsonPrimitive)?.intOrNull
+                        ?: state.value.yarmiplay.voice?.maxBitrate
+                        ?: 32_000,
+                    fec = if ("fec" in j) j.bool("fec") else state.value.yarmiplay.voice?.fec ?: true,
+                    dtx = if ("dtx" in j) j.bool("dtx") else state.value.yarmiplay.voice?.dtx ?: true,
                 ),
             )
         }
@@ -952,11 +966,6 @@ class SyncplayClient(
             val id = a.str("participantId")?.takeIf { it.isNotEmpty() } ?: return@let
             emit(SyncplayEvent.VoiceActivity(id, a.str("username"), a.bool("speaking")))
         }
-        (message["voiceSignal"] as? JsonObject)?.let { s ->
-            val type = s.str("type")?.takeIf { it.isNotEmpty() } ?: return@let
-            val payload = s.str("sdp") ?: s.str("candidate") ?: s.str("payload") ?: return@let
-            emit(SyncplayEvent.VoiceSignal(type, payload))
-        }
     }
 
     /** Ask the server for a seat in this Syncplay room's voice channel. */
@@ -968,25 +977,13 @@ class SyncplayClient(
 
     /** Leave voice without leaving the Syncplay room. */
     fun leaveVoice() {
-        scope.launch { sendYarmiplay { put("voiceLeave", true) } }
+        scope.launch { sendYarmiplay { putJsonObject("voiceLeave") { } } }
     }
 
     /** Report local speaking for the room's speaking indicators. */
     fun sendVoiceActivity(speaking: Boolean) {
         scope.launch {
             sendYarmiplay { putJsonObject("voiceActivity") { put("speaking", speaking) } }
-        }
-    }
-
-    /** Forward opaque media signalling (offer/answer/candidate or Opus-channel control). */
-    fun sendVoiceSignal(type: String, payload: String, payloadKey: String = "sdp") {
-        scope.launch {
-            sendYarmiplay {
-                putJsonObject("voiceSignal") {
-                    put("type", type)
-                    put(payloadKey, payload)
-                }
-            }
         }
     }
 
@@ -1409,7 +1406,7 @@ class SyncplayClient(
         private fun parseVoicePeer(element: JsonElement): VoicePeer? {
             val o = element as? JsonObject ?: return null
             val id = o.str("participantId")?.takeIf { it.isNotEmpty() } ?: return null
-            return VoicePeer(id, o.str("username").orEmpty(), o.str("recvMid") ?: o.str("mid"))
+            return VoicePeer(id, o.str("username").orEmpty(), o.bool("speaking"))
         }
 
         internal fun parseVoiceDescriptor(element: JsonElement?): VoiceDescriptor? {
@@ -1424,10 +1421,12 @@ class SyncplayClient(
                 maxBitrate = (o["maxBitrate"] as? JsonPrimitive)?.intOrNull ?: 32_000,
                 fec = if ("fec" in o) o.bool("fec") else true,
                 dtx = if ("dtx" in o) o.bool("dtx") else true,
-                transport = o.str("transport") ?: "opus",
+                transport = o.str("transport") ?: "yv1",
                 udpPort = (o["udpPort"] as? JsonPrimitive)?.intOrNull ?: 9000,
                 tcpPort = (o["tcpPort"] as? JsonPrimitive)?.intOrNull ?: 9000,
+                wsPath = o.str("wsPath") ?: "/yarmiplay/voice",
                 maxParticipants = (o["maxParticipants"] as? JsonPrimitive)?.intOrNull ?: 8,
+                fingerprint = o.str("fingerprint").orEmpty(),
             )
         }
 

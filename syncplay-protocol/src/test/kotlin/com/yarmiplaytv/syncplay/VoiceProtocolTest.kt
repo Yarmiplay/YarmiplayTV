@@ -20,21 +20,23 @@ class VoiceProtocolTest {
     }
 
     @Test
-    fun `capabilities voice and descriptor parse`() {
+    fun `capabilities voice and descriptor parse yv1`() {
         val caps = SyncplayClient.parseCapabilities(
             json.parseToJsonElement("""{"fileRelay":true,"voice":true,"roomSettings":true}""").jsonObject,
         )!!
         assertTrue(caps.voice)
         val voice = SyncplayClient.parseVoiceDescriptor(
             json.parseToJsonElement(
-                """{"version":1,"codec":"opus","clockRate":48000,"channels":1,"ptime":20,"maxBitrate":32000,"fec":true,"dtx":true,"transport":"opus","udpPort":9000,"tcpPort":9000,"maxParticipants":8}""",
+                """{"version":1,"codec":"opus","clockRate":48000,"channels":1,"ptime":20,"maxBitrate":32000,"fec":true,"dtx":true,"transport":"yv1","udpPort":9000,"tcpPort":9000,"wsPath":"/yarmiplay/voice","maxParticipants":8,"fingerprint":"${"ab".repeat(32)}"}""",
             ),
         )!!
         assertEquals(1, voice.version)
         assertEquals("opus", voice.codec)
         assertEquals(9000, voice.udpPort)
         assertEquals(9000, voice.tcpPort)
-        assertEquals("opus", voice.transport)
+        assertEquals("yv1", voice.transport)
+        assertEquals("/yarmiplay/voice", voice.wsPath)
+        assertEquals(64, voice.fingerprint.length)
     }
 
     @Test
@@ -46,6 +48,11 @@ class VoiceProtocolTest {
     fun `voice closed reasons`() {
         assertEquals(VoiceClosedReason.ROOM, VoiceClosedReason.parse("room"))
         assertEquals(VoiceClosedReason.FULL, VoiceClosedReason.parse("full"))
+        assertEquals(VoiceClosedReason.DISABLED, VoiceClosedReason.parse("disabled"))
+        assertEquals(VoiceClosedReason.VANILLA, VoiceClosedReason.parse("vanilla"))
+        assertEquals(VoiceClosedReason.LEFT, VoiceClosedReason.parse("left"))
+        assertEquals(VoiceClosedReason.REPLACED, VoiceClosedReason.parse("replaced"))
+        assertEquals(VoiceClosedReason.VERSION, VoiceClosedReason.parse("version"))
         assertEquals(VoiceClosedReason.UNKNOWN, VoiceClosedReason.parse("wat"))
     }
 }

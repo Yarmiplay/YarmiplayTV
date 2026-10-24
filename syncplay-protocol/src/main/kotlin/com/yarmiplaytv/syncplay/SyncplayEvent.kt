@@ -70,13 +70,27 @@ sealed interface SyncplayEvent {
 
     // --- Voice (YarmiplayServerTV 2.0+) ------------------------------------------------
 
-    /** We have a seat in the room's voice channel. */
+    /** We have a seat in the room's voice channel ([VOICE_PROTOCOL] §5.2). */
     data class VoiceJoined(
         val participantId: String,
         val username: String,
         val room: String,
-        val recvMids: List<String>,
         val version: Int,
+        /** 16 lower-case hex characters (big-endian u64 seat token). */
+        val token: String,
+        /** Standard base64 of the 32-byte AES-256-GCM key for this seat. */
+        val key: String,
+        val udpPort: Int,
+        val tcpPort: Int,
+        val wsPath: String,
+        /** Lower-case hex SHA-256 of the voice TLS certificate (DER). */
+        val fingerprint: String,
+        val clockRate: Int = 48_000,
+        val channels: Int = 1,
+        val ptimeMs: Int = 20,
+        val maxBitrate: Int = 32_000,
+        val fec: Boolean = true,
+        val dtx: Boolean = true,
     ) : SyncplayEvent
 
     /** The server closed our voice seat. */
@@ -87,10 +101,4 @@ sealed interface SyncplayEvent {
 
     /** Someone started or stopped speaking (relayed client report). */
     data class VoiceActivity(val participantId: String, val username: String?, val speaking: Boolean) : SyncplayEvent
-
-    /**
-     * Opaque media signalling (SDP/ICE in the WebRTC draft, or framing control in the Opus-channel revision).
-     * The voice stack consumes this; Syncplay only carries the JSON.
-     */
-    data class VoiceSignal(val type: String, val payload: String) : SyncplayEvent
 }

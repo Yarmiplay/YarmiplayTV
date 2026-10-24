@@ -27,6 +27,7 @@ import { isLoopbackHost } from "../syncplay/transport";
 import type { DeviceAuth } from "../syncplay/yarmiplay";
 import * as PlaylistEdits from "./playlistEdits";
 import { TrustedDomains } from "./playlistEdits";
+import { VoiceController } from "../voice/controller";
 
 /** A line in the chat and notification feed. */
 export interface FeedMessage {
@@ -154,6 +155,8 @@ export class RoomSession {
   readonly nowPlaying = new Store<NowPlaying | null>(null);
   readonly canUndo = new Store(false);
   readonly connectionError = new Store<string | null>(null);
+  /** Browser room voice (`/yarmiplay/voice`); inactive when the server has no voice. */
+  readonly voice = new VoiceController(() => this.client);
 
   private client: SyncplayClient | null = null;
   private unsubscribe: (() => void)[] = [];
@@ -255,6 +258,7 @@ export class RoomSession {
     this.saveNextAs = options.saveAs ?? null;
     this.unsubscribe = [client.subscribe((s) => this.onRoomState(s)), client.onEvent((e) => this.onEvent(e))];
     client.start();
+    this.voice.start();
     if (this.reportedFile) client.fileLoaded(this.reportedFile, false);
   }
 
@@ -264,6 +268,7 @@ export class RoomSession {
   }
 
   disconnect() {
+    this.voice.stop();
     this.relay.cancelAll();
     this.unsubscribe.forEach((u) => u());
     this.unsubscribe = [];

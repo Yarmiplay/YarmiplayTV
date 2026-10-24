@@ -22,8 +22,12 @@ import {
   type ServerTls,
   type SharedJellyfin,
   type UploadRequest,
+  type VoiceClosedReason,
+  type VoiceDescriptor,
+  type VoicePeer,
   type YarmiplayInfo,
   type YarmiplaySession,
+  parseVoiceClosedReason,
 } from "./yarmiplay";
 
 export interface SyncplayConfig {
@@ -92,6 +96,7 @@ export const isOperator = (s: RoomState) => inManagedRoom(s) && s.users.some((u)
 export const followsOperators = (s: RoomState) => inManagedRoom(s) && !isOperator(s);
 export const relayActive = (y: YarmiplayInfo) => y.session && y.capabilities.fileRelay;
 export const roomSettingsShared = (y: YarmiplayInfo) => y.session && y.capabilities.roomSettings;
+export const voiceAvailable = (y: YarmiplayInfo) => y.session && y.capabilities.voice && y.voice !== null;
 
 /** One-off things that happened; persistent state lives in [RoomState]. */
 export type SyncplayEvent =
@@ -113,7 +118,21 @@ export type SyncplayEvent =
   | { type: "uploadRequested"; request: UploadRequest }
   | { type: "uploadCancelled"; id: string }
   | { type: "roomSettingsChanged"; settings: RoomSettings; first: boolean }
-  | { type: "jellyfinAuthorized"; code: string; ok: boolean; error: string | null };
+  | { type: "jellyfinAuthorized"; code: string; ok: boolean; error: string | null }
+  | {
+      type: "voiceJoined";
+      participantId: string;
+      username: string;
+      room: string;
+      token: string;
+      key: string;
+      wsPath: string;
+      fingerprint: string;
+      maxBitrate: number;
+    }
+  | { type: "voiceClosed"; reason: VoiceClosedReason }
+  | { type: "voicePeers"; peers: VoicePeer[] }
+  | { type: "voiceActivity"; participantId: string; username: string | null; speaking: boolean };
 
 type Json = Record<string, unknown>;
 
@@ -567,6 +586,7 @@ export class SyncplayClient {
             access: str(marker, "access"),
             approvedDevice: str(marker, "device") === "approved",
             capabilities: parseCapabilities(marker.capabilities) ?? ext.capabilities,
+            voice: parseVoiceDescriptor(marker.voice) ?? ext.voice,
             tls: parseTls(marker.tls),
           }
         : ext.serverKind === "YARMIPLAY"
@@ -829,14 +849,21 @@ export class SyncplayClient {
     const wasRelayOn = this._state.yarmiplay.capabilities.fileRelay;
     const caps = parseCapabilities(message.capabilities);
     if (caps) {
+      const voice = caps.voice
+        ? (parseVoiceDescriptor(message.voice) ?? this._state.yarmiplay.voice)
+        : null;
       this.updateExt((e) => ({
         ...e,
         capabilities: caps,
         relayFiles: caps.fileRelay ? e.relayFiles : [],
+        voice,
         // Vanilla mode revokes with capabilities alone; from then on the connection is plain Syncplay.
         serverKind: allOff(caps) && !("jellyfin" in message) && !("session" in message) ? "SYNCPLAY" : e.serverKind,
       }));
       if (!caps.fileRelay) this.offerSent = null;
+    } else if ("voice" in message) {
+      const voice = parseVoiceDescriptor(message.voice);
+      if (voice) this.updateExt((e) => ({ ...e, voice }));
     }
     if (isObject(message.jellyfin)) {
       const jellyfin = parseSharedJellyfin(message.jellyfin);
@@ -880,6 +907,64 @@ export class SyncplayClient {
         this.emit({ type: "roomSettingsChanged", settings, first: before === null });
       }
     }
+    this.handleVoiceMessage(message);
+  }
+
+  private handleVoiceMessage(message: Json) {
+    if (isObject(message.voiceJoined)) {
+      const j = message.voiceJoined;
+      const participantId = str(j, "participantId");
+      const token = str(j, "token");
+      const key = str(j, "key");
+      if (participantId && token?.length === 16 && key) {
+        this.emit({
+          type: "voiceJoined",
+          participantId,
+          username: str(j, "username") ?? "",
+          room: str(j, "room") ?? "",
+          token,
+          key,
+          wsPath: str(j, "wsPath") ?? this._state.yarmiplay.voice?.wsPath ?? "/yarmiplay/voice",
+          fingerprint: str(j, "fingerprint") ?? "",
+          maxBitrate: typeof j.maxBitrate === "number" ? j.maxBitrate : (this._state.yarmiplay.voice?.maxBitrate ?? 32_000),
+        });
+      }
+    }
+    if (isObject(message.voiceClosed)) {
+      this.emit({ type: "voiceClosed", reason: parseVoiceClosedReason(str(message.voiceClosed, "reason")) });
+    }
+    const peersEl = message.voicePeers;
+    if (isObject(peersEl) && Array.isArray(peersEl.peers)) {
+      this.emit({ type: "voicePeers", peers: peersEl.peers.map(parseVoicePeer).filter((p): p is VoicePeer => p !== null) });
+    } else if (Array.isArray(peersEl)) {
+      this.emit({ type: "voicePeers", peers: peersEl.map(parseVoicePeer).filter((p): p is VoicePeer => p !== null) });
+    }
+    if (isObject(message.voiceActivity)) {
+      const id = str(message.voiceActivity, "participantId");
+      if (id) {
+        this.emit({
+          type: "voiceActivity",
+          participantId: id,
+          username: str(message.voiceActivity, "username"),
+          speaking: bool(message.voiceActivity, "speaking"),
+        });
+      }
+    }
+  }
+
+  /** Ask the server for a seat in this Syncplay room's voice channel. */
+  joinVoice(version = this._state.yarmiplay.voice?.version ?? 1) {
+    if (!voiceAvailable(this._state.yarmiplay)) return;
+    this.sendYarmiplay({ voiceJoin: { version } });
+  }
+
+  /** Leave voice without leaving the Syncplay room. */
+  leaveVoice() {
+    this.sendYarmiplay({ voiceLeave: {} });
+  }
+
+  sendVoiceActivity(speaking: boolean) {
+    this.sendYarmiplay({ voiceActivity: { speaking } });
   }
 
   private async answerChallenge(challenge: Json) {
@@ -1286,6 +1371,40 @@ export function parseCapabilities(element: unknown): Capabilities | null {
     roomSettings: bool(element, "roomSettings"),
     websocket: bool(element, "websocket"),
     mal: bool(element, "mal"),
+    voice: bool(element, "voice"),
+  };
+}
+
+export function parseVoiceDescriptor(element: unknown): VoiceDescriptor | null {
+  if (!isObject(element)) return null;
+  const version = typeof element.version === "number" ? element.version : null;
+  if (version === null) return null;
+  return {
+    version,
+    codec: str(element, "codec") ?? "opus",
+    clockRate: typeof element.clockRate === "number" ? element.clockRate : 48_000,
+    channels: typeof element.channels === "number" ? element.channels : 1,
+    ptimeMs: typeof element.ptime === "number" ? element.ptime : 20,
+    maxBitrate: typeof element.maxBitrate === "number" ? element.maxBitrate : 32_000,
+    fec: "fec" in element ? bool(element, "fec") : true,
+    dtx: "dtx" in element ? bool(element, "dtx") : true,
+    transport: str(element, "transport") ?? "yv1",
+    udpPort: typeof element.udpPort === "number" ? element.udpPort : 9000,
+    tcpPort: typeof element.tcpPort === "number" ? element.tcpPort : 9000,
+    wsPath: str(element, "wsPath") ?? "/yarmiplay/voice",
+    maxParticipants: typeof element.maxParticipants === "number" ? element.maxParticipants : 8,
+    fingerprint: str(element, "fingerprint") ?? "",
+  };
+}
+
+function parseVoicePeer(element: unknown): VoicePeer | null {
+  if (!isObject(element)) return null;
+  const participantId = str(element, "participantId");
+  if (!participantId) return null;
+  return {
+    participantId,
+    username: str(element, "username") ?? "",
+    speaking: bool(element, "speaking"),
   };
 }
 

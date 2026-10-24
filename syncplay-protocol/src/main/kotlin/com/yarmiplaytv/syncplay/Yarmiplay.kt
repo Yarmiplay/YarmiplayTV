@@ -93,8 +93,8 @@ data class YarmiplayCapabilities(
 
 /**
  * How to join voice when [YarmiplayCapabilities.voice] is true.
- * Media is Opus through the server (UDP with TCP fallback; browsers use the session WebSocket).
- * See docs/plans/VOICE_PROTOCOL-server-draft.md (align when the server revises the draft).
+ * Media is Opus `yv1` frames (UDP 9000, TLS TCP fallback; browsers use `/yarmiplay/voice`).
+ * See docs/plans/VOICE_PROTOCOL.md.
  */
 data class VoiceDescriptor(
     val version: Int = 1,
@@ -105,34 +105,58 @@ data class VoiceDescriptor(
     val maxBitrate: Int = 32_000,
     val fec: Boolean = true,
     val dtx: Boolean = true,
-    /**
-     * Wire for native clients: `opus` (framed Opus on UDP/TCP) or legacy draft `webrtc`.
-     * Browsers always use the session WebSocket for media.
-     */
-    val transport: String = "opus",
+    /** Wire name: `yv1` (version 1). Older draft values are ignored; clients still use yv1. */
+    val transport: String = "yv1",
     val udpPort: Int = 9000,
     val tcpPort: Int = 9000,
+    /** Browser media socket path on the Syncplay port. */
+    val wsPath: String = "/yarmiplay/voice",
     val maxParticipants: Int = 8,
+    /** Lower-case hex SHA-256 of the voice TLS certificate (DER). Empty until the server sends it. */
+    val fingerprint: String = "",
 )
 
 /** One other person in the voice room, as the server last told us. */
 data class VoicePeer(
     val participantId: String,
     val username: String,
-    /** Receive slot / mid when the server assigns one; null until known. */
-    val recvMid: String? = null,
+    /** Last speaking flag from [voicePeers] / [voiceActivity]. */
+    val speaking: Boolean = false,
+)
+
+/**
+ * Secrets and ports from `voiceJoined` for opening the `yv1` media path.
+ * [host] is the Syncplay host (no port); media uses [udpPort] / [tcpPort].
+ */
+data class VoiceMediaParams(
+    val host: String,
+    val token: String,
+    val key: String,
+    val udpPort: Int = 9000,
+    val tcpPort: Int = 9000,
+    val fingerprint: String = "",
+    val wsPath: String = "/yarmiplay/voice",
+    val maxBitrate: Int = 32_000,
+    val fec: Boolean = true,
+    val dtx: Boolean = true,
+    val clockRate: Int = 48_000,
+    val channels: Int = 1,
+    val ptimeMs: Int = 20,
 )
 
 /** Why the server closed our voice seat. */
 enum class VoiceClosedReason {
-    ROOM, TOGGLE_OFF, FULL, REPLACED, ERROR, UNKNOWN;
+    LEFT, DISABLED, VANILLA, FULL, ROOM, REPLACED, VERSION, ERROR, UNKNOWN;
 
     companion object {
         fun parse(value: String?): VoiceClosedReason = when (value) {
-            "room" -> ROOM
-            "toggle", "off", "disabled" -> TOGGLE_OFF
+            "left" -> LEFT
+            "disabled", "toggle", "off" -> DISABLED
+            "vanilla" -> VANILLA
             "full" -> FULL
+            "room" -> ROOM
             "replaced" -> REPLACED
+            "version" -> VERSION
             "error" -> ERROR
             else -> UNKNOWN
         }

@@ -4,8 +4,8 @@
 
 ## Approved decisions (locked in)
 
-- Transport: Opus over our channel (UDP **9000**, TCP fallback); web uses the server's browser transport (`/yarmiplay/ws`). **No WebRTC client.**
-- Align with `docs/VOICE_PROTOCOL.md` in YarmiplayServerTV PR #2 **after** that draft is revised away from WebRTC-only.
+- Transport: Opus `yv1` on UDP **9000** with AES-256-GCM, TLS TCP **9000** fallback; browsers use `GET /yarmiplay/voice?t=<seat token>` on the Syncplay port. **No WebRTC client.**
+- Align with server `docs/VOICE_PROTOCOL.md` (YarmiplayServerTV PR #2 / 2.0.0) — final.
 - TV talk: **tap toggle** (never hold-to-talk). Mic starts **off** on join. Focusable **Mic** button in player + room. Remote mic/voice keys toggle when delivered. Long-press OK is a shortcut only. Listen-only (no button) when no usable mic; headset preferred when connected.
 - Per-person mute/volume **persist**.
 - Phones: voice continues in the **background**; media notification gets voice controls (not TV).
@@ -31,32 +31,38 @@ Handled when the app receives them (`TvVoiceKeys` / `MainActivity.dispatchKeyEve
 
 If the system opens Assistant instead of delivering a key, use the on-screen Mic button.
 
-## Landed in this branch so far
+## Landed in this branch
 
 - Version **2.7.0** bump (app, desktop, metainfo).
-- Protocol types: `capabilities.voice`, `VoiceDescriptor`, signaling events/handlers.
+- Protocol: `capabilities.voice`, `VoiceDescriptor` (`yv1`, `wsPath`, `fingerprint`), `voiceJoined` secrets, closed reasons, `voiceLeave: {}`.
 - Settings: voice master toggle, talk mode (TV forced `TOGGLE`), gains, devices, join/leave sounds, persisted `voicePeerPrefs`, TV mic hint flags.
-- `VoiceController` + Android stub `VoiceEngine` (capture probe + cue WAVs; Opus media pending server doc).
-- TV UI: Mic button, mic-live badge + cue, one-time hint, listen-only banner, peer mute/volume steps, remote key toggle.
-- Join/leave WAVs **locked** (user approved softer pair) + mic on/off cues (`voice_join` / `voice_leave` / `voice_mic_on` / `voice_mic_off`).
+- `VoiceController` + platform engines on real media path.
+- **`:voice-media`**: Concentus Opus, AES-256-GCM `yv1` packets, UDP + fingerprint-pinned TLS TCP fallback, keepalives.
+- **Android / desktop / macOS**: `AndroidVoiceEngine` / `DesktopVoiceEngine` capture + playback through `VoiceMediaSession`.
+- **Web**: `WebVoiceEngine` on `/yarmiplay/voice` (WebCrypto + WebCodecs Opus) + `VoiceController` on `RoomSession`.
+- TV UI: Mic button, mic-live badge + cue, one-time hint, listen-only banner, peer mute/volume, remote key toggle.
+- Phone/tablet: room speaking/mute/volume, notification voice actions, FGS `mediaPlayback|microphone`.
+- Join/leave WAVs **locked** + mic on/off cues.
 - `RECORD_AUDIO` + optional `microphone` feature + FGS microphone permission.
+- Windows: `TargetFormat.Exe`, `WindowsSetupUi`, `WindowsUpdater` `.exe` path, `packaging/windows/README`.
+- macOS: `NSMicrophoneUsageDescription` in jpackage `infoPlist`.
 - Privacy + Play data-safety notes.
-- Unit tests: `VoiceProtocolTest`.
+- Unit tests: `VoiceProtocolTest`, `Yv1PacketTest`, `TvVoiceKeysTest`, web `yv1.test.ts`.
 
-## Next (blocked / in progress)
+## Still open (not blocking real-device UI / media smoke)
 
-1. Wait for revised server `VOICE_PROTOCOL.md` (Opus UDP/TCP + browser WS framing).
-2. Real Opus media path on Android/desktop/macOS/web.
-3. Phone notification voice actions + FGS mic type while transmitting.
-4. Custom Windows `.exe` installer + updater path.
-5. macOS dmg packaging + `NSMicrophoneUsageDescription`.
+1. SignPath / CI publish of branded `YarmiplayTV-*-setup.exe` (jpackage Exe ships meanwhile).
+2. Polished web room mic/peer UI (engine + controller are wired; chrome can follow).
+3. End-to-end against a live YarmiplayServerTV 2.0.0 voice build.
 
-## What to test on real hardware (when a build is ready)
+## What to test on real hardware (debug / sideload build — no release tag)
 
-**Phone:** join a voice-enabled room; grant mic; open-mic + mute; background the app; notification mute/leave.
+**Phone / tablet:** join a voice-enabled YarmiplayServerTV 2.0 room; grant mic; open-mic + mute; background the app; notification mute/leave; hear peers (Opus path live).
 
-**TV:** listen-only without headset (no Mic button); with USB/BT headset — Mic button + tap toggle, mic-live badge + cue; try remote SEARCH / VOICE_ASSIST / ASSIST; confirm one-time hint once; mute persists after reconnect.
+**TV:** listen-only without headset (no Mic button); with USB/BT headset — Mic tap toggle, mic-live badge + cue; try remote SEARCH / VOICE_ASSIST / ASSIST; one-time hint once; mute persists after reconnect; hear peers.
 
-**Desktop:** device pickers, open-mic vs PTT, join/leave tones volume.
+**Desktop / macOS:** join voice room; device capture; open-mic vs PTT; join/leave tones; UDP then TCP fallback if UDP is blocked.
+
+**Web:** join from `tv.yarmiplay.com/watch/` against a voice-on server; allow mic; talk over `/yarmiplay/voice`.
 
 **Vanilla Syncplay:** no voice UI, no regressions.

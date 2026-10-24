@@ -29,6 +29,7 @@ jetbrainsLifecycle = "2.9.4"
 jna = "5.17.0"
 lwjgl = "3.3.6"
 zxing = "3.5.3"
+concentus = "1.0.2"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -65,6 +66,7 @@ coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version
 libmpv = { module = "dev.jdtech.mpv:libmpv", version.ref = "libmpv" }
 junit = { module = "junit:junit", version.ref = "junit" }
 play-app-update = { module = "com.google.android.play:app-update", version.ref = "playAppUpdate" }
+concentus = { module = "io.github.jaredmdobson:concentus", version.ref = "concentus" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 lwjgl = { module = "org.lwjgl:lwjgl", version.ref = "lwjgl" }
 lwjgl-glfw = { module = "org.lwjgl:lwjgl-glfw", version.ref = "lwjgl" }

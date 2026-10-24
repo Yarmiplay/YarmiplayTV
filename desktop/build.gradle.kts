@@ -23,6 +23,7 @@ kotlin {
 
 dependencies {
     implementation(project(":shared"))
+    implementation(project(":voice-media"))
     implementation(project(":player-mpv-desktop"))
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
@@ -216,7 +217,9 @@ compose.desktop {
         if (malClientId.isNotEmpty()) jvmArgs += "-Dyarmiplaytv.malClientId=$malClientId"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Msi, TargetFormat.Dmg, TargetFormat.Deb)
+            // Exe is the download-page / winget installer (branded bootstrapper wraps this payload; see packaging/windows).
+            // Msi remains for the UpgradeCode migration path until installs are fully on .exe.
+            targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "YarmiplayTV"
             packageVersion = appVersion
             // On Windows this becomes the launcher's FileDescription, which Task Manager shows as the process name.
@@ -235,6 +238,7 @@ compose.desktop {
                 shortcut = true
                 dirChooser = true
                 perUserInstall = true
+                // Same UpgradeCode as today's MSI so .exe upgrades replace per-user MSI installs.
                 upgradeUuid = "6F0C2B1E-4E59-4C1B-9B7E-2D1A5C3F8E41"
             }
             macOS {
@@ -242,6 +246,12 @@ compose.desktop {
                 bundleID = "com.yarmiplaytv.desktop"
                 dockName = "YarmiplayTV"
                 appCategory = "public.app-category.entertainment"
+                infoPlist {
+                    extraKeysRawXml = """
+                        <key>NSMicrophoneUsageDescription</key>
+                        <string>YarmiplayTV uses the microphone for optional room voice chat when you join a YarmiplayServerTV room with voice on. Listening alone does not need the microphone.</string>
+                    """.trimIndent()
+                }
             }
             linux {
                 iconFile.set(generateAppIcons.flatMap { it.outputDir.file("icon.png") })

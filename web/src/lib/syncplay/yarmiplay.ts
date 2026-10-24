@@ -66,6 +66,8 @@ export interface Capabilities {
   websocket: boolean;
   /** The web's: the server passes MyAnimeList calls through (MAL refuses browsers' cross-origin requests). */
   mal: boolean;
+  /** Room voice chat (YarmiplayServerTV 2.0+). */
+  voice: boolean;
 }
 
 export const noCapabilities = (): Capabilities => ({
@@ -77,7 +79,62 @@ export const noCapabilities = (): Capabilities => ({
   roomSettings: false,
   websocket: false,
   mal: false,
+  voice: false,
 });
+
+/** How to join voice when [Capabilities.voice] is true (`yv1` frames on `/yarmiplay/voice`). */
+export interface VoiceDescriptor {
+  version: number;
+  codec: string;
+  clockRate: number;
+  channels: number;
+  ptimeMs: number;
+  maxBitrate: number;
+  fec: boolean;
+  dtx: boolean;
+  transport: string;
+  udpPort: number;
+  tcpPort: number;
+  wsPath: string;
+  maxParticipants: number;
+  fingerprint: string;
+}
+
+export interface VoicePeer {
+  participantId: string;
+  username: string;
+  speaking: boolean;
+}
+
+export type VoiceClosedReason =
+  | "left"
+  | "disabled"
+  | "vanilla"
+  | "full"
+  | "room"
+  | "replaced"
+  | "version"
+  | "error"
+  | "unknown";
+
+export function parseVoiceClosedReason(value: string | null | undefined): VoiceClosedReason {
+  switch (value) {
+    case "left":
+    case "disabled":
+    case "vanilla":
+    case "full":
+    case "room":
+    case "replaced":
+    case "version":
+    case "error":
+      return value;
+    case "toggle":
+    case "off":
+      return "disabled";
+    default:
+      return "unknown";
+  }
+}
 
 /** Vanilla mode: the host switched every extension off, and the session token is revoked. */
 export const allOff = (c: Capabilities): boolean => !c.fileRelay && !c.jellyfin && !c.https;
@@ -161,6 +218,8 @@ export interface YarmiplayInfo {
   session: boolean;
   tls: ServerTls | null;
   roomSettings: RoomSettings | null;
+  /** Present when [capabilities.voice] is true. */
+  voice: VoiceDescriptor | null;
 }
 
 export const emptyYarmiplayInfo = (): YarmiplayInfo => ({
@@ -177,6 +236,7 @@ export const emptyYarmiplayInfo = (): YarmiplayInfo => ({
   session: false,
   tls: null,
   roomSettings: null,
+  voice: null,
 });
 
 /** The HTTP side of an extension session: base URL on the Syncplay host and port, and the bearer token. */
