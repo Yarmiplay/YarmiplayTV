@@ -6,9 +6,10 @@ share one APK), each with its download and install steps.
   python scripts/download_site.py --dist dist --out _site [--version 0.1.0] [--site-url URL]
       [--google-verification TOKEN] [--indexnow-key KEY] [--flathub-id ID] [--snap-name NAME] [--aur-package NAME]
 
-Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .exe/.msi/.zip: Windows,
+Files in --dist are sorted onto platforms by extension (.apk: TV and phone/tablet, .exe/.zip: Windows,
 .dmg/.pkg: macOS, .deb/.rpm/.AppImage: Linux) and copied under stable names such as YarmiplayTV.apk, so links
-keep working across builds. <site>/a/ redirects to the APK for TV apps like Downloader, <site>/privacy/
+keep working across builds. The Windows .msi stays on the GitHub release for upgrades; the download page does
+not offer it. <site>/a/ redirects to the APK for TV apps like Downloader, <site>/privacy/
 is docs/privacy.md (the Play Store privacy policy), <site>/terms/ is docs/terms.md (the community rules the
 apps ask users to agree to), <site>/test/ is docs/testers.md (how to join the Google Play
 test), <site>/manual/ is docs/manual.md (the user manual, with a table of contents and the store screenshots),
@@ -153,12 +154,12 @@ def either(items):
     """"a", "a or b", "a, b or c"."""
     return " or ".join(filter(None, [", ".join(items[:-1]), items[-1]]))
 
-# Lower-case extension -> platforms it installs on and the button label. Without a store listing the first
-# file is the platform's main button.
+# Lower-case extension -> platforms it installs on and the button label. Store listings (STORE_LINKS) are
+# rendered first as the primary button; files follow in this order. A missing extension is omitted (no dead
+# links). Windows .msi is intentionally absent: GitHub release only.
 EXTENSIONS = {
     ".apk": (("android",), "APK"),
     ".exe": (("windows",), "Installer (.exe)"),
-    ".msi": (("windows",), "Installer (.msi)"),
     ".zip": (("windows",), "Portable (.zip)"),
     ".dmg": (("macos",), "Disk image (.dmg)"),
     ".pkg": (("macos",), "Installer (.pkg)"),
@@ -167,11 +168,11 @@ EXTENSIONS = {
     ".appimage": (("linux",), "AppImage"),
 }
 
-# version.json: the package each platform's update check offers, by preference. Windows prefers the branded
-# setup .exe (falls back to .msi); the portable app replaces its files from the portable zip.
+# version.json: the package each platform's update check offers, by preference. Windows offers the setup
+# .exe only; the portable app replaces its files from the portable zip.
 UPDATE_PACKAGES = {
     "android": (".apk",),
-    "windows": (".exe", ".msi"),
+    "windows": (".exe",),
     "windows-portable": (".zip",),
     "macos": (".dmg", ".pkg"),
     "linux": (".deb", ".rpm", ".appimage"),
