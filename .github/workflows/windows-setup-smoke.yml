@@ -69,25 +69,34 @@ jobs:
             cp "desktop/build/compose/binaries/main/msi/YarmiplayTV-${version}.msi" setup/
           fi
           ls -l setup/
-          echo "setup=$PWD/setup/YarmiplayTV-${version}-setup.exe" >> "$GITHUB_OUTPUT"
-          echo "msi=$PWD/setup/YarmiplayTV-${version}.msi" >> "$GITHUB_OUTPUT"
+          # Windows paths for Start-Process (bash $PWD is /d/a/... which PowerShell cannot open).
+          echo "setup=${GITHUB_WORKSPACE}\\setup\\YarmiplayTV-${version}-setup.exe" >> "$GITHUB_OUTPUT"
+          echo "msi=${GITHUB_WORKSPACE}\\setup\\YarmiplayTV-${version}.msi" >> "$GITHUB_OUTPUT"
 
       - name: Document Benny failure — --silent/--relaunch on jpackage Exe
+        continue-on-error: true
         shell: pwsh
         run: |
+          # Documentary only: 2.7.0's updater passed these into jpackage Exe. Must not fail the job.
           $setup = "${{ steps.pkg.outputs.setup }}"
           $logDir = Join-Path $env:RUNNER_TEMP "setup-logs"
           New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-          $broken = Start-Process -FilePath $setup -ArgumentList @("--silent", "--relaunch") -Wait -PassThru
-          "legacy-2.7.0-flags exit=$($broken.ExitCode)" | Tee-Object -FilePath (Join-Path $logDir "legacy-flags.txt")
-          # Expected: non-zero. If jpackage starts accepting these, the test still continues with /quiet.
+          try {
+            $broken = Start-Process -FilePath $setup -ArgumentList @("--silent", "--relaunch") -Wait -PassThru
+            "legacy-2.7.0-flags exit=$($broken.ExitCode)" | Tee-Object -FilePath (Join-Path $logDir "legacy-flags.txt")
+          } catch {
+            "legacy-2.7.0-flags error=$($_.Exception.Message)" | Tee-Object -FilePath (Join-Path $logDir "legacy-flags.txt")
+          }
 
       - name: Fresh install via setup.exe /quiet (2.7.2 exe updater path)
         shell: pwsh
         run: |
           $setup = "${{ steps.pkg.outputs.setup }}"
+          if (-not (Test-Path -LiteralPath $setup)) { throw "setup.exe missing: $setup" }
+          $logDir = Join-Path $env:RUNNER_TEMP "setup-logs"
+          New-Item -ItemType Directory -Force -Path $logDir | Out-Null
           $p = Start-Process -FilePath $setup -ArgumentList @("/quiet") -Wait -PassThru
-          "quiet exit=$($p.ExitCode)" | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/quiet.txt"
+          "quiet exit=$($p.ExitCode)" | Tee-Object -FilePath (Join-Path $logDir "quiet.txt")
           if ($p.ExitCode -notin 0, 3010) { throw "setup.exe /quiet failed: $($p.ExitCode)" }
 
       - name: Launch installed app --version
@@ -112,20 +121,18 @@ jobs:
           $msi = "${{ steps.pkg.outputs.msi }}"
           $exe = "${{ steps.app.outputs.exe }}"
           $version = "${{ steps.pkg.outputs.version }}"
+          if (-not (Test-Path -LiteralPath $msi)) { throw "msi missing: $msi" }
           $hold = Start-Process -FilePath $exe -ArgumentList "--version" -PassThru -WindowStyle Hidden
           Start-Sleep -Milliseconds 300
-          $script = @"
-          Wait-Process -Id $($hold.Id) -ErrorAction SilentlyContinue
-          `$p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList ('/i "' + '$msi' + '" /passive /norestart')
-          Remove-Item -LiteralPath '$msi' -ErrorAction SilentlyContinue
-          `$ok = `$p.ExitCode -in 0, 3010
-          if (-not `$ok) { throw "msiexec failed: `$(`$p.ExitCode)" }
-          `$out = & '$exe' --version
-          Write-Host `$out
-          if (`$out -notmatch 'YarmiplayTV $version') { throw "after MSI upgrade: `$out" }
-          "@
-          $script | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/msi-upgrade.ps1"
-          powershell.exe -NoProfile -NonInteractive -Command $script
+          Wait-Process -Id $hold.Id -ErrorAction SilentlyContinue
+          $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList (@("/i", $msi, "/passive", "/norestart") -join ' ')
+          # ArgumentList as single string is wrong for msiexec; pass array:
+          $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$msi`" /passive /norestart"
+          "msiexec exit=$($p.ExitCode)" | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/msi-upgrade.txt"
+          if ($p.ExitCode -notin 0, 3010) { throw "msiexec failed: $($p.ExitCode)" }
+          $out = & $exe --version
+          "$out"
+          if ("$out" -notmatch "YarmiplayTV $version") { throw "after MSI upgrade: $out" }
 
       - name: setup.exe /quiet over the MSI install
         shell: pwsh
