@@ -1,7 +1,7 @@
 name: Windows setup smoke
 
-# Proves setup.exe installs with the flags WindowsUpdater uses, and that the MSI updater path
-# (version.json → msiexec) can upgrade an installed copy — the Benny 2.7.1 failure mode.
+# Proves the fixed Windows updater path: an older MSI install upgrades via msiexec to this
+# commit's MSI (version.json), and setup.exe /quiet installs/relaunches. Job stays ≤20 minutes.
 on:
   workflow_dispatch:
     inputs:
@@ -50,7 +50,7 @@ jobs:
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
-      - name: Resolve setup.exe and MSI
+      - name: Resolve packages
         id: pkg
         timeout-minutes: 12
         env:
@@ -61,39 +61,39 @@ jobs:
           version=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' desktop/build.gradle.kts)
           echo "version=$version" >> "$GITHUB_OUTPUT"
           mkdir -p setup
+          # Older release for the upgrade-from path (Benny: 2.6.x / 2.7.0 → new).
+          gh release download -R "$GITHUB_REPOSITORY" v2.7.0 -p 'YarmiplayTV-2.7.0.msi' -D setup
           if [ -n "$SETUP_URL" ]; then
             curl -fsSL -o "setup/YarmiplayTV-${version}-setup.exe" "$SETUP_URL"
+            ./gradlew --stacktrace -PdesktopOnly :desktop:packageMsi
+            cp "desktop/build/compose/binaries/main/msi/YarmiplayTV-${version}.msi" setup/
           else
             ./gradlew --stacktrace -PdesktopOnly :desktop:packageExe :desktop:packageMsi
             cp "desktop/build/compose/binaries/main/exe/YarmiplayTV-${version}.exe" \
               "setup/YarmiplayTV-${version}-setup.exe"
             cp "desktop/build/compose/binaries/main/msi/YarmiplayTV-${version}.msi" setup/
           fi
-          if [ ! -f "setup/YarmiplayTV-${version}.msi" ]; then
-            ./gradlew --stacktrace -PdesktopOnly :desktop:packageMsi
-            cp "desktop/build/compose/binaries/main/msi/YarmiplayTV-${version}.msi" setup/
-          fi
+          test -f "setup/YarmiplayTV-2.7.0.msi"
           test -f "setup/YarmiplayTV-${version}-setup.exe"
           test -f "setup/YarmiplayTV-${version}.msi"
           ls -l setup/
 
-      - name: Fresh install via setup.exe /quiet (2.7.2 exe updater path)
+      - name: Install older 2.7.0 MSI (pre-update baseline)
         timeout-minutes: 5
         shell: pwsh
         run: |
-          $setup = Join-Path $env:GITHUB_WORKSPACE "setup\YarmiplayTV-${{ steps.pkg.outputs.version }}-setup.exe"
-          if (-not (Test-Path -LiteralPath $setup)) { throw "setup.exe missing: $setup" }
           $logDir = Join-Path $env:RUNNER_TEMP "setup-logs"
           New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-          $p = Start-Process -FilePath $setup -ArgumentList @("/quiet") -PassThru
+          $old = Join-Path $env:GITHUB_WORKSPACE "setup\YarmiplayTV-2.7.0.msi"
+          $p = Start-Process msiexec.exe -PassThru -ArgumentList "/i `"$old`" /qn /norestart"
           if (-not $p.WaitForExit(300000)) {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-            throw "setup.exe /quiet timed out after 5 minutes"
+            throw "msiexec 2.7.0 timed out"
           }
-          "quiet exit=$($p.ExitCode)" | Tee-Object -FilePath (Join-Path $logDir "quiet.txt")
-          if ($p.ExitCode -notin 0, 3010) { throw "setup.exe /quiet failed: $($p.ExitCode)" }
+          "msiexec-2.7.0 exit=$($p.ExitCode)" | Tee-Object -FilePath (Join-Path $logDir "msi-270.txt")
+          if ($p.ExitCode -notin 0, 3010) { throw "msiexec 2.7.0 failed: $($p.ExitCode)" }
 
-      - name: Launch installed app --version
+      - name: Locate app and check 2.7.0
         id: app
         timeout-minutes: 3
         shell: pwsh
@@ -102,9 +102,8 @@ jobs:
             -Recurse -Filter "YarmiplayTV.exe" -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -notmatch '\\runtime\\' } |
             Select-Object -First 1
-          if (-not $exe) { throw "YarmiplayTV.exe not found after setup.exe /quiet" }
+          if (-not $exe) { throw "YarmiplayTV.exe not found after 2.7.0 MSI" }
           $exe.FullName | Tee-Object -FilePath "$env:RUNNER_TEMP/installed-path.txt"
-          # jpackage launcher needs its install dir on PATH for bundled DLLs; capture both streams.
           $out = Join-Path $env:RUNNER_TEMP "version-out.txt"
           $err = Join-Path $env:RUNNER_TEMP "version-err.txt"
           $p = Start-Process -FilePath $exe.FullName -ArgumentList "--version" `
@@ -112,38 +111,35 @@ jobs:
             -RedirectStandardOutput $out -RedirectStandardError $err
           $ver = ((Get-Content -Raw -ErrorAction SilentlyContinue $out) + (Get-Content -Raw -ErrorAction SilentlyContinue $err)).Trim()
           "exit=$($p.ExitCode)`n$ver" | Tee-Object -FilePath "$env:RUNNER_TEMP/version.txt"
-          if ($ver -notmatch 'YarmiplayTV (\d+\.\d+\.\d+)') {
-            throw "unexpected --version (exit $($p.ExitCode)): [$ver]"
-          }
+          if ($ver -notmatch 'YarmiplayTV 2\.7\.0') { throw "expected 2.7.0 baseline, got: [$ver]" }
           Add-Content -Path $env:GITHUB_OUTPUT -Value "exe=$($exe.FullName)"
           Add-Content -Path $env:GITHUB_OUTPUT -Value "dir=$($exe.DirectoryName)"
 
-      - name: MSI upgrade path (launch-time / prompt updater for 2.6.x and 2.7.0)
+      - name: Upgrade via 2.7.2 MSI (version.json / launch-time updater path)
         timeout-minutes: 5
         shell: pwsh
         run: |
-          # Production WindowsUpdater uses msiexec /passive; CI uses /qn so no UI can stall the runner.
+          # Production uses /passive; CI uses /qn so no UI can stall the runner.
           $msi = Join-Path $env:GITHUB_WORKSPACE "setup\YarmiplayTV-${{ steps.pkg.outputs.version }}.msi"
           $exe = "${{ steps.app.outputs.exe }}"
           $dir = "${{ steps.app.outputs.dir }}"
           $version = "${{ steps.pkg.outputs.version }}"
-          if (-not (Test-Path -LiteralPath $msi)) { throw "msi missing: $msi" }
           $p = Start-Process msiexec.exe -PassThru -ArgumentList "/i `"$msi`" /qn /norestart"
           if (-not $p.WaitForExit(300000)) {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-            throw "msiexec timed out after 5 minutes"
+            throw "msiexec upgrade timed out"
           }
-          "msiexec exit=$($p.ExitCode)" | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/msi-upgrade.txt"
-          if ($p.ExitCode -notin 0, 3010) { throw "msiexec failed: $($p.ExitCode)" }
+          "msiexec-upgrade exit=$($p.ExitCode)" | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/msi-upgrade.txt"
+          if ($p.ExitCode -notin 0, 3010) { throw "msiexec upgrade failed: $($p.ExitCode)" }
           $out = Join-Path $env:RUNNER_TEMP "version-msi-out.txt"
           $err = Join-Path $env:RUNNER_TEMP "version-msi-err.txt"
           $v = Start-Process -FilePath $exe -ArgumentList "--version" -WorkingDirectory $dir `
             -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
           $text = ((Get-Content -Raw -ErrorAction SilentlyContinue $out) + (Get-Content -Raw -ErrorAction SilentlyContinue $err)).Trim()
-          "$text"
+          "$text" | Tee-Object -FilePath "$env:RUNNER_TEMP/version-after-msi.txt"
           if ($text -notmatch "YarmiplayTV $version") { throw "after MSI upgrade (exit $($v.ExitCode)): [$text]" }
 
-      - name: setup.exe /quiet over the MSI install
+      - name: setup.exe /quiet over the upgraded install
         timeout-minutes: 5
         shell: pwsh
         run: |
@@ -154,17 +150,17 @@ jobs:
           $p = Start-Process -FilePath $setup -ArgumentList @("/quiet") -PassThru
           if (-not $p.WaitForExit(300000)) {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-            throw "setup.exe /quiet upgrade timed out after 5 minutes"
+            throw "setup.exe /quiet timed out"
           }
-          "re-quiet exit=$($p.ExitCode)" | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/re-quiet.txt"
-          if ($p.ExitCode -notin 0, 3010) { throw "setup.exe /quiet upgrade failed: $($p.ExitCode)" }
+          "quiet exit=$($p.ExitCode)" | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/quiet.txt"
+          if ($p.ExitCode -notin 0, 3010) { throw "setup.exe /quiet failed: $($p.ExitCode)" }
           $out = Join-Path $env:RUNNER_TEMP "version-exe-out.txt"
           $err = Join-Path $env:RUNNER_TEMP "version-exe-err.txt"
           $v = Start-Process -FilePath $exe -ArgumentList "--version" -WorkingDirectory $dir `
             -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
           $text = ((Get-Content -Raw -ErrorAction SilentlyContinue $out) + (Get-Content -Raw -ErrorAction SilentlyContinue $err)).Trim()
-          "$text"
-          if ($text -notmatch "YarmiplayTV $version") { throw "after exe upgrade (exit $($v.ExitCode)): [$text]" }
+          "$text" | Tee-Object -FilePath "$env:RUNNER_TEMP/version-after-exe.txt"
+          if ($text -notmatch "YarmiplayTV $version") { throw "after setup.exe (exit $($v.ExitCode)): [$text]" }
 
       - name: Upload logs
         if: always()
