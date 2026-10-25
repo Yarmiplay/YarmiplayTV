@@ -21,6 +21,15 @@ interface VoiceEngine {
     /** Start/stop capturing (open-mic, PTT hold, or TV toggle latch). */
     fun setTransmitting(on: Boolean)
 
+    /** Whether the platform currently allows mic capture (e.g. RECORD_AUDIO granted). */
+    fun hasMicPermission(): Boolean = true
+
+    /**
+     * Called after the user grants mic permission while already connected, so capture can start
+     * (Android's [AudioRecord] is only created once permission is held).
+     */
+    fun onMicPermissionGranted() = Unit
+
     fun setSelfMuted(muted: Boolean)
 
     fun setInputGain(gain: Float)
@@ -72,6 +81,8 @@ class NullVoiceEngine : VoiceEngine {
     override suspend fun connect(params: VoiceMediaParams): Boolean = false
     override fun disconnect() = Unit
     override fun setTransmitting(on: Boolean) = Unit
+    override fun hasMicPermission(): Boolean = true
+    override fun onMicPermissionGranted() = Unit
     override fun setSelfMuted(muted: Boolean) = Unit
     override fun setInputGain(gain: Float) = Unit
     override fun setOutputGain(gain: Float) = Unit

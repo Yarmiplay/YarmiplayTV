@@ -32,6 +32,7 @@ import com.yarmiplaytv.ui.mobile.appPalette
 import com.yarmiplaytv.ui.mobile.pipParams
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.YarmiplayTvTheme
+import com.yarmiplaytv.voice.AndroidMicPermissions
 import com.yarmiplaytv.voice.TvVoiceKeys
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -39,6 +40,9 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val container get() = (application as YarmiplayTvApp).container
+
+    /** Activity-result launcher must be registered before STARTED; attached to the bridge in onCreate. */
+    private val androidMicPermissions = AndroidMicPermissions(this)
 
     private val pipExitReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -68,6 +72,7 @@ class MainActivity : ComponentActivity() {
         container.updates.exitApp = { exit(this) }
         deviceKind = DeviceUi.kind(this, intent)
         container.deviceKind = deviceKind
+        container.micPermissions.delegate = androidMicPermissions
         // Like saved instance state: a recreated activity carries on where it was, a new one starts at Home.
         val screens = (application as YarmiplayTvApp).screens
         if (savedInstanceState == null) {

@@ -110,6 +110,10 @@ class SkipDetector(
     private suspend fun make(episode: EpisodeFile, kind: SkipSegment.Kind, id: String): FingerprintCache.Stored? = reading.withPermit {
         val job = currentCoroutineContext()[Job]
         val made = withContext(Dispatchers.IO) {
+            // Interrupt the blocking decode thread when the job is cancelled (CI was flaking on
+            // "file that changes while listening" when only polling isActive).
+            val thread = Thread.currentThread()
+            val cancelHandle = job?.invokeOnCompletion { thread.interrupt() }
             try {
                 val duration = episode.duration ?: decoder.duration(episode.url) ?: return@withContext null
                 val (from, seconds) = window(duration, kind)
@@ -117,7 +121,7 @@ class SkipDetector(
                 val start = decoder.decode(
                     episode.url, from, seconds, languages(),
                     sink = { pcm, n -> fingerprinter.consume(pcm, n) },
-                    cancelled = { job?.isActive == false },
+                    cancelled = { job?.isActive == false || thread.isInterrupted },
                 ) ?: return@withContext null
                 currentCoroutineContext().ensureActive()
                 fingerprinter.finish().takeIf { it.size >= MIN_POINTS }?.let { FingerprintCache.Stored(start, it) }
@@ -126,6 +130,9 @@ class SkipDetector(
             } catch (e: Exception) {
                 Logger.w(TAG, "Can't listen to ${episode.fileName}", e)
                 null
+            } finally {
+                cancelHandle?.dispose()
+                Thread.interrupted() // clear interrupt for the pooled IO thread
             }
         }
         if (made == null) failed += id else cache.saveFingerprint(episode.key, kind, made)

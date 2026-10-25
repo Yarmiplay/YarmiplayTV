@@ -47,11 +47,16 @@ class FakeSeason(
             val n = numberOf(uri)
             reads += n to start
             while (hang) {
-                if (cancelled()) {
+                if (cancelled() || Thread.currentThread().isInterrupted) {
                     sawCancel = true
                     return null
                 }
-                Thread.sleep(10)
+                try {
+                    Thread.sleep(10)
+                } catch (_: InterruptedException) {
+                    sawCancel = true
+                    return null
+                }
             }
             val rate = Synth.RATE
             val first = (start * rate).toLong()

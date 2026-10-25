@@ -4,6 +4,7 @@
   import * as FileMatch from "../lib/syncplay/fileMatch";
   import * as ManagedRooms from "../lib/syncplay/managedRooms";
   import { formatTime } from "../lib/syncplay/models";
+  import type { VoiceUi } from "../lib/voice/controller";
   import Icon from "./Icon.svelte";
 
   /**
@@ -12,6 +13,7 @@
    */
   const session = $derived($sessionStore);
   let room = $state<RoomState | null>(null);
+  let voice = $state<VoiceUi | null>(null);
   let newRoom = $state("");
   let managedName = $state("");
   let operatorPassword = $state("");
@@ -20,6 +22,11 @@
   $effect(() => {
     if (!session) return;
     return session.room.subscribe((r) => (room = r));
+  });
+
+  $effect(() => {
+    if (!session) return;
+    return session.voice.ui.subscribe((v) => (voice = v));
   });
 
   const me = $derived(room?.users.find((u) => u.name === room?.username) ?? null);
@@ -101,6 +108,29 @@
         <Icon name={room.isReady ? "block" : "check_circle"} size={20} />{room.isReady ? "I'm not ready" : "I'm ready"}
       </button>
     </section>
+
+    {#if voice?.available}
+      <section class="voice" data-testid="voice_panel">
+        {#if voice.status}<p class="dim small" data-testid="voice_banner">{voice.status}</p>{/if}
+        <div class="voice-row">
+          {#if voice.showMic}
+            <button
+              class="button quiet"
+              data-testid="voice_self_mic"
+              onclick={() => session?.voice.setSelfMuted(!voice?.selfMuted)}
+            >
+              <Icon name={voice.selfMuted ? "volume_off" : "volume_up"} size={20} />
+              {voice.selfMuted ? "Mic muted" : "Mic on"}
+            </button>
+          {/if}
+          {#if voice.membershipIsLeave}
+            <button class="button quiet" data-testid="voice_leave" onclick={() => session?.voice.leave()}>Leave voice</button>
+          {:else}
+            <button class="button" data-testid="voice_join" onclick={() => session?.voice.join()}>Join voice</button>
+          {/if}
+        </div>
+      </section>
+    {/if}
 
     <section class="form">
       <h4>Switch rooms</h4>
@@ -234,6 +264,12 @@
   }
   .dot.unknown {
     background: var(--text-dim);
+  }
+  .voice-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
   }
   .form form {
     display: flex;

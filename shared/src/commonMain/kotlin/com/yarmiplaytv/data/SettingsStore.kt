@@ -215,6 +215,11 @@ data class AppSettings(
     val chatOnVideo: Boolean = false,
     /** Join YarmiplayServerTV room voice when the server offers it; off hides all voice UI. */
     val voiceChat: Boolean = true,
+    /**
+     * When on (default), join voice automatically on entering a room that offers it.
+     * When off, stay out until the user taps Join voice. Still respects [voiceChat] and the server toggle.
+     */
+    val voiceAutoJoin: Boolean = true,
     /** How we send mic audio: open mic with VAD, or push-to-talk (TV is always toggle). */
     val voiceTalkMode: VoiceTalkMode = VoiceTalkMode.OPEN_MIC,
     /** Local mic gain for voice (0–2, 1 = unity). */
@@ -344,6 +349,7 @@ class SettingsStore(
         val showRoomChat = booleanPreferencesKey("chat_show")
         val chatOnVideo = booleanPreferencesKey("chat_on_video")
         val voiceChat = booleanPreferencesKey("voice_chat")
+        val voiceAutoJoin = booleanPreferencesKey("voice_auto_join")
         val voiceTalkMode = stringPreferencesKey("voice_talk_mode")
         val voiceInputGain = floatPreferencesKey("voice_input_gain")
         val voiceOutputGain = floatPreferencesKey("voice_output_gain")
@@ -487,6 +493,7 @@ class SettingsStore(
             showRoomChat = p[Keys.showRoomChat] ?: true,
             chatOnVideo = p[Keys.chatOnVideo] ?: false,
             voiceChat = p[Keys.voiceChat] ?: true,
+            voiceAutoJoin = p[Keys.voiceAutoJoin] ?: true,
             voiceTalkMode = p[Keys.voiceTalkMode]?.let { runCatching { VoiceTalkMode.valueOf(it) }.getOrNull() } ?: VoiceTalkMode.OPEN_MIC,
             voiceInputGain = p[Keys.voiceInputGain] ?: 1f,
             voiceOutputGain = p[Keys.voiceOutputGain] ?: 1f,
@@ -689,6 +696,8 @@ class SettingsStore(
     suspend fun saveChatOnVideo(on: Boolean) = dataStore.edit { it[Keys.chatOnVideo] = on }
 
     suspend fun saveVoiceChat(on: Boolean) = dataStore.edit { it[Keys.voiceChat] = on }
+
+    suspend fun saveVoiceAutoJoin(on: Boolean) = dataStore.edit { it[Keys.voiceAutoJoin] = on }
 
     suspend fun saveVoiceTalkMode(mode: VoiceTalkMode) = dataStore.edit { it[Keys.voiceTalkMode] = mode.name }
 

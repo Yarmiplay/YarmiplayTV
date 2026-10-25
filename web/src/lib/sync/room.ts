@@ -464,6 +464,7 @@ export class RoomSession {
 
   private applyVoiceSettings(settings: Settings.Settings) {
     this.voice.setEnabled(settings.voiceChat);
+    this.voice.setAutoJoin(settings.voiceAutoJoin);
     this.voice.setInputDeviceId(settings.voiceInputDeviceId || null);
     this.voice.setOutputDeviceId(settings.voiceOutputDeviceId || null);
   }

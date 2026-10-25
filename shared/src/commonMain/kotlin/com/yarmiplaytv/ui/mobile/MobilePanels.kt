@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -383,45 +384,68 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
         voiceBanner(voiceUi)?.let {
             Text(it, color = if (voiceUi.micLive) AppColors.Ready else AppColors.TextDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("voice_banner"))
         }
-        if (voiceUi.showMicButton) {
+        if (voiceUi.showVoiceMembershipButton) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconButton(
-                    {
-                        when (voiceUi.talkMode) {
-                            VoiceTalkMode.TOGGLE -> container.voice.toggleTalk()
-                            VoiceTalkMode.PUSH_TO_TALK -> Unit // hold handled elsewhere
-                            VoiceTalkMode.OPEN_MIC -> container.voice.toggleSelfMuted()
+                if (voiceUi.showMicButton) {
+                    IconButton(
+                        {
+                            when (voiceUi.talkMode) {
+                                VoiceTalkMode.TOGGLE -> container.voice.toggleTalk()
+                                VoiceTalkMode.PUSH_TO_TALK -> Unit // hold handled elsewhere
+                                VoiceTalkMode.OPEN_MIC -> container.voice.toggleSelfMuted()
+                            }
+                        },
+                        Modifier.testTag("voice_self_mic"),
+                    ) {
+                        val live = when (voiceUi.talkMode) {
+                            VoiceTalkMode.OPEN_MIC -> !voiceUi.selfMuted && voiceUi.connection == VoiceConnection.CONNECTED
+                            else -> voiceUi.micLive
                         }
-                    },
-                    Modifier.testTag("voice_self_mic"),
-                ) {
-                    val live = when (voiceUi.talkMode) {
-                        VoiceTalkMode.OPEN_MIC -> !voiceUi.selfMuted && voiceUi.connection == VoiceConnection.CONNECTED
-                        else -> voiceUi.micLive
+                        Icon(
+                            if (live) Icons.Filled.Mic else Icons.Filled.MicOff,
+                            if (live) "Mute microphone" else "Unmute microphone",
+                            tint = if (live) AppColors.Ready else AppColors.TextDim,
+                        )
                     }
-                    Icon(
-                        if (live) Icons.Filled.Mic else Icons.Filled.MicOff,
-                        if (live) "Mute microphone" else "Unmute microphone",
-                        tint = if (live) AppColors.Ready else AppColors.TextDim,
+                    Text(
+                        when {
+                            voiceUi.talkMode == VoiceTalkMode.OPEN_MIC && voiceUi.selfMuted -> "Mic muted"
+                            voiceUi.micLive || (voiceUi.talkMode == VoiceTalkMode.OPEN_MIC && !voiceUi.selfMuted) -> "Mic on"
+                            else -> "Mic off"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
                     )
+                    if (voiceUi.talkMode == VoiceTalkMode.PUSH_TO_TALK && voiceUi.capture != VoiceCaptureKind.NONE) {
+                        TextButton(
+                            onClick = { container.voice.setPushToTalkHeld(!voiceUi.talking) },
+                            modifier = Modifier.testTag("voice_ptt"),
+                        ) { Text(if (voiceUi.talking) "Release" else "Hold to talk") }
+                    }
+                } else {
+                    Spacer(Modifier.weight(1f))
                 }
-                Text(
-                    when {
-                        voiceUi.talkMode == VoiceTalkMode.OPEN_MIC && voiceUi.selfMuted -> "Mic muted"
-                        voiceUi.micLive || (voiceUi.talkMode == VoiceTalkMode.OPEN_MIC && !voiceUi.selfMuted) -> "Mic on"
-                        else -> "Mic off"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                if (voiceUi.talkMode == VoiceTalkMode.PUSH_TO_TALK && voiceUi.capture != VoiceCaptureKind.NONE) {
-                    TextButton(
-                        onClick = { container.voice.setPushToTalkHeld(!voiceUi.talking) },
-                        modifier = Modifier.testTag("voice_ptt"),
-                    ) { Text(if (voiceUi.talking) "Release" else "Hold to talk") }
+                if (voiceUi.voiceMembershipIsLeave) {
+                    TextButton({ container.voice.leave() }, Modifier.testTag("voice_leave")) { Text("Leave voice") }
+                } else {
+                    TextButton({ container.voice.join() }, Modifier.testTag("voice_join")) { Text("Join voice") }
                 }
-                TextButton({ container.voice.leave() }, Modifier.testTag("voice_leave")) { Text("Leave voice") }
             }
+        }
+        if (voiceUi.showMicPermissionSettings) {
+            AlertDialog(
+                onDismissRequest = { container.voice.dismissMicPermissionSettings() },
+                title = { Text("Microphone permission") },
+                text = { Text("Microphone access is needed to talk. Enable it in the app's settings.") },
+                confirmButton = {
+                    TextButton({ container.voice.openMicPermissionSettings() }, Modifier.testTag("voice_mic_settings")) {
+                        Text("Open settings")
+                    }
+                },
+                dismissButton = {
+                    TextButton({ container.voice.dismissMicPermissionSettings() }) { Text("Not now") }
+                },
+            )
         }
         val blocked by container.sync.blocked.collectAsStateWithLifecycle()
         val me = room.users.firstOrNull { it.name == room.username }

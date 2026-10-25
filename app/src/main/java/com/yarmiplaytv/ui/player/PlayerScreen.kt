@@ -717,6 +717,13 @@ private fun ControlsBar(
             }
             // Every remote can focus this and press OK — primary TV talk control (tap toggle).
             TvMicButton(voiceUi, onToggle = { container.voice.toggleTalk() }, focusRequester = micFocus, onVideo = true)
+            if (voiceUi.showVoiceMembershipButton) {
+                if (voiceUi.voiceMembershipIsLeave) {
+                    ActionButton("Leave voice", { container.voice.leave() }, Modifier.testTag("voice_leave"), container = ON_VIDEO_BUTTON)
+                } else {
+                    ActionButton("Join voice", { container.voice.join() }, Modifier.testTag("voice_join"), container = ON_VIDEO_BUTTON)
+                }
+            }
         }, end = {
             rememberRelaySave(container)?.let { save ->
                 IconAction(

@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.7.7" date="2026-10-25">
+      <description>
+        <p>Ask for microphone permission when you tap Mic, Join voice after Leave (with Auto-join voice setting), and make skip listening cancel reliably when the file changes.</p>
+      </description>
+    </release>
     <release version="2.7.6" date="2026-10-25">
       <description>
         <p>The picture-in-picture pause button on Android pauses playback.</p>
