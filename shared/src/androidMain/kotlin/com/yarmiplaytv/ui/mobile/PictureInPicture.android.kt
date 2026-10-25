@@ -3,10 +3,8 @@ package com.yarmiplaytv.ui.mobile
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.app.RemoteAction
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.os.Build
@@ -25,7 +23,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.PictureInPictureModeChangedInfo
-import androidx.core.content.ContextCompat
 import androidx.core.util.Consumer
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -87,18 +84,13 @@ actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: 
         }
         // Android 12 enters by itself (setAutoEnterEnabled); older versions get the leave hint.
         val leaveHint = Runnable { if (latestAuto && !activity.isInPictureInPictureMode) runCatching { activity.enterPictureInPictureMode(latestParams) } }
-        val playPause = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) = player.setPaused(!player.isPaused)
-        }
         activity.addOnPictureInPictureModeChangedListener(modeListener)
         lifecycle.addObserver(lifecycleObserver)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) activity.addOnUserLeaveHintListener(leaveHint)
-        ContextCompat.registerReceiver(activity, playPause, IntentFilter(ACTION_PIP_PLAY_PAUSE), ContextCompat.RECEIVER_NOT_EXPORTED)
         onDispose {
             activity.removeOnPictureInPictureModeChangedListener(modeListener)
             lifecycle.removeObserver(lifecycleObserver)
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) activity.removeOnUserLeaveHintListener(leaveHint)
-            runCatching { activity.unregisterReceiver(playPause) }
             PlayerPictureInPicture.active = false
             // Off the player screen, keep auto-enter enabled if media is loaded and setting is on.
             val keepAuto = latestAuto && player.isFileLoaded && (state.videoWidth > 0 || state.displayAspect > 0 || !FileNames.isAudio(state.url.orEmpty()))

@@ -24,6 +24,7 @@ import com.yarmiplaytv.playback.PlaybackService
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.TvRoot
 import com.yarmiplaytv.ui.mobile.ACTION_PIP_EXIT
+import com.yarmiplaytv.ui.mobile.ACTION_PIP_PLAY_PAUSE
 import com.yarmiplaytv.ui.mobile.MobileRoot
 import com.yarmiplaytv.ui.mobile.MobileTheme
 import com.yarmiplaytv.ui.mobile.PlayerPictureInPicture
@@ -42,6 +43,17 @@ class MainActivity : ComponentActivity() {
     private val pipExitReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             exit(context ?: this@MainActivity)
+        }
+    }
+
+    /**
+     * The system picture-in-picture pause button. Registered once: the root and the player both call
+     * rememberPictureInPicture, and a receiver in each of those toggled pause twice, so the button did nothing.
+     */
+    private val pipPlayPauseReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val player = container.player
+            player.setPaused(!player.isPaused)
         }
     }
 
@@ -93,6 +105,7 @@ class MainActivity : ComponentActivity() {
         val hasPip = packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
         if (hasPip) {
             ContextCompat.registerReceiver(this, pipExitReceiver, IntentFilter(ACTION_PIP_EXIT), ContextCompat.RECEIVER_NOT_EXPORTED)
+            ContextCompat.registerReceiver(this, pipPlayPauseReceiver, IntentFilter(ACTION_PIP_PLAY_PAUSE), ContextCompat.RECEIVER_NOT_EXPORTED)
         }
 
         if (hasPip && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -155,6 +168,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         runCatching { unregisterReceiver(pipExitReceiver) }
+        runCatching { unregisterReceiver(pipPlayPauseReceiver) }
         if (activeActivity == this) {
             activeActivity = null
         }

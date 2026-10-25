@@ -1,6 +1,7 @@
 package com.yarmiplaytv
 
 import android.content.ContentUris
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.media.AudioManager
@@ -24,6 +25,7 @@ import com.yarmiplaytv.local.AndroidFrameGrabber
 import com.yarmiplaytv.local.LocalFile
 import com.yarmiplaytv.support.Screenshots
 import com.yarmiplaytv.sync.PlaylistStatus
+import com.yarmiplaytv.ui.mobile.ACTION_PIP_PLAY_PAUSE
 import com.yarmiplaytv.ui.mobile.PlayerPictureInPicture
 import com.yarmiplaytv.ui.nav.Screen
 import kotlinx.coroutines.runBlocking
@@ -294,6 +296,16 @@ class LocalPlaybackTest {
         assertSame(activity, compose.activity)
         compose.waitUntilExactlyOneExists(hasTestTag("player_controls"), 10_000)
         assertFalse(PlayerPictureInPicture.active)
+    }
+
+    @Test
+    fun pictureInPicturePauseActionPausesOnce() {
+        assumeTrue("no picture-in-picture on this device", pipSupported)
+        playClipAndWaitLoaded()
+        compose.runOnUiThread { container.player.setPaused(false) }
+        waitFor(5_000) { !container.player.isPaused }
+        compose.activity.sendBroadcast(Intent(ACTION_PIP_PLAY_PAUSE).setPackage(compose.activity.packageName))
+        waitFor(5_000) { container.player.isPaused }
     }
 
     @Test
