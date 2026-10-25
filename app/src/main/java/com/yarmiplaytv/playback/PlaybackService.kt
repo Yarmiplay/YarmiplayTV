@@ -204,16 +204,18 @@ class PlaybackService : Service() {
             android.content.pm.PackageManager.PERMISSION_GRANTED
 
     /**
-     * Only claim the microphone FGS type when RECORD_AUDIO is granted. Since 2.7.7 we request
-     * that permission on Mic tap (not at launch); auto-join can be CONNECTED without it, and
-     * [startForeground] with [ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE] then throws
-     * SecurityException and the whole notification disappears.
+     * Claim the microphone FGS type only while the mic is actually live (transmitting).
+     * Holding it for the whole voice CONNECTED session (even when muted / mic-off) keeps the
+     * green privacy indicator on phone/tablet — TV never uses this FGS path, which is why the
+     * indicator cleared there after 2.7.8 but not on handhelds. Also requires RECORD_AUDIO so
+     * [startForeground] does not throw SecurityException.
      */
     private fun foregroundTypes(voice: VoiceUiState): Int {
         var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
         if (isPhoneOrTablet &&
             voice.showUi &&
             voice.connection == VoiceConnection.CONNECTED &&
+            voice.talking &&
             hasRecordAudio()
         ) {
             types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE

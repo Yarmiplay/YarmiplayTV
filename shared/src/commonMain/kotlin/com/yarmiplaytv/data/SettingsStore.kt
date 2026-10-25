@@ -36,7 +36,8 @@ import kotlinx.serialization.json.Json
 
 /**
  * How the mic is gated when sending voice.
- * TV always uses [TOGGLE] (one press open, next press close). Phones/desktop use [OPEN_MIC] or [PUSH_TO_TALK].
+ * Android TV/phone/tablet always use [TOGGLE] (one press open, next press close). Desktop uses the
+ * saved preference ([OPEN_MIC], [PUSH_TO_TALK], or [TOGGLE]).
  */
 enum class VoiceTalkMode { OPEN_MIC, PUSH_TO_TALK, TOGGLE }
 

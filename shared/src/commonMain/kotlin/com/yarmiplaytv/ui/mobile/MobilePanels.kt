@@ -397,13 +397,14 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
                         },
                         Modifier.testTag("voice_self_mic"),
                     ) {
+                        // Phone/tablet use TOGGLE (micLive); desktop OPEN_MIC still keys off !selfMuted.
                         val live = when (voiceUi.talkMode) {
                             VoiceTalkMode.OPEN_MIC -> !voiceUi.selfMuted && voiceUi.connection == VoiceConnection.CONNECTED
                             else -> voiceUi.micLive
                         }
                         Icon(
                             if (live) Icons.Filled.Mic else Icons.Filled.MicOff,
-                            if (live) "Mute microphone" else "Unmute microphone",
+                            if (live) "Mic live — tap to mute" else "Mic off — tap to talk",
                             tint = if (live) AppColors.Ready else AppColors.TextDim,
                         )
                     }
