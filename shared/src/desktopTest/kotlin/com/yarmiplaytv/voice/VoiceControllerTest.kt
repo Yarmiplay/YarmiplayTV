@@ -2,6 +2,7 @@ package com.yarmiplaytv.voice
 
 import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.FakePlayer
+import com.yarmiplaytv.data.VoiceTalkMode
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.syncplay.ConnectionStatus
@@ -131,6 +132,17 @@ class VoiceControllerTest {
         assertEquals(VoiceConnection.OFF, voice.ui.value.connection)
         assertFalse(voice.ui.value.voiceMembershipIsLeave)
         assertEquals("Join voice", if (voice.ui.value.voiceMembershipIsLeave) "Leave voice" else "Join voice")
+    }
+
+    @Test
+    fun `phone talk mode is toggle even when settings say open mic`() {
+        runBlocking {
+            store.saveVoiceTalkMode(VoiceTalkMode.OPEN_MIC)
+            store.saveVoiceAutoJoin(false)
+        }
+        awaitTrue("open-mic saved") { runBlocking { store.current().voiceTalkMode == VoiceTalkMode.OPEN_MIC } }
+        onMain { sync.setTestRoom(roomWithVoice()) }
+        awaitTrue("phone forces toggle") { voice.ui.value.talkMode == VoiceTalkMode.TOGGLE }
     }
 
     @Test

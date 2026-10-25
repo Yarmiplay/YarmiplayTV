@@ -291,8 +291,15 @@ class VoiceController(
         startJoin()
     }
 
+    /**
+     * TV, phone and tablet always use one-tap [VoiceTalkMode.TOGGLE] (mic starts off; capture only while
+     * latched on) so the privacy indicator and player control match. Desktop keeps the saved preference.
+     */
     private fun effectiveTalkMode(settings: AppSettings): VoiceTalkMode =
-        if (deviceKind() == DeviceKind.TV) VoiceTalkMode.TOGGLE else settings.voiceTalkMode
+        when (deviceKind()) {
+            DeviceKind.DESKTOP -> settings.voiceTalkMode
+            DeviceKind.TV, DeviceKind.PHONE, DeviceKind.TABLET -> VoiceTalkMode.TOGGLE
+        }
 
     private fun maybeOfferHint(state: VoiceUiState, hintShown: Boolean): VoiceUiState {
         val wantHint = deviceKind() == DeviceKind.TV &&

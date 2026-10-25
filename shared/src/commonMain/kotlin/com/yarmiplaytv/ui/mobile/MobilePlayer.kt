@@ -51,6 +51,8 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -118,6 +120,7 @@ import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.SurfaceInk
 import com.yarmiplaytv.ui.theme.OnVideo
 import com.yarmiplaytv.ui.theme.onVideoLabel
+import com.yarmiplaytv.voice.VoiceUiState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -301,6 +304,13 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                             hint = skipKeyHint,
                         )
 
+                        val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
+                        if (!isPortrait && voiceUi.micLive) {
+                            PlayerMicLiveBadge(
+                                Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp),
+                            )
+                        }
+
                         androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
                             Box(Modifier.fillMaxSize().testTag(if (isPortrait) "video_overlay" else "player_controls")) {
                                 Row(
@@ -366,6 +376,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         container = container,
                                         inRoom = inRoom,
                                         ready = room.isReady == true,
+                                        voiceUi = voiceUi,
                                         onInteract = ::touch,
                                         onSheet = ::openSheet,
                                         modifier = Modifier.align(Alignment.BottomCenter).hoverable(barsHover),
@@ -622,11 +633,17 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
 
                                     Spacer(Modifier.height(4.dp))
 
+                                    val portraitVoice by container.voice.ui.collectAsStateWithLifecycle()
                                     Row(
                                         Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         PlayerVolumeControl(::touch, onVideo = false)
+                                        PlayerMicButton(
+                                            portraitVoice,
+                                            onToggle = { container.voice.toggleTalk(); touch() },
+                                            onVideo = false,
+                                        )
                                         Spacer(Modifier.weight(1f))
                                         rememberRelaySave(container)?.let { RelaySaveButton(it, ::touch, tint = AppColors.Text) }
                                         container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
@@ -741,6 +758,7 @@ private fun BottomControls(
     container: AppContainer,
     inRoom: Boolean,
     ready: Boolean,
+    voiceUi: VoiceUiState,
     onInteract: () -> Unit,
     onSheet: (PlayerSheet) -> Unit,
     modifier: Modifier = Modifier,
@@ -764,6 +782,12 @@ private fun BottomControls(
         Row(verticalAlignment = Alignment.CenterVertically) {
             PlayerVolumeControl(onInteract, Modifier.padding(end = 8.dp))
             if (inRoom) ReadyChip(ready, { container.sync.toggleReady(); onInteract() }, Modifier.testTag("player_ready"))
+            // Same one-tap Mic as TV player bar — always visible while in voice with a mic.
+            PlayerMicButton(
+                voiceUi,
+                onToggle = { container.voice.toggleTalk(); onInteract() },
+                onVideo = true,
+            )
             Spacer(Modifier.weight(1f))
             rememberRelaySave(container)?.let { RelaySaveButton(it, onInteract) }
             container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
@@ -779,6 +803,46 @@ private fun BottomControls(
             SheetButton(Icons.Filled.Tune, "Video") { onSheet(PlayerSheet.VIDEO) }
             if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList") { onSheet(PlayerSheet.MAL) }
         }
+    }
+}
+
+/** Player Mic toggle (phone/tablet), matching TV: one tap open/close, green when live. */
+@Composable
+private fun PlayerMicButton(
+    ui: VoiceUiState,
+    onToggle: () -> Unit,
+    onVideo: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (!ui.showMicButton) return
+    val live = ui.micLive
+    val tint = when {
+        live -> AppColors.Ready
+        onVideo -> Color.White
+        else -> AppColors.Text
+    }
+    IconButton(onToggle, modifier.testTag("player_mic_toggle")) {
+        Icon(
+            if (live) Icons.Filled.Mic else Icons.Filled.MicOff,
+            contentDescription = if (live) "Mic live — tap to mute" else "Mic off — tap to talk",
+            tint = tint,
+        )
+    }
+}
+
+@Composable
+private fun PlayerMicLiveBadge(modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color.Black.copy(alpha = 0.72f))
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .testTag("player_mic_live"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Filled.Mic, contentDescription = null, tint = AppColors.Ready, modifier = Modifier.size(20.dp))
+        Text("Mic live", color = Color.White, style = MaterialTheme.typography.labelLarge)
     }
 }
 
