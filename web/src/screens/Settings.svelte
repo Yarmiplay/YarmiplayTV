@@ -175,6 +175,14 @@
             Voice chat<br /><span class="dim small">Talk in rooms on a YarmiplayServerTV server that has voice on; off hides the controls and disconnects</span>
           </label>
           {#if s.voiceChat}
+            <label class="switch" data-testid="toggle_voice_auto_join">
+              <input
+                type="checkbox"
+                checked={s.voiceAutoJoin}
+                onchange={(e) => set((x) => ({ ...x, voiceAutoJoin: (e.target as HTMLInputElement).checked }))}
+              />
+              Auto-join voice<br /><span class="dim small">Join voice automatically when you enter a room that has it; off shows Join voice until you tap it</span>
+            </label>
             <label data-testid="voice_input_device">
               Microphone
               <select

@@ -342,6 +342,12 @@ private fun SyncingSettings(container: AppContainer) {
         Modifier.testTag("toggle_voice_chat"),
     ) { container.scope.launch { container.settingsStore.saveVoiceChat(it) } }
     if (settings.voiceChat) {
+        SettingsToggle(
+            "Auto-join voice",
+            "Join voice automatically when you enter a room that has it; off shows Join voice until you tap it",
+            settings.voiceAutoJoin,
+            Modifier.testTag("toggle_voice_auto_join"),
+        ) { container.scope.launch { container.settingsStore.saveVoiceAutoJoin(it) } }
         VoiceDeviceSettings(container)
     }
     if (container.supportsDeviceAccess) {

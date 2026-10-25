@@ -34,6 +34,7 @@ class VoiceController(
     private val settingsStore: SettingsStore,
     private val scope: CoroutineScope,
     private val engine: VoiceEngine,
+    private val micPermissions: MicPermissions = AlwaysGrantedMicPermissions,
     private val deviceKind: () -> DeviceKind,
 ) {
     private val _ui = MutableStateFlow(VoiceUiState())
@@ -48,6 +49,8 @@ class VoiceController(
     private var selfMuted = false
     private var awaitingReplace = false
     private var lastFailAtMs = 0L
+    /** After [leave], stay out of voice until [join] (reconcile must not auto-rejoin). */
+    private var leftByUser = false
 
     init {
         engine.onDeviceLost = { input ->
@@ -61,20 +64,20 @@ class VoiceController(
         combine(
             sync.room.map { it.yarmiplay.voiceAvailable to it.yarmiplay.voice }.distinctUntilChanged(),
             settings.map {
-                Triple(it.voiceChat, effectiveTalkMode(it), it.voiceTvMicHintShown)
+                VoiceReconcileKeys(it.voiceChat, effectiveTalkMode(it), it.voiceTvMicHintShown, it.voiceAutoJoin)
             }.distinctUntilChanged(),
-        ) { (available, descriptor), (enabled, mode, hintShown) ->
-            Quad(available, enabled, mode, descriptor to hintShown)
-        }.onEach { (available, enabled, mode, descAndHint) ->
-            val (descriptor, hintShown) = descAndHint
+        ) { (available, descriptor), keys ->
+            available to (descriptor to keys)
+        }.onEach { (available, descAndKeys) ->
+            val (descriptor, keys) = descAndKeys
             _ui.update {
                 val next = it.copy(
                     available = available,
-                    enabledByClient = enabled,
-                    talkMode = mode,
+                    enabledByClient = keys.voiceChat,
+                    talkMode = keys.talkMode,
                     descriptor = descriptor,
                 )
-                maybeOfferHint(next, hintShown)
+                maybeOfferHint(next, keys.hintShown)
             }
             reconcileSession()
         }.launchIn(scope)
@@ -115,9 +118,17 @@ class VoiceController(
     }
 
     fun setSelfMuted(muted: Boolean) {
+        if (!muted) {
+            withMicPermission { applySelfMuted(false) }
+            return
+        }
+        applySelfMuted(true)
+    }
+
+    private fun applySelfMuted(muted: Boolean) {
         selfMuted = muted
         engine.setSelfMuted(muted)
-        _ui.update { it.copy(selfMuted = muted) }
+        _ui.update { it.copy(selfMuted = muted, showMicPermissionSettings = false) }
         updateTransmitting()
     }
 
@@ -125,6 +136,14 @@ class VoiceController(
 
     /** Hold for push-to-talk on phone/desktop. Not used on TV (tap toggle). */
     fun setPushToTalkHeld(held: Boolean) {
+        if (held) {
+            withMicPermission { applyPushToTalkHeld(true) }
+            return
+        }
+        applyPushToTalkHeld(false)
+    }
+
+    private fun applyPushToTalkHeld(held: Boolean) {
         pttHeld = held
         updateTransmitting()
     }
@@ -132,6 +151,7 @@ class VoiceController(
     /**
      * Tap toggle for TV (and any TOGGLE mode): open mic ↔ close mic.
      * Starts off on join. No-op when listen-only or voice UI hidden.
+     * Requests RECORD_AUDIO on Android the first time the mic is turned on.
      */
     fun toggleTalk() {
         val state = _ui.value
@@ -143,6 +163,14 @@ class VoiceController(
     fun setTalkLatched(on: Boolean) {
         val state = _ui.value
         if (!state.showUi || state.listenOnly) return
+        if (on) {
+            withMicPermission { applyTalkLatched(true) }
+            return
+        }
+        applyTalkLatched(false)
+    }
+
+    private fun applyTalkLatched(on: Boolean) {
         val was = talkLatched
         talkLatched = on
         if (was != on) playMicCue(on)
@@ -152,9 +180,46 @@ class VoiceController(
                 talkLatched = on,
                 statusLine = statusFor(it.capture, on, it.talkMode),
                 showMicHint = false,
+                showMicPermissionSettings = false,
             )
         }
         if (on || was) dismissMicHint()
+    }
+
+    /**
+     * Runs [action] once mic permission is held. On Android, shows the system prompt from a Mic tap;
+     * on deny sets a short status (and [VoiceUiState.showMicPermissionSettings] when permanent).
+     */
+    private fun withMicPermission(action: () -> Unit) {
+        if (micPermissions.granted()) {
+            engine.onMicPermissionGranted()
+            action()
+            return
+        }
+        micPermissions.request { granted ->
+            if (granted) {
+                engine.onMicPermissionGranted()
+                _ui.update { it.copy(showMicPermissionSettings = false) }
+                action()
+            } else {
+                val permanent = micPermissions.permanentlyDenied()
+                _ui.update {
+                    it.copy(
+                        statusLine = "Microphone permission needed to talk",
+                        showMicPermissionSettings = permanent,
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissMicPermissionSettings() {
+        _ui.update { it.copy(showMicPermissionSettings = false) }
+    }
+
+    fun openMicPermissionSettings() {
+        micPermissions.openAppSettings()
+        _ui.update { it.copy(showMicPermissionSettings = false) }
     }
 
     /** Record which remote key successfully toggled the mic (for the one-time hint label). */
@@ -177,6 +242,10 @@ class VoiceController(
         scope.launch { settingsStore.saveVoiceTalkMode(mode) }
     }
 
+    fun setAutoJoin(on: Boolean) {
+        scope.launch { settingsStore.saveVoiceAutoJoin(on) }
+    }
+
     fun setPeerMuted(username: String, muted: Boolean) {
         scope.launch {
             val cur = settingsStore.current().voicePeerPrefs[username] ?: VoicePeerPrefs()
@@ -194,8 +263,22 @@ class VoiceController(
     }
 
     fun leave() {
+        leftByUser = true
+        retryJob?.cancel()
         sync.client?.leaveVoice()
         tearDown(VoiceConnection.OFF, "Left voice")
+    }
+
+    /**
+     * Rejoin room voice after [leave] (or retry after FAILED). No-op when the server or client
+     * voice toggle is off.
+     */
+    fun join() {
+        val room = sync.room.value
+        if (!room.yarmiplay.voiceAvailable || !settings.value.voiceChat) return
+        leftByUser = false
+        lastFailAtMs = 0L
+        startJoin()
     }
 
     private fun effectiveTalkMode(settings: AppSettings): VoiceTalkMode =
@@ -220,19 +303,30 @@ class VoiceController(
         val want = room.yarmiplay.voiceAvailable && settings.value.voiceChat
         val state = _ui.value
         if (!want) {
+            leftByUser = false
             if (state.connection != VoiceConnection.OFF) {
                 sync.client?.leaveVoice()
                 tearDown(VoiceConnection.OFF, null)
             }
             return
         }
-        if (awaitingReplace) return
+        if (awaitingReplace || leftByUser) return
         if (state.connection == VoiceConnection.OFF || state.connection == VoiceConnection.FAILED) {
-            join()
+            if (settings.value.voiceAutoJoin) {
+                startJoin()
+            } else if (state.statusLine == null || state.connection == VoiceConnection.OFF) {
+                // Auto-join off: stay out and show Join voice (mic stays hidden).
+                _ui.update {
+                    it.copy(
+                        connection = VoiceConnection.OFF,
+                        statusLine = it.statusLine ?: "Not in voice — tap Join voice to talk",
+                    )
+                }
+            }
         }
     }
 
-    private fun join() {
+    private fun startJoin() {
         val client = sync.client ?: return
         val desc = sync.room.value.yarmiplay.voice ?: return
         val now = System.currentTimeMillis()
@@ -247,6 +341,7 @@ class VoiceController(
                     statusLine = "Connecting voice…",
                     talkLatched = false,
                     talking = false,
+                    showMicPermissionSettings = false,
                 )
             }
             val capture = engine.detectCapture()
@@ -299,10 +394,11 @@ class VoiceController(
                 }
             }
             VoiceClosedReason.ROOM -> {
+                leftByUser = false
                 tearDown(VoiceConnection.OFF, null)
                 // Retry immediately in the new Syncplay room if we still want voice.
                 if (sync.room.value.yarmiplay.voiceAvailable && settings.value.voiceChat) {
-                    join()
+                    startJoin()
                 }
             }
             VoiceClosedReason.FULL -> {
@@ -329,11 +425,12 @@ class VoiceController(
         retryJob?.cancel()
         retryJob = scope.launch {
             delay(10_000)
-            if (_ui.value.connection == VoiceConnection.FAILED &&
+            if (!leftByUser &&
+                _ui.value.connection == VoiceConnection.FAILED &&
                 sync.room.value.yarmiplay.voiceAvailable &&
                 settings.value.voiceChat
             ) {
-                join()
+                startJoin()
             }
         }
     }
@@ -424,6 +521,7 @@ class VoiceController(
             selfMuted -> false
             ui.connection != VoiceConnection.CONNECTED -> false
             ui.capture == VoiceCaptureKind.NONE -> false
+            !engine.hasMicPermission() && !micPermissions.granted() -> false
             mode == VoiceTalkMode.TOGGLE -> talkLatched
             mode == VoiceTalkMode.PUSH_TO_TALK -> pttHeld
             else -> true // OPEN_MIC
@@ -458,10 +556,16 @@ class VoiceController(
                 talking = false,
                 talkLatched = false,
                 showMicHint = false,
+                showMicPermissionSettings = false,
                 statusLine = status,
             )
         }
     }
 }
 
-private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+private data class VoiceReconcileKeys(
+    val voiceChat: Boolean,
+    val talkMode: VoiceTalkMode,
+    val hintShown: Boolean,
+    val autoJoin: Boolean,
+)

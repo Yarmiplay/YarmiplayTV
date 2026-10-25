@@ -114,6 +114,16 @@ class AndroidVoiceEngine(
         session.get()?.setTransmitting(on)
     }
 
+    override fun hasMicPermission(): Boolean =
+        ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+
+    override fun onMicPermissionGranted() {
+        val media = session.get() ?: return
+        if (captureJob?.isActive == true) return
+        startCapture(media)
+    }
+
     override fun setSelfMuted(muted: Boolean) {
         session.get()?.setSelfMuted(muted)
     }

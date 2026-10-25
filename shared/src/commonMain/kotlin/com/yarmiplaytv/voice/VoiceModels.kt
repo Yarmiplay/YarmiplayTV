@@ -57,11 +57,26 @@ data class VoiceUiState(
     val showMicHint: Boolean = false,
     /** Last remote key label that toggled the mic (e.g. "mic button"), when known. */
     val remoteKeyLabel: String = "",
+    /**
+     * True after the user denied RECORD_AUDIO with "Don't ask again" (or equivalent).
+     * Room UI offers a button that opens the app's permission settings.
+     */
+    val showMicPermissionSettings: Boolean = false,
 ) {
     val showUi: Boolean get() = available && enabledByClient
     val listenOnly: Boolean get() = showUi && capture == VoiceCaptureKind.NONE
-    /** Show the focusable Mic control (hidden in listen-only). */
-    val showMicButton: Boolean get() = showUi && !listenOnly
+    /** Joining or connected — mic/mute controls only make sense then. */
+    val inVoice: Boolean
+        get() = connection == VoiceConnection.CONNECTED || connection == VoiceConnection.CONNECTING
+    /** Mic control while connected (hidden in listen-only and when not in voice). */
+    val showMicButton: Boolean get() = showUi && !listenOnly && connection == VoiceConnection.CONNECTED
+    /**
+     * Single membership control: Leave while in/joining voice, Join while out (after Leave, auto-join
+     * off, or a failed connect). Never show both labels at once.
+     */
+    val showVoiceMembershipButton: Boolean get() = showUi
+    /** True → label "Leave voice"; false → "Join voice". */
+    val voiceMembershipIsLeave: Boolean get() = inVoice
     /** Clear on-screen “mic is open” affordance. */
     val micLive: Boolean get() = showUi && !listenOnly && talking
 }

@@ -176,6 +176,13 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                     subtitle = "Talk in rooms on a YarmiplayServerTV server that has voice on; off hides the controls and disconnects",
                 )
                 if (settings.voiceChat) {
+                    ToggleRow(
+                        "Auto-join voice",
+                        settings.voiceAutoJoin,
+                        { container.scope.launch { container.settingsStore.saveVoiceAutoJoin(!settings.voiceAutoJoin) } },
+                        subtitle = "Join voice automatically when you enter a room that has it; off shows Join voice until you tap it",
+                        modifier = Modifier.testTag("toggle_voice_auto_join"),
+                    )
                     TvVoiceDeviceRows(container)
                 }
                 if (container.supportsDeviceAccess) {

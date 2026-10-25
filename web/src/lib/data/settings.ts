@@ -72,6 +72,8 @@ export interface Settings {
   chatOnVideo: boolean;
   /** Join room voice on YarmiplayServerTV when the server has it on. */
   voiceChat: boolean;
+  /** Join voice automatically when entering a room that has it (default on). */
+  voiceAutoJoin: boolean;
   /** `enumerateDevices` mic id; empty = system default. */
   voiceInputDeviceId: string;
   /** `setSinkId` speaker id when supported; empty = system default. */
@@ -141,6 +143,7 @@ export function load(): Settings {
     showChat: bool("chat_show", true),
     chatOnVideo: bool("chat_on_video", false),
     voiceChat: bool("voice_chat", true),
+    voiceAutoJoin: bool("voice_auto_join", true),
     voiceInputDeviceId: text("voice_input_device", ""),
     voiceOutputDeviceId: text("voice_output_device", ""),
     theme: themeOf(read("app_theme")),
@@ -190,6 +193,7 @@ export function save(settings: Settings) {
   write("chat_show", String(settings.showChat));
   write("chat_on_video", String(settings.chatOnVideo));
   write("voice_chat", String(settings.voiceChat));
+  write("voice_auto_join", String(settings.voiceAutoJoin));
   write("voice_input_device", settings.voiceInputDeviceId);
   write("voice_output_device", settings.voiceOutputDeviceId);
   write("app_theme", settings.theme);

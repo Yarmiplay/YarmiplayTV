@@ -206,6 +206,13 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
             if (voiceUi.showMicButton) {
                 TvMicButton(voiceUi, onToggle = { container.voice.toggleTalk() })
             }
+            if (voiceUi.showVoiceMembershipButton) {
+                if (voiceUi.voiceMembershipIsLeave) {
+                    ActionButton("Leave voice", { container.voice.leave() }, Modifier.testTag("voice_leave"))
+                } else {
+                    ActionButton("Join voice", { container.voice.join() }, Modifier.testTag("voice_join"))
+                }
+            }
         }
         val me = room.users.firstOrNull { it.name == room.username }
         val streamingFrom = relayStatus?.takeIf { !it.downloading && !it.complete }?.seeders?.toSet().orEmpty()

@@ -10,6 +10,7 @@ fun voiceBanner(ui: VoiceUiState): String? = when {
     !ui.showUi -> null
     ui.connection == VoiceConnection.CONNECTING -> "Connecting voice…"
     ui.connection == VoiceConnection.FAILED -> ui.statusLine ?: "Voice couldn't connect"
+    ui.connection == VoiceConnection.OFF -> ui.statusLine
     ui.listenOnly -> "Listening only — no mic on this device. Join from your phone to talk."
     ui.micLive -> "Mic live"
     ui.talkMode == VoiceTalkMode.TOGGLE -> ui.statusLine ?: "Mic off — press Mic to talk"

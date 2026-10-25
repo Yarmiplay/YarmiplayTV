@@ -58,6 +58,7 @@ import com.yarmiplaytv.tracking.detect.SkipDetector
 import com.yarmiplaytv.update.Updates
 import com.yarmiplaytv.update.WhatsNew
 import com.yarmiplaytv.voice.NullVoiceEngine
+import com.yarmiplaytv.voice.MicPermissionBridge
 import com.yarmiplaytv.voice.VoiceController
 import com.yarmiplaytv.voice.VoiceEngine
 import java.io.File
@@ -230,8 +231,14 @@ class AppContainer(
     /** Starts checking only when the host calls [Updates.checkOnLaunch]. */
     val updates = Updates(scope, settingsStore, appVersion)
 
+    /**
+     * Android attaches [androidx.activity.result.contract.ActivityResultContracts.RequestPermission]
+     * here from MainActivity; desktop keeps the always-granted default.
+     */
+    val micPermissions = MicPermissionBridge()
+
     /** Room voice chat on YarmiplayServerTV; idle when the server or client setting is off. */
-    val voice = VoiceController(sync, settingsStore, scope, voiceEngine) { deviceKind }
+    val voice = VoiceController(sync, settingsStore, scope, voiceEngine, micPermissions) { deviceKind }
 
     /** Called when the person or platform requests shutting down the application. */
     var onExitApp: (() -> Unit)? = null

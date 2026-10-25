@@ -7,23 +7,30 @@ import { WebVoiceEngine } from "./engine";
 export type VoiceUi = {
   available: boolean;
   connected: boolean;
+  connecting: boolean;
   participantId: string | null;
   peers: VoicePeer[];
   speakingIds: Set<string>;
   selfMuted: boolean;
   transmitting: boolean;
   status: string | null;
+  /** Single flip: Leave while in/joining, Join while out. */
+  membershipIsLeave: boolean;
+  showMic: boolean;
 };
 
 const idle = (): VoiceUi => ({
   available: false,
   connected: false,
+  connecting: false,
   participantId: null,
   peers: [],
   speakingIds: new Set(),
   selfMuted: false,
   transmitting: false,
   status: null,
+  membershipIsLeave: false,
+  showMic: false,
 });
 
 /**
@@ -33,6 +40,9 @@ export class VoiceController {
   readonly ui = new Store<VoiceUi>(idle());
   private readonly engine = new WebVoiceEngine();
   private enabled = true;
+  private autoJoin = true;
+  /** After Leave (or auto-join off on entry), stay out until [join]. */
+  private leftByUser = false;
   private unsubs: Array<() => void> = [];
   private onDeviceLostClear: ((input: boolean) => void) | null = null;
 
@@ -55,11 +65,17 @@ export class VoiceController {
     for (const u of this.unsubs) u();
     this.unsubs = [];
     this.engine.disconnect();
+    this.leftByUser = false;
     this.ui.set(idle());
   }
 
   setEnabled(on: boolean) {
     this.enabled = on;
+    this.reconcile();
+  }
+
+  setAutoJoin(on: boolean) {
+    this.autoJoin = on;
     this.reconcile();
   }
 
@@ -97,17 +113,37 @@ export class VoiceController {
   }
 
   leave() {
+    this.leftByUser = true;
     this.client()?.leaveVoice();
     this.engine.disconnect();
     this.ui.update((u) => ({
       ...u,
       connected: false,
+      connecting: false,
       participantId: null,
       peers: [],
       speakingIds: new Set(),
       transmitting: false,
       status: "Left voice",
+      membershipIsLeave: false,
+      showMic: false,
     }));
+  }
+
+  /** Rejoin after Leave / when auto-join is off. Respects client and server toggles. */
+  join() {
+    const c = this.client();
+    const y = c?.state.yarmiplay;
+    if (!c || !y || !voiceAvailable(y) || !this.enabled) return;
+    this.leftByUser = false;
+    this.ui.update((u) => ({
+      ...u,
+      connecting: true,
+      status: "Connecting voice…",
+      membershipIsLeave: true,
+      showMic: false,
+    }));
+    c.joinVoice();
   }
 
   setPeerMuted(participantId: string, muted: boolean) {
@@ -124,16 +160,42 @@ export class VoiceController {
     const available = !!y && voiceAvailable(y) && this.enabled;
     this.ui.update((u) => ({ ...u, available }));
     if (!available) {
-      if (this.ui.value.connected || this.ui.value.participantId) {
+      this.leftByUser = false;
+      if (this.ui.value.connected || this.ui.value.participantId || this.ui.value.connecting) {
         c?.leaveVoice();
         this.engine.disconnect();
         this.ui.update(() => ({ ...idle(), available: false }));
       }
       return;
     }
-    if (!this.ui.value.connected && this.ui.value.status !== "Connecting voice…") {
-      this.ui.update((u) => ({ ...u, status: "Connecting voice…" }));
+    if (this.leftByUser) {
+      this.ui.update((u) => ({
+        ...u,
+        membershipIsLeave: false,
+        showMic: false,
+        status: u.status ?? "Not in voice — tap Join voice to talk",
+      }));
+      return;
+    }
+    if (this.ui.value.connected || this.ui.value.connecting) return;
+    if (this.autoJoin) {
+      this.ui.update((u) => ({
+        ...u,
+        connecting: true,
+        status: "Connecting voice…",
+        membershipIsLeave: true,
+        showMic: false,
+      }));
       c?.joinVoice();
+    } else {
+      this.ui.update((u) => ({
+        ...u,
+        connected: false,
+        connecting: false,
+        membershipIsLeave: false,
+        showMic: false,
+        status: u.status ?? "Not in voice — tap Join voice to talk",
+      }));
     }
   }
 
@@ -156,15 +218,26 @@ export class VoiceController {
         );
         if (!ok) {
           c.leaveVoice();
-          this.ui.update((u) => ({ ...u, connected: false, status: "Couldn't connect voice" }));
+          this.ui.update((u) => ({
+            ...u,
+            connected: false,
+            connecting: false,
+            status: "Couldn't connect voice",
+            membershipIsLeave: false,
+            showMic: false,
+          }));
           return;
         }
+        this.leftByUser = false;
         this.ui.update((u) => ({
           ...u,
           connected: true,
+          connecting: false,
           participantId: ev.participantId,
           status: null,
           transmitting: !u.selfMuted,
+          membershipIsLeave: true,
+          showMic: true,
         }));
         this.engine.setTransmitting(!this.ui.value.selfMuted);
         break;
@@ -174,18 +247,26 @@ export class VoiceController {
         this.ui.update((u) => ({
           ...u,
           connected: false,
+          connecting: false,
           participantId: null,
           peers: [],
           speakingIds: new Set(),
           transmitting: false,
+          showMic: false,
+          membershipIsLeave: false,
           status:
             ev.reason === "full"
               ? "Voice room is full"
               : ev.reason === "disabled" || ev.reason === "vanilla"
                 ? "Voice chat turned off on the server"
-                : null,
+                : ev.reason === "left"
+                  ? "Left voice"
+                  : null,
         }));
-        if (ev.reason === "room" && this.enabled) this.reconcile();
+        if (ev.reason === "room") {
+          this.leftByUser = false;
+          if (this.enabled) this.reconcile();
+        }
         break;
       case "voicePeers":
         this.ui.update((u) => ({
@@ -205,6 +286,7 @@ export class VoiceController {
       case "disconnected":
       case "sessionEnded":
         this.engine.disconnect();
+        this.leftByUser = false;
         this.ui.set(idle());
         break;
       default:

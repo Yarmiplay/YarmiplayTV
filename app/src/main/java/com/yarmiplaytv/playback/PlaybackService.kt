@@ -68,6 +68,7 @@ class PlaybackService : Service() {
             ACTION_VOICE_MUTE -> if (isPhoneOrTablet) container.voice.toggleSelfMuted()
             ACTION_VOICE_TALK -> if (isPhoneOrTablet) handleVoiceTalk()
             ACTION_VOICE_LEAVE -> if (isPhoneOrTablet) container.voice.leave()
+            ACTION_VOICE_JOIN -> if (isPhoneOrTablet) container.voice.join()
             ACTION_STOP -> {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -368,7 +369,8 @@ class PlaybackService : Service() {
         val playPauseIcon = if (playerState.paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
         val playPauseLabel = if (playerState.paused) "Play" else "Pause"
 
-        val showVoice = isPhoneOrTablet && voice.showUi && voice.connection == VoiceConnection.CONNECTED
+        val showVoiceConnected = isPhoneOrTablet && voice.showUi && voice.connection == VoiceConnection.CONNECTED
+        val showVoiceMembership = isPhoneOrTablet && voice.showVoiceMembershipButton
         val mediaStyle = Notification.MediaStyle()
         mediaSession?.let { mediaStyle.setMediaSession(it.sessionToken) }
         mediaStyle.setShowActionsInCompactView(0, 1, 2)
@@ -378,7 +380,7 @@ class PlaybackService : Service() {
             .setContentText(subtitle)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(contentIntent)
-            .setOngoing(!playerState.paused || showVoice)
+            .setOngoing(!playerState.paused || showVoiceConnected || showVoiceMembership)
             .setDeleteIntent(exitIntent)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setCategory(Notification.CATEGORY_TRANSPORT)
@@ -405,7 +407,7 @@ class PlaybackService : Service() {
                 ).build(),
             )
 
-        if (showVoice) {
+        if (showVoiceConnected && voice.showMicButton) {
             val micAction = when (voice.talkMode) {
                 VoiceTalkMode.OPEN_MIC ->
                     (if (voice.selfMuted) "Unmute" else "Mute") to ACTION_VOICE_MUTE
@@ -419,13 +421,25 @@ class PlaybackService : Service() {
                     servicePending(5, micAction.second),
                 ).build(),
             )
-            builder.addAction(
-                Notification.Action.Builder(
-                    Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
-                    "Leave voice",
-                    servicePending(7, ACTION_VOICE_LEAVE),
-                ).build(),
-            )
+        }
+        if (showVoiceMembership) {
+            if (voice.voiceMembershipIsLeave) {
+                builder.addAction(
+                    Notification.Action.Builder(
+                        Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
+                        "Leave voice",
+                        servicePending(7, ACTION_VOICE_LEAVE),
+                    ).build(),
+                )
+            } else {
+                builder.addAction(
+                    Notification.Action.Builder(
+                        Icon.createWithResource(this, android.R.drawable.ic_btn_speak_now),
+                        "Join voice",
+                        servicePending(8, ACTION_VOICE_JOIN),
+                    ).build(),
+                )
+            }
         }
 
         builder.addAction(
@@ -472,6 +486,7 @@ class PlaybackService : Service() {
         const val ACTION_VOICE_MUTE = "com.yarmiplaytv.action.VOICE_MUTE"
         const val ACTION_VOICE_TALK = "com.yarmiplaytv.action.VOICE_TALK"
         const val ACTION_VOICE_LEAVE = "com.yarmiplaytv.action.VOICE_LEAVE"
+        const val ACTION_VOICE_JOIN = "com.yarmiplaytv.action.VOICE_JOIN"
 
         fun start(context: Context) {
             val intent = Intent(context, PlaybackService::class.java).setAction(ACTION_START)
