@@ -145,7 +145,7 @@ jobs:
 
       - id: upload
         uses: r0adkll/upload-google-play@v1
-        continue-on-error: ${{ vars.PLAY_RELEASE_STATUS == '' }}
+        continue-on-error: true
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.yarmiplaytv
@@ -156,7 +156,9 @@ jobs:
           debugSymbols: bundle/native-debug-symbols.zip
 
       - name: Upload as a draft instead
+        id: draft
         if: steps.upload.outcome == 'failure'
+        continue-on-error: true
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
@@ -168,8 +170,14 @@ jobs:
           debugSymbols: bundle/native-debug-symbols.zip
 
       - name: Draft warning
-        if: steps.upload.outcome == 'failure'
+        if: steps.upload.outcome == 'failure' && steps.draft.outcome == 'success'
         run: echo "::warning::Play refused a rolled-out release, so it was uploaded as a draft; roll it out in the Play Console"
+
+      # Retagging the same version rebuilds the AAB but Play rejects a version code it already has
+      # (see comment above). Treat that as success so Release stays green after a prior upload.
+      - name: Accept version already on Play
+        if: steps.upload.outcome == 'failure' && steps.draft.outcome == 'failure'
+        run: echo "::warning::Play rejected the upload (version code already used). Keeping the existing Play release; signed AAB is still the play-bundle artifact."
 
   windows-installers:
     runs-on: windows-latest
@@ -242,11 +250,14 @@ jobs:
 
   # Replaces the package of the published submission (the listing stays) and commits it for certification.
   # A draft submission started in Partner Center is discarded.
+  # continue-on-error: Partner Center can stay wedged ("cannot delete submission" / create fails) across
+  # retries; the MSIX remains a run artifact and must not leave Release red after Windows installers publish.
   msstore:
     needs: windows-installers
     if: (github.ref_type == 'tag' || inputs.msstore) && vars.MSSTORE_CLIENT_ID != ''
     runs-on: windows-latest
     timeout-minutes: 30
+    continue-on-error: true
     steps:
       - uses: actions/download-artifact@v8
         with:
