@@ -41,7 +41,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private val container get() = (application as YarmiplayTvApp).container
 
-    /** Activity-result launcher must be registered before STARTED; attached to the bridge in onCreate. */
+    /** Attached to the mic-permission bridge in onCreate; results arrive via [onRequestPermissionsResult]. */
     private val androidMicPermissions = AndroidMicPermissions(this)
 
     private val pipExitReceiver = object : BroadcastReceiver() {
@@ -145,6 +145,17 @@ class MainActivity : ComponentActivity() {
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray,
+    ) {
+        if (androidMicPermissions.onRequestPermissionsResult(requestCode, grantResults)) return
+        @Suppress("DEPRECATION")
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     override fun onStart() {
