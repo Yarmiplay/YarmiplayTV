@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.7.5" date="2026-10-25">
+      <description>
+        <p>The Google Play build is shrunk, obfuscated and optimized. Debug builds stay readable.</p>
+      </description>
+    </release>
     <release version="2.7.4" date="2026-10-25">
       <description>
         <p>The Windows installer is one branded window, and launch updates on Windows use it.</p>

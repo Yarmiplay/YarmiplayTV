@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val appVersion = "2.7.4"
+val appVersion = "2.7.5"
 
 /** Play needs an ever-increasing versionCode: major * 10000 + minor * 100 + patch. */
 fun versionCodeOf(name: String): Int {
@@ -81,13 +81,15 @@ android {
 
     buildTypes {
         debug {
+            // Download page, local installs and instrumented tests. Not shrunk or renamed.
+            isMinifyEnabled = false
             signingConfigs.findByName("downloadPage")?.let { signingConfig = it }
         }
         release {
-            // Play builds: apps on Play mustn't update themselves or point to updates outside Play.
+            // Play builds only: apps on Play mustn't update themselves or point to updates outside Play.
             buildConfigField("boolean", "UPDATE_CHECK", "false")
             signingConfig = signingConfigs.findByName("release")
-            // R8 runs so Play gets mapping.txt. proguard-rules.pro keeps names and code as they are.
+            // Shrink, obfuscate and optimize the Play bundle. mapping.txt goes to Play with it.
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // libmpv's .so files are already stripped. SYMBOL_TABLE is the symbol table Play can store.
