@@ -63,7 +63,7 @@ class DesktopVoiceEngine : VoiceEngine {
         session.set(media)
         frameSamples = media.frameSamples
         openPlayback()
-        startCapture(media)
+        // Capture only while transmitting so mute/mic-off releases the input device.
         startMixPump(media)
         startDeviceWatch()
         return true
@@ -72,23 +72,43 @@ class DesktopVoiceEngine : VoiceEngine {
     override fun disconnect() {
         watchJob?.cancel()
         watchJob = null
-        captureThread?.interrupt()
-        captureThread = null
         playbackJob?.cancel()
         playbackJob = null
         session.getAndSet(null)?.disconnect()
-        closeCaptureLine()
+        stopCapture()
         closePlaybackLine()
         runCatching { clip?.close() }
         clip = null
     }
 
     override fun setTransmitting(on: Boolean) {
-        session.get()?.setTransmitting(on)
+        val media = session.get()
+        media?.setTransmitting(on)
+        syncCapture(media)
     }
 
     override fun setSelfMuted(muted: Boolean) {
-        session.get()?.setSelfMuted(muted)
+        val media = session.get()
+        media?.setSelfMuted(muted)
+        syncCapture(media)
+    }
+
+    private fun syncCapture(media: VoiceMediaSession?) {
+        if (media == null || session.get() !== media) {
+            stopCapture()
+            return
+        }
+        if (media.isTransmitting()) {
+            if (captureThread?.isAlive != true) startCapture(media)
+        } else {
+            stopCapture()
+        }
+    }
+
+    private fun stopCapture() {
+        captureThread?.interrupt()
+        captureThread = null
+        closeCaptureLine()
     }
 
     override fun setInputGain(gain: Float) {
@@ -120,7 +140,8 @@ class DesktopVoiceEngine : VoiceEngine {
         if (inputDeviceId == next) return
         inputDeviceId = next
         val media = session.get() ?: return
-        startCapture(media)
+        stopCapture()
+        syncCapture(media)
     }
 
     override fun setOutputDeviceId(id: String?) {
@@ -194,9 +215,7 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     private fun startCapture(media: VoiceMediaSession) {
-        captureThread?.interrupt()
-        captureThread = null
-        closeCaptureLine()
+        stopCapture()
         var id = inputDeviceId
         var line = JvmVoiceDevices.openCapture(id, media.frameSamples)
         if (line == null && !id.isNullOrEmpty()) {
@@ -240,7 +259,8 @@ class DesktopVoiceEngine : VoiceEngine {
                 if (!JvmVoiceDevices.isAvailable(inputDeviceId, target = true)) {
                     inputDeviceId = null
                     onDeviceLost?.invoke(true)
-                    startCapture(media)
+                    stopCapture()
+                    syncCapture(media)
                 }
                 if (!JvmVoiceDevices.isAvailable(outputDeviceId, target = false)) {
                     outputDeviceId = null

@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.7.8" date="2026-10-25">
+      <description>
+        <p>Stop holding the mic while muted (privacy indicator), fix voice audio playback routing and open-mic permission, and restore the Android playback notification when voice is connected without mic permission.</p>
+      </description>
+    </release>
     <release version="2.7.7" date="2026-10-25">
       <description>
         <p>Ask for microphone permission when you tap Mic, Join voice after Leave (with Auto-join voice setting), and make skip listening cancel reliably when the file changes.</p>

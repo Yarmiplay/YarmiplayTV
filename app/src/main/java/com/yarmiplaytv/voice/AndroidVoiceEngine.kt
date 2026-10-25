@@ -88,7 +88,8 @@ class AndroidVoiceEngine(
         session.set(media)
         frameSamples = media.frameSamples
         startPlayback(media.frameSamples)
-        startCapture(media)
+        // Capture starts only while transmitting so a muted/mic-off join does not hold AudioRecord
+        // (green privacy indicator) or request the mic FGS type without need.
         return true
     }
 
@@ -97,13 +98,10 @@ class AndroidVoiceEngine(
     }
 
     private fun disconnectMedia() {
-        captureJob?.cancel()
-        captureJob = null
         playbackJob?.cancel()
         playbackJob = null
         session.getAndSet(null)?.disconnect()
-        runCatching { audioRecord?.release() }
-        audioRecord = null
+        stopCapture()
         runCatching { audioTrack?.pause(); audioTrack?.flush(); audioTrack?.release() }
         audioTrack = null
         runCatching { player?.release() }
@@ -111,7 +109,9 @@ class AndroidVoiceEngine(
     }
 
     override fun setTransmitting(on: Boolean) {
-        session.get()?.setTransmitting(on)
+        val media = session.get()
+        media?.setTransmitting(on)
+        syncCapture(media)
     }
 
     override fun hasMicPermission(): Boolean =
@@ -119,13 +119,34 @@ class AndroidVoiceEngine(
             PackageManager.PERMISSION_GRANTED
 
     override fun onMicPermissionGranted() {
-        val media = session.get() ?: return
-        if (captureJob?.isActive == true) return
-        startCapture(media)
+        syncCapture(session.get())
     }
 
     override fun setSelfMuted(muted: Boolean) {
-        session.get()?.setSelfMuted(muted)
+        val media = session.get()
+        media?.setSelfMuted(muted)
+        syncCapture(media)
+    }
+
+    /** Hold [AudioRecord] only while we are transmitting; release it when muted / mic off. */
+    private fun syncCapture(media: VoiceMediaSession?) {
+        if (media == null || session.get() !== media) {
+            stopCapture()
+            return
+        }
+        if (media.isTransmitting()) {
+            if (captureJob?.isActive != true) startCapture(media)
+        } else {
+            stopCapture()
+        }
+    }
+
+    private fun stopCapture() {
+        captureJob?.cancel()
+        captureJob = null
+        runCatching { audioRecord?.stop() }
+        runCatching { audioRecord?.release() }
+        audioRecord = null
     }
 
     override fun setInputGain(gain: Float) {
@@ -169,8 +190,9 @@ class AndroidVoiceEngine(
         preferredInputId = next
         val media = session.get() ?: return
         if (!applyPreferredInput()) {
-            // Recreate capture on the new (or default) route.
-            startCapture(media)
+            // Recreate capture on the new (or default) route when transmitting.
+            stopCapture()
+            syncCapture(media)
         }
     }
 
@@ -202,10 +224,7 @@ class AndroidVoiceEngine(
     }
 
     private fun startCapture(media: VoiceMediaSession) {
-        captureJob?.cancel()
-        captureJob = null
-        runCatching { audioRecord?.release() }
-        audioRecord = null
+        stopCapture()
         if (ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -258,10 +277,12 @@ class AndroidVoiceEngine(
             AudioFormat.ENCODING_PCM_16BIT,
         )
         if (minBuf <= 0) return
+        // USAGE_MEDIA follows the same volume stream as video/music and TV speakers; VOICE_COMMUNICATION
+        // often stays silent on TVs and phones when the call stream is at zero while media is loud.
         val track = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build(),
             )
@@ -334,7 +355,10 @@ class AndroidVoiceEngine(
                 if (preferredInputId != null && preferredInputId in removedIds) {
                     preferredInputId = null
                     onDeviceLost?.invoke(true)
-                    if (media != null) startCapture(media)
+                    if (media != null) {
+                        stopCapture()
+                        syncCapture(media)
+                    }
                 }
                 if (preferredOutputId != null && preferredOutputId in removedIds) {
                     preferredOutputId = null

@@ -101,10 +101,15 @@ class VoiceMediaSession(
         transmitting.set(on && !selfMuted.get())
     }
 
+    /** True when capture frames should be encoded and sent. */
+    fun isTransmitting(): Boolean = transmitting.get()
+
     fun setSelfMuted(muted: Boolean) {
         selfMuted.set(muted)
         if (muted) transmitting.set(false)
     }
+
+    fun isSelfMuted(): Boolean = selfMuted.get()
 
     fun setInputGain(gain: Float) {
         inputGain = gain.coerceIn(0f, 2f)
