@@ -139,14 +139,23 @@ jobs:
           "$text" | Tee-Object -FilePath "$env:RUNNER_TEMP/version-after-msi.txt"
           if ($text -notmatch "YarmiplayTV $version") { throw "after MSI upgrade (exit $($v.ExitCode)): [$text]" }
 
-      - name: setup.exe /quiet over the upgraded install
+      - name: Fresh setup.exe /quiet on a clean install dir
         timeout-minutes: 5
         shell: pwsh
         run: |
+          # Same-version setup.exe over an MSI of this version returns 1638. Uninstall first, then
+          # prove the download-page setup.exe /quiet path (WindowsUpdater's .exe branch).
           $setup = Join-Path $env:GITHUB_WORKSPACE "setup\YarmiplayTV-${{ steps.pkg.outputs.version }}-setup.exe"
-          $exe = "${{ steps.app.outputs.exe }}"
-          $dir = "${{ steps.app.outputs.dir }}"
           $version = "${{ steps.pkg.outputs.version }}"
+          $msi = Join-Path $env:GITHUB_WORKSPACE "setup\YarmiplayTV-${{ steps.pkg.outputs.version }}.msi"
+          $u = Start-Process msiexec.exe -PassThru -ArgumentList "/x `"$msi`" /qn /norestart"
+          if (-not $u.WaitForExit(300000)) {
+            Stop-Process -Id $u.Id -Force -ErrorAction SilentlyContinue
+            throw "msiexec uninstall timed out"
+          }
+          "uninstall exit=$($u.ExitCode)" | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/uninstall.txt"
+          # 1605 = product not found; OK if UpgradeCode cleanup already removed it.
+          if ($u.ExitCode -notin 0, 1605, 3010) { throw "msiexec uninstall failed: $($u.ExitCode)" }
           $p = Start-Process -FilePath $setup -ArgumentList @("/quiet") -PassThru
           if (-not $p.WaitForExit(300000)) {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
@@ -154,9 +163,14 @@ jobs:
           }
           "quiet exit=$($p.ExitCode)" | Tee-Object -FilePath "$env:RUNNER_TEMP/setup-logs/quiet.txt"
           if ($p.ExitCode -notin 0, 3010) { throw "setup.exe /quiet failed: $($p.ExitCode)" }
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\YarmiplayTV", "$env:LOCALAPPDATA\Programs" `
+            -Recurse -Filter "YarmiplayTV.exe" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '\\runtime\\' } |
+            Select-Object -First 1
+          if (-not $exe) { throw "YarmiplayTV.exe not found after setup.exe /quiet" }
           $out = Join-Path $env:RUNNER_TEMP "version-exe-out.txt"
           $err = Join-Path $env:RUNNER_TEMP "version-exe-err.txt"
-          $v = Start-Process -FilePath $exe -ArgumentList "--version" -WorkingDirectory $dir `
+          $v = Start-Process -FilePath $exe.FullName -ArgumentList "--version" -WorkingDirectory $exe.DirectoryName `
             -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
           $text = ((Get-Content -Raw -ErrorAction SilentlyContinue $out) + (Get-Content -Raw -ErrorAction SilentlyContinue $err)).Trim()
           "$text" | Tee-Object -FilePath "$env:RUNNER_TEMP/version-after-exe.txt"
