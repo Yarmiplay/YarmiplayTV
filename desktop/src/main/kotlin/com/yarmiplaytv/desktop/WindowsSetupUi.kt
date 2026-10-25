@@ -64,8 +64,20 @@ class WindowsSetupUi {
         }
         frame = JFrame("YarmiplayTV").apply {
             isUndecorated = true
+            if (translucencySupported()) background = Color(0, 0, 0, 0)
             defaultCloseOperation = WindowConstants.DO_NOTHING_ON_CLOSE
+            iconImages = listOf(16, 32, 48, 64).map(LaunchUpdateWindow::logoImage)
             contentPane = card
+            val drag = object : java.awt.event.MouseAdapter() {
+                private var from: java.awt.Point? = null
+                override fun mousePressed(e: java.awt.event.MouseEvent) { from = e.point }
+                override fun mouseDragged(e: java.awt.event.MouseEvent) {
+                    val start = from ?: return
+                    setLocation(x + e.x - start.x, y + e.y - start.y)
+                }
+            }
+            card.addMouseListener(drag)
+            card.addMouseMotionListener(drag)
             isResizable = false
             pack()
             setSize(maxOf(width, 440), height)
@@ -165,11 +177,23 @@ object WindowsSetupArgs {
     fun isSilent(args: Array<String>): Boolean =
         args.any { it.equals("--silent", true) || it.equals("/S", true) || it.equals("/silent", true) }
 
+    /** No option page: `/quiet` is what 2.7.1–2.7.3 pass, `--silent` is the branded installer's own flag. */
+    fun unattended(args: Array<String>): Boolean =
+        isSilent(args) || args.any { it.equals("/quiet", true) || it.equals("/qn", true) }
+
     fun relaunch(args: Array<String>): Boolean =
         args.any { it.equals("--relaunch", true) }
+
+    fun isUninstall(args: Array<String>): Boolean =
+        args.any { it.equals("--uninstall", true) }
 
     fun installDir(args: Array<String>): String? {
         val i = args.indexOfFirst { it.equals("--dir", true) }
         return if (i >= 0 && i + 1 < args.size) args[i + 1] else null
     }
 }
+
+private fun translucencySupported(): Boolean = runCatching {
+    java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice
+        .isWindowTranslucencySupported(java.awt.GraphicsDevice.WindowTranslucency.PERPIXEL_TRANSLUCENT)
+}.getOrDefault(false)

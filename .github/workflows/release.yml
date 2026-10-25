@@ -4,8 +4,8 @@ name: Release
 # - the Play upload bundle, signed with the upload key from the secrets YARMIPLAYTV_KEYSTORE_BASE64,
 #   YARMIPLAYTV_KEYSTORE_PASSWORD, YARMIPLAYTV_KEY_ALIAS and YARMIPLAYTV_KEY_PASSWORD; with the variable
 #   PLAY_TRACK and the secret PLAY_SERVICE_ACCOUNT_JSON it is uploaded to that Play Console track;
-# - the Windows installers (branded YarmiplayTV-<version>-setup.exe from jpackage Exe, the .msi for UpgradeCode
-#   migration, and the portable zip), attached to the tag's GitHub release, where the download page takes them
+# - the Windows installers (branded YarmiplayTV-<version>-setup.exe, the .msi for older updaters and winget,
+#   and the portable zip), attached to the tag's GitHub release, where the download page takes them
 #   from (and winget the .msi until it points at the .exe). They are released unsigned for now; once the variable
 #   SIGNPATH_ORGANIZATION_ID and the secret SIGNPATH_API_TOKEN are set, they are first code signed through
 #   SignPath (certificate by SignPath Foundation) after an approver accepts the signing request;
@@ -209,12 +209,10 @@ jobs:
       - name: Installers
         run: |
           chmod +x gradlew
-          ./gradlew --stacktrace :desktop:packageExe :desktop:packageMsi :desktop:packagePortableZip
+          ./gradlew --stacktrace :desktop:packageSetupExe :desktop:packageMsi :desktop:packagePortableZip
           mkdir windows
           cp desktop/build/compose/binaries/main/msi/*.msi desktop/build/compose/binaries/main/portable/*.zip windows/
-          # Download page / WindowsUpdater name: jpackage writes YarmiplayTV-<version>.exe.
-          cp "desktop/build/compose/binaries/main/exe/YarmiplayTV-${VERSION}.exe" \
-            "windows/YarmiplayTV-${VERSION}-setup.exe"
+          cp desktop/build/compose/binaries/main/exe/*-setup.exe windows/
           ls -l windows
 
       - name: jpackage logs

@@ -19,6 +19,12 @@ data class Update(
     /** This platform's package (APK, .msi, .dmg or .deb). */
     val downloadUrl: String,
     val sha256: String?,
+    /**
+     * Windows only: the branded setup.exe beside the .msi. Older Windows updaters ignore it and keep using
+     * [downloadUrl], which stays the .msi.
+     */
+    val setupUrl: String? = null,
+    val setupSha256: String? = null,
 )
 
 /** Versions like "1.2" or "1.2.0"; missing parts count as 0, so 1.2 and 1.2.0 are the same version. */
@@ -42,7 +48,8 @@ object AppVersions {
 /**
  * Reads the download page's version.json (written by scripts/download_site.py) from GitHub Pages:
  * `{"page": url, "platforms": {"android": {"version", "file", "sha256"}, "windows": …}}`, with "page"
- * and "file" relative to the manifest. The request carries nothing about the user or the device.
+ * and "file" relative to the manifest. Windows may also have "setup" and "setupSha256" for the branded
+ * installer. The request carries nothing about the user or the device.
  */
 class UpdateChecker(
     private val manifestUrl: String = System.getProperty("yarmiplaytv.updateManifest") ?: MANIFEST_URL,
@@ -71,11 +78,14 @@ class UpdateChecker(
             val file = entry["file"]?.jsonPrimitive?.content ?: return null
             if (!AppVersions.isNewer(version, current)) return null
             val base = manifestUrl.toHttpUrl()
+            val setupFile = entry["setup"]?.jsonPrimitive?.content
             return Update(
                 version = version,
                 pageUrl = (base.resolve(root["page"]?.jsonPrimitive?.content ?: "./") ?: base).toString(),
                 downloadUrl = base.resolve(file)?.toString() ?: return null,
                 sha256 = entry["sha256"]?.jsonPrimitive?.content,
+                setupUrl = setupFile?.let { base.resolve(it)?.toString() },
+                setupSha256 = entry["setupSha256"]?.jsonPrimitive?.content,
             )
         }
     }

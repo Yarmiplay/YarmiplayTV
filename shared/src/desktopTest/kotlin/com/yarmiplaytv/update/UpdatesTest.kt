@@ -79,6 +79,20 @@ class UpdatesTest {
     }
 
     @Test
+    fun `windows can name the branded setup beside the msi`() {
+        val json = """
+            {"page": "./", "platforms": {"windows": {
+              "version": "1.2.0", "file": "YarmiplayTV.msi", "sha256": "bb",
+              "setup": "YarmiplayTV.exe", "setupSha256": "cc"
+            }}}
+        """.trimIndent()
+        val update = UpdateChecker.parse(json, "windows", "1.0.0", "https://tv.yarmiplay.com/version.json")
+        assertEquals("https://tv.yarmiplay.com/YarmiplayTV.exe", update!!.setupUrl)
+        assertEquals("cc", update.setupSha256)
+        assertEquals("https://tv.yarmiplay.com/YarmiplayTV.msi", update.downloadUrl)
+    }
+
+    @Test
     fun `check returns null when the page is unreachable or broken`() {
         server.enqueue(MockResponse().setResponseCode(404))
         server.enqueue(MockResponse().setBody("<html>not json</html>"))

@@ -135,14 +135,17 @@ class UpdateSourceTest {
     }
 
     @Test
-    fun `the windows setup exe uses jpackage quiet not custom silent flags`() {
-        val updater = WindowsUpdater(exe, listOf("keep"))
-        val script = updater.exeScript(File("C:/Temp/YarmiplayTV-2.7.2-setup.exe"), listOf(1, 2), relaunch = true)
-        assertTrue(script.contains("/quiet"))
-        assertFalse("jpackage Exe rejects --silent", script.contains("--silent"))
-        assertFalse("relaunch is done by the updater, not the installer", script.contains("--relaunch"))
+    fun `the windows setup exe installs silently into the current folder`() {
+        val launcher = File("C:/Users/Sam/AppData/Local/Yarmiplay TV/YarmiplayTV.exe")
+        val updater = WindowsUpdater(launcher, listOf("keep"))
+        val script = updater.exeScript(File("C:/Temp/YarmiplayTV-2.7.4-setup.exe"), listOf(1, 2), relaunch = true)
+        val dir = launcher.parentFile.path
+        assertTrue(script.contains("-ArgumentList ${listOf("--silent", "--dir", dir).joinToString(",") { psQuoted(it) }}"))
+        assertFalse("the updater starts the new copy itself", script.contains("--relaunch"))
+        assertFalse(script.contains("/quiet"))
         assertTrue(script.contains("Wait-Process -Id 1,2"))
         assertTrue(script.contains("YARMIPLAYTV_UPDATE_FAILED"))
+        assertTrue(script.contains("keep"))
     }
 
     @Test

@@ -9,6 +9,10 @@ import java.awt.geom.Path2D
 import java.awt.geom.RoundRectangle2D
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
+import java.io.FilterOutputStream
+import java.util.zip.Deflater
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import javax.imageio.ImageIO
 
 plugins {
@@ -51,7 +55,7 @@ tasks.test {
     testLogging { events("passed", "skipped", "failed") }
 }
 
-val appVersion = "2.7.3"
+val appVersion = "2.7.4"
 val libmpvDir = project(":player-mpv-desktop").layout.buildDirectory.dir("libmpv")
 
 /** Draws the app logo (the two play triangles of ic_logo.xml on the banner gradient) as png, ico and icns. */
@@ -217,9 +221,9 @@ compose.desktop {
         if (malClientId.isNotEmpty()) jvmArgs += "-Dyarmiplaytv.malClientId=$malClientId"
 
         nativeDistributions {
-            // Exe is the download-page / winget installer (branded bootstrapper wraps this payload; see packaging/windows).
-            // Msi remains for the UpgradeCode migration path until installs are fully on .exe.
-            targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb)
+            // The download-page installer is packageSetupExe (branded window), not jpackage's Exe wizard.
+            // Msi stays so already-installed 2.6.x / 2.7.0 copies can still update, and for winget.
+            targetFormats(TargetFormat.Msi, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "YarmiplayTV"
             packageVersion = appVersion
             // On Windows this becomes the launcher's FileDescription, which Task Manager shows as the process name.
@@ -269,6 +273,105 @@ compose.desktop {
 // are, so a value with spaces needs its own quotes.
 tasks.withType<AbstractJPackageTask>().configureEach {
     if (targetFormat == TargetFormat.Deb) freeArgs.addAll("--linux-package-deps", "\"libmpv2 | libmpv1\"")
+}
+
+// Branded setup.exe: a small stub with the app image appended. Running it extracts the image and opens the
+// install window (YarmiplayTV.exe --setup). The footer matches writeSetupFooter in WindowsSetup.kt.
+abstract class PackageSetupExe : DefaultTask() {
+    @get:InputDirectory abstract val imageDir: DirectoryProperty
+    @get:InputFile abstract val stubSource: RegularFileProperty
+    @get:InputFile abstract val iconFile: RegularFileProperty
+    @get:Input abstract val packageVersion: Property<String>
+    @get:OutputFile abstract val setupExe: RegularFileProperty
+
+    @TaskAction
+    fun build() {
+        if (!System.getProperty("os.name").startsWith("Windows")) {
+            error("packageSetupExe builds the Windows installer and has to run on Windows")
+        }
+        val csc = File("C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe")
+        if (!csc.isFile) error("Windows setup needs the .NET Framework compiler at ${csc.path}")
+        val version = packageVersion.get()
+        val out = setupExe.get().asFile
+        val work = File(out.parentFile, "setup-stub").apply { mkdirs() }
+        val parts = version.split('.')
+        val asmVersion = List(4) { index -> parts.getOrNull(index)?.toIntOrNull() ?: 0 }.joinToString(".")
+        val assembly = File(work, "AssemblyInfo.cs")
+        assembly.writeText(
+            """
+            using System.Reflection;
+            [assembly: AssemblyTitle("YarmiplayTV Setup")]
+            [assembly: AssemblyProduct("YarmiplayTV")]
+            [assembly: AssemblyCompany("Yarmiplay")]
+            [assembly: AssemblyVersion("$asmVersion")]
+            [assembly: AssemblyFileVersion("$asmVersion")]
+            """.trimIndent(),
+        )
+        val stub = File(work, "stub.exe")
+        val compile = ProcessBuilder(
+            csc.absolutePath,
+            "/nologo",
+            "/target:winexe",
+            "/optimize+",
+            "/reference:System.IO.Compression.FileSystem.dll",
+            "/reference:System.Windows.Forms.dll",
+            "/win32icon:${iconFile.get().asFile.absolutePath}",
+            "/out:${stub.absolutePath}",
+            stubSource.get().asFile.absolutePath,
+            assembly.absolutePath,
+        ).redirectErrorStream(true).start()
+        val compileLog = compile.inputStream.bufferedReader().readText()
+        if (compile.waitFor() != 0) error("setup stub failed to compile\n$compileLog")
+
+        val image = imageDir.get().asFile
+        if (image.walkTopDown().none { it.isFile && it.name == "YarmiplayTV.exe" }) {
+            error("app image ${image.path} has no YarmiplayTV.exe")
+        }
+        out.parentFile.mkdirs()
+        out.outputStream().use { stream ->
+            stub.inputStream().use { it.copyTo(stream) }
+            val counted = object : FilterOutputStream(stream) {
+                var count = 0L
+                override fun write(b: Int) {
+                    stream.write(b)
+                    count++
+                }
+                override fun write(b: ByteArray, off: Int, len: Int) {
+                    stream.write(b, off, len)
+                    count += len
+                }
+            }
+            // Closing the zip must not close setup.exe: the footer is written after the zip.
+            val keepOpen = object : FilterOutputStream(counted) {
+                override fun write(b: ByteArray, off: Int, len: Int) = counted.write(b, off, len)
+                override fun close() { flush() }
+            }
+            ZipOutputStream(keepOpen).use { zip ->
+                zip.setLevel(Deflater.BEST_SPEED)
+                image.walkTopDown().filter { it.isFile }.forEach { file ->
+                    val entry = ZipEntry(file.relativeTo(image).invariantSeparatorsPath)
+                    entry.time = file.lastModified()
+                    zip.putNextEntry(entry)
+                    file.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
+            }
+            var length = counted.count
+            repeat(8) {
+                stream.write((length and 0xFF).toInt())
+                length = length ushr 8
+            }
+            stream.write("YPTVZIP1".toByteArray(Charsets.US_ASCII))
+        }
+    }
+}
+
+tasks.register<PackageSetupExe>("packageSetupExe") {
+    imageDir.set(tasks.named<AbstractJPackageTask>("createDistributable").flatMap { it.destinationDir })
+    stubSource.set(rootProject.layout.projectDirectory.file("packaging/windows/SetupStub.cs"))
+    iconFile.set(generateAppIcons.flatMap { it.outputDir.file("icon.ico") })
+    packageVersion.set(appVersion)
+    setupExe.set(layout.buildDirectory.file("compose/binaries/main/exe/YarmiplayTV-$appVersion-setup.exe"))
 }
 
 // The portable Windows app: the app image zipped, with its launcher marked portable so it keeps its settings

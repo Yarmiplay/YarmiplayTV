@@ -1,7 +1,7 @@
 name: Windows setup smoke
 
-# Proves the fixed Windows updater path: an older MSI install upgrades via msiexec to this
-# commit's MSI (version.json), and setup.exe /quiet installs/relaunches. Job stays ≤20 minutes.
+# Proves an older MSI install upgrades via msiexec, and the branded setup.exe /quiet installs
+# into the per-user folder. Job stays ≤20 minutes.
 on:
   workflow_dispatch:
     inputs:
@@ -68,8 +68,8 @@ jobs:
             ./gradlew --stacktrace -PdesktopOnly :desktop:packageMsi
             cp "desktop/build/compose/binaries/main/msi/YarmiplayTV-${version}.msi" setup/
           else
-            ./gradlew --stacktrace -PdesktopOnly :desktop:packageExe :desktop:packageMsi
-            cp "desktop/build/compose/binaries/main/exe/YarmiplayTV-${version}.exe" \
+            ./gradlew --stacktrace -PdesktopOnly :desktop:packageSetupExe :desktop:packageMsi
+            cp desktop/build/compose/binaries/main/exe/*-setup.exe \
               "setup/YarmiplayTV-${version}-setup.exe"
             cp "desktop/build/compose/binaries/main/msi/YarmiplayTV-${version}.msi" setup/
           fi
@@ -140,11 +140,10 @@ jobs:
           if ($text -notmatch "YarmiplayTV $version") { throw "after MSI upgrade (exit $($v.ExitCode)): [$text]" }
 
       - name: Fresh setup.exe /quiet on a clean install dir
-        timeout-minutes: 5
+        timeout-minutes: 10
         shell: pwsh
         run: |
-          # Same-version setup.exe over an MSI of this version returns 1638. Uninstall first, then
-          # prove the download-page setup.exe /quiet path (WindowsUpdater's .exe branch).
+          # The branded setup replaces an MSI of the same version, so uninstall the MSI first.
           $setup = Join-Path $env:GITHUB_WORKSPACE "setup\YarmiplayTV-${{ steps.pkg.outputs.version }}-setup.exe"
           $version = "${{ steps.pkg.outputs.version }}"
           $msi = Join-Path $env:GITHUB_WORKSPACE "setup\YarmiplayTV-${{ steps.pkg.outputs.version }}.msi"
@@ -157,7 +156,7 @@ jobs:
           # 1605 = product not found; OK if UpgradeCode cleanup already removed it.
           if ($u.ExitCode -notin 0, 1605, 3010) { throw "msiexec uninstall failed: $($u.ExitCode)" }
           $p = Start-Process -FilePath $setup -ArgumentList @("/quiet") -PassThru
-          if (-not $p.WaitForExit(300000)) {
+          if (-not $p.WaitForExit(480000)) {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
             throw "setup.exe /quiet timed out"
           }
@@ -175,6 +174,10 @@ jobs:
           $text = ((Get-Content -Raw -ErrorAction SilentlyContinue $out) + (Get-Content -Raw -ErrorAction SilentlyContinue $err)).Trim()
           "$text" | Tee-Object -FilePath "$env:RUNNER_TEMP/version-after-exe.txt"
           if ($text -notmatch "YarmiplayTV $version") { throw "after setup.exe (exit $($v.ExitCode)): [$text]" }
+          $key = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\YarmiplayTV'
+          if ($key.DisplayVersion -ne $version) { throw "uninstall entry is $($key.DisplayVersion)" }
+          $desk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'YarmiplayTV.lnk'
+          if (-not (Test-Path -LiteralPath $desk)) { throw "desktop shortcut missing" }
 
       - name: Upload logs
         if: always()

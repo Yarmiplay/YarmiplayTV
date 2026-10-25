@@ -6,6 +6,7 @@ fun main(args: Array<String>) {
     System.setProperty("apple.awt.application.appearance", "NSAppearanceNameDarkAqua")
     val list = args.toList()
     when {
+        "--setup" in list -> enterWindowsSetup(list)
         "--benchmark" in list -> runBenchmark(BenchmarkOptions(list))
         "--version" in list -> println("YarmiplayTV $APP_VERSION, libmpv ${libmpvVersion()}")
         else -> runApp(list)

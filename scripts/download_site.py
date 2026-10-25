@@ -233,7 +233,8 @@ def platforms(short_link, stores=(), play_test=False):
             f'apps when Android asks, then choose <b>Install</b>.',
         ], [], alternatives=True),
         Platform("windows", "Windows", "Windows 10 or 11, 64-bit.", [
-            "Get it from the Microsoft Store, or run the installer, then start YarmiplayTV from the Start menu.",
+            "Get it from the Microsoft Store, or run the installer and choose <b>Install</b>. "
+            "YarmiplayTV can start when it finishes, and it's also in the Start menu.",
             "Or unzip the portable version anywhere and run <b>YarmiplayTV.exe</b>: nothing is installed, and its "
             "settings stay in its folder.",
         ], ["Install JDK 17, clone the repository, then:", "gradlew.bat :desktop:run"], alternatives=True),
@@ -1027,8 +1028,13 @@ def update_manifest(found, downloads, version, desktop_version):
         if ext is None:
             continue
         fallback = version if ext == ".apk" else desktop_version
-        platforms[key] = {"version": file_version(found[ext]) or fallback, "file": downloads[ext].href,
-                          "sha256": downloads[ext].sha256}
+        entry = {"version": file_version(found[ext]) or fallback, "file": downloads[ext].href,
+                 "sha256": downloads[ext].sha256}
+        # Older Windows updaters only understand the .msi in "file". 2.7.4+ prefers "setup", the branded exe.
+        if key == "windows" and ".exe" in downloads:
+            entry["setup"] = downloads[".exe"].href
+            entry["setupSha256"] = downloads[".exe"].sha256
+        platforms[key] = entry
     return {"page": "./", "platforms": platforms}
 
 

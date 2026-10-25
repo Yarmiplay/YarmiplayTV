@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.7.4" date="2026-10-25">
+      <description>
+        <p>The Windows installer is one branded window, and launch updates on Windows use it.</p>
+      </description>
+    </release>
     <release version="2.7.3" date="2026-10-25">
       <description>
         <p>Google Play crash reports now include native debug symbols and the deobfuscation file.</p>

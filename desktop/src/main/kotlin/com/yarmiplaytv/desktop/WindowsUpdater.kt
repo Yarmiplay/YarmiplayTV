@@ -47,12 +47,9 @@ internal fun psRelaunch(launcher: File, args: List<String>, version: String): St
 /**
  * Installs updates from the download page's Windows package.
  *
- * Prefer the `.msi` URL in `version.json` (`msiexec /passive`): every release since 2.6.x's updater only
- * knows that path, and 2.7.0's `.exe` path passed `--silent` / `--relaunch`, which jpackage's Exe installer
- * does not accept (Benny's "installer didn't finish" after 2.7.1 pointed `version.json` at `.exe`).
- *
- * When the URL is still an `.exe` (manual / future), run jpackage's silent flag (`/quiet`) and relaunch
- * ourselves — never pass `--relaunch` into the installer.
+ * The branded setup.exe (version.json `setup`) is installed with `--silent --dir` into this copy's folder,
+ * showing the same progress card as the download. `file` stays the `.msi` so 2.6.x and 2.7.0, which only
+ * know `msiexec`, keep updating. This process starts the app again after a successful install.
  */
 internal class WindowsUpdater(
     private val launcher: File,
@@ -64,14 +61,13 @@ internal class WindowsUpdater(
     private var exeSetup = false
 
     override suspend fun download(update: Update, progress: (Float?) -> Unit) {
-        val name = update.downloadUrl.substringAfterLast('/').substringBefore('?')
-        exeSetup = name.endsWith(".exe", ignoreCase = true)
-        val destName = if (exeSetup) {
-            "YarmiplayTV-${update.version}-setup.exe"
-        } else {
-            "YarmiplayTV-${update.version}.msi"
-        }
-        packageFile = downloadVerified(update, File(System.getProperty("java.io.tmpdir"), destName), progress)
+        val setup = update.setupUrl
+        val setupSha = update.setupSha256
+        val branded = !setup.isNullOrBlank() && !setupSha.isNullOrBlank()
+        exeSetup = branded || update.downloadUrl.substringAfterLast('/').substringBefore('?').endsWith(".exe", ignoreCase = true)
+        val packageUpdate = if (branded) update.copy(downloadUrl = setup!!, sha256 = setupSha) else update
+        val destName = if (exeSetup) "YarmiplayTV-${update.version}-setup.exe" else "YarmiplayTV-${update.version}.msi"
+        packageFile = downloadVerified(packageUpdate, File(System.getProperty("java.io.tmpdir"), destName), progress)
         version = update.version
     }
 
@@ -84,13 +80,15 @@ internal class WindowsUpdater(
     }
 
     /**
-     * jpackage Exe (WiX): `/quiet` is unattended with no UI. Relaunch is done by [psRelaunch], not installer flags.
-     * Do not pass `--silent` / `--relaunch` — those are for a custom bootstrapper that has not shipped.
+     * Branded setup.exe: `--silent` still shows the progress card, `--dir` is this install's folder.
+     * Arguments are a PowerShell array so a path with spaces stays one argument. Relaunch is [psRelaunch],
+     * after the installer exits, so the new copy is what starts.
      */
     internal fun exeScript(exe: File, pids: List<Long>, relaunch: Boolean): String = buildString {
+        val setupArgs = listOf("--silent", "--dir", launcher.parentFile?.path.orEmpty())
         append("Wait-Process -Id ${pids.joinToString(",")} -ErrorAction SilentlyContinue; ")
         append("\$p = Start-Process -FilePath ${psQuoted(exe.path)} -Wait -PassThru")
-        append(" -ArgumentList ${psQuoted(windowsCommandLine(listOf("/quiet")))}")
+        append(" -ArgumentList ${setupArgs.joinToString(",") { psQuoted(it) }}")
         append("; ")
         append("Remove-Item -LiteralPath ${psQuoted(exe.path)} -ErrorAction SilentlyContinue; ")
         if (relaunch) {
