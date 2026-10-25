@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val appVersion = "2.7.2"
+val appVersion = "2.7.3"
 
 /** Play needs an ever-increasing versionCode: major * 10000 + minor * 100 + patch. */
 fun versionCodeOf(name: String): Int {
@@ -87,8 +87,13 @@ android {
             // Play builds: apps on Play mustn't update themselves or point to updates outside Play.
             buildConfigField("boolean", "UPDATE_CHECK", "false")
             signingConfig = signingConfigs.findByName("release")
-            isMinifyEnabled = false
+            // R8 runs so Play gets mapping.txt. proguard-rules.pro keeps names and code as they are.
+            isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // libmpv's .so files are already stripped. SYMBOL_TABLE is the symbol table Play can store.
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
         }
     }
 
@@ -111,6 +116,19 @@ android {
     // Reference screenshots for the safety-net comparison tests, read back from the test APK's assets.
     sourceSets["androidTest"].assets.srcDir("src/androidTest/screenshots")
 }
+
+// libmpv ships stripped, so AGP's symbol extraction finds nothing to add. The dynamic symbol tables are still
+// in the .so files (mpv, ffmpeg, FreeType). Play accepts that zip as the native debug symbols for a release.
+val releaseNativeDebugSymbolsZip = tasks.register<Zip>("releaseNativeDebugSymbolsZip") {
+    group = "build"
+    description = "Zip release native libraries for the Play Console native debug symbols upload."
+    dependsOn("mergeReleaseNativeLibs")
+    from(layout.buildDirectory.dir("intermediates/merged_native_libs/release/mergeReleaseNativeLibs/out/lib"))
+    include("**/*.so")
+    archiveFileName.set("native-debug-symbols.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("outputs/native-debug-symbols/release"))
+}
+tasks.matching { it.name == "bundleRelease" }.configureEach { dependsOn(releaseNativeDebugSymbolsZip) }
 
 kotlin {
     jvmToolchain(17)

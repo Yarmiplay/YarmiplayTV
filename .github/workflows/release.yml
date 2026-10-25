@@ -108,12 +108,22 @@ jobs:
           jarsigner -verify "$aab" | tee "$RUNNER_TEMP/verify.txt"
           grep -q "jar verified" "$RUNNER_TEMP/verify.txt"
           mv "$aab" "yarmiplaytv-$VERSION.aab"
+          mapping=app/build/outputs/mapping/release/mapping.txt
+          symbols=app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip
+          test -s "$mapping"
+          test -s "$symbols"
+          unzip -l "$symbols" | grep -q '\.so'
+          cp "$mapping" mapping.txt
+          cp "$symbols" native-debug-symbols.zip
           rm -f "$RUNNER_TEMP/upload.jks"
 
       - uses: actions/upload-artifact@v7
         with:
           name: play-bundle-${{ env.VERSION }}
-          path: yarmiplaytv-*.aab
+          path: |
+            yarmiplaytv-*.aab
+            mapping.txt
+            native-debug-symbols.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -142,6 +152,8 @@ jobs:
           releaseFiles: bundle/*.aab
           track: ${{ vars.PLAY_TRACK }}
           status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}
+          mappingFile: bundle/mapping.txt
+          debugSymbols: bundle/native-debug-symbols.zip
 
       - name: Upload as a draft instead
         if: steps.upload.outcome == 'failure'
@@ -152,6 +164,8 @@ jobs:
           releaseFiles: bundle/*.aab
           track: ${{ vars.PLAY_TRACK }}
           status: draft
+          mappingFile: bundle/mapping.txt
+          debugSymbols: bundle/native-debug-symbols.zip
 
       - name: Draft warning
         if: steps.upload.outcome == 'failure'

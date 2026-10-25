@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.7.3" date="2026-10-25">
+      <description>
+        <p>Google Play crash reports now include native debug symbols and the deobfuscation file.</p>
+      </description>
+    </release>
     <release version="2.7.2" date="2026-10-24">
       <description>
         <p>Fix Windows in-app updates: version.json offers the MSI again so 2.6.x and 2.7.0 can install the update; setup.exe uses jpackage /quiet when an .exe URL is used. Download page stays Store, setup.exe, portable zip.</p>
