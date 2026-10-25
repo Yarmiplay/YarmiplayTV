@@ -7,27 +7,25 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 /**
  * RECORD_AUDIO runtime permission, requested only when the user taps Mic (never at launch).
  * Wired into [MicPermissionBridge] from [com.yarmiplaytv.MainActivity].
+ *
+ * Uses [ActivityCompat.requestPermissions] (same path as notification permission) rather than
+ * Activity Result launchers, so vital release lint does not require a Fragment dependency.
  */
 class AndroidMicPermissions(
     private val activity: ComponentActivity,
 ) : MicPermissions {
+    companion object {
+        const val REQUEST_RECORD_AUDIO = 102
+    }
+
     @Volatile private var asked = false
     @Volatile private var pending: ((Boolean) -> Unit)? = null
-
-    private val launcher = activity.registerForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        val cb = pending
-        pending = null
-        cb?.invoke(granted)
-    }
 
     override fun granted(): Boolean =
         ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO) ==
@@ -40,7 +38,20 @@ class AndroidMicPermissions(
         }
         asked = true
         pending = onResult
-        launcher.launch(Manifest.permission.RECORD_AUDIO)
+        ActivityCompat.requestPermissions(
+            activity,
+            arrayOf(Manifest.permission.RECORD_AUDIO),
+            REQUEST_RECORD_AUDIO,
+        )
+    }
+
+    /** @return true if this handled [requestCode]. */
+    fun onRequestPermissionsResult(requestCode: Int, grantResults: IntArray): Boolean {
+        if (requestCode != REQUEST_RECORD_AUDIO) return false
+        val cb = pending
+        pending = null
+        cb?.invoke(grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)
+        return true
     }
 
     override fun permanentlyDenied(): Boolean {
