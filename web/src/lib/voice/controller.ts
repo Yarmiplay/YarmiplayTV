@@ -101,8 +101,11 @@ export class VoiceController {
 
   setSelfMuted(muted: boolean) {
     this.engine.setSelfMuted(muted);
-    this.ui.update((u) => ({ ...u, selfMuted: muted, transmitting: muted ? false : u.transmitting }));
-    this.client()?.sendVoiceActivity(!muted && this.ui.value.transmitting);
+    const transmitting = muted ? false : this.ui.value.transmitting;
+    this.ui.update((u) => ({ ...u, selfMuted: muted, transmitting }));
+    // Keep engine capture in sync when unmute restores a prior transmitting latch.
+    if (!muted && transmitting) this.engine.setTransmitting(true);
+    this.client()?.sendVoiceActivity(!muted && transmitting);
   }
 
   setTransmitting(on: boolean) {

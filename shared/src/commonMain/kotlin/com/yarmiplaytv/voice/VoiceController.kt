@@ -132,7 +132,17 @@ class VoiceController(
         updateTransmitting()
     }
 
-    fun toggleSelfMuted() = setSelfMuted(!selfMuted)
+    fun toggleSelfMuted() {
+        // OPEN_MIC shows "unmuted" when selfMuted is false even before RECORD_AUDIO is granted.
+        // The first Mic tap must request permission and start talking, not flip into mute.
+        if (!selfMuted && !_ui.value.talking) {
+            withMicPermission {
+                applySelfMuted(false)
+            }
+            return
+        }
+        setSelfMuted(!selfMuted)
+    }
 
     /** Hold for push-to-talk on phone/desktop. Not used on TV (tap toggle). */
     fun setPushToTalkHeld(held: Boolean) {

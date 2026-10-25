@@ -29,7 +29,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.util.concurrent.Executors
 
-/** Leave ↔ Join flip, auto-join default/persistence, and mic hidden when out of voice. */
+/** Leave ↔ Join flip, auto-join, mute capture gating, and mic hidden when out of voice. */
 class VoiceControllerTest {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -38,6 +38,7 @@ class VoiceControllerTest {
     private lateinit var sync: SyncController
     private lateinit var voice: VoiceController
     private lateinit var store: com.yarmiplaytv.data.SettingsStore
+    private lateinit var engine: CaptureTrackingVoiceEngine
 
     @Before
     fun setUp() {
@@ -45,7 +46,8 @@ class VoiceControllerTest {
         scope = CoroutineScope(SupervisorJob() + main)
         store = desktopSettingsStore(tmp.newFolder("config"), CoroutineScope(SupervisorJob() + Dispatchers.IO))
         sync = SyncController(scope, FakePlayer())
-        voice = VoiceController(sync, store, scope, NullVoiceEngine(), AlwaysGrantedMicPermissions) { DeviceKind.PHONE }
+        engine = CaptureTrackingVoiceEngine()
+        voice = VoiceController(sync, store, scope, engine, AlwaysGrantedMicPermissions) { DeviceKind.PHONE }
     }
 
     @After
@@ -130,4 +132,100 @@ class VoiceControllerTest {
         assertFalse(voice.ui.value.voiceMembershipIsLeave)
         assertEquals("Join voice", if (voice.ui.value.voiceMembershipIsLeave) "Leave voice" else "Join voice")
     }
+
+    @Test
+    fun `self mute releases capture`() {
+        onMain {
+            engine.capturing = true
+            engine.wantTransmit = true
+            voice.setSelfMuted(true)
+        }
+        awaitTrue("capture stopped while muted") { !engine.capturing && !engine.wantTransmit }
+        assertTrue(voice.ui.value.selfMuted)
+    }
+
+    @Test
+    fun `open mic tap requests permission instead of muting when not talking`() {
+        val mic = DeniedThenGrantMicPermissions()
+        val deniedEngine = CaptureTrackingVoiceEngine(permission = false)
+        val deniedVoice = VoiceController(sync, store, scope, deniedEngine, mic) { DeviceKind.PHONE }
+        assertFalse(deniedVoice.ui.value.selfMuted)
+        assertFalse(deniedVoice.ui.value.talking)
+        onMain { deniedVoice.toggleSelfMuted() }
+        awaitTrue("permission requested") { mic.requestCount >= 1 }
+        assertFalse("must not flip into mute on first tap", deniedVoice.ui.value.selfMuted)
+        onMain { mic.grant() }
+        awaitTrue("permission applied on engine") { deniedEngine.hasMicPermission() }
+        assertFalse(deniedVoice.ui.value.selfMuted)
+    }
+}
+
+/** Mirrors platform engines: capture follows [setTransmitting] / [setSelfMuted]. */
+private class CaptureTrackingVoiceEngine(
+    private var permission: Boolean = true,
+) : VoiceEngine {
+    override var onDeviceLost: ((input: Boolean) -> Unit)? = null
+    @Volatile var capturing = false
+    @Volatile var wantTransmit = false
+    @Volatile private var selfMuted = false
+
+    override suspend fun detectCapture(): VoiceCaptureKind = VoiceCaptureKind.OPEN
+    override suspend fun connect(params: com.yarmiplaytv.syncplay.VoiceMediaParams): Boolean = true
+    override fun disconnect() {
+        capturing = false
+        wantTransmit = false
+    }
+
+    override fun setTransmitting(on: Boolean) {
+        wantTransmit = on && !selfMuted
+        capturing = wantTransmit
+    }
+
+    override fun hasMicPermission(): Boolean = permission
+    override fun onMicPermissionGranted() {
+        permission = true
+        if (wantTransmit) capturing = true
+    }
+
+    override fun setSelfMuted(muted: Boolean) {
+        selfMuted = muted
+        if (muted) {
+            wantTransmit = false
+            capturing = false
+        }
+    }
+
+    override fun setInputGain(gain: Float) = Unit
+    override fun setOutputGain(gain: Float) = Unit
+    override fun setPeerMuted(participantId: String, muted: Boolean) = Unit
+    override fun setPeerVolume(participantId: String, volume: Float) = Unit
+    override fun setInputDeviceId(id: String?) = Unit
+    override fun setOutputDeviceId(id: String?) = Unit
+    override fun playSound(kind: VoiceSound, volume: Float) = Unit
+}
+
+private class DeniedThenGrantMicPermissions : MicPermissions {
+    @Volatile var requestCount = 0
+    @Volatile private var granted = false
+    @Volatile private var pending: ((Boolean) -> Unit)? = null
+
+    override fun granted(): Boolean = granted
+    override fun request(onResult: (Boolean) -> Unit) {
+        requestCount++
+        if (granted) {
+            onResult(true)
+        } else {
+            pending = onResult
+        }
+    }
+
+    fun grant() {
+        granted = true
+        val cb = pending
+        pending = null
+        cb?.invoke(true)
+    }
+
+    override fun permanentlyDenied(): Boolean = false
+    override fun openAppSettings() = Unit
 }

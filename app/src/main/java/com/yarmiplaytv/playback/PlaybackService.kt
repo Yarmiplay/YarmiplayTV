@@ -199,9 +199,23 @@ class PlaybackService : Service() {
         }
     }
 
+    private fun hasRecordAudio(): Boolean =
+        ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Only claim the microphone FGS type when RECORD_AUDIO is granted. Since 2.7.7 we request
+     * that permission on Mic tap (not at launch); auto-join can be CONNECTED without it, and
+     * [startForeground] with [ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE] then throws
+     * SecurityException and the whole notification disappears.
+     */
     private fun foregroundTypes(voice: VoiceUiState): Int {
         var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-        if (isPhoneOrTablet && voice.showUi && voice.connection == VoiceConnection.CONNECTED) {
+        if (isPhoneOrTablet &&
+            voice.showUi &&
+            voice.connection == VoiceConnection.CONNECTED &&
+            hasRecordAudio()
+        ) {
             types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         }
         return types
@@ -214,8 +228,22 @@ class PlaybackService : Service() {
         val voice = container.voice.ui.value
         updateSession(playerState, room, nowPlaying, voice)
         val notification = buildNotification(playerState, room, nowPlaying, voice)
+        promoteForeground(notification, voice)
+    }
+
+    private fun promoteForeground(notification: Notification, voice: VoiceUiState) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, foregroundTypes(voice))
+            val types = foregroundTypes(voice)
+            try {
+                startForeground(NOTIFICATION_ID, notification, types)
+            } catch (_: SecurityException) {
+                // Mic type without RECORD_AUDIO (or OEM quirk): keep media playback notification.
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
+                )
+            }
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
@@ -255,7 +283,7 @@ class PlaybackService : Service() {
                 updateSession(update.playerState, update.room, update.nowPlaying, update.voice)
                 val notification = buildNotification(update.playerState, update.room, update.nowPlaying, update.voice)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(NOTIFICATION_ID, notification, foregroundTypes(update.voice))
+                    promoteForeground(notification, update.voice)
                 } else {
                     NotificationManagerCompat.from(this@PlaybackService).notify(NOTIFICATION_ID, notification)
                 }

@@ -65,7 +65,7 @@ export class WebVoiceEngine {
       await this.sendKeepalive();
       this.keepaliveTimer = setInterval(() => void this.sendKeepalive(), 5000);
       this.maxBitrate = seat.maxBitrate ?? 32_000;
-      await this.startCapture(this.maxBitrate);
+      // Capture starts only while transmitting so mute releases getUserMedia.
       this.listenDeviceChanges();
       return true;
     } catch {
@@ -108,13 +108,33 @@ export class WebVoiceEngine {
 
   setTransmitting(on: boolean) {
     this.transmitting = on && !this.selfMuted;
+    void this.syncCapture();
     this.onSpeaking?.(this.transmitting);
   }
 
   setSelfMuted(muted: boolean) {
     this.selfMuted = muted;
     if (muted) this.transmitting = false;
+    void this.syncCapture();
     this.onSpeaking?.(this.transmitting);
+  }
+
+  private async syncCapture() {
+    if (this.closed) {
+      this.stopCapture();
+      return;
+    }
+    if (this.transmitting) {
+      if (!this.captureStream) {
+        try {
+          await this.startCapture(this.maxBitrate);
+        } catch {
+          /* ignore — permission / no mic */
+        }
+      }
+    } else {
+      this.stopCapture();
+    }
   }
 
   setInputGain(gain: number) {
@@ -192,7 +212,7 @@ export class WebVoiceEngine {
 
   private async restartCapture() {
     this.stopCapture();
-    if (this.closed) return;
+    if (this.closed || !this.transmitting) return;
     try {
       await this.startCapture(this.maxBitrate);
     } catch {
