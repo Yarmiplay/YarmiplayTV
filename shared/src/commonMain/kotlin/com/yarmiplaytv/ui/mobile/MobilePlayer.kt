@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -126,8 +127,17 @@ import com.yarmiplaytv.voice.micControlLive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.ui.graphics.vector.ImageVector
 
-private enum class PlayerSheet { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES, VIDEO, MAL }
+private enum class PlayerSheet(val label: String, val icon: ImageVector) {
+    PLAYLIST("Shared playlist", Icons.AutoMirrored.Filled.PlaylistPlay),
+    ROOM("Room", Icons.Filled.Groups),
+    CHAT("Chat", Icons.Filled.Forum),
+    AUDIO("Audio", Icons.Filled.Audiotrack),
+    SUBTITLES("Subtitles", Icons.Filled.Subtitles),
+    VIDEO("Video", Icons.Filled.Tune),
+    MAL("MyAnimeList", Icons.Filled.Bookmarks),
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -144,6 +154,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     var controls by remember { mutableStateOf(true) }
     var interaction by remember { mutableLongStateOf(0L) }
     var sheet by remember { mutableStateOf<PlayerSheet?>(null) }
+    var lastSheet by remember { mutableStateOf(PlayerSheet.ROOM) }
     var seekFlash by remember { mutableStateOf<String?>(null) }
     val barsHover = remember { MutableInteractionSource() }
     val onBars by barsHover.collectIsHoveredAsState()
@@ -195,6 +206,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
         skip = { forward -> container.playlist.skip(forward); touch() },
     )
     fun openSheet(kind: PlayerSheet) {
+        lastSheet = kind
         val tab = when (kind) {
             PlayerSheet.PLAYLIST -> RoomPanelTab.PLAYLIST
             PlayerSheet.ROOM -> RoomPanelTab.ROOM
@@ -204,6 +216,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
         }
         if (tab == null || !toggleRoomSidePanel(tab)) sheet = kind
     }
+    fun openMenus() = openSheet(lastSheet)
     if (pip.active) {
         if (pictureInPictureWindow) PictureInPictureElsewhere(pip) else PictureInPictureView(container)
         return
@@ -385,7 +398,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         ready = room.isReady == true,
                                         voiceUi = voiceUi,
                                         onInteract = ::touch,
-                                        onSheet = ::openSheet,
+                                        onMenus = { openMenus(); touch() },
                                         modifier = Modifier.align(Alignment.BottomCenter).hoverable(barsHover),
                                     )
                                 }
@@ -667,9 +680,9 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                                 Icon(Icons.Filled.PhotoCamera, contentDescription = "Screenshot", tint = AppColors.Text)
                                             }
                                         }
-                                        // TV-style single Menus entry instead of a crowded sheet-button row.
+                                        // TV-style single Menus entry (reopens last panel) instead of a crowded sheet-button row.
                                         IconButton(
-                                            { openSheet(PlayerSheet.PLAYLIST); touch() },
+                                            { openMenus(); touch() },
                                             Modifier.testTag("player_menus"),
                                         ) {
                                             Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = AppColors.Text)
@@ -726,6 +739,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     }
 
     sheet?.let { kind ->
+        val menuTabs = PlayerSheet.entries.filter { it != PlayerSheet.MAL || container.mal.client.configured }
         ModalBottomSheet(
             onDismissRequest = { sheet = null },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -735,6 +749,29 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
         ) {
             SurfaceInk {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+                // TV-style tab strip: one Menus control opens the sheet; tabs switch content.
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    menuTabs.forEach { tab ->
+                        val selected = tab == kind
+                        IconButton(
+                            onClick = { openSheet(tab) },
+                            modifier = Modifier.testTag("sheet_tab_${tab.name.lowercase()}"),
+                        ) {
+                            Icon(
+                                tab.icon,
+                                contentDescription = tab.label,
+                                tint = if (selected) AppColors.Accent else AppColors.TextDim,
+                            )
+                        }
+                    }
+                }
                 when (kind) {
                     PlayerSheet.PLAYLIST -> PlaylistContent(container, onBrowse = { sheet = null; nav.popTo(Screen.Home) })
                     PlayerSheet.ROOM -> RoomUsersContent(container)
@@ -762,7 +799,7 @@ private fun BottomControls(
     ready: Boolean,
     voiceUi: VoiceUiState,
     onInteract: () -> Unit,
-    onSheet: (PlayerSheet) -> Unit,
+    onMenus: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by container.player.state.collectAsStateWithLifecycle()
@@ -799,7 +836,7 @@ private fun BottomControls(
                 }
             }
             // Grouped menus like TV instead of one icon per panel.
-            IconButton({ onSheet(PlayerSheet.PLAYLIST); onInteract() }, Modifier.testTag("player_menus")) {
+            IconButton({ onMenus(); onInteract() }, Modifier.testTag("player_menus")) {
                 Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = Color.White)
             }
         }
@@ -852,16 +889,6 @@ private fun PictureInPictureElsewhere(pip: PictureInPicture) {
             Button(pip.toggle, Modifier.testTag("pip_back_here")) { Text("Show the video here") }
         }
     }
-}
-
-@Composable
-private fun SheetButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    tint: Color = Color.White,
-    onClick: () -> Unit,
-) {
-    IconButton(onClick, Modifier.testTag("sheet_$label")) { Icon(icon, contentDescription = label, tint = tint) }
 }
 
 @Composable
