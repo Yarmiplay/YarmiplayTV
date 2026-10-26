@@ -1,8 +1,8 @@
 package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeDown
@@ -63,18 +63,22 @@ internal fun PlayerVolumeBar(
                 tint = if (onVideo) Color.White else AppColors.Text,
             )
         }
+        // Prefer up to 120dp; shrink when the parent row is tight instead of wrapping to a second line.
         PlayerTrack(
             value = if (muted) 0f else volume.toFloat(),
             valueRange = 0f..control.max.toFloat(),
             onValueChange = { control.setVolume(it.roundToInt().toDouble()); onInteract() },
             onVideo = onVideo,
-            modifier = Modifier.width(120.dp).testTag("volume_slider"),
+            modifier = Modifier
+                .widthIn(min = 48.dp, max = 120.dp)
+                .fillMaxWidth()
+                .testTag("volume_slider"),
         )
         Text(
             if (muted) "Muted" else "${volume.roundToInt()}%",
             color = if (onVideo) OnVideo.Text else AppColors.TextDim,
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.widthIn(min = 48.dp).padding(start = 8.dp).testTag("volume_label"),
+            modifier = Modifier.widthIn(min = 40.dp).padding(start = 4.dp).testTag("volume_label"),
         )
     }
 }

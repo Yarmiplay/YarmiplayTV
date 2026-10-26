@@ -79,6 +79,8 @@ export interface Settings {
   voiceChat: boolean;
   /** Join voice automatically when entering a room that has it (default on). */
   voiceAutoJoin: boolean;
+  /** Capture noise suppression via getUserMedia (default on). */
+  voiceNoiseSuppression: boolean;
   /** Mute mic when playback starts/resumes (default on). */
   voiceAutoMuteWhenPlaying: boolean;
   /** Unmute on pause only if auto-mute muted you (default on). */
@@ -157,6 +159,7 @@ export function load(): Settings {
     chatOnVideo: bool("chat_on_video", false),
     voiceChat: bool("voice_chat", true),
     voiceAutoJoin: bool("voice_auto_join", true),
+    voiceNoiseSuppression: bool("voice_noise_suppression", true),
     voiceAutoMuteWhenPlaying: bool("voice_auto_mute_when_playing", true),
     voiceAutoUnmuteWhenPaused: bool("voice_auto_unmute_when_paused", true),
     voiceInputDeviceId: text("voice_input_device", ""),
@@ -213,6 +216,7 @@ export function save(settings: Settings) {
   write("chat_on_video", String(settings.chatOnVideo));
   write("voice_chat", String(settings.voiceChat));
   write("voice_auto_join", String(settings.voiceAutoJoin));
+  write("voice_noise_suppression", String(settings.voiceNoiseSuppression));
   write("voice_auto_mute_when_playing", String(settings.voiceAutoMuteWhenPlaying));
   write("voice_auto_unmute_when_paused", String(settings.voiceAutoUnmuteWhenPaused));
   write("voice_input_device", settings.voiceInputDeviceId);

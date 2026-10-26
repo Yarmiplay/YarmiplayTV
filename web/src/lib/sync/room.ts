@@ -468,6 +468,7 @@ export class RoomSession {
   private applyVoiceSettings(settings: Settings.Settings) {
     this.voice.setEnabled(settings.voiceChat);
     this.voice.setAutoJoin(settings.voiceAutoJoin);
+    this.voice.setNoiseSuppression(settings.voiceNoiseSuppression);
     this.voice.setAutoMuteWhenPlaying(settings.voiceAutoMuteWhenPlaying);
     this.voice.setAutoUnmuteWhenPaused(settings.voiceAutoUnmuteWhenPaused);
     this.voice.setInputDeviceId(settings.voiceInputDeviceId || null);

@@ -192,6 +192,14 @@
               />
               Auto-join voice<br /><span class="dim small">Join voice automatically when you enter a room that has it; off shows Join voice until you tap it</span>
             </label>
+            <label class="switch" data-testid="toggle_voice_noise_suppression">
+              <input
+                type="checkbox"
+                checked={s.voiceNoiseSuppression}
+                onchange={(e) => set((x) => ({ ...x, voiceNoiseSuppression: (e.target as HTMLInputElement).checked }))}
+              />
+              Noise suppression<br /><span class="dim small">Cut background noise on your mic (browser WebRTC noiseSuppression). Applies on the next mic open</span>
+            </label>
             <label class="switch" data-testid="toggle_voice_auto_mute_playing">
               <input
                 type="checkbox"

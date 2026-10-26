@@ -60,6 +60,8 @@ class DesktopVoiceEngine : VoiceEngine {
         disconnect()
         val media = VoiceMediaSession(scope)
         if (!media.connect(params)) return false
+        // Default on; VoiceController reapplies the saved preference immediately after connect.
+        media.setNoiseSuppression(true)
         session.set(media)
         frameSamples = media.frameSamples
         openPlayback()
@@ -117,6 +119,10 @@ class DesktopVoiceEngine : VoiceEngine {
 
     override fun setOutputGain(gain: Float) {
         session.get()?.setOutputGain(gain)
+    }
+
+    override fun setNoiseSuppression(on: Boolean) {
+        session.get()?.setNoiseSuppression(on)
     }
 
     override fun setPeerMuted(participantId: String, muted: Boolean) {

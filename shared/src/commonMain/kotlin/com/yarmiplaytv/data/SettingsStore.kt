@@ -225,6 +225,11 @@ data class AppSettings(
      */
     val voiceAutoJoin: Boolean = true,
     /**
+     * Capture noise suppression (default on): RNNoise-framed spectral NS + VAD on all clients,
+     * plus Android WebRTC NoiseSuppressor/AEC/AGC and browser getUserMedia noiseSuppression.
+     */
+    val voiceNoiseSuppression: Boolean = true,
+    /**
      * When on (default), mute the mic when playback starts or resumes.
      * Independent of [voiceAutoUnmuteWhenPaused].
      */
@@ -364,6 +369,7 @@ class SettingsStore(
         val chatOnVideo = booleanPreferencesKey("chat_on_video")
         val voiceChat = booleanPreferencesKey("voice_chat")
         val voiceAutoJoin = booleanPreferencesKey("voice_auto_join")
+        val voiceNoiseSuppression = booleanPreferencesKey("voice_noise_suppression")
         val voiceAutoMuteWhenPlaying = booleanPreferencesKey("voice_auto_mute_when_playing")
         val voiceAutoUnmuteWhenPaused = booleanPreferencesKey("voice_auto_unmute_when_paused")
         val voiceTalkMode = stringPreferencesKey("voice_talk_mode")
@@ -510,6 +516,7 @@ class SettingsStore(
             chatOnVideo = p[Keys.chatOnVideo] ?: false,
             voiceChat = p[Keys.voiceChat] ?: true,
             voiceAutoJoin = p[Keys.voiceAutoJoin] ?: true,
+            voiceNoiseSuppression = p[Keys.voiceNoiseSuppression] ?: true,
             voiceAutoMuteWhenPlaying = p[Keys.voiceAutoMuteWhenPlaying] ?: true,
             voiceAutoUnmuteWhenPaused = p[Keys.voiceAutoUnmuteWhenPaused] ?: true,
             voiceTalkMode = p[Keys.voiceTalkMode]?.let { runCatching { VoiceTalkMode.valueOf(it) }.getOrNull() } ?: VoiceTalkMode.OPEN_MIC,
@@ -716,6 +723,8 @@ class SettingsStore(
     suspend fun saveVoiceChat(on: Boolean) = dataStore.edit { it[Keys.voiceChat] = on }
 
     suspend fun saveVoiceAutoJoin(on: Boolean) = dataStore.edit { it[Keys.voiceAutoJoin] = on }
+
+    suspend fun saveVoiceNoiseSuppression(on: Boolean) = dataStore.edit { it[Keys.voiceNoiseSuppression] = on }
 
     suspend fun saveVoiceAutoMuteWhenPlaying(on: Boolean) = dataStore.edit { it[Keys.voiceAutoMuteWhenPlaying] = on }
 

@@ -197,6 +197,13 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         modifier = Modifier.testTag("toggle_voice_auto_join"),
                     )
                     ToggleRow(
+                        "Noise suppression",
+                        settings.voiceNoiseSuppression,
+                        { container.scope.launch { container.settingsStore.saveVoiceNoiseSuppression(!settings.voiceNoiseSuppression) } },
+                        subtitle = "Cut background noise on your mic (RNNoise-framed spectral NS + VAD; also WebRTC AEC/NS/AGC). Applies live",
+                        modifier = Modifier.testTag("toggle_voice_noise_suppression"),
+                    )
+                    ToggleRow(
                         "Auto-mute when playing",
                         settings.voiceAutoMuteWhenPlaying,
                         { container.scope.launch { container.settingsStore.saveVoiceAutoMuteWhenPlaying(!settings.voiceAutoMuteWhenPlaying) } },

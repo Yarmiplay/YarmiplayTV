@@ -26,6 +26,16 @@ val openSourceComponents = listOf(
     OpenSourceComponent("Mbed TLS", "Apache 2.0", "https://www.trustedfirmware.org/projects/mbed-tls"),
     OpenSourceComponent("Lua", "MIT", "https://www.lua.org"),
     OpenSourceComponent("Chromaprint (fingerprint classifiers)", "MIT", "https://github.com/acoustid/chromaprint"),
+    OpenSourceComponent(
+        "RNNoise (voice NS framing; 480-sample / 10 ms @ 48 kHz)",
+        "BSD 3-Clause",
+        "https://gitlab.xiph.org/xiph/rnnoise",
+    ),
+    OpenSourceComponent(
+        "WebRTC Audio Processing (Android NoiseSuppressor / AEC / AGC; browser getUserMedia noiseSuppression)",
+        "BSD 3-Clause",
+        "https://webrtc.org",
+    ),
     OpenSourceComponent("Kotlin, kotlinx.coroutines, kotlinx.serialization", "Apache 2.0", "https://kotlinlang.org"),
     OpenSourceComponent("Jetpack Compose, AndroidX", "Apache 2.0", "https://developer.android.com/jetpack"),
     OpenSourceComponent("Compose Multiplatform", "Apache 2.0", "https://www.jetbrains.com/compose-multiplatform"),

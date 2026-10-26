@@ -44,6 +44,7 @@ export class WebVoiceEngine {
   private inputGain = 1;
   private inputDeviceId: string | null = null;
   private outputDeviceId: string | null = null;
+  private noiseSuppression = true;
   private maxBitrate = 32_000;
   private deviceChangeHandler: (() => void) | null = null;
   onDeviceLost: ((input: boolean) => void) | null = null;
@@ -143,6 +144,16 @@ export class WebVoiceEngine {
 
   setOutputGain(gain: number) {
     this.outputGain = Math.min(2, Math.max(0, gain));
+  }
+
+  setNoiseSuppression(on: boolean) {
+    if (this.noiseSuppression === on) return;
+    this.noiseSuppression = on;
+    // Re-open capture so getUserMedia picks up the new constraint.
+    if (this.transmitting && this.captureStream) {
+      this.stopCapture();
+      void this.syncCapture();
+    }
   }
 
   setPeerMuted(participantId: string, muted: boolean) {
@@ -302,7 +313,8 @@ export class WebVoiceEngine {
       channelCount: 1,
       sampleRate: 48000,
       echoCancellation: true,
-      noiseSuppression: true,
+      noiseSuppression: this.noiseSuppression,
+      autoGainControl: this.noiseSuppression,
     };
     if (this.inputDeviceId) audio.deviceId = { exact: this.inputDeviceId };
     let stream: MediaStream;
@@ -313,7 +325,13 @@ export class WebVoiceEngine {
         this.inputDeviceId = null;
         this.onDeviceLost?.(true);
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: { channelCount: 1, sampleRate: 48000, echoCancellation: true, noiseSuppression: true },
+          audio: {
+            channelCount: 1,
+            sampleRate: 48000,
+            echoCancellation: true,
+            noiseSuppression: this.noiseSuppression,
+            autoGainControl: this.noiseSuppression,
+          },
           video: false,
         });
       } else {
