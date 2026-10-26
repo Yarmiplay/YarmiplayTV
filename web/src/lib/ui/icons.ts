@@ -42,6 +42,7 @@ import icon_login from "@material-design-icons/svg/filled/login.svg?raw";
 import icon_logout from "@material-design-icons/svg/filled/logout.svg?raw";
 import icon_meeting_room from "@material-design-icons/svg/filled/meeting_room.svg?raw";
 import icon_menu_book from "@material-design-icons/svg/filled/menu_book.svg?raw";
+import icon_mic from "@material-design-icons/svg/filled/mic.svg?raw";
 import icon_more_vert from "@material-design-icons/svg/filled/more_vert.svg?raw";
 import icon_movie from "@material-design-icons/svg/filled/movie.svg?raw";
 import icon_new_releases from "@material-design-icons/svg/filled/new_releases.svg?raw";
@@ -125,6 +126,7 @@ const RAW = {
   logout: icon_logout,
   meeting_room: icon_meeting_room,
   menu_book: icon_menu_book,
+  mic: icon_mic,
   more_vert: icon_more_vert,
   movie: icon_movie,
   new_releases: icon_new_releases,

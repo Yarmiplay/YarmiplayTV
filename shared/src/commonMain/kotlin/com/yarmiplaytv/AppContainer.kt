@@ -239,6 +239,7 @@ class AppContainer(
 
     /** Room voice chat on YarmiplayServerTV; idle when the server or client setting is off. */
     val voice = VoiceController(sync, settingsStore, scope, voiceEngine, micPermissions) { deviceKind }
+        .also { it.bindPlayback(player.state) }
 
     /** Called when the person or platform requests shutting down the application. */
     var onExitApp: (() -> Unit)? = null

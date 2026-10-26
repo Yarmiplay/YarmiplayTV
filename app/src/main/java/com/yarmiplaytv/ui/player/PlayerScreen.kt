@@ -64,6 +64,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import android.os.SystemClock
 import com.yarmiplaytv.voice.TvVoiceKeys
+import com.yarmiplaytv.voice.micControlLive
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -253,11 +254,12 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 val up = ev.type == KeyEventType.KeyUp
                 val code = ev.key.nativeKeyCode
                 val firstPress = down && ev.nativeKeyEvent.repeatCount == 0
-                if (voiceUi.showMicButton && TvVoiceKeys.isVoiceToggleKey(code)) {
+                if (voiceUi.showMicButton && TvVoiceKeys.isVoiceHoldKey(code)) {
                     if (firstPress) {
                         container.voice.noteRemoteToggleKey(TvVoiceKeys.labelFor(code))
-                        container.voice.toggleTalk()
+                        container.voice.setTalkLatched(true)
                     }
+                    if (up) container.voice.setTalkLatched(false)
                     return@onPreviewKeyEvent true
                 }
                 val global = when (code) {
@@ -394,7 +396,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 val toasts = remember(container) { container.sync.toasts.filter { it.showsOnVideo(container.settings.value.chatOnVideo) } }
                 ToastHost(toasts, Modifier.align(Alignment.TopStart).padding(32.dp))
                 TvMalNotice(container, Modifier.align(Alignment.TopEnd).padding(32.dp))
-                TvMicLiveBadge(voiceUi, Modifier.align(Alignment.TopCenter).padding(top = 32.dp))
+                // Mic live sits on RoomChip (status cluster) while HUD is up — no video overlay badge.
                 if (voiceUi.showMicHint) {
                     LaunchedEffect(voiceUi.showMicHint) {
                         delay(12_000)
@@ -443,6 +445,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                         room,
                         playerStreamingLabel(container, controlsVisible = true, state.fileLoaded),
                         Modifier.align(Alignment.TopEnd).padding(32.dp),
+                        micLive = voiceUi.micControlLive(),
                     )
                 }
 
@@ -818,23 +821,35 @@ private fun PanelTabs(
 }
 
 @Composable
-private fun RoomChip(room: com.yarmiplaytv.syncplay.RoomState, streaming: String? = null, modifier: Modifier = Modifier) {
+private fun RoomChip(
+    room: com.yarmiplaytv.syncplay.RoomState,
+    streaming: String? = null,
+    modifier: Modifier = Modifier,
+    micLive: Boolean = false,
+) {
     val text: String
     val color: Color
     when (room.status) {
         ConnectionStatus.CONNECTED -> {
             val ready = room.users.count { it.isReady == true }
             val ping = if (room.rttMillis > 0) " · %.0f ms".format(room.rttMillis) else ""
-            text = "${ManagedRooms.label(room.room)} · ${room.users.size} watching · $ready ready$ping" + (streaming?.let { " · $it" } ?: "")
+            val mic = if (micLive) " · Mic" else ""
+            text = "${ManagedRooms.label(room.room)} · ${room.users.size} watching · $ready ready$ping" +
+                (streaming?.let { " · $it" } ?: "") + mic
             color = AppColors.Ready
         }
         ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> { text = "Connecting to Syncplay…"; color = AppColors.NotReady }
         ConnectionStatus.DISCONNECTED -> { text = "Not in a room"; color = OnVideo.Text.copy(alpha = 0.6f) }
     }
+    val tag = when {
+        streaming != null && room.status == ConnectionStatus.CONNECTED -> modifier.testTag("relay_streaming")
+        micLive -> modifier.testTag("status_mic_live")
+        else -> modifier
+    }
     if (streaming != null && room.status == ConnectionStatus.CONNECTED) {
-        StreamingChip(text, modifier.testTag("relay_streaming"))
+        StreamingChip(text, tag)
     } else {
-        VideoChip(text, color, modifier)
+        VideoChip(text, color, tag)
     }
 }
 

@@ -17,6 +17,7 @@
     { key: "media", label: "Media", icon: "video_library" },
     { key: "myanimelist", label: "MyAnimeList", icon: "bookmarks" },
     { key: "syncing", label: "Syncing", icon: "sync" },
+    { key: "voice", label: "Voice", icon: "mic" },
     { key: "playback", label: "Playback", icon: "tune" },
     { key: "whatsnew", label: "What's new", icon: "new_releases" },
     { key: "about", label: "About", icon: "info" },
@@ -166,13 +167,21 @@
           {#if s.showChat}
             <label class="switch"><input type="checkbox" checked={s.chatOnVideo} onchange={(e) => set((x) => ({ ...x, chatOnVideo: (e.target as HTMLInputElement).checked }))} /> Chat on the video</label>
           {/if}
+          <label>
+            Device name (what the host sees)
+            <input value={s.deviceName} maxlength="60" onchange={(e) => set((x) => ({ ...x, deviceName: (e.target as HTMLInputElement).value.trim() || x.deviceName }))} />
+          </label>
+        </div>
+      {:else if shown === "voice"}
+        <h2>Voice</h2>
+        <div class="card group">
           <label class="switch" data-testid="toggle_voice_chat">
             <input
               type="checkbox"
               checked={s.voiceChat}
               onchange={(e) => set((x) => ({ ...x, voiceChat: (e.target as HTMLInputElement).checked }))}
             />
-            Voice chat<br /><span class="dim small">Talk in rooms on a YarmiplayServerTV server that has voice on; off hides the controls and disconnects</span>
+            Enable voice<br /><span class="dim small">Talk in rooms on a YarmiplayServerTV server that has voice on; off fully disables voice (no join, mic, sounds, or voice UI)</span>
           </label>
           {#if s.voiceChat}
             <label class="switch" data-testid="toggle_voice_auto_join">
@@ -182,6 +191,22 @@
                 onchange={(e) => set((x) => ({ ...x, voiceAutoJoin: (e.target as HTMLInputElement).checked }))}
               />
               Auto-join voice<br /><span class="dim small">Join voice automatically when you enter a room that has it; off shows Join voice until you tap it</span>
+            </label>
+            <label class="switch" data-testid="toggle_voice_auto_mute_playing">
+              <input
+                type="checkbox"
+                checked={s.voiceAutoMuteWhenPlaying}
+                onchange={(e) => set((x) => ({ ...x, voiceAutoMuteWhenPlaying: (e.target as HTMLInputElement).checked }))}
+              />
+              Auto-mute when playing<br /><span class="dim small">Mute your mic when playback starts or resumes</span>
+            </label>
+            <label class="switch" data-testid="toggle_voice_auto_unmute_paused">
+              <input
+                type="checkbox"
+                checked={s.voiceAutoUnmuteWhenPaused}
+                onchange={(e) => set((x) => ({ ...x, voiceAutoUnmuteWhenPaused: (e.target as HTMLInputElement).checked }))}
+              />
+              Auto-unmute when paused<br /><span class="dim small">Unmute when playback pauses, only if auto-mute muted you — never overrides a mute you set yourself</span>
             </label>
             <label data-testid="voice_input_device">
               Microphone
@@ -216,11 +241,50 @@
                 {/if}
               </span>
             </label>
+            <label data-testid="voice_input_gain">
+              Microphone volume
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.05"
+                value={s.voiceInputGain}
+                oninput={(e) => set((x) => ({ ...x, voiceInputGain: Number((e.target as HTMLInputElement).value) }))}
+              />
+            </label>
+            <label data-testid="voice_output_gain">
+              Voice playback volume
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.05"
+                value={s.voiceOutputGain}
+                oninput={(e) => set((x) => ({ ...x, voiceOutputGain: Number((e.target as HTMLInputElement).value) }))}
+              />
+            </label>
+            <label class="switch" data-testid="toggle_voice_join_leave_sounds">
+              <input
+                type="checkbox"
+                checked={s.voiceJoinLeaveSounds}
+                onchange={(e) => set((x) => ({ ...x, voiceJoinLeaveSounds: (e.target as HTMLInputElement).checked }))}
+              />
+              Join and leave sounds
+            </label>
+            {#if s.voiceJoinLeaveSounds}
+              <label data-testid="voice_join_leave_volume">
+                Join/leave sound volume
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={s.voiceJoinLeaveVolume}
+                  oninput={(e) => set((x) => ({ ...x, voiceJoinLeaveVolume: Number((e.target as HTMLInputElement).value) }))}
+                />
+              </label>
+            {/if}
           {/if}
-          <label>
-            Device name (what the host sees)
-            <input value={s.deviceName} maxlength="60" onchange={(e) => set((x) => ({ ...x, deviceName: (e.target as HTMLInputElement).value.trim() || x.deviceName }))} />
-          </label>
         </div>
       {:else if shown === "playback"}
         <h2>Playback</h2>

@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Sync
@@ -169,11 +170,23 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         subtitle = CHAT_ON_VIDEO_NOTE,
                     )
                 }
+                if (container.supportsDeviceAccess) {
+                    var deviceName by rememberSavedText(settings.deviceName) { name -> container.scope.launch { container.settingsStore.saveDeviceName(name) } }
+                    TvTextField(
+                        deviceName,
+                        { deviceName = it },
+                        "Device name (shown to YarmiplayServerTV hosts when asking for access)",
+                        placeholder = DevicePlatform.deviceName,
+                    )
+                }
+                    }
+                    TvSettingsCategory.VOICE -> {
                 ToggleRow(
-                    "Voice chat",
+                    "Enable voice",
                     settings.voiceChat,
                     { container.scope.launch { container.settingsStore.saveVoiceChat(!settings.voiceChat) } },
-                    subtitle = "Talk in rooms on a YarmiplayServerTV server that has voice on; off hides the controls and disconnects",
+                    subtitle = "Talk in rooms on a YarmiplayServerTV server that has voice on; off fully disables voice (no join, mic, sounds, or voice UI)",
+                    modifier = Modifier.testTag("toggle_voice_chat"),
                 )
                 if (settings.voiceChat) {
                     ToggleRow(
@@ -183,16 +196,48 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         subtitle = "Join voice automatically when you enter a room that has it; off shows Join voice until you tap it",
                         modifier = Modifier.testTag("toggle_voice_auto_join"),
                     )
-                    TvVoiceDeviceRows(container)
-                }
-                if (container.supportsDeviceAccess) {
-                    var deviceName by rememberSavedText(settings.deviceName) { name -> container.scope.launch { container.settingsStore.saveDeviceName(name) } }
-                    TvTextField(
-                        deviceName,
-                        { deviceName = it },
-                        "Device name (shown to YarmiplayServerTV hosts when asking for access)",
-                        placeholder = DevicePlatform.deviceName,
+                    ToggleRow(
+                        "Auto-mute when playing",
+                        settings.voiceAutoMuteWhenPlaying,
+                        { container.scope.launch { container.settingsStore.saveVoiceAutoMuteWhenPlaying(!settings.voiceAutoMuteWhenPlaying) } },
+                        subtitle = "Mute your mic when playback starts or resumes",
+                        modifier = Modifier.testTag("toggle_voice_auto_mute_playing"),
                     )
+                    ToggleRow(
+                        "Auto-unmute when paused",
+                        settings.voiceAutoUnmuteWhenPaused,
+                        { container.scope.launch { container.settingsStore.saveVoiceAutoUnmuteWhenPaused(!settings.voiceAutoUnmuteWhenPaused) } },
+                        subtitle = "Unmute when playback pauses, only if auto-mute muted you — never overrides a mute you set yourself",
+                        modifier = Modifier.testTag("toggle_voice_auto_unmute_paused"),
+                    )
+                    TvVoiceDeviceRows(container)
+                    TvVoiceGainRow(
+                        "Microphone volume",
+                        settings.voiceInputGain,
+                        max = 2f,
+                        Modifier.testTag("voice_input_gain"),
+                    ) { container.scope.launch { container.settingsStore.saveVoiceInputGain(it) } }
+                    TvVoiceGainRow(
+                        "Voice playback volume",
+                        settings.voiceOutputGain,
+                        max = 2f,
+                        Modifier.testTag("voice_output_gain"),
+                    ) { container.scope.launch { container.settingsStore.saveVoiceOutputGain(it) } }
+                    ToggleRow(
+                        "Join and leave sounds",
+                        settings.voiceJoinLeaveSounds,
+                        { container.scope.launch { container.settingsStore.saveVoiceJoinLeaveSounds(!settings.voiceJoinLeaveSounds) } },
+                        subtitle = "Short sound when someone joins or leaves voice",
+                        modifier = Modifier.testTag("toggle_voice_join_leave_sounds"),
+                    )
+                    if (settings.voiceJoinLeaveSounds) {
+                        TvVoiceGainRow(
+                            "Join/leave sound volume",
+                            settings.voiceJoinLeaveVolume,
+                            max = 1f,
+                            Modifier.testTag("voice_join_leave_volume"),
+                        ) { container.scope.launch { container.settingsStore.saveVoiceJoinLeaveVolume(it) } }
+                    }
                 }
                     }
                     TvSettingsCategory.MEDIA -> {
@@ -339,6 +384,7 @@ private enum class TvSettingsCategory(val title: String, val icon: ImageVector) 
     MEDIA("Media", Icons.Filled.VideoLibrary),
     MAL("MyAnimeList", Icons.Filled.Tv),
     SYNCING("Syncing", Icons.Filled.Sync),
+    VOICE("Voice", Icons.Filled.Mic),
     PLAYBACK("Playback", Icons.Filled.PlayCircle),
     APPEARANCE("Appearance", Icons.Filled.Palette),
     UPDATES("Updates", Icons.Filled.SystemUpdate),
@@ -470,6 +516,28 @@ private fun TvVoiceDeviceRow(
         },
         Modifier.testTag(testTag),
         subtitle = subtitle,
+    )
+}
+
+/** D-pad friendly gain steps (0–max); OK cycles. */
+@Composable
+private fun TvVoiceGainRow(
+    title: String,
+    value: Float,
+    max: Float,
+    modifier: Modifier = Modifier,
+    onChange: (Float) -> Unit,
+) {
+    val steps = listOf(0f, 0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).filter { it <= max }
+    val current = steps.minByOrNull { kotlin.math.abs(it - value) } ?: value
+    ValueRow(
+        title,
+        "%.0f%%".format(current / max * 100f),
+        {
+            val idx = steps.indexOfFirst { kotlin.math.abs(it - current) < 0.001f }.let { if (it < 0) 0 else it }
+            onChange(steps[(idx + 1) % steps.size])
+        },
+        modifier,
     )
 }
 

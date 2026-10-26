@@ -58,17 +58,29 @@ class AndroidVoiceEngine(
         if (ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            if (!isTv && app.packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE)) {
+            // Phone/tablet: mic feature present → prompt later on Mic tap. TV remotes need permission too.
+            if (app.packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE) || isTv) {
                 return@withContext VoiceCaptureKind.OPEN
             }
+            android.util.Log.i(TAG, "detectCapture: no RECORD_AUDIO and no microphone feature")
+            return@withContext VoiceCaptureKind.NONE
         }
         val inputs = inputInfos()
-        val headset = inputs.firstOrNull { it.type in HEADSET_INPUT_TYPES }
-        if (headset != null) {
+        android.util.Log.i(
+            TAG,
+            "detectCapture inputs=${inputs.map { "${it.id}:${typeName(it.type)}:${it.productName}" }}",
+        )
+        val remote = inputs.firstOrNull { it.type in REMOTE_MIC_TYPES }
+        if (remote != null) {
+            android.util.Log.i(TAG, "detectCapture: remote/BLE mic ${labelOf(remote, true)}")
             return@withContext VoiceCaptureKind.OPEN
         }
+        val headset = inputs.firstOrNull { it.type in HEADSET_INPUT_TYPES }
+        if (headset != null) return@withContext VoiceCaptureKind.OPEN
         val other = inputs.firstOrNull { it.type != AudioDeviceInfo.TYPE_TELEPHONY }
-        if (other != null) {
+        if (other != null) return@withContext VoiceCaptureKind.OPEN
+        // Probe whether AudioRecord can open (TV may list no devices yet still capture via remote path).
+        if (openCaptureRecord(VoicePcm.frameSamples)?.also { (r, _) -> r.release() } != null) {
             return@withContext VoiceCaptureKind.OPEN
         }
         fallbackCapture()
@@ -78,6 +90,7 @@ class AndroidVoiceEngine(
         if (!isTv && app.packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE)) {
             return VoiceCaptureKind.OPEN
         }
+        android.util.Log.w(TAG, "detectCapture: No microphone available")
         return VoiceCaptureKind.NONE
     }
 
@@ -228,43 +241,151 @@ class AndroidVoiceEngine(
         if (ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
+            android.util.Log.w(TAG, "startCapture: RECORD_AUDIO not granted")
             return
         }
-        val sampleRate = 48_000
-        val minBuf = AudioRecord.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        )
-        if (minBuf <= 0) return
-        val record = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-            sampleRate,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            maxOf(minBuf, media.frameSamples * 2 * 4),
-        )
-        if (record.state != AudioRecord.STATE_INITIALIZED) {
-            record.release()
+        val opened = openCaptureRecord(media.frameSamples) ?: run {
+            android.util.Log.e(TAG, "startCapture: no usable AudioRecord (TV remote mic missing?)")
             return
         }
+        val (record, sourceName) = opened
         if (!preferInputDevice(record) && !preferredInputId.isNullOrEmpty()) {
             preferredInputId = null
             onDeviceLost?.invoke(true)
         }
+        val actualRate = record.sampleRate
+        val channels = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            record.channelCount
+        } else {
+            1
+        }
+        val deviceLabel = preferredInputLabel(record)
+        val format = VoiceCaptureFormat(
+            sampleRate = actualRate,
+            channels = channels.coerceAtLeast(1),
+            pcm16 = true,
+            audioSource = sourceName,
+            deviceLabel = deviceLabel,
+        )
+        android.util.Log.i(
+            TAG,
+            "capture open $format opusRate=${VoicePcm.SAMPLE_RATE} frameSamples=${media.frameSamples} " +
+                "bytesPerOpusFrame=${VoicePcm.frameSamples * 2}",
+        )
+        if (actualRate != VoicePcm.SAMPLE_RATE) {
+            android.util.Log.w(
+                TAG,
+                "AudioRecord rate $actualRate != Opus ${VoicePcm.SAMPLE_RATE}; resampling " +
+                    "(this mismatch is the usual cause of garbled Android→peer audio)",
+            )
+        }
         audioRecord = record
         record.startRecording()
-        val frame = ShortArray(media.frameSamples)
+        // Read native-rate PCM, resample to 48 kHz mono, accumulate exact Opus frames, copy out.
+        val readBuf = ShortArray(maxOf(actualRate / 50, media.frameSamples) * format.channels * 2)
+        val monoScratch = ShortArray(readBuf.size)
+        val accumulator = VoicePcm.FrameAccumulator(media.frameSamples)
         captureJob = scope.launch(Dispatchers.IO) {
             while (isActive && session.get() === media) {
-                val n = record.read(frame, 0, frame.size)
-                if (n == frame.size) {
-                    media.offerCapturePcm(frame)
-                } else if (n < 0) {
-                    break
+                val n = record.read(readBuf, 0, readBuf.size)
+                when {
+                    n < 0 -> {
+                        android.util.Log.w(TAG, "AudioRecord.read error $n")
+                        break
+                    }
+                    n == 0 -> continue
+                    else -> {
+                        val mono = toMono(readBuf, n, format.channels, monoScratch)
+                        val at48k = if (actualRate == VoicePcm.SAMPLE_RATE) {
+                            mono
+                        } else {
+                            VoicePcm.resampleMono(mono, actualRate, VoicePcm.SAMPLE_RATE)
+                        }
+                        for (frame in accumulator.push(at48k)) {
+                            media.offerCapturePcm(frame)
+                        }
+                    }
                 }
             }
         }
+    }
+
+    /**
+     * Open an [AudioRecord] that can actually capture. Phones: prefer MIC / VOICE_RECOGNITION over
+     * VOICE_COMMUNICATION (AEC path often forces 16 kHz and sounds garbled when encoded as 48 kHz Opus).
+     * TVs: prefer VOICE_RECOGNITION / DEFAULT so remote / BLE headset mics are reachable.
+     */
+    private fun openCaptureRecord(frameSamples: Int): Pair<AudioRecord, String>? {
+        val sources = if (isTv) {
+            listOf(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION to "VOICE_RECOGNITION",
+                MediaRecorder.AudioSource.DEFAULT to "DEFAULT",
+                MediaRecorder.AudioSource.MIC to "MIC",
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION to "VOICE_COMMUNICATION",
+            )
+        } else {
+            listOf(
+                MediaRecorder.AudioSource.MIC to "MIC",
+                MediaRecorder.AudioSource.VOICE_RECOGNITION to "VOICE_RECOGNITION",
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION to "VOICE_COMMUNICATION",
+                MediaRecorder.AudioSource.DEFAULT to "DEFAULT",
+            )
+        }
+        // Prefer 48 kHz; also try 44.1 / 16 kHz hardware rates and resample.
+        val rates = intArrayOf(VoicePcm.SAMPLE_RATE, 44_100, 16_000, 8_000)
+        for ((source, name) in sources) {
+            for (rate in rates) {
+                val minBuf = AudioRecord.getMinBufferSize(
+                    rate,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                )
+                if (minBuf <= 0) continue
+                val record = runCatching {
+                    AudioRecord(
+                        source,
+                        rate,
+                        AudioFormat.CHANNEL_IN_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT,
+                        maxOf(minBuf, frameSamples * 2 * 8),
+                    )
+                }.getOrNull() ?: continue
+                if (record.state != AudioRecord.STATE_INITIALIZED) {
+                    record.release()
+                    continue
+                }
+                android.util.Log.i(TAG, "AudioRecord ok source=$name requestedRate=$rate actualRate=${record.sampleRate}")
+                return record to name
+            }
+        }
+        return null
+    }
+
+    private fun toMono(interleaved: ShortArray, sampleCount: Int, channels: Int, scratch: ShortArray): ShortArray {
+        if (channels <= 1) {
+            return interleaved.copyOf(sampleCount)
+        }
+        val frames = sampleCount / channels
+        val out = if (scratch.size >= frames) scratch else ShortArray(frames)
+        var i = 0
+        var o = 0
+        while (o < frames) {
+            var sum = 0
+            for (c in 0 until channels) sum += interleaved[i + c].toInt()
+            out[o] = (sum / channels).toShort()
+            i += channels
+            o++
+        }
+        return out.copyOf(frames)
+    }
+
+    private fun preferredInputLabel(record: AudioRecord): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return "default"
+        val preferred = runCatching { record.preferredDevice }.getOrNull()
+        if (preferred != null) return labelOf(preferred, input = true)
+        val id = preferredInputId?.toIntOrNull()
+        val info = id?.let { inputInfos().firstOrNull { d -> d.id == it } }
+        return info?.let { labelOf(it, input = true) } ?: "system default"
     }
 
     private fun startPlayback(frameSamples: Int) {
@@ -322,14 +443,21 @@ class AndroidVoiceEngine(
     private fun preferInputDevice(record: AudioRecord): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return preferredInputId.isNullOrEmpty()
         val id = preferredInputId?.toIntOrNull()
-        if (id == null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                runCatching { record.preferredDevice = null }
-            }
-            return true
+        if (id != null) {
+            val device = inputInfos().firstOrNull { it.id == id } ?: return false
+            return runCatching { record.preferredDevice = device; true }.getOrDefault(false)
         }
-        val device = inputInfos().firstOrNull { it.id == id } ?: return false
-        return runCatching { record.preferredDevice = device; true }.getOrDefault(false)
+        // TV: auto-select a remote / BLE / HDMI mic when the user hasn't picked one.
+        if (isTv) {
+            val remote = inputInfos().firstOrNull { it.type in REMOTE_MIC_TYPES }
+                ?: inputInfos().firstOrNull { it.type in HEADSET_INPUT_TYPES }
+            if (remote != null) {
+                android.util.Log.i(TAG, "preferInputDevice: auto remote ${labelOf(remote, true)}")
+                return runCatching { record.preferredDevice = remote; true }.getOrDefault(false)
+            }
+        }
+        runCatching { record.preferredDevice = null }
+        return true
     }
 
     private fun preferOutputDevice(track: AudioTrack): Boolean {
@@ -411,12 +539,40 @@ class AndroidVoiceEngine(
         return if (product != null) "$typeLabel ($product)" else typeLabel
     }
 
+    private fun typeName(type: Int): String = when (type) {
+        AudioDeviceInfo.TYPE_BUILTIN_MIC -> "BUILTIN_MIC"
+        AudioDeviceInfo.TYPE_WIRED_HEADSET -> "WIRED_HEADSET"
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "BT_SCO"
+        AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_HDMI_ARC -> "HDMI"
+        AudioDeviceInfo.TYPE_TELEPHONY -> "TELEPHONY"
+        else -> when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && type == AudioDeviceInfo.TYPE_USB_HEADSET -> "USB_HEADSET"
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && type == AudioDeviceInfo.TYPE_BLE_HEADSET -> "BLE_HEADSET"
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && type == AudioDeviceInfo.TYPE_REMOTE_SUBMIX -> "REMOTE_SUBMIX"
+            else -> "type$type"
+        }
+    }
+
     companion object {
+        private const val TAG = "AndroidVoice"
+
         private val HEADSET_INPUT_TYPES: Set<Int> = buildSet {
             add(AudioDeviceInfo.TYPE_WIRED_HEADSET)
             add(AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) add(AudioDeviceInfo.TYPE_USB_HEADSET)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(AudioDeviceInfo.TYPE_BLE_HEADSET)
+        }
+
+        /** TV remote / assistant mics often appear as BLE headset, remote submix, or HDMI. */
+        private val REMOTE_MIC_TYPES: Set<Int> = buildSet {
+            add(AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                add(AudioDeviceInfo.TYPE_BLE_HEADSET)
+                add(AudioDeviceInfo.TYPE_REMOTE_SUBMIX)
+            }
+            add(AudioDeviceInfo.TYPE_HDMI)
+            add(AudioDeviceInfo.TYPE_HDMI_ARC)
+            add(AudioDeviceInfo.TYPE_DOCK)
         }
     }
 }

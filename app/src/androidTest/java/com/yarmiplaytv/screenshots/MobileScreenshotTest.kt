@@ -236,13 +236,14 @@ class MobileScreenshotTest {
         await("player_controls"); await("play_pause")
         scenarios.awaitCacheSettled()
         shot("player")
-        val sheets = listOf("Shared playlist" to "playlist", "Room" to "room", "Chat" to "chat", "Audio" to "audio", "Subtitles" to "subtitles")
-        val resting = sheets.associate { (label, _) -> label to boundsOf("sheet_$label") }
-        for ((label, slug) in sheets) {
-            // An open sheet brings the navigation bar back and lifts the controls; while they slide down again
-            // a tap at the button's position lands on the seek bar.
-            compose.waitUntil(5_000) { boundsOf("sheet_$label") == resting[label] }
-            tap("sheet_$label"); await("player_sheet")
+        // TV-style Menus: one control + tab strip (sheet_tab_*), not one icon per panel.
+        val sheets = listOf("playlist", "room", "chat", "audio", "subtitles")
+        await("player_menus")
+        val menusRest = boundsOf("player_menus")
+        for (slug in sheets) {
+            compose.waitUntil(5_000) { boundsOf("player_menus") == menusRest }
+            tap("player_menus"); await("player_sheet")
+            tap("sheet_tab_$slug")
             shot("player_sheet_$slug")
             back()
             compose.waitUntilDoesNotExist(hasTestTag("player_sheet"), 5_000)

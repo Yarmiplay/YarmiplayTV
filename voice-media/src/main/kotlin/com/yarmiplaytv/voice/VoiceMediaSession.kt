@@ -140,8 +140,10 @@ class VoiceMediaSession(
         val t = transport ?: return false
         if (pcm.size < opus.frameSamples) return false
         if (!transmitting.get() || selfMuted.get()) return true
-        val gained = if (inputGain == 1f) pcm else ShortArray(opus.frameSamples) { i ->
-            (pcm[i] * inputGain).roundToInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+        // Always copy: platform capture may reuse the buffer on the next read while we encode/send.
+        val slice = pcm.copyOf(opus.frameSamples)
+        val gained = if (inputGain == 1f) slice else ShortArray(opus.frameSamples) { i ->
+            (slice[i] * inputGain).roundToInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
         }
         val frame = opus.encode(gained) ?: return true
         t.sendAudio(frame, opus.frameSamples)

@@ -32,10 +32,12 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.Slider
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -104,7 +106,8 @@ import kotlinx.coroutines.launch
 private enum class SettingsCategory(val title: String, val icon: ImageVector, val summary: String) {
     MEDIA("Media", Icons.Filled.VideoLibrary, "Media servers, media folders, sharing your files, where files are saved"),
     MAL("MyAnimeList", Icons.Filled.Tv, "Your account and list updates"),
-    SYNCING("Syncing", Icons.Filled.Sync, "Unpausing, catching up, readiness, playlists, chat, voice devices, your device's name"),
+    SYNCING("Syncing", Icons.Filled.Sync, "Unpausing, catching up, readiness, playlists, chat, your device's name"),
+    VOICE("Voice", Icons.Filled.Mic, "Room voice, auto-join, auto-mute, devices, volume, join/leave sounds"),
     PLAYBACK("Playback", Icons.Filled.PlayCircle, "Decoding, picture-in-picture, openings and endings, seeking, languages"),
     APPEARANCE("Appearance", Icons.Filled.Palette, "Theme: dark, noire, monochrome, light, or as your device is set"),
     UPDATES("Updates", Icons.Filled.SystemUpdate, "Checking for and installing new versions"),
@@ -219,6 +222,7 @@ private fun ColumnScope.CategorySettings(category: SettingsCategory, container: 
         SettingsCategory.MEDIA -> MediaSettings(container, nav)
         SettingsCategory.MAL -> MalSettings(container, nav)
         SettingsCategory.SYNCING -> SyncingSettings(container)
+        SettingsCategory.VOICE -> VoiceSettings(container)
         SettingsCategory.PLAYBACK -> PlaybackSettings(container)
         SettingsCategory.APPEARANCE -> AppearanceSettings(container)
         SettingsCategory.UPDATES -> UpdatesSettings(container, nav)
@@ -335,21 +339,6 @@ private fun SyncingSettings(container: AppContainer) {
             Modifier.testTag("toggle_chat_on_video"),
         ) { container.scope.launch { container.settingsStore.saveChatOnVideo(it) } }
     }
-    SettingsToggle(
-        "Voice chat",
-        "Talk in rooms on a YarmiplayServerTV server that has voice on; off hides the controls and disconnects",
-        settings.voiceChat,
-        Modifier.testTag("toggle_voice_chat"),
-    ) { container.scope.launch { container.settingsStore.saveVoiceChat(it) } }
-    if (settings.voiceChat) {
-        SettingsToggle(
-            "Auto-join voice",
-            "Join voice automatically when you enter a room that has it; off shows Join voice until you tap it",
-            settings.voiceAutoJoin,
-            Modifier.testTag("toggle_voice_auto_join"),
-        ) { container.scope.launch { container.settingsStore.saveVoiceAutoJoin(it) } }
-        VoiceDeviceSettings(container)
-    }
     if (container.supportsDeviceAccess) {
         SettingTextField(
             settings.deviceName,
@@ -359,6 +348,78 @@ private fun SyncingSettings(container: AppContainer) {
             "Shown to YarmiplayServerTV hosts when you ask for access",
             Modifier.testTag("device_name"),
         )
+    }
+}
+
+/** All room-voice prefs; preference keys unchanged so existing saves keep working. */
+@Composable
+private fun VoiceSettings(container: AppContainer) {
+    val settings by container.settings.collectAsStateWithLifecycle()
+    SettingsToggle(
+        "Enable voice",
+        "Talk in rooms on a YarmiplayServerTV server that has voice on; off fully disables voice (no join, mic, sounds, or voice UI)",
+        settings.voiceChat,
+        Modifier.testTag("toggle_voice_chat"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceChat(it) } }
+    // Other voice prefs stay saved but are hidden while Enable voice is off.
+    if (!settings.voiceChat) return
+    SettingsToggle(
+        "Auto-join voice",
+        "Join voice automatically when you enter a room that has it; off shows Join voice until you tap it",
+        settings.voiceAutoJoin,
+        Modifier.testTag("toggle_voice_auto_join"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceAutoJoin(it) } }
+    SettingsToggle(
+        "Auto-mute when playing",
+        "Mute your mic when playback starts or resumes",
+        settings.voiceAutoMuteWhenPlaying,
+        Modifier.testTag("toggle_voice_auto_mute_playing"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceAutoMuteWhenPlaying(it) } }
+    SettingsToggle(
+        "Auto-unmute when paused",
+        "Unmute when playback pauses, only if auto-mute muted you — never overrides a mute you set yourself",
+        settings.voiceAutoUnmuteWhenPaused,
+        Modifier.testTag("toggle_voice_auto_unmute_paused"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceAutoUnmuteWhenPaused(it) } }
+    VoiceDeviceSettings(container)
+    VoiceGainSlider(
+        "Microphone volume",
+        settings.voiceInputGain,
+        Modifier.testTag("voice_input_gain"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceInputGain(it) } }
+    VoiceGainSlider(
+        "Voice playback volume",
+        settings.voiceOutputGain,
+        Modifier.testTag("voice_output_gain"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceOutputGain(it) } }
+    SettingsToggle(
+        "Join and leave sounds",
+        "Short sound when someone joins or leaves voice",
+        settings.voiceJoinLeaveSounds,
+        Modifier.testTag("toggle_voice_join_leave_sounds"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceJoinLeaveSounds(it) } }
+    if (settings.voiceJoinLeaveSounds) {
+        VoiceGainSlider(
+            "Join/leave sound volume",
+            settings.voiceJoinLeaveVolume,
+            Modifier.testTag("voice_join_leave_volume"),
+            max = 1f,
+        ) { container.scope.launch { container.settingsStore.saveVoiceJoinLeaveVolume(it) } }
+    }
+}
+
+@Composable
+private fun VoiceGainSlider(
+    title: String,
+    value: Float,
+    modifier: Modifier = Modifier,
+    max: Float = 2f,
+    onChange: (Float) -> Unit,
+) {
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(title, style = MaterialTheme.typography.bodyLarge)
+        Text("%.0f%%".format(value / max * 100f), color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+        Slider(value = value.coerceIn(0f, max), onValueChange = onChange, valueRange = 0f..max)
     }
 }
 

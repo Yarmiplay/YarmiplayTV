@@ -66,9 +66,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.data.VoiceTalkMode
 import com.yarmiplaytv.voice.VoiceCaptureKind
 import com.yarmiplaytv.voice.VoiceConnection
+import com.yarmiplaytv.voice.micControlDescription
+import com.yarmiplaytv.voice.micControlLabel
+import com.yarmiplaytv.voice.micControlLive
 import com.yarmiplaytv.voice.peerPrefs
 import com.yarmiplaytv.voice.voiceBanner
 import androidx.compose.runtime.Composable
@@ -388,32 +392,18 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (voiceUi.showMicButton) {
                     IconButton(
-                        {
-                            when (voiceUi.talkMode) {
-                                VoiceTalkMode.TOGGLE -> container.voice.toggleTalk()
-                                VoiceTalkMode.PUSH_TO_TALK -> Unit // hold handled elsewhere
-                                VoiceTalkMode.OPEN_MIC -> container.voice.toggleSelfMuted()
-                            }
-                        },
+                        { container.voice.toggleMic() },
                         Modifier.testTag("voice_self_mic"),
                     ) {
-                        // Phone/tablet use TOGGLE (micLive); desktop OPEN_MIC still keys off !selfMuted.
-                        val live = when (voiceUi.talkMode) {
-                            VoiceTalkMode.OPEN_MIC -> !voiceUi.selfMuted && voiceUi.connection == VoiceConnection.CONNECTED
-                            else -> voiceUi.micLive
-                        }
+                        val live = voiceUi.micControlLive()
                         Icon(
                             if (live) Icons.Filled.Mic else Icons.Filled.MicOff,
-                            if (live) "Mic live — tap to mute" else "Mic off — tap to talk",
+                            voiceUi.micControlDescription(showKeyboardShortcut = container.deviceKind == DeviceKind.DESKTOP),
                             tint = if (live) AppColors.Ready else AppColors.TextDim,
                         )
                     }
                     Text(
-                        when {
-                            voiceUi.talkMode == VoiceTalkMode.OPEN_MIC && voiceUi.selfMuted -> "Mic muted"
-                            voiceUi.micLive || (voiceUi.talkMode == VoiceTalkMode.OPEN_MIC && !voiceUi.selfMuted) -> "Mic on"
-                            else -> "Mic off"
-                        },
+                        voiceUi.micControlLabel(),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f),
                     )

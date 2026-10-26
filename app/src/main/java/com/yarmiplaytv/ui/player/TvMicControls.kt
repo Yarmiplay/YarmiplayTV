@@ -1,17 +1,12 @@
 package com.yarmiplaytv.ui.player
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -19,7 +14,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.yarmiplaytv.ui.components.IconAction
@@ -54,29 +48,6 @@ fun TvMicButton(
         mod,
         tint = tint,
     )
-}
-
-/** Persistent chip while the mic is live (player overlay). */
-@Composable
-fun TvMicLiveBadge(ui: VoiceUiState, modifier: Modifier = Modifier) {
-    if (!ui.micLive) return
-    Row(
-        modifier
-            .clip(RoundedCornerShape(50))
-            .background(Color.Black.copy(alpha = 0.72f))
-            .padding(horizontal = 14.dp, vertical = 8.dp)
-            .testTag("tv_mic_live"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(
-            Icons.Filled.Mic,
-            contentDescription = null,
-            tint = AppColors.Ready,
-            modifier = Modifier.size(22.dp).clip(CircleShape),
-        )
-        Text("Mic live", color = Color.White, style = MaterialTheme.typography.labelLarge)
-    }
 }
 
 /** One-time hint the first time TV voice is available with a usable mic. */

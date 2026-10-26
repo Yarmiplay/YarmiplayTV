@@ -155,4 +155,15 @@ class ShortcutsTest {
         assertFalse(press(Key.A))
         assertEquals(emptyList<String>(), log)
     }
+
+    @Test
+    fun ctrlMTogglesMicAndPlainMStaysVideoMute() {
+        val t = Target()
+        assertTrue(press(Key.M, t))
+        assertTrue(press(Key.M, t, ctrl = true))
+        // Cmd+M is not bound (macOS window minimize); keep Ctrl+M on every desktop OS.
+        assertFalse(press(Key.M, t, meta = true))
+        assertEquals(listOf("Mute", "show", "ToggleMic", "show"), log)
+        assertFalse(press(Key.M, Target(playerShowing = false), ctrl = true))
+    }
 }

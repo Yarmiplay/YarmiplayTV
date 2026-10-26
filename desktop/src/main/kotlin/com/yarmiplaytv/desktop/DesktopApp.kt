@@ -243,6 +243,14 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
                     setPip(!DesktopPip.open)
                     true
                 }
+                PlaybackAction.ToggleMic -> {
+                    if (!container.voice.ui.value.showMicButton) {
+                        false
+                    } else {
+                        container.voice.toggleMic()
+                        true
+                    }
+                }
                 else -> container.playback.perform(action)
             }
         }

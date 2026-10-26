@@ -106,6 +106,14 @@ sealed interface PlaybackAction {
         override val showsControls = true
     }
 
+    /**
+     * Room voice mic mute/unmute (Ctrl+M). Not video volume mute ([Mute] / plain M).
+     * Handled by the desktop/web shortcut layer; [PlaybackController] does not apply it.
+     */
+    data object ToggleMic : PlaybackAction {
+        override val showsControls = true
+    }
+
     data object Fullscreen : PlaybackAction {
         override val showsControls = true
     }
@@ -245,6 +253,8 @@ private fun ctrlAction(key: Key, shift: Boolean): PlaybackAction? = when (key) {
     Key.DirectionLeft -> if (shift) PlaybackAction.SubStep(-1) else PlaybackAction.SubSeek(-1)
     Key.DirectionRight -> if (shift) PlaybackAction.SubStep(1) else PlaybackAction.SubSeek(1)
     Key.Backspace -> if (shift) PlaybackAction.MarkSeek else PlaybackAction.ResetAll
+    // Ctrl+M = room mic (not video mute). Cmd+M is left alone so macOS can keep window minimize.
+    Key.M -> PlaybackAction.ToggleMic
     Key.R -> PlaybackAction.Reload
     Key.H -> PlaybackAction.HwdecToggle
     Key.S -> PlaybackAction.Screenshot(subtitles = true)
@@ -437,7 +447,9 @@ class PlaybackController(
             PlaybackAction.ScreenshotEachFrame -> {
                 if (!player.command("screenshot", "each-frame")) player.showText("Not available")
             }
-            PlaybackAction.ToggleControls, PlaybackAction.SkipSegment, PlaybackAction.FocusChat, PlaybackAction.TogglePip -> return false
+            PlaybackAction.ToggleControls, PlaybackAction.SkipSegment, PlaybackAction.FocusChat,
+            PlaybackAction.TogglePip, PlaybackAction.ToggleMic,
+            -> return false
         }
         return true
     }

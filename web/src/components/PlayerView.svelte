@@ -83,6 +83,17 @@
   const inRoom = $derived(room?.status === "CONNECTED");
   const readyCount = $derived(room?.users.filter((u) => u.isReady).length ?? 0);
   const seekStep = $derived($settings.playback.seekStepSeconds);
+  let voiceMicLive = $state(false);
+  $effect(() => {
+    const v = session?.voice;
+    if (!v) {
+      voiceMicLive = false;
+      return;
+    }
+    return v.ui.subscribe((ui) => {
+      voiceMicLive = !!ui.showMic && ui.connected && !ui.selfMuted && ui.transmitting;
+    });
+  });
 
   onMount(() => {
     const p = new MediaPlayer(videoCanvas, subtitleCanvas, pictureSubtitleCanvas);
@@ -335,8 +346,17 @@
     // Typing goes to text fields; a file picker or a checkbox that keeps the focus mustn't swallow the keys.
     const typing = target.closest('input:not([type="file"]):not([type="checkbox"]):not([type="radio"]), textarea, select');
     if (typing && event.key !== "Escape") return;
-    if (event.ctrlKey || event.altKey || event.metaKey) return;
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    // Ctrl+M = room mic (same as Room tab). Meta+M left alone (macOS minimize). Plain M = video mute.
+    if (event.ctrlKey && !event.altKey && !event.metaKey && key === "m") {
+      const ui = session?.voice.ui.value;
+      if (ui?.showMic) {
+        session!.voice.setSelfMuted(!ui.selfMuted);
+        event.preventDefault();
+      }
+      return;
+    }
+    if (event.ctrlKey || event.altKey || event.metaKey) return;
     switch (key) {
       case " ":
       case "k":
@@ -546,8 +566,8 @@
           <button class="tool" onclick={() => go(inRoom ? "#/room" : "#/")} aria-label="Back" title="Back"><Icon name="arrow_back" size={24} /></button>
           <span class="title">{s.name}</span>
           {#if room && inRoom}
-            <button class="chip room-chip" onclick={() => (panel = panel === "room" ? null : "room")}>
-              {ManagedRooms.label(room.room)} · {room.users.length} · {readyCount} ready
+            <button class="chip room-chip" data-testid={voiceMicLive ? "status_mic_live" : undefined} onclick={() => (panel = panel === "room" ? null : "room")}>
+              {ManagedRooms.label(room.room)} · {room.users.length} · {readyCount} ready{#if voiceMicLive} · Mic{/if}
             </button>
           {/if}
           <button class="tool" onclick={pictureInPicture} aria-label="Picture-in-picture (P)" title="Picture-in-picture (P)"><Icon name="picture_in_picture_alt" size={24} /><span class="tool-label">Picture-in-picture</span></button>

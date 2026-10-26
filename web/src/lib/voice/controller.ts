@@ -41,10 +41,16 @@ export class VoiceController {
   private readonly engine = new WebVoiceEngine();
   private enabled = true;
   private autoJoin = true;
+  private autoMuteWhenPlaying = true;
+  private autoUnmuteWhenPaused = true;
+  /** True only when auto-mute muted us — auto-unmute never overrides a manual mute. */
+  private autoMutedByPlayback = false;
   /** After Leave (or auto-join off on entry), stay out until [join]. */
   private leftByUser = false;
   private unsubs: Array<() => void> = [];
   private onDeviceLostClear: ((input: boolean) => void) | null = null;
+  private playbackUnsub: (() => void) | null = null;
+  private lastPlaying: boolean | null = null;
 
   constructor(private readonly client: () => SyncplayClient | null) {
     this.engine.onDeviceLost = (input) => this.onDeviceLostClear?.(input);
@@ -64,6 +70,10 @@ export class VoiceController {
   stop() {
     for (const u of this.unsubs) u();
     this.unsubs = [];
+    this.playbackUnsub?.();
+    this.playbackUnsub = null;
+    this.lastPlaying = null;
+    this.autoMutedByPlayback = false;
     this.engine.disconnect();
     this.leftByUser = false;
     this.ui.set(idle());
@@ -77,6 +87,29 @@ export class VoiceController {
   setAutoJoin(on: boolean) {
     this.autoJoin = on;
     this.reconcile();
+  }
+
+  setAutoMuteWhenPlaying(on: boolean) {
+    this.autoMuteWhenPlaying = on;
+  }
+
+  setAutoUnmuteWhenPaused(on: boolean) {
+    this.autoUnmuteWhenPaused = on;
+  }
+
+  /**
+   * Observe player pause/play for auto-mute / auto-unmute (same semantics as the apps).
+   * Pass a subscribe that yields `{ loaded, paused }`.
+   */
+  bindPlayback(subscribe: (cb: (s: { loaded: boolean; paused: boolean }) => void) => () => void) {
+    this.playbackUnsub?.();
+    this.lastPlaying = null;
+    this.playbackUnsub = subscribe((s) => {
+      const playing = s.loaded && !s.paused;
+      if (this.lastPlaying === playing) return;
+      this.lastPlaying = playing;
+      this.onPlaybackPlayingChanged(playing);
+    });
   }
 
   setOnDeviceLost(handler: ((input: boolean) => void) | null) {
@@ -100,12 +133,32 @@ export class VoiceController {
   }
 
   setSelfMuted(muted: boolean) {
+    this.autoMutedByPlayback = false; // manual
+    this.applySelfMuted(muted);
+  }
+
+  private applySelfMuted(muted: boolean) {
     this.engine.setSelfMuted(muted);
-    const transmitting = muted ? false : this.ui.value.transmitting;
-    this.ui.update((u) => ({ ...u, selfMuted: muted, transmitting }));
-    // Keep engine capture in sync when unmute restores a prior transmitting latch.
+    const transmitting = muted ? false : this.ui.value.transmitting || (!muted && this.ui.value.connected);
+    this.ui.update((u) => ({ ...u, selfMuted: muted, transmitting: muted ? false : transmitting }));
     if (!muted && transmitting) this.engine.setTransmitting(true);
     this.client()?.sendVoiceActivity(!muted && transmitting);
+  }
+
+  private onPlaybackPlayingChanged(playing: boolean) {
+    const ui = this.ui.value;
+    if (!ui.connected || !ui.showMic) return;
+    if (playing) {
+      if (!this.autoMuteWhenPlaying) return;
+      if (ui.selfMuted) return;
+      this.applySelfMuted(true);
+      this.autoMutedByPlayback = true;
+    } else {
+      if (!this.autoUnmuteWhenPaused) return;
+      if (!this.autoMutedByPlayback) return;
+      this.applySelfMuted(false);
+      this.autoMutedByPlayback = false;
+    }
   }
 
   setTransmitting(on: boolean) {
