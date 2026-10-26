@@ -1,0 +1,131 @@
+# Read-only snapshot of every Google Play track (internal, alpha, beta, production, …).
+# Uses the same PLAY_SERVICE_ACCOUNT_JSON secret as the Release play upload job.
+# API calls: edits.insert → edits.tracks.list → edits.delete. Never commits an edit.
+name: Play tracks status
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  tracks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install Google API client
+        run: pip install --quiet google-auth google-api-python-client
+
+      - name: List Play tracks (read-only edit)
+        id: list
+        env:
+          # Written to a temp file only; never echoed or printed.
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          PACKAGE_NAME: com.yarmiplaytv
+          OUT_JSON: ${{ runner.temp }}/play-tracks.json
+        run: |
+          set -euo pipefail
+          if [ -z "${PLAY_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "::error::PLAY_SERVICE_ACCOUNT_JSON secret is empty"
+            exit 1
+          fi
+          SA_FILE="${RUNNER_TEMP}/play-sa.json"
+          # Avoid echo/printf of the secret in the log; write via Python from the env var.
+          python3 - <<'PY'
+          import json, os, pathlib, sys
+          from google.oauth2 import service_account
+          from googleapiclient.discovery import build
+
+          package = os.environ["PACKAGE_NAME"]
+          out_path = pathlib.Path(os.environ["OUT_JSON"])
+          sa_path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "play-sa.json"
+          sa_path.write_text(os.environ["PLAY_SERVICE_ACCOUNT_JSON"], encoding="utf-8")
+          try:
+              creds = service_account.Credentials.from_service_account_file(
+                  str(sa_path),
+                  scopes=["https://www.googleapis.com/auth/androidpublisher"],
+              )
+              service = build("androidpublisher", "v3", credentials=creds, cache_discovery=False)
+              edit = service.edits().insert(body={}, packageName=package).execute()
+              edit_id = edit["id"]
+              try:
+                  # Read-only: list tracks, then delete the edit. Never call edits().commit().
+                  listed = service.edits().tracks().list(packageName=package, editId=edit_id).execute()
+              finally:
+                  service.edits().delete(packageName=package, editId=edit_id).execute()
+          finally:
+              try:
+                  sa_path.unlink(missing_ok=True)
+              except Exception:
+                  pass
+
+          tracks = listed.get("tracks") or []
+          summary_lines = ["# Play tracks status", "", f"Package: `{package}`", ""]
+          log_lines = [f"Play tracks for {package} ({len(tracks)} track(s))"]
+
+          for track in tracks:
+              name = track.get("track") or "(unnamed)"
+              releases = track.get("releases") or []
+              summary_lines.append(f"## {name}")
+              log_lines.append(f"track: {name}")
+              if not releases:
+                  summary_lines.append("_No releases_")
+                  log_lines.append("  (no releases)")
+                  summary_lines.append("")
+                  continue
+              for rel in releases:
+                  codes = rel.get("versionCodes") or []
+                  codes_s = ", ".join(str(c) for c in codes) if codes else "(none)"
+                  version_name = rel.get("name") or rel.get("versionName") or "(none)"
+                  status = rel.get("status") or "(unknown)"
+                  fraction = rel.get("userFraction")
+                  fraction_s = "n/a" if fraction is None else str(fraction)
+                  line = (
+                      f"- versionCodes: `{codes_s}` · name: `{version_name}` · "
+                      f"status: `{status}` · userFraction: `{fraction_s}`"
+                  )
+                  summary_lines.append(line)
+                  log_lines.append(
+                      f"  versionCodes={codes_s} name={version_name} "
+                      f"status={status} userFraction={fraction_s}"
+                  )
+              summary_lines.append("")
+
+          payload = {
+              "packageName": package,
+              "tracks": [
+                  {
+                      "track": t.get("track"),
+                      "releases": [
+                          {
+                              "versionCodes": [str(c) for c in (r.get("versionCodes") or [])],
+                              "name": r.get("name") or r.get("versionName"),
+                              "status": r.get("status"),
+                              "userFraction": r.get("userFraction"),
+                          }
+                          for r in (t.get("releases") or [])
+                      ],
+                  }
+                  for t in tracks
+              ],
+          }
+          out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+          summary = "\n".join(summary_lines) + "\n"
+          step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if step_summary:
+              with open(step_summary, "a", encoding="utf-8") as f:
+                  f.write(summary)
+          for line in log_lines:
+              print(line, flush=True)
+          PY
+
+      - name: Upload play-tracks.json
+        uses: actions/upload-artifact@v7
+        with:
+          name: play-tracks
+          path: ${{ runner.temp }}/play-tracks.json
+          if-no-files-found: error
