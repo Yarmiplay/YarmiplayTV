@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -205,6 +206,8 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
         seekBy = ::seekBy,
         skip = { forward -> container.playlist.skip(forward); touch() },
     )
+    // RoomSidePanel is only composed in landscape; portrait must use the modal sheet or room/chat/playlist never appear.
+    var portraitLayout by remember { mutableStateOf(false) }
     fun openSheet(kind: PlayerSheet) {
         lastSheet = kind
         val tab = when (kind) {
@@ -214,7 +217,9 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
             PlayerSheet.MAL -> RoomPanelTab.MAL
             else -> null
         }
-        if (tab == null || !toggleRoomSidePanel(tab)) sheet = kind
+        // Side panel is desktop-landscape only; phone/tablet and portrait always use the modal sheet.
+        val useDesktopSidePanel = container.deviceKind == DeviceKind.DESKTOP && !portraitLayout
+        if (tab == null || !useDesktopSidePanel || !toggleRoomSidePanel(tab)) sheet = kind
     }
     fun openMenus() = openSheet(lastSheet)
     if (pip.active) {
@@ -252,6 +257,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     }
     BoxWithConstraints(Modifier.fillMaxSize().then(keyboard)) {
         val isPortrait = maxWidth < maxHeight
+        portraitLayout = isPortrait
         val fullscreenToggle = rememberFullscreenToggle(isPortrait)
         fullscreenHolder.value = fullscreenToggle
         FullscreenLandscape(pictureInPicture = pip.active, isPortrait = isPortrait)
@@ -411,10 +417,12 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                 // Child 1: Portrait bottom section (title, details, controls) or Landscape RoomSidePanel
                 if (isPortrait) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                        // fillMaxWidth (not fillMaxSize): scroll must measure content taller than the viewport.
                         Column(
                             Modifier
                                 .widthIn(max = 640.dp)
-                                .fillMaxSize()
+                                .fillMaxWidth()
+                                .fillMaxHeight()
                                 .verticalScroll(rememberScrollState())
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -500,6 +508,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                             }
 
                             // Dedicated Room Status & Ready Card (always visible when connected to a room, no need to tap the video)
+                            val portraitVoice by container.voice.ui.collectAsStateWithLifecycle()
                             if (room.status != ConnectionStatus.DISCONNECTED) {
                                 Surface(
                                     color = AppColors.Surface, contentColor = AppColors.OnSurface,
@@ -511,7 +520,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                             .fillMaxWidth()
                                             .padding(horizontal = 16.dp, vertical = 12.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
                                         Column(
                                             Modifier
@@ -567,6 +576,13 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                                 modifier = Modifier.testTag("player_ready"),
                                             )
                                         }
+                                        // Mic beside Ready — full 48dp target (not crushed by the volume row).
+                                        PlayerMicButton(
+                                            portraitVoice,
+                                            onToggle = { container.voice.toggleMic(); touch() },
+                                            onVideo = false,
+                                            showKeyboardShortcut = false,
+                                        )
                                     }
                                 }
                             }
@@ -652,32 +668,41 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         }
                                     }
 
+                                    Spacer(Modifier.height(8.dp))
+
+                                    // Volume alone — sharing a row with Ready/Mic/Menus crushed those controls on phones.
+                                    PlayerVolumeControl(::touch, onVideo = false, modifier = Modifier.fillMaxWidth())
+
                                     Spacer(Modifier.height(4.dp))
 
-                                    val portraitVoice by container.voice.ui.collectAsStateWithLifecycle()
                                     Row(
                                         Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     ) {
-                                        PlayerVolumeControl(::touch, onVideo = false)
-                                        if (inRoom) {
-                                            ReadyChip(
-                                                room.isReady == true,
-                                                { container.sync.toggleReady(); touch() },
-                                                Modifier.testTag("player_ready_controls"),
+                                        // When the room card is hidden, keep Mic reachable next to a Ready chip here.
+                                        if (room.status == ConnectionStatus.DISCONNECTED) {
+                                            if (inRoom) {
+                                                ReadyChip(
+                                                    room.isReady == true,
+                                                    { container.sync.toggleReady(); touch() },
+                                                    Modifier.testTag("player_ready_controls"),
+                                                )
+                                            }
+                                            PlayerMicButton(
+                                                portraitVoice,
+                                                onToggle = { container.voice.toggleMic(); touch() },
+                                                onVideo = false,
+                                                showKeyboardShortcut = false,
                                             )
                                         }
-                                        // Keep Mic beside Ready (same toggleMic path as Room tab).
-                                        PlayerMicButton(
-                                            portraitVoice,
-                                            onToggle = { container.voice.toggleMic(); touch() },
-                                            onVideo = false,
-                                            showKeyboardShortcut = container.deviceKind == DeviceKind.DESKTOP,
-                                        )
                                         Spacer(Modifier.weight(1f))
                                         rememberRelaySave(container)?.let { RelaySaveButton(it, ::touch, tint = AppColors.Text) }
                                         container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
-                                            IconButton({ screenshots.take(); touch() }, Modifier.testTag("screenshot")) {
+                                            IconButton(
+                                                { screenshots.take(); touch() },
+                                                Modifier.size(48.dp).testTag("screenshot"),
+                                            ) {
                                                 Icon(Icons.Filled.PhotoCamera, contentDescription = "Screenshot", tint = AppColors.Text)
                                             }
                                         }
@@ -685,7 +710,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         if (container.deviceKind == DeviceKind.PHONE || container.deviceKind == DeviceKind.TABLET) {
                                             IconButton(
                                                 { openMenus(); touch() },
-                                                Modifier.testTag("player_menus"),
+                                                Modifier.size(48.dp).testTag("player_menus"),
                                             ) {
                                                 Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = AppColors.Text)
                                             }
@@ -852,7 +877,7 @@ private fun BottomControls(
                 }
             }
             if (useMenus) {
-                IconButton({ onMenus(); onInteract() }, Modifier.testTag("player_menus")) {
+                IconButton({ onMenus(); onInteract() }, Modifier.size(48.dp).testTag("player_menus")) {
                     Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = Color.White)
                 }
             } else {
@@ -884,11 +909,13 @@ private fun PlayerMicButton(
         onVideo -> Color.White
         else -> AppColors.Text
     }
-    IconButton(onToggle, modifier.testTag("player_mic_toggle")) {
+    // requiredSize keeps a 48dp touch target even when a tight parent would otherwise crush the IconButton.
+    IconButton(onToggle, modifier.requiredSize(48.dp).testTag("player_mic_toggle")) {
         Icon(
             if (live) Icons.Filled.Mic else Icons.Filled.MicOff,
             contentDescription = ui.micControlDescription(showKeyboardShortcut),
             tint = tint,
+            modifier = Modifier.size(24.dp),
         )
     }
 }

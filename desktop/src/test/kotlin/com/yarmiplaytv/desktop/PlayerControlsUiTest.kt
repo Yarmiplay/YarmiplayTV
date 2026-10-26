@@ -21,6 +21,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performSemanticsAction
@@ -48,7 +49,11 @@ import com.yarmiplaytv.ui.mobile.PipContent
 import com.yarmiplaytv.ui.mobile.PlayerVolume
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.voice.VoiceCaptureKind
+import com.yarmiplaytv.voice.VoiceConnection
+import com.yarmiplaytv.voice.VoiceUiState
 import java.io.File
+import java.lang.reflect.Field
 import java.util.Collections
 import java.util.concurrent.Executors
 import javax.imageio.ImageIO
@@ -473,6 +478,118 @@ class PlayerControlsUiTest {
         // Room card and ready button stay visible even when video overlay is hidden
         onNodeWithTag("portrait_room_card").assertExists()
         onNodeWithTag("player_ready").assertExists()
+    }
+
+    @Test
+    fun `phone portrait Menus is fully on screen and opens sheets, Mic is 48dp beside Ready`() = runComposeUiTest {
+        app.deviceKind = DeviceKind.PHONE
+        player.state.value = player.state.value.copy(paused = true)
+        app.sync.setTestRoom(
+            RoomState(
+                status = ConnectionStatus.CONNECTED,
+                room = "AnimeNight",
+                username = "Alice",
+                isReady = false,
+                users = listOf(RoomUser(name = "Alice", room = "AnimeNight", isReady = false)),
+            )
+        )
+        forceVoiceConnected()
+
+        val lifecycle = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
+        }
+        val nav = Navigator(mutableStateListOf(Screen.Home, Screen.Player))
+        mainClock.autoAdvance = false
+        var densityDpi = 1f
+        setContent {
+            densityDpi = LocalDensity.current.density
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
+                // Narrow phone portrait — the regression that crushed Mic and clipped Menus.
+                MobileTheme { Box(Modifier.size(360.dp, 800.dp)) { MobilePlayerScreen(app, nav) } }
+            }
+        }
+        settle()
+
+        val root = onRoot().fetchSemanticsNode().boundsInRoot
+        val menus = onNodeWithTag("player_menus").fetchSemanticsNode().boundsInRoot
+        assertTrue("Menus fully on-screen horizontally", menus.left >= root.left - 0.5f && menus.right <= root.right + 0.5f)
+        assertTrue("Menus fully on-screen vertically", menus.top >= root.top - 0.5f && menus.bottom <= root.bottom + 0.5f)
+        assertTrue("Menus touch target at least 48dp", menus.height >= 48f * densityDpi - 1f)
+
+        onNodeWithTag("player_menus").performMouseInput { click() }
+        settle()
+        onNodeWithTag("player_sheet").assertExists()
+        onNodeWithTag("sheet_tab_room").assertExists()
+        onNodeWithTag("sheet_tab_chat").assertExists()
+        onNodeWithTag("sheet_tab_playlist").assertExists()
+        onNodeWithTag("sheet_tab_audio").assertExists()
+        onNodeWithTag("sheet_tab_subtitles").assertExists()
+
+        val mic = onNodeWithTag("player_mic_toggle").fetchSemanticsNode().boundsInRoot
+        assertEquals("Mic is 48dp tall", 48f * densityDpi, mic.height, 1.5f)
+        assertEquals("Mic is 48dp wide", 48f * densityDpi, mic.width, 1.5f)
+        val ready = onNodeWithTag("player_ready").fetchSemanticsNode().boundsInRoot
+        assertTrue("Mic stays next to Ready on the room card", kotlin.math.abs(mic.center.y - ready.center.y) < 24f * densityDpi)
+        assertTrue("Mic is after Ready", mic.left >= ready.right - 1f)
+    }
+
+    @Test
+    fun `tablet portrait Menus stays reachable`() = runComposeUiTest {
+        app.deviceKind = DeviceKind.TABLET
+        player.state.value = player.state.value.copy(paused = true)
+        val lifecycle = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
+        }
+        val nav = Navigator(mutableStateListOf(Screen.Home, Screen.Player))
+        mainClock.autoAdvance = false
+        setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
+                MobileTheme { Box(Modifier.size(800.dp, 1280.dp)) { MobilePlayerScreen(app, nav) } }
+            }
+        }
+        settle()
+        val root = onRoot().fetchSemanticsNode().boundsInRoot
+        val menus = onNodeWithTag("player_menus").fetchSemanticsNode().boundsInRoot
+        assertTrue(menus.right <= root.right + 0.5f)
+        onNodeWithTag("player_menus").performMouseInput { click() }
+        settle()
+        onNodeWithTag("player_sheet").assertExists()
+    }
+
+    @Test
+    fun `phone landscape Menus is on the video controls bar`() = runComposeUiTest {
+        app.deviceKind = DeviceKind.PHONE
+        player.state.value = player.state.value.copy(paused = true)
+        val lifecycle = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
+        }
+        val nav = Navigator(mutableStateListOf(Screen.Home, Screen.Player))
+        mainClock.autoAdvance = false
+        setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
+                MobileTheme { Box(Modifier.size(800.dp, 360.dp)) { MobilePlayerScreen(app, nav) } }
+            }
+        }
+        settle()
+        onNodeWithTag("player_menus").assertExists()
+        onNodeWithTag("player_menus").performMouseInput { click() }
+        settle()
+        onNodeWithTag("player_sheet").assertExists()
+    }
+
+    /** Drive VoiceController's private UI flow so the Mic button is composed in player tests. */
+    @Suppress("UNCHECKED_CAST")
+    private fun forceVoiceConnected() {
+        val field: Field = app.voice.javaClass.getDeclaredField("_ui").apply { isAccessible = true }
+        val flow = field.get(app.voice) as MutableStateFlow<VoiceUiState>
+        flow.value = VoiceUiState(
+            available = true,
+            enabledByClient = true,
+            connection = VoiceConnection.CONNECTED,
+            capture = VoiceCaptureKind.OPEN,
+            talkLatched = false,
+            selfMuted = true,
+        )
     }
 }
 
