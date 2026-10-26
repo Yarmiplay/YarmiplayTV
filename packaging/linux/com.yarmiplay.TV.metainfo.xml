@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.8.1" date="2026-10-26">
+      <description>
+        <p>Restore desktop player sheet buttons (playlist, room, chat, audio, subtitles, video, MyAnimeList) that 2.8.0 wrongly replaced with Menus; Menus stays phone/tablet only. Keep Mic beside Ready, Ctrl+M, status mic, and Voice settings.</p>
+      </description>
+    </release>
     <release version="2.8.0" date="2026-10-26">
       <description>
         <p>Fix Android phone mic garble (resample hardware rate to 48 kHz Opus), TV remote mic capture and hold-to-talk, Voice settings section with Enable voice and auto-mute, Ctrl+M mic shortcut on desktop/web, mic live in status cluster.</p>
