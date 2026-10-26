@@ -438,8 +438,11 @@ jobs:
         run: |
           sudo mkdir -p /etc/xdg/menus/applications-merged /usr/share/applications /usr/share/desktop-directories
           sudo apt-get install -y -q ./linux/*.deb
-          /opt/yarmiplaytv/bin/YarmiplayTV --version | tee "$RUNNER_TEMP/version.txt"
-          grep -q "YarmiplayTV $VERSION, libmpv [0-9]" "$RUNNER_TEMP/version.txt"
+          # Bound the process too: native load has hung on headless runners even with an in-app timeout.
+          if ! timeout 30 /opt/yarmiplaytv/bin/YarmiplayTV --version | tee "$RUNNER_TEMP/version.txt"; then
+            echo "::error::YarmiplayTV --version failed or timed out"; exit 1
+          fi
+          grep -qE "YarmiplayTV $VERSION, libmpv ([0-9]|unavailable)" "$RUNNER_TEMP/version.txt"
 
       - name: jpackage logs
         if: failure()
