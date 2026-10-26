@@ -370,6 +370,12 @@ private fun VoiceSettings(container: AppContainer) {
         Modifier.testTag("toggle_voice_auto_join"),
     ) { container.scope.launch { container.settingsStore.saveVoiceAutoJoin(it) } }
     SettingsToggle(
+        "Noise suppression",
+        "Cut background noise on your mic (RNNoise-framed spectral NS + VAD; Android also uses WebRTC AEC/NS/AGC). Applies live",
+        settings.voiceNoiseSuppression,
+        Modifier.testTag("toggle_voice_noise_suppression"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceNoiseSuppression(it) } }
+    SettingsToggle(
         "Auto-mute when playing",
         "Mute your mic when playback starts or resumes",
         settings.voiceAutoMuteWhenPlaying,

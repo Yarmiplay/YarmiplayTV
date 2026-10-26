@@ -4,21 +4,26 @@ import io.github.jaredmdobson.concentus.OpusApplication
 import io.github.jaredmdobson.concentus.OpusDecoder
 import io.github.jaredmdobson.concentus.OpusEncoder
 import io.github.jaredmdobson.concentus.OpusException
+import io.github.jaredmdobson.concentus.OpusSignal
 
 /** 48 kHz mono Opus encode/decode for 20 ms frames (960 samples). */
 class OpusCodec(
-    bitrate: Int = 32_000,
+    bitrate: Int = 48_000,
     fec: Boolean = true,
-    dtx: Boolean = true,
+    dtx: Boolean = false,
     private val sampleRate: Int = 48_000,
     private val channels: Int = 1,
 ) {
     val frameSamples: Int = sampleRate / 50 // 20 ms
     private val encoder = OpusEncoder(sampleRate, channels, OpusApplication.OPUS_APPLICATION_VOIP).also {
-        it.bitrate = bitrate.coerceIn(6_000, 128_000)
+        it.bitrate = bitrate.coerceIn(24_000, 64_000)
         it.useInbandFEC = fec
         it.useDTX = dtx
-        it.complexity = 5
+        it.complexity = 8
+        it.packetLossPercent = if (fec) 20 else 0
+        it.signalType = OpusSignal.OPUS_SIGNAL_VOICE
+        it.useVBR = true
+        it.useConstrainedVBR = true
     }
     private val decoder = OpusDecoder(sampleRate, channels)
     private val encBuf = ByteArray(400)
@@ -43,5 +48,8 @@ class OpusCodec(
         }
     }
 
-    fun decodePlc(): ShortArray? = decode(ByteArray(0), fec = true)
+    fun decodePlc(): ShortArray? = decode(ByteArray(0), fec = false)
+
+    /** Decode with in-band FEC using the next packet's FEC bits for the missing frame. */
+    fun decodeFec(nextPacket: ByteArray): ShortArray? = decode(nextPacket, fec = true)
 }

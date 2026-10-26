@@ -12,9 +12,13 @@ import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaPlayer
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import androidx.core.content.ContextCompat
 import com.yarmiplaytv.R
 import com.yarmiplaytv.syncplay.VoiceMediaParams
@@ -47,6 +51,11 @@ class AndroidVoiceEngine(
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var frameSamples: Int = 960
+    private var noiseSuppression = true
+    private var platformNs: NoiseSuppressor? = null
+    private var platformAec: AcousticEchoCanceler? = null
+    private var platformAgc: AutomaticGainControl? = null
+    private var previousAudioMode: Int? = null
     private var deviceCallback: AudioDeviceCallback? = null
     override var onDeviceLost: ((input: Boolean) -> Unit)? = null
 
@@ -98,6 +107,7 @@ class AndroidVoiceEngine(
         disconnectMedia()
         val media = VoiceMediaSession(scope) { _, pcm -> writePlayback(pcm) }
         if (!media.connect(params)) return false
+        media.setNoiseSuppression(noiseSuppression)
         session.set(media)
         frameSamples = media.frameSamples
         startPlayback(media.frameSamples)
@@ -117,6 +127,7 @@ class AndroidVoiceEngine(
         stopCapture()
         runCatching { audioTrack?.pause(); audioTrack?.flush(); audioTrack?.release() }
         audioTrack = null
+        restoreAudioMode()
         runCatching { player?.release() }
         player = null
     }
@@ -157,9 +168,11 @@ class AndroidVoiceEngine(
     private fun stopCapture() {
         captureJob?.cancel()
         captureJob = null
+        releasePlatformEffects()
         runCatching { audioRecord?.stop() }
         runCatching { audioRecord?.release() }
         audioRecord = null
+        if (session.get()?.isTransmitting() != true) restoreAudioMode()
     }
 
     override fun setInputGain(gain: Float) {
@@ -168,6 +181,12 @@ class AndroidVoiceEngine(
 
     override fun setOutputGain(gain: Float) {
         session.get()?.setOutputGain(gain)
+    }
+
+    override fun setNoiseSuppression(on: Boolean) {
+        noiseSuppression = on
+        session.get()?.setNoiseSuppression(on)
+        applyPlatformEffects(audioRecord)
     }
 
     override fun setPeerMuted(participantId: String, muted: Boolean) {
@@ -244,8 +263,11 @@ class AndroidVoiceEngine(
             android.util.Log.w(TAG, "startCapture: RECORD_AUDIO not granted")
             return
         }
+        media.setNoiseSuppression(noiseSuppression)
+        enterCommunicationMode()
         val opened = openCaptureRecord(media.frameSamples) ?: run {
             android.util.Log.e(TAG, "startCapture: no usable AudioRecord (TV remote mic missing?)")
+            restoreAudioMode()
             return
         }
         val (record, sourceName) = opened
@@ -253,6 +275,7 @@ class AndroidVoiceEngine(
             preferredInputId = null
             onDeviceLost?.invoke(true)
         }
+        applyPlatformEffects(record)
         val actualRate = record.sampleRate
         val channels = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             record.channelCount
@@ -270,22 +293,25 @@ class AndroidVoiceEngine(
         android.util.Log.i(
             TAG,
             "capture open $format opusRate=${VoicePcm.SAMPLE_RATE} frameSamples=${media.frameSamples} " +
-                "bytesPerOpusFrame=${VoicePcm.frameSamples * 2}",
+                "bytesPerOpusFrame=${VoicePcm.frameSamples * 2} ns=$noiseSuppression",
         )
         if (actualRate != VoicePcm.SAMPLE_RATE) {
             android.util.Log.w(
                 TAG,
-                "AudioRecord rate $actualRate != Opus ${VoicePcm.SAMPLE_RATE}; resampling " +
-                    "(this mismatch is the usual cause of garbled Android→peer audio)",
+                "AudioRecord rate $actualRate != Opus ${VoicePcm.SAMPLE_RATE}; streaming resample " +
+                    "(stateless per-chunk resample was a usual cause of choppy Android→peer audio)",
             )
         }
         audioRecord = record
         record.startRecording()
-        // Read native-rate PCM, resample to 48 kHz mono, accumulate exact Opus frames, copy out.
-        val readBuf = ShortArray(maxOf(actualRate / 50, media.frameSamples) * format.channels * 2)
+        // Dedicated urgent-audio thread: read ~20 ms chunks, stateful resample, exact Opus frames.
+        val readSamples = maxOf(actualRate / 50, 320) * format.channels
+        val readBuf = ShortArray(readSamples)
         val monoScratch = ShortArray(readBuf.size)
+        val resampler = if (actualRate == VoicePcm.SAMPLE_RATE) null else StreamingResampler(actualRate)
         val accumulator = VoicePcm.FrameAccumulator(media.frameSamples)
         captureJob = scope.launch(Dispatchers.IO) {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
             while (isActive && session.get() === media) {
                 val n = record.read(readBuf, 0, readBuf.size)
                 when {
@@ -296,11 +322,7 @@ class AndroidVoiceEngine(
                     n == 0 -> continue
                     else -> {
                         val mono = toMono(readBuf, n, format.channels, monoScratch)
-                        val at48k = if (actualRate == VoicePcm.SAMPLE_RATE) {
-                            mono
-                        } else {
-                            VoicePcm.resampleMono(mono, actualRate, VoicePcm.SAMPLE_RATE)
-                        }
+                        val at48k = resampler?.push(mono) ?: mono
                         for (frame in accumulator.push(at48k)) {
                             media.offerCapturePcm(frame)
                         }
@@ -311,8 +333,8 @@ class AndroidVoiceEngine(
     }
 
     /**
-     * Open an [AudioRecord] that can actually capture. Phones: prefer MIC / VOICE_RECOGNITION over
-     * VOICE_COMMUNICATION (AEC path often forces 16 kHz and sounds garbled when encoded as 48 kHz Opus).
+     * Open an [AudioRecord] that can actually capture.
+     * Phones: prefer VOICE_COMMUNICATION so platform AEC/NS/AGC attach; fall back to MIC / VOICE_RECOGNITION.
      * TVs: prefer VOICE_RECOGNITION / DEFAULT so remote / BLE headset mics are reachable.
      */
     private fun openCaptureRecord(frameSamples: Int): Pair<AudioRecord, String>? {
@@ -325,13 +347,13 @@ class AndroidVoiceEngine(
             )
         } else {
             listOf(
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION to "VOICE_COMMUNICATION",
                 MediaRecorder.AudioSource.MIC to "MIC",
                 MediaRecorder.AudioSource.VOICE_RECOGNITION to "VOICE_RECOGNITION",
-                MediaRecorder.AudioSource.VOICE_COMMUNICATION to "VOICE_COMMUNICATION",
                 MediaRecorder.AudioSource.DEFAULT to "DEFAULT",
             )
         }
-        // Prefer 48 kHz; also try 44.1 / 16 kHz hardware rates and resample.
+        // Prefer 48 kHz; also try 44.1 / 16 kHz hardware rates and resample with StreamingResampler.
         val rates = intArrayOf(VoicePcm.SAMPLE_RATE, 44_100, 16_000, 8_000)
         for ((source, name) in sources) {
             for (rate in rates) {
@@ -341,20 +363,22 @@ class AndroidVoiceEngine(
                     AudioFormat.ENCODING_PCM_16BIT,
                 )
                 if (minBuf <= 0) continue
+                // ≥4× min + two 20 ms frames so reads don't underrun under load.
+                val bufBytes = maxOf(minBuf * 4, frameSamples * 2 * 8)
                 val record = runCatching {
                     AudioRecord(
                         source,
                         rate,
                         AudioFormat.CHANNEL_IN_MONO,
                         AudioFormat.ENCODING_PCM_16BIT,
-                        maxOf(minBuf, frameSamples * 2 * 8),
+                        bufBytes,
                     )
                 }.getOrNull() ?: continue
                 if (record.state != AudioRecord.STATE_INITIALIZED) {
                     record.release()
                     continue
                 }
-                android.util.Log.i(TAG, "AudioRecord ok source=$name requestedRate=$rate actualRate=${record.sampleRate}")
+                android.util.Log.i(TAG, "AudioRecord ok source=$name requestedRate=$rate actualRate=${record.sampleRate} buf=$bufBytes")
                 return record to name
             }
         }
@@ -377,6 +401,49 @@ class AndroidVoiceEngine(
             o++
         }
         return out.copyOf(frames)
+    }
+
+    private fun applyPlatformEffects(record: AudioRecord?) {
+        releasePlatformEffects()
+        if (record == null || !noiseSuppression) return
+        val sessionId = record.audioSessionId
+        if (sessionId == AudioManager.AUDIO_SESSION_ID_GENERATE) return
+        if (NoiseSuppressor.isAvailable()) {
+            platformNs = runCatching { NoiseSuppressor.create(sessionId)?.also { it.enabled = true } }.getOrNull()
+        }
+        if (AcousticEchoCanceler.isAvailable()) {
+            platformAec = runCatching { AcousticEchoCanceler.create(sessionId)?.also { it.enabled = true } }.getOrNull()
+        }
+        if (AutomaticGainControl.isAvailable()) {
+            platformAgc = runCatching { AutomaticGainControl.create(sessionId)?.also { it.enabled = true } }.getOrNull()
+        }
+        android.util.Log.i(
+            TAG,
+            "platform effects ns=${platformNs != null} aec=${platformAec != null} agc=${platformAgc != null}",
+        )
+    }
+
+    private fun releasePlatformEffects() {
+        runCatching { platformNs?.release() }
+        runCatching { platformAec?.release() }
+        runCatching { platformAgc?.release() }
+        platformNs = null
+        platformAec = null
+        platformAgc = null
+    }
+
+    private fun enterCommunicationMode() {
+        if (isTv) return
+        val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (previousAudioMode == null) previousAudioMode = am.mode
+        runCatching { am.mode = AudioManager.MODE_IN_COMMUNICATION }
+    }
+
+    private fun restoreAudioMode() {
+        val prev = previousAudioMode ?: return
+        previousAudioMode = null
+        val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        runCatching { am.mode = prev }
     }
 
     private fun preferredInputLabel(record: AudioRecord): String {
@@ -414,7 +481,8 @@ class AndroidVoiceEngine(
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                     .build(),
             )
-            .setBufferSizeInBytes(maxOf(minBuf, frameSamples * 2 * 4))
+            // ~200 ms (10 × 20 ms frames) so paced jitter-buffer output does not underrun.
+            .setBufferSizeInBytes(maxOf(minBuf * 4, frameSamples * 2 * 10))
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
         if (!preferOutputDevice(track) && !preferredOutputId.isNullOrEmpty()) {

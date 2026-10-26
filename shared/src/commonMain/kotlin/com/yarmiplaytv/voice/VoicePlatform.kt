@@ -36,6 +36,12 @@ interface VoiceEngine {
 
     fun setOutputGain(gain: Float)
 
+    /**
+     * Capture-side noise suppression (RNNoise-framed spectral NS + VAD, plus platform WebRTC
+     * effects where available). Default on; applies live while connected.
+     */
+    fun setNoiseSuppression(on: Boolean) = Unit
+
     /** Local mute of one remote participant (by server participant id, e.g. `c17`). */
     fun setPeerMuted(participantId: String, muted: Boolean)
 
@@ -86,6 +92,7 @@ class NullVoiceEngine : VoiceEngine {
     override fun setSelfMuted(muted: Boolean) = Unit
     override fun setInputGain(gain: Float) = Unit
     override fun setOutputGain(gain: Float) = Unit
+    override fun setNoiseSuppression(on: Boolean) = Unit
     override fun setPeerMuted(participantId: String, muted: Boolean) = Unit
     override fun setPeerVolume(participantId: String, volume: Float) = Unit
     override fun setInputDeviceId(id: String?) = Unit

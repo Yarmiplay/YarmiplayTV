@@ -100,6 +100,12 @@ class VoiceController(
             .launchIn(scope)
 
         settings
+            .map { it.voiceNoiseSuppression }
+            .distinctUntilChanged()
+            .onEach { engine.setNoiseSuppression(it) }
+            .launchIn(scope)
+
+        settings
             .map { it.voiceInputDeviceId to it.voiceOutputDeviceId }
             .distinctUntilChanged()
             .onEach { (input, output) ->
@@ -562,6 +568,7 @@ class VoiceController(
         val devices = settings.value
         engine.setInputGain(devices.voiceInputGain)
         engine.setOutputGain(devices.voiceOutputGain)
+        engine.setNoiseSuppression(devices.voiceNoiseSuppression)
         engine.setInputDeviceId(devices.voiceInputDeviceId.ifEmpty { null })
         engine.setOutputDeviceId(devices.voiceOutputDeviceId.ifEmpty { null })
         val hintShown = devices.voiceTvMicHintShown

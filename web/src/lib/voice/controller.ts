@@ -89,6 +89,10 @@ export class VoiceController {
     this.reconcile();
   }
 
+  setNoiseSuppression(on: boolean) {
+    this.engine.setNoiseSuppression(on);
+  }
+
   setAutoMuteWhenPlaying(on: boolean) {
     this.autoMuteWhenPlaying = on;
   }

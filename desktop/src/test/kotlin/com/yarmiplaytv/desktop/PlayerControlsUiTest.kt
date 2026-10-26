@@ -512,9 +512,14 @@ class PlayerControlsUiTest {
 
         val root = onRoot().fetchSemanticsNode().boundsInRoot
         val menus = onNodeWithTag("player_menus").fetchSemanticsNode().boundsInRoot
+        val volume = onNodeWithTag("volume_slider").fetchSemanticsNode().boundsInRoot
         assertTrue("Menus fully on-screen horizontally", menus.left >= root.left - 0.5f && menus.right <= root.right + 0.5f)
         assertTrue("Menus fully on-screen vertically", menus.top >= root.top - 0.5f && menus.bottom <= root.bottom + 0.5f)
         assertTrue("Menus touch target at least 48dp", menus.height >= 48f * densityDpi - 1f)
+        // Volume + Menus share one row (centers within ~24dp); slider shrinks instead of wrapping.
+        val rowDelta = kotlin.math.abs((volume.top + volume.bottom) / 2f - (menus.top + menus.bottom) / 2f)
+        assertTrue("volume and Menus on one row (center delta=$rowDelta)", rowDelta < 24f * densityDpi)
+        assertTrue("volume left of Menus", volume.right <= menus.left + 0.5f)
 
         onNodeWithTag("player_menus").performMouseInput { click() }
         settle()

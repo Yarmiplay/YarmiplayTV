@@ -670,11 +670,8 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
 
                                     Spacer(Modifier.height(8.dp))
 
-                                    // Volume alone — sharing a row with Ready/Mic/Menus crushed those controls on phones.
-                                    PlayerVolumeControl(::touch, onVideo = false, modifier = Modifier.fillMaxWidth())
-
-                                    Spacer(Modifier.height(4.dp))
-
+                                    // One row: shrinking volume left, screenshot/Menus (or desktop sheets) right.
+                                    // Mic stays beside Ready on the room card (or here when disconnected) — leave its size alone.
                                     Row(
                                         Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
@@ -696,7 +693,11 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                                 showKeyboardShortcut = false,
                                             )
                                         }
-                                        Spacer(Modifier.weight(1f))
+                                        PlayerVolumeControl(
+                                            ::touch,
+                                            onVideo = false,
+                                            modifier = Modifier.weight(1f),
+                                        )
                                         rememberRelaySave(container)?.let { RelaySaveButton(it, ::touch, tint = AppColors.Text) }
                                         container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
                                             IconButton(
