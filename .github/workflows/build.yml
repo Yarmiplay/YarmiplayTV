@@ -136,10 +136,7 @@ jobs:
 
       - name: libmpv, a virtual display and .deb tooling
         if: runner.os == 'Linux'
-        # Bound apt: runners occasionally hang forever on apt-get update/install.
-        run: |
-          sudo timeout 120 apt-get update -q
-          sudo timeout 180 apt-get install -y -q libmpv2 xvfb fakeroot
+        run: sudo apt-get update -q && sudo apt-get install -y -q libmpv2 xvfb fakeroot
 
       - name: Desktop tests and installers
         env:
