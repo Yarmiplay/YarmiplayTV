@@ -31,6 +31,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.local.SeekFrames
@@ -113,7 +114,7 @@ class PlayerControlsUiTest {
             createPlayer = { player },
             createLocalLibrary = { s, scope, folders -> FileLocalLibrary(s, scope, folders, watchForChanges = false) },
             seekFrames = frames,
-        )
+        ).also { it.deviceKind = DeviceKind.DESKTOP }
         player.state.value = PlaybackState(fileLoaded = true, duration = 600.0, paused = false)
         DesktopPlayerInput.volume = volume
     }
@@ -154,6 +155,27 @@ class PlayerControlsUiTest {
     private fun ComposeUiTest.bubbleText(text: String) = onNode(hasText(text) and hasAnyAncestor(hasTestTag("seek_preview")))
 
     private fun ComposeUiTest.controlsShowing() = onAllNodesWithTag("player_controls").fetchSemanticsNodes().isNotEmpty()
+
+    @Test
+    fun `desktop has no Menus button and keeps 2_7_9 sheet controls directly accessible`() = runComposeUiTest {
+        player.state.value = player.state.value.copy(paused = true)
+        showPlayer()
+        onNodeWithTag("player_menus").assertDoesNotExist()
+        // Controls that 2.8.0 wrongly moved into Menus on desktop — restored as direct sheet buttons.
+        listOf(
+            "sheet_Shared playlist",
+            "sheet_Room",
+            "sheet_Chat",
+            "sheet_Audio",
+            "sheet_Subtitles",
+            "sheet_Video",
+        ).forEach { tag ->
+            onNodeWithTag(tag).assertExists()
+        }
+        // 2.8.0 keepers still present beside the restored row.
+        onNodeWithTag("volume_mute").assertExists()
+        onNodeWithTag("player_ready").assertDoesNotExist() // not in a room in this fixture
+    }
 
     @Test
     fun `the volume control shows the level, mutes and sets the volume`() = runComposeUiTest {

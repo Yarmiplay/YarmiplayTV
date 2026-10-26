@@ -398,6 +398,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         ready = room.isReady == true,
                                         voiceUi = voiceUi,
                                         onInteract = ::touch,
+                                        onSheet = { openSheet(it); touch() },
                                         onMenus = { openMenus(); touch() },
                                         modifier = Modifier.align(Alignment.BottomCenter).hoverable(barsHover),
                                     )
@@ -680,12 +681,22 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                                 Icon(Icons.Filled.PhotoCamera, contentDescription = "Screenshot", tint = AppColors.Text)
                                             }
                                         }
-                                        // TV-style single Menus entry (reopens last panel) instead of a crowded sheet-button row.
-                                        IconButton(
-                                            { openMenus(); touch() },
-                                            Modifier.testTag("player_menus"),
-                                        ) {
-                                            Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = AppColors.Text)
+                                        // Menus (TV-style) is phone/tablet only; desktop keeps direct sheet buttons.
+                                        if (container.deviceKind == DeviceKind.PHONE || container.deviceKind == DeviceKind.TABLET) {
+                                            IconButton(
+                                                { openMenus(); touch() },
+                                                Modifier.testTag("player_menus"),
+                                            ) {
+                                                Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = AppColors.Text)
+                                            }
+                                        } else {
+                                            SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist", tint = AppColors.Text) { openSheet(PlayerSheet.PLAYLIST) }
+                                            SheetButton(Icons.Filled.Groups, "Room", tint = AppColors.Text) { openSheet(PlayerSheet.ROOM) }
+                                            SheetButton(Icons.Filled.Forum, "Chat", tint = AppColors.Text) { openSheet(PlayerSheet.CHAT) }
+                                            SheetButton(Icons.Filled.Audiotrack, "Audio", tint = AppColors.Text) { openSheet(PlayerSheet.AUDIO) }
+                                            SheetButton(Icons.Filled.Subtitles, "Subtitles", tint = AppColors.Text) { openSheet(PlayerSheet.SUBTITLES) }
+                                            SheetButton(Icons.Filled.Tune, "Video", tint = AppColors.Text) { openSheet(PlayerSheet.VIDEO) }
+                                            if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList", tint = AppColors.Text) { openSheet(PlayerSheet.MAL) }
                                         }
                                     }
                                 }
@@ -739,6 +750,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     }
 
     sheet?.let { kind ->
+        val useMenus = container.deviceKind == DeviceKind.PHONE || container.deviceKind == DeviceKind.TABLET
         val menuTabs = PlayerSheet.entries.filter { it != PlayerSheet.MAL || container.mal.client.configured }
         ModalBottomSheet(
             onDismissRequest = { sheet = null },
@@ -749,26 +761,28 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
         ) {
             SurfaceInk {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-                // TV-style tab strip: one Menus control opens the sheet; tabs switch content.
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    menuTabs.forEach { tab ->
-                        val selected = tab == kind
-                        IconButton(
-                            onClick = { openSheet(tab) },
-                            modifier = Modifier.testTag("sheet_tab_${tab.name.lowercase()}"),
-                        ) {
-                            Icon(
-                                tab.icon,
-                                contentDescription = tab.label,
-                                tint = if (selected) AppColors.Accent else AppColors.TextDim,
-                            )
+                // Tab strip only with Menus on phone/tablet; desktop opens one sheet at a time.
+                if (useMenus) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        menuTabs.forEach { tab ->
+                            val selected = tab == kind
+                            IconButton(
+                                onClick = { openSheet(tab) },
+                                modifier = Modifier.testTag("sheet_tab_${tab.name.lowercase()}"),
+                            ) {
+                                Icon(
+                                    tab.icon,
+                                    contentDescription = tab.label,
+                                    tint = if (selected) AppColors.Accent else AppColors.TextDim,
+                                )
+                            }
                         }
                     }
                 }
@@ -799,6 +813,7 @@ private fun BottomControls(
     ready: Boolean,
     voiceUi: VoiceUiState,
     onInteract: () -> Unit,
+    onSheet: (PlayerSheet) -> Unit,
     onMenus: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -810,6 +825,7 @@ private fun BottomControls(
             delay(250)
         }
     }
+    val useMenus = container.deviceKind == DeviceKind.PHONE || container.deviceKind == DeviceKind.TABLET
     Column(
         modifier.fillMaxWidth()
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000))))
@@ -835,9 +851,18 @@ private fun BottomControls(
                     Icon(Icons.Filled.PhotoCamera, contentDescription = "Screenshot", tint = Color.White)
                 }
             }
-            // Grouped menus like TV instead of one icon per panel.
-            IconButton({ onMenus(); onInteract() }, Modifier.testTag("player_menus")) {
-                Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = Color.White)
+            if (useMenus) {
+                IconButton({ onMenus(); onInteract() }, Modifier.testTag("player_menus")) {
+                    Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = Color.White)
+                }
+            } else {
+                SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist") { onSheet(PlayerSheet.PLAYLIST) }
+                SheetButton(Icons.Filled.Groups, "Room") { onSheet(PlayerSheet.ROOM) }
+                SheetButton(Icons.Filled.Forum, "Chat") { onSheet(PlayerSheet.CHAT) }
+                SheetButton(Icons.Filled.Audiotrack, "Audio") { onSheet(PlayerSheet.AUDIO) }
+                SheetButton(Icons.Filled.Subtitles, "Subtitles") { onSheet(PlayerSheet.SUBTITLES) }
+                SheetButton(Icons.Filled.Tune, "Video") { onSheet(PlayerSheet.VIDEO) }
+                if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList") { onSheet(PlayerSheet.MAL) }
             }
         }
     }
@@ -866,6 +891,16 @@ private fun PlayerMicButton(
             tint = tint,
         )
     }
+}
+
+@Composable
+private fun SheetButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color = Color.White,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick, Modifier.testTag("sheet_$label")) { Icon(icon, contentDescription = label, tint = tint) }
 }
 
 /** The player as Android's picture-in-picture window: only the video (the system adds its own controls). */
