@@ -76,6 +76,13 @@ class PlaybackTest {
         assertTrue(PlaybackAction.TogglePause.showsControls)
     }
 
+    @Test
+    fun plainMIsVideoMuteAndCtrlMIsMicToggle() {
+        assertEquals(PlaybackAction.Mute, playbackAction(Key.M))
+        assertEquals(PlaybackAction.ToggleMic, playbackAction(Key.M, ctrl = true))
+        assertFalse(controller(RecordingPlayer(), inRoom = false).perform(PlaybackAction.ToggleMic))
+    }
+
     private fun controller(player: RecordingPlayer, inRoom: Boolean) = PlaybackController(
         player = player,
         inRoom = { inRoom },

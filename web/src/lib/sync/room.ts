@@ -198,6 +198,9 @@ export class RoomSession {
     this.locator = new MediaLocator<RelayFile>(library, servers, (name) => findRelayFile(this.room.value, name));
     this.locator.preferredServer = settings.preferredServer;
     this.applyVoiceSettings(settings);
+    this.voice.bindPlayback((cb) =>
+      this.player.subscribe((s) => cb({ loaded: s.loaded, paused: s.paused })),
+    );
   }
 
   get isActive(): boolean {
@@ -465,6 +468,8 @@ export class RoomSession {
   private applyVoiceSettings(settings: Settings.Settings) {
     this.voice.setEnabled(settings.voiceChat);
     this.voice.setAutoJoin(settings.voiceAutoJoin);
+    this.voice.setAutoMuteWhenPlaying(settings.voiceAutoMuteWhenPlaying);
+    this.voice.setAutoUnmuteWhenPaused(settings.voiceAutoUnmuteWhenPaused);
     this.voice.setInputDeviceId(settings.voiceInputDeviceId || null);
     this.voice.setOutputDeviceId(settings.voiceOutputDeviceId || null);
   }

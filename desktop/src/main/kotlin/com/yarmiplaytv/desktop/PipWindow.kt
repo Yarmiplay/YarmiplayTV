@@ -123,6 +123,11 @@ private fun pipKey(
         return true
     }
     if (action == PlaybackAction.Fullscreen || action == PlaybackAction.FocusChat || action == PlaybackAction.ToggleControls) return false
+    if (action == PlaybackAction.ToggleMic) {
+        if (!container.voice.ui.value.showMicButton) return false
+        container.voice.toggleMic()
+        return true
+    }
     return container.playback.perform(action)
 }
 

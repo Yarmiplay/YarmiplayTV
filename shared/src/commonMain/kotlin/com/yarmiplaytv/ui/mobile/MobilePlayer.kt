@@ -121,8 +121,11 @@ import com.yarmiplaytv.ui.theme.SurfaceInk
 import com.yarmiplaytv.ui.theme.OnVideo
 import com.yarmiplaytv.ui.theme.onVideoLabel
 import com.yarmiplaytv.voice.VoiceUiState
+import com.yarmiplaytv.voice.micControlDescription
+import com.yarmiplaytv.voice.micControlLive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.Menu
 
 private enum class PlayerSheet { PLAYLIST, ROOM, CHAT, AUDIO, SUBTITLES, VIDEO, MAL }
 
@@ -224,6 +227,10 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                 PlaybackAction.FocusChat -> openSheet(PlayerSheet.CHAT)
                 PlaybackAction.TogglePip -> pip.toggle()
                 PlaybackAction.Fullscreen -> fullscreenHolder.value?.invoke() ?: return@onKeyEvent false
+                PlaybackAction.ToggleMic -> {
+                    if (!container.voice.ui.value.showMicButton) return@onKeyEvent false
+                    container.voice.toggleMic()
+                }
                 else -> if (!container.playback.perform(action)) return@onKeyEvent false
             }
             if (action.showsControls) input.showControls()
@@ -305,11 +312,6 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         )
 
                         val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
-                        if (!isPortrait && voiceUi.micLive) {
-                            PlayerMicLiveBadge(
-                                Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp),
-                            )
-                        }
 
                         androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
                             Box(Modifier.fillMaxSize().testTag(if (isPortrait) "video_overlay" else "player_controls")) {
@@ -325,7 +327,12 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         Text(nowPlaying?.title ?: "Nothing playing", color = OnVideo.Text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                                     }
                                     if (!isPortrait) {
-                                        RoomStatusChip(room, playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls })
+                                        // Status cluster (room · ready · ping · compact mic); hides with HUD — no video Mic badge.
+                                        RoomStatusChip(
+                                            room,
+                                            playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls },
+                                            micLive = voiceUi.micControlLive(),
+                                        )
                                     }
                                     if (pip.supported && state.fileLoaded) {
                                         IconButton(pip.toggle, Modifier.testTag("pip")) {
@@ -639,10 +646,19 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         PlayerVolumeControl(::touch, onVideo = false)
+                                        if (inRoom) {
+                                            ReadyChip(
+                                                room.isReady == true,
+                                                { container.sync.toggleReady(); touch() },
+                                                Modifier.testTag("player_ready_controls"),
+                                            )
+                                        }
+                                        // Keep Mic beside Ready (same toggleMic path as Room tab).
                                         PlayerMicButton(
                                             portraitVoice,
-                                            onToggle = { container.voice.toggleTalk(); touch() },
+                                            onToggle = { container.voice.toggleMic(); touch() },
                                             onVideo = false,
+                                            showKeyboardShortcut = container.deviceKind == DeviceKind.DESKTOP,
                                         )
                                         Spacer(Modifier.weight(1f))
                                         rememberRelaySave(container)?.let { RelaySaveButton(it, ::touch, tint = AppColors.Text) }
@@ -651,28 +667,14 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                                 Icon(Icons.Filled.PhotoCamera, contentDescription = "Screenshot", tint = AppColors.Text)
                                             }
                                         }
+                                        // TV-style single Menus entry instead of a crowded sheet-button row.
+                                        IconButton(
+                                            { openSheet(PlayerSheet.PLAYLIST); touch() },
+                                            Modifier.testTag("player_menus"),
+                                        ) {
+                                            Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = AppColors.Text)
+                                        }
                                     }
-                                }
-                            }
-
-                            // Portrait sheet buttons bar
-                            Surface(
-                                color = AppColors.Surface, contentColor = AppColors.OnSurface,
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Row(
-                                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceAround,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist", tint = AppColors.Text) { openSheet(PlayerSheet.PLAYLIST) }
-                                    SheetButton(Icons.Filled.Groups, "Room", tint = AppColors.Text) { openSheet(PlayerSheet.ROOM) }
-                                    SheetButton(Icons.Filled.Forum, "Chat", tint = AppColors.Text) { openSheet(PlayerSheet.CHAT) }
-                                    SheetButton(Icons.Filled.Audiotrack, "Audio", tint = AppColors.Text) { openSheet(PlayerSheet.AUDIO) }
-                                    SheetButton(Icons.Filled.Subtitles, "Subtitles", tint = AppColors.Text) { openSheet(PlayerSheet.SUBTITLES) }
-                                    SheetButton(Icons.Filled.Tune, "Video", tint = AppColors.Text) { openSheet(PlayerSheet.VIDEO) }
-                                    if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList", tint = AppColors.Text) { openSheet(PlayerSheet.MAL) }
                                 }
                             }
                         }
@@ -782,11 +784,12 @@ private fun BottomControls(
         Row(verticalAlignment = Alignment.CenterVertically) {
             PlayerVolumeControl(onInteract, Modifier.padding(end = 8.dp))
             if (inRoom) ReadyChip(ready, { container.sync.toggleReady(); onInteract() }, Modifier.testTag("player_ready"))
-            // Same one-tap Mic as TV player bar — always visible while in voice with a mic.
+            // Beside Ready — same toggleMic() path as the Room tab (OPEN_MIC mute / TOGGLE latch).
             PlayerMicButton(
                 voiceUi,
-                onToggle = { container.voice.toggleTalk(); onInteract() },
+                onToggle = { container.voice.toggleMic(); onInteract() },
                 onVideo = true,
+                showKeyboardShortcut = container.deviceKind == DeviceKind.DESKTOP,
             )
             Spacer(Modifier.weight(1f))
             rememberRelaySave(container)?.let { RelaySaveButton(it, onInteract) }
@@ -795,27 +798,25 @@ private fun BottomControls(
                     Icon(Icons.Filled.PhotoCamera, contentDescription = "Screenshot", tint = Color.White)
                 }
             }
-            SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist") { onSheet(PlayerSheet.PLAYLIST) }
-            SheetButton(Icons.Filled.Groups, "Room") { onSheet(PlayerSheet.ROOM) }
-            SheetButton(Icons.Filled.Forum, "Chat") { onSheet(PlayerSheet.CHAT) }
-            SheetButton(Icons.Filled.Audiotrack, "Audio") { onSheet(PlayerSheet.AUDIO) }
-            SheetButton(Icons.Filled.Subtitles, "Subtitles") { onSheet(PlayerSheet.SUBTITLES) }
-            SheetButton(Icons.Filled.Tune, "Video") { onSheet(PlayerSheet.VIDEO) }
-            if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList") { onSheet(PlayerSheet.MAL) }
+            // Grouped menus like TV instead of one icon per panel.
+            IconButton({ onSheet(PlayerSheet.PLAYLIST); onInteract() }, Modifier.testTag("player_menus")) {
+                Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = Color.White)
+            }
         }
     }
 }
 
-/** Player Mic toggle (phone/tablet), matching TV: one tap open/close, green when live. */
+/** Player Mic toggle beside Ready; visual state matches Room tab via [micControlLive]. */
 @Composable
 private fun PlayerMicButton(
     ui: VoiceUiState,
     onToggle: () -> Unit,
     onVideo: Boolean,
+    showKeyboardShortcut: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     if (!ui.showMicButton) return
-    val live = ui.micLive
+    val live = ui.micControlLive()
     val tint = when {
         live -> AppColors.Ready
         onVideo -> Color.White
@@ -824,25 +825,9 @@ private fun PlayerMicButton(
     IconButton(onToggle, modifier.testTag("player_mic_toggle")) {
         Icon(
             if (live) Icons.Filled.Mic else Icons.Filled.MicOff,
-            contentDescription = if (live) "Mic live — tap to mute" else "Mic off — tap to talk",
+            contentDescription = ui.micControlDescription(showKeyboardShortcut),
             tint = tint,
         )
-    }
-}
-
-@Composable
-private fun PlayerMicLiveBadge(modifier: Modifier = Modifier) {
-    Row(
-        modifier
-            .clip(RoundedCornerShape(50))
-            .background(Color.Black.copy(alpha = 0.72f))
-            .padding(horizontal = 14.dp, vertical = 8.dp)
-            .testTag("player_mic_live"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(Icons.Filled.Mic, contentDescription = null, tint = AppColors.Ready, modifier = Modifier.size(20.dp))
-        Text("Mic live", color = Color.White, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -907,15 +892,22 @@ private fun Chip(text: String, color: Color, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun RoomStatusChip(room: RoomState, streaming: String? = null) {
+private fun RoomStatusChip(room: RoomState, streaming: String? = null, micLive: Boolean = false) {
     when (room.status) {
         ConnectionStatus.CONNECTED -> {
             val ready = room.users.count { it.isReady == true }
             val via = streaming?.let { " · ${it.withPing(room.rttMillis)}" }.orEmpty()
+            val mic = if (micLive) " · Mic" else ""
             Chip(
-                "${ManagedRooms.label(room.room)} · ${room.users.size} · $ready ready$via",
+                "${ManagedRooms.label(room.room)} · ${room.users.size} · $ready ready$via$mic",
                 AppColors.Ready,
-                if (streaming != null) Modifier.widthIn(max = 420.dp).testTag("relay_streaming") else Modifier,
+                if (streaming != null) {
+                    Modifier.widthIn(max = 420.dp).testTag("relay_streaming")
+                } else if (micLive) {
+                    Modifier.testTag("status_mic_live")
+                } else {
+                    Modifier
+                },
             )
         }
         ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> Chip("Connecting…", AppColors.NotReady)

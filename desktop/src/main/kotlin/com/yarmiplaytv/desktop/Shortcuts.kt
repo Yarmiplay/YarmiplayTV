@@ -54,6 +54,7 @@ internal fun handleShortcut(
         PlaybackAction.SkipSegment -> target.perform(action)
         PlaybackAction.FocusChat -> target.perform(action)
         PlaybackAction.TogglePip -> target.perform(action)
+        PlaybackAction.ToggleMic -> target.perform(action)
         else -> target.perform(action)
     }
     if (handled && action.showsControls) target.player?.showControls()

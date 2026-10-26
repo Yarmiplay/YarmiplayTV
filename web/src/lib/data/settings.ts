@@ -38,6 +38,11 @@ const int = (key: string, fallback: number) => {
   return Number.isInteger(n) ? n : fallback;
 };
 const text = (key: string, fallback: string) => read(key) ?? fallback;
+const float = (key: string, fallback: number) => {
+  const v = read(key);
+  const n = v === null ? NaN : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
 
 export interface ConnectionProfile {
   host: string;
@@ -70,14 +75,22 @@ export interface Settings {
   showChat: boolean;
   /** Chat messages pop up over the video as they arrive; off keeps them to the chat panel. */
   chatOnVideo: boolean;
-  /** Join room voice on YarmiplayServerTV when the server has it on. */
+  /** Client "Enable voice" master switch (same key as apps' voice_chat). */
   voiceChat: boolean;
   /** Join voice automatically when entering a room that has it (default on). */
   voiceAutoJoin: boolean;
+  /** Mute mic when playback starts/resumes (default on). */
+  voiceAutoMuteWhenPlaying: boolean;
+  /** Unmute on pause only if auto-mute muted you (default on). */
+  voiceAutoUnmuteWhenPaused: boolean;
   /** `enumerateDevices` mic id; empty = system default. */
   voiceInputDeviceId: string;
   /** `setSinkId` speaker id when supported; empty = system default. */
   voiceOutputDeviceId: string;
+  voiceInputGain: number;
+  voiceOutputGain: number;
+  voiceJoinLeaveSounds: boolean;
+  voiceJoinLeaveVolume: number;
   theme: ThemeKey;
   acceptedRoomRules: boolean;
   playback: PlaybackPrefs;
@@ -144,8 +157,14 @@ export function load(): Settings {
     chatOnVideo: bool("chat_on_video", false),
     voiceChat: bool("voice_chat", true),
     voiceAutoJoin: bool("voice_auto_join", true),
+    voiceAutoMuteWhenPlaying: bool("voice_auto_mute_when_playing", true),
+    voiceAutoUnmuteWhenPaused: bool("voice_auto_unmute_when_paused", true),
     voiceInputDeviceId: text("voice_input_device", ""),
     voiceOutputDeviceId: text("voice_output_device", ""),
+    voiceInputGain: float("voice_input_gain", 1),
+    voiceOutputGain: float("voice_output_gain", 1),
+    voiceJoinLeaveSounds: bool("voice_join_leave_sounds", true),
+    voiceJoinLeaveVolume: float("voice_join_leave_volume", 0.5),
     theme: themeOf(read("app_theme")),
     acceptedRoomRules: bool("room_rules_accepted", false),
     playback: {
@@ -194,8 +213,14 @@ export function save(settings: Settings) {
   write("chat_on_video", String(settings.chatOnVideo));
   write("voice_chat", String(settings.voiceChat));
   write("voice_auto_join", String(settings.voiceAutoJoin));
+  write("voice_auto_mute_when_playing", String(settings.voiceAutoMuteWhenPlaying));
+  write("voice_auto_unmute_when_paused", String(settings.voiceAutoUnmuteWhenPaused));
   write("voice_input_device", settings.voiceInputDeviceId);
   write("voice_output_device", settings.voiceOutputDeviceId);
+  write("voice_input_gain", String(settings.voiceInputGain));
+  write("voice_output_gain", String(settings.voiceOutputGain));
+  write("voice_join_leave_sounds", String(settings.voiceJoinLeaveSounds));
+  write("voice_join_leave_volume", String(settings.voiceJoinLeaveVolume));
   write("app_theme", settings.theme);
   write("room_rules_accepted", String(settings.acceptedRoomRules));
   const p = settings.playback;

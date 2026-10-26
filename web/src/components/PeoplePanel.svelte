@@ -117,6 +117,8 @@
             <button
               class="button quiet"
               data-testid="voice_self_mic"
+              title={voice.selfMuted ? "Unmute mic (Ctrl+M)" : "Mute mic (Ctrl+M)"}
+              aria-label={voice.selfMuted ? "Unmute mic (Ctrl+M)" : "Mute mic (Ctrl+M)"}
               onclick={() => session?.voice.setSelfMuted(!voice?.selfMuted)}
             >
               <Icon name={voice.selfMuted ? "volume_off" : "volume_up"} size={20} />

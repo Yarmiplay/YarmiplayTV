@@ -170,6 +170,34 @@ class VoiceControllerTest {
         awaitTrue("permission applied on engine") { deniedEngine.hasMicPermission() }
         assertFalse(deniedVoice.ui.value.selfMuted)
     }
+
+    @Test
+    fun `toggleMic on phone uses talk latch`() {
+        runBlocking { store.saveVoiceAutoJoin(false) }
+        onMain { sync.setTestRoom(roomWithVoice()) }
+        awaitTrue("voice UI") { voice.ui.value.showUi }
+        awaitTrue("phone toggle mode") { voice.ui.value.talkMode == VoiceTalkMode.TOGGLE }
+        // Without a real VoiceJoined we only assert the mode routing helper stays consistent.
+        assertEquals(VoiceTalkMode.TOGGLE, voice.ui.value.talkMode)
+        onMain { voice.toggleMic() } // no-op until CONNECTED — must not throw
+    }
+
+    @Test
+    fun `auto-mute defaults on and persists independently`() {
+        runBlocking {
+            assertTrue(store.current().voiceAutoMuteWhenPlaying)
+            assertTrue(store.current().voiceAutoUnmuteWhenPaused)
+            store.saveVoiceAutoMuteWhenPlaying(false)
+            store.saveVoiceAutoUnmuteWhenPaused(false)
+        }
+        awaitTrue("auto-mute off") { runBlocking { !store.current().voiceAutoMuteWhenPlaying } }
+        awaitTrue("auto-unmute off") { runBlocking { !store.current().voiceAutoUnmuteWhenPaused } }
+        runBlocking {
+            store.saveVoiceAutoMuteWhenPlaying(true)
+            store.saveVoiceAutoUnmuteWhenPaused(true)
+        }
+        awaitTrue("auto-mute on") { runBlocking { store.current().voiceAutoMuteWhenPlaying } }
+    }
 }
 
 /** Mirrors platform engines: capture follows [setTransmitting] / [setSelfMuted]. */

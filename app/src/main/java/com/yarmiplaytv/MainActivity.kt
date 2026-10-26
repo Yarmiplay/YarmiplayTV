@@ -128,19 +128,21 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * TV mic / voice keys toggle room talk when the system delivers them to the app
-     * (see [TvVoiceKeys]). The focusable Mic button remains the path every remote can use.
+     * TV remote mic / search keys are hold-to-talk (many remotes only stream while held).
+     * The focusable Mic button remains tap-to-toggle for remotes that never deliver these keys.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (deviceKind == DeviceKind.TV &&
-            event.action == KeyEvent.ACTION_DOWN &&
-            event.repeatCount == 0 &&
-            TvVoiceKeys.isVoiceToggleKey(event.keyCode)
-        ) {
+        if (deviceKind == DeviceKind.TV && TvVoiceKeys.isVoiceHoldKey(event.keyCode)) {
             val voice = container.voice.ui.value
             if (voice.showMicButton) {
-                container.voice.noteRemoteToggleKey(TvVoiceKeys.labelFor(event.keyCode))
-                container.voice.toggleTalk()
+                when (event.action) {
+                    KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0) {
+                        container.voice.noteRemoteToggleKey(TvVoiceKeys.labelFor(event.keyCode))
+                        container.voice.setTalkLatched(true)
+                    }
+                    KeyEvent.ACTION_UP -> container.voice.setTalkLatched(false)
+                    else -> return super.dispatchKeyEvent(event)
+                }
                 return true
             }
         }

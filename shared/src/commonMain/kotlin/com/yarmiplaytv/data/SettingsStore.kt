@@ -214,13 +214,26 @@ data class AppSettings(
     val showRoomChat: Boolean = true,
     /** Chat messages pop up over the video as they arrive; off keeps them to the chat panel. */
     val chatOnVideo: Boolean = false,
-    /** Join YarmiplayServerTV room voice when the server offers it; off hides all voice UI. */
+    /**
+     * Client-side "Enable voice" master switch (default on). Off fully disables room voice:
+     * no join, capture, remote audio, sounds, or voice UI. Preference key `voice_chat` unchanged.
+     */
     val voiceChat: Boolean = true,
     /**
      * When on (default), join voice automatically on entering a room that offers it.
      * When off, stay out until the user taps Join voice. Still respects [voiceChat] and the server toggle.
      */
     val voiceAutoJoin: Boolean = true,
+    /**
+     * When on (default), mute the mic when playback starts or resumes.
+     * Independent of [voiceAutoUnmuteWhenPaused].
+     */
+    val voiceAutoMuteWhenPlaying: Boolean = true,
+    /**
+     * When on (default), unmute the mic when playback pauses — but only if auto-mute
+     * (or an equivalent auto path) muted it; never overrides a mute the user set themselves.
+     */
+    val voiceAutoUnmuteWhenPaused: Boolean = true,
     /** How we send mic audio: open mic with VAD, or push-to-talk (TV is always toggle). */
     val voiceTalkMode: VoiceTalkMode = VoiceTalkMode.OPEN_MIC,
     /** Local mic gain for voice (0–2, 1 = unity). */
@@ -351,6 +364,8 @@ class SettingsStore(
         val chatOnVideo = booleanPreferencesKey("chat_on_video")
         val voiceChat = booleanPreferencesKey("voice_chat")
         val voiceAutoJoin = booleanPreferencesKey("voice_auto_join")
+        val voiceAutoMuteWhenPlaying = booleanPreferencesKey("voice_auto_mute_when_playing")
+        val voiceAutoUnmuteWhenPaused = booleanPreferencesKey("voice_auto_unmute_when_paused")
         val voiceTalkMode = stringPreferencesKey("voice_talk_mode")
         val voiceInputGain = floatPreferencesKey("voice_input_gain")
         val voiceOutputGain = floatPreferencesKey("voice_output_gain")
@@ -495,6 +510,8 @@ class SettingsStore(
             chatOnVideo = p[Keys.chatOnVideo] ?: false,
             voiceChat = p[Keys.voiceChat] ?: true,
             voiceAutoJoin = p[Keys.voiceAutoJoin] ?: true,
+            voiceAutoMuteWhenPlaying = p[Keys.voiceAutoMuteWhenPlaying] ?: true,
+            voiceAutoUnmuteWhenPaused = p[Keys.voiceAutoUnmuteWhenPaused] ?: true,
             voiceTalkMode = p[Keys.voiceTalkMode]?.let { runCatching { VoiceTalkMode.valueOf(it) }.getOrNull() } ?: VoiceTalkMode.OPEN_MIC,
             voiceInputGain = p[Keys.voiceInputGain] ?: 1f,
             voiceOutputGain = p[Keys.voiceOutputGain] ?: 1f,
@@ -699,6 +716,10 @@ class SettingsStore(
     suspend fun saveVoiceChat(on: Boolean) = dataStore.edit { it[Keys.voiceChat] = on }
 
     suspend fun saveVoiceAutoJoin(on: Boolean) = dataStore.edit { it[Keys.voiceAutoJoin] = on }
+
+    suspend fun saveVoiceAutoMuteWhenPlaying(on: Boolean) = dataStore.edit { it[Keys.voiceAutoMuteWhenPlaying] = on }
+
+    suspend fun saveVoiceAutoUnmuteWhenPaused(on: Boolean) = dataStore.edit { it[Keys.voiceAutoUnmuteWhenPaused] = on }
 
     suspend fun saveVoiceTalkMode(mode: VoiceTalkMode) = dataStore.edit { it[Keys.voiceTalkMode] = mode.name }
 

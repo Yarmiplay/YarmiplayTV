@@ -5,6 +5,7 @@ import com.yarmiplaytv.data.AppSettings
 import com.yarmiplaytv.data.SettingsStore
 import com.yarmiplaytv.data.VoicePeerPrefs
 import com.yarmiplaytv.data.VoiceTalkMode
+import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.syncplay.SyncplayEvent
 import com.yarmiplaytv.syncplay.VoiceClosedReason
@@ -51,6 +52,11 @@ class VoiceController(
     private var lastFailAtMs = 0L
     /** After [leave], stay out of voice until [join] (reconcile must not auto-rejoin). */
     private var leftByUser = false
+    /**
+     * True only when [voiceAutoMuteWhenPlaying] muted the mic for us. Auto-unmute on pause
+     * restores only in that case — never overrides a mute the user set themselves.
+     */
+    private var autoMutedByPlayback = false
 
     init {
         engine.onDeviceLost = { input ->
@@ -118,18 +124,75 @@ class VoiceController(
     }
 
     fun setSelfMuted(muted: Boolean) {
+        autoMutedByPlayback = false // manual
         if (!muted) {
-            withMicPermission { applySelfMuted(false) }
+            withMicPermission { applySelfMuted(false, fromAuto = false) }
             return
         }
-        applySelfMuted(true)
+        applySelfMuted(true, fromAuto = false)
     }
 
-    private fun applySelfMuted(muted: Boolean) {
+    private fun applySelfMuted(muted: Boolean, fromAuto: Boolean) {
+        if (!fromAuto) autoMutedByPlayback = false
         selfMuted = muted
         engine.setSelfMuted(muted)
         _ui.update { it.copy(selfMuted = muted, showMicPermissionSettings = false) }
         updateTransmitting()
+    }
+
+    /**
+     * Observe player pause/play so [voiceAutoMuteWhenPlaying] / [voiceAutoUnmuteWhenPaused] can run.
+     * Call once from [com.yarmiplaytv.AppContainer] with [Player.state].
+     */
+    fun bindPlayback(playback: StateFlow<PlaybackState>) {
+        playback
+            .map { it.fileLoaded && !it.paused }
+            .distinctUntilChanged()
+            .onEach { playing -> onPlaybackPlayingChanged(playing) }
+            .launchIn(scope)
+    }
+
+    private fun onPlaybackPlayingChanged(playing: Boolean) {
+        if (!_ui.value.showUi || _ui.value.connection != VoiceConnection.CONNECTED) return
+        if (playing) {
+            if (!settings.value.voiceAutoMuteWhenPlaying) return
+            if (!micIsOpenForAutoMute()) return
+            muteForAutoPlayback()
+            autoMutedByPlayback = true
+        } else {
+            if (!settings.value.voiceAutoUnmuteWhenPaused) return
+            if (!autoMutedByPlayback) return
+            unmuteAfterAutoPlayback()
+            autoMutedByPlayback = false
+        }
+    }
+
+    private fun micIsOpenForAutoMute(): Boolean {
+        val ui = _ui.value
+        if (ui.listenOnly || !ui.showMicButton) return false
+        return when (ui.talkMode) {
+            VoiceTalkMode.OPEN_MIC -> !selfMuted
+            VoiceTalkMode.TOGGLE, VoiceTalkMode.PUSH_TO_TALK -> talkLatched || ui.talking
+        }
+    }
+
+    private fun muteForAutoPlayback() {
+        when (_ui.value.talkMode) {
+            VoiceTalkMode.OPEN_MIC -> applySelfMuted(true, fromAuto = true)
+            VoiceTalkMode.TOGGLE -> applyTalkLatched(false, fromAuto = true)
+            VoiceTalkMode.PUSH_TO_TALK -> {
+                pttHeld = false
+                updateTransmitting()
+            }
+        }
+    }
+
+    private fun unmuteAfterAutoPlayback() {
+        when (_ui.value.talkMode) {
+            VoiceTalkMode.OPEN_MIC -> applySelfMuted(false, fromAuto = true)
+            VoiceTalkMode.TOGGLE -> applyTalkLatched(true, fromAuto = true)
+            VoiceTalkMode.PUSH_TO_TALK -> Unit // hold-to-talk: don't force hold
+        }
     }
 
     fun toggleSelfMuted() {
@@ -137,11 +200,23 @@ class VoiceController(
         // The first Mic tap must request permission and start talking, not flip into mute.
         if (!selfMuted && !_ui.value.talking) {
             withMicPermission {
-                applySelfMuted(false)
+                applySelfMuted(false, fromAuto = false)
             }
             return
         }
         setSelfMuted(!selfMuted)
+    }
+
+    /**
+     * One-tap Mic used by the Room tab and the player bar. Talk-mode aware so desktop OPEN_MIC
+     * mutes via [toggleSelfMuted] while phone/TV TOGGLE latches via [toggleTalk].
+     */
+    fun toggleMic() {
+        when (_ui.value.talkMode) {
+            VoiceTalkMode.TOGGLE -> toggleTalk()
+            VoiceTalkMode.PUSH_TO_TALK -> Unit // hold handled via [setPushToTalkHeld]
+            VoiceTalkMode.OPEN_MIC -> toggleSelfMuted()
+        }
     }
 
     /** Hold for push-to-talk on phone/desktop. Not used on TV (tap toggle). */
@@ -173,17 +248,19 @@ class VoiceController(
     fun setTalkLatched(on: Boolean) {
         val state = _ui.value
         if (!state.showUi || state.listenOnly) return
+        autoMutedByPlayback = false // manual
         if (on) {
-            withMicPermission { applyTalkLatched(true) }
+            withMicPermission { applyTalkLatched(true, fromAuto = false) }
             return
         }
-        applyTalkLatched(false)
+        applyTalkLatched(false, fromAuto = false)
     }
 
-    private fun applyTalkLatched(on: Boolean) {
+    private fun applyTalkLatched(on: Boolean, fromAuto: Boolean) {
+        if (!fromAuto) autoMutedByPlayback = false
         val was = talkLatched
         talkLatched = on
-        if (was != on) playMicCue(on)
+        if (was != on && !fromAuto) playMicCue(on)
         updateTransmitting()
         _ui.update {
             it.copy(
@@ -193,7 +270,7 @@ class VoiceController(
                 showMicPermissionSettings = false,
             )
         }
-        if (on || was) dismissMicHint()
+        if (!fromAuto && (on || was)) dismissMicHint()
     }
 
     /**
@@ -374,7 +451,7 @@ class VoiceController(
     }
 
     private fun statusFor(capture: VoiceCaptureKind, latched: Boolean, mode: VoiceTalkMode): String? = when {
-        capture == VoiceCaptureKind.NONE -> "Listening only — no mic on this device. Join from your phone to talk."
+        capture == VoiceCaptureKind.NONE -> "No microphone available — listening only"
         latched -> "Mic live"
         mode == VoiceTalkMode.TOGGLE -> "Mic off — press Mic to talk"
         mode == VoiceTalkMode.PUSH_TO_TALK -> "Hold to talk"

@@ -194,11 +194,20 @@ class DesktopVoiceEngine : VoiceEngine {
     private fun startMixPump(media: VoiceMediaSession) {
         val out = ShortArray(media.frameSamples)
         val bytes = ByteArray(out.size * 2)
+        var loggedFormat = false
         playbackJob = scope.launch(Dispatchers.IO) {
             while (isActive && session.get() === media) {
                 val n = media.pollMixedPcm(out)
                 val line = playbackLine
                 if (n > 0 && line != null) {
+                    if (!loggedFormat) {
+                        loggedFormat = true
+                        println(
+                            "DesktopVoice playback format=PCM16LE rate=48000 ch=1 " +
+                                "frameSamples=${media.frameSamples} bytesPerFrame=${media.frameSamples * 2} " +
+                                "firstRemoteRms=${media.lastRemoteRms}",
+                        )
+                    }
                     for (i in 0 until n) {
                         val s = out[i].toInt()
                         bytes[i * 2] = (s and 0xff).toByte()
@@ -227,6 +236,10 @@ class DesktopVoiceEngine : VoiceEngine {
         if (line == null) return
         captureLine = line
         val frameBytes = media.frameSamples * 2
+        println(
+            "DesktopVoice capture format=PCM16LE rate=48000 ch=1 " +
+                "frameSamples=${media.frameSamples} bytesPerFrame=$frameBytes device=${id ?: "system default"}",
+        )
         val buf = ByteArray(frameBytes)
         val pcm = ShortArray(media.frameSamples)
         captureThread = thread(name = "voice-capture", isDaemon = true) {

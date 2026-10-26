@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.8.0" date="2026-10-26">
+      <description>
+        <p>Fix Android phone mic garble (resample hardware rate to 48 kHz Opus), TV remote mic capture and hold-to-talk, Voice settings section with Enable voice and auto-mute, Ctrl+M mic shortcut on desktop/web, mic live in status cluster.</p>
+      </description>
+    </release>
     <release version="2.7.9" date="2026-10-25">
       <description>
         <p>Phone and tablet voice match TV: one-tap mic in the player, capture and the microphone foreground-service type only while the mic is live so the privacy indicator clears when muted.</p>

@@ -25,9 +25,17 @@ class TvVoiceKeysTest {
     }
 
     @Test
+    fun `remote mic keys are hold-to-talk`() {
+        assertTrue(TvVoiceKeys.isVoiceHoldKey(KeyEvent.KEYCODE_SEARCH))
+        assertTrue(TvVoiceKeys.isVoiceHoldKey(KeyEvent.KEYCODE_VOICE_ASSIST))
+        assertFalse(TvVoiceKeys.isVoiceHoldKey(KeyEvent.KEYCODE_DPAD_CENTER))
+    }
+
+    @Test
     fun `hint mentions mic button`() {
         val text = TvVoiceKeys.hintText("mic / search button")
         assertTrue(text.contains("Mic"))
+        assertTrue(text.contains("Hold"))
         assertTrue(text.contains("mic / search button"))
         assertEquals("mic / search button", TvVoiceKeys.labelFor(KeyEvent.KEYCODE_SEARCH))
     }
