@@ -35,18 +35,20 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Downloading
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Headset
+import androidx.compose.material.icons.filled.HeadsetOff
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SkipNext
@@ -65,6 +67,8 @@ import androidx.compose.runtime.setValue
 import android.os.SystemClock
 import com.yarmiplaytv.voice.TvVoiceKeys
 import com.yarmiplaytv.voice.micControlLive
+import com.yarmiplaytv.voice.readyControlDescription
+import com.yarmiplaytv.voice.voiceMembershipDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -710,22 +714,25 @@ private fun ControlsBar(
             }
             if (inRoom) {
                 val ready = room.isReady == true
-                ActionButton(
-                    if (ready) "Ready" else "Not ready",
+                IconAction(
+                    if (ready) Icons.Filled.CheckCircle else Icons.Filled.CheckCircleOutline,
+                    readyControlDescription(ready),
                     { container.sync.toggleReady() },
-                    icon = if (ready) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                    Modifier.testTag("player_ready"),
                     tint = if (ready) AppColors.Ready else AppColors.NotReady,
-                    container = ON_VIDEO_BUTTON,
                 )
             }
             // Every remote can focus this and press OK — primary TV talk control (tap toggle).
             TvMicButton(voiceUi, onToggle = { container.voice.toggleTalk() }, focusRequester = micFocus, onVideo = true)
             if (voiceUi.showVoiceMembershipButton) {
-                if (voiceUi.voiceMembershipIsLeave) {
-                    ActionButton("Leave voice", { container.voice.leave() }, Modifier.testTag("voice_leave"), container = ON_VIDEO_BUTTON)
-                } else {
-                    ActionButton("Join voice", { container.voice.join() }, Modifier.testTag("voice_join"), container = ON_VIDEO_BUTTON)
-                }
+                val inVoice = voiceUi.voiceMembershipIsLeave
+                IconAction(
+                    if (inVoice) Icons.Filled.Headset else Icons.Filled.HeadsetOff,
+                    voiceUi.voiceMembershipDescription(),
+                    { if (inVoice) container.voice.leave() else container.voice.join() },
+                    Modifier.testTag(if (inVoice) "player_voice_leave" else "player_voice_join"),
+                    tint = if (inVoice) OnVideo.Text else OnVideo.Text.copy(alpha = 0.72f),
+                )
             }
         }, end = {
             rememberRelaySave(container)?.let { save ->

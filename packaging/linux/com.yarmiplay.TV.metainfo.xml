@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.8.4" date="2026-10-28">
+      <description>
+        <p>Player controls: icon-only Ready (check circle) and Join/Leave voice (headset), matching Mic size on phone, tablet, TV, desktop, and web. Room tab keeps text labels.</p>
+      </description>
+    </release>
     <release version="2.8.3" date="2026-10-26">
       <description>
         <p>Portrait volume/screenshot/Menus on one row; smoother Android mic (streaming resampler, Opus VOIP/FEC, jitter buffer); noise suppression with Voice setting (default on).</p>

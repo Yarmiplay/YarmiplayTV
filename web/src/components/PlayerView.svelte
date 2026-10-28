@@ -84,14 +84,26 @@
   const readyCount = $derived(room?.users.filter((u) => u.isReady).length ?? 0);
   const seekStep = $derived($settings.playback.seekStepSeconds);
   let voiceMicLive = $state(false);
+  let voiceAvailable = $state(false);
+  let voiceMembershipIsLeave = $state(false);
+  let voiceShowMic = $state(false);
+  let voiceSelfMuted = $state(false);
   $effect(() => {
     const v = session?.voice;
     if (!v) {
       voiceMicLive = false;
+      voiceAvailable = false;
+      voiceMembershipIsLeave = false;
+      voiceShowMic = false;
+      voiceSelfMuted = false;
       return;
     }
     return v.ui.subscribe((ui) => {
       voiceMicLive = !!ui.showMic && ui.connected && !ui.selfMuted && ui.transmitting;
+      voiceAvailable = !!ui.available;
+      voiceMembershipIsLeave = !!ui.membershipIsLeave;
+      voiceShowMic = !!ui.showMic;
+      voiceSelfMuted = !!ui.selfMuted;
     });
   });
 
@@ -644,8 +656,42 @@
               aria-label="Volume"
             />
             {#if inRoom}
-              <button class="chip" class:ready={room?.isReady} onclick={() => session?.toggleReady()}>
-                <span class="dot"></span>{room?.isReady ? "Ready" : "Not ready"}
+              <button
+                class="tool icon-only"
+                class:ready={room?.isReady}
+                data-testid="player_ready"
+                onclick={() => session?.toggleReady()}
+                aria-label={room?.isReady ? "Ready (click to unready)" : "Not ready (click to ready)"}
+                title={room?.isReady ? "Ready (click to unready)" : "Not ready (click to ready)"}
+              >
+                <Icon name={room?.isReady ? "check_circle" : "check_circle_outline"} size={24} />
+              </button>
+            {/if}
+            {#if voiceShowMic}
+              <button
+                class="tool icon-only"
+                class:live={voiceMicLive}
+                data-testid="player_mic_toggle"
+                onclick={() => {
+                  const ui = session?.voice.ui.value;
+                  if (ui?.showMic) session?.voice.setSelfMuted(!ui.selfMuted);
+                }}
+                aria-label={voiceSelfMuted ? "Unmute mic (Ctrl+M)" : "Mute mic (Ctrl+M)"}
+                title={voiceSelfMuted ? "Unmute mic (Ctrl+M)" : "Mute mic (Ctrl+M)"}
+              >
+                <Icon name={voiceSelfMuted || !voiceMicLive ? "mic_off" : "mic"} size={24} />
+              </button>
+            {/if}
+            {#if voiceAvailable}
+              <button
+                class="tool icon-only"
+                class:in-voice={voiceMembershipIsLeave}
+                data-testid={voiceMembershipIsLeave ? "player_voice_leave" : "player_voice_join"}
+                onclick={() => (voiceMembershipIsLeave ? session?.voice.leave() : session?.voice.join())}
+                aria-label={voiceMembershipIsLeave ? "Leave voice" : "Join voice"}
+                title={voiceMembershipIsLeave ? "Leave voice" : "Join voice"}
+              >
+                <Icon name={voiceMembershipIsLeave ? "headset" : "headset_off"} size={24} />
               </button>
             {/if}
             <span class="spacer"></span>
@@ -1050,6 +1096,19 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
+  }
+  .tool.icon-only {
+    min-width: 40px;
+    min-height: 40px;
+    justify-content: center;
+    padding: 8px;
+  }
+  .tool.icon-only.ready,
+  .tool.icon-only.live {
+    color: var(--ready);
+  }
+  .tool.icon-only:not(.ready):not(.live):not(.in-voice) {
+    color: rgb(255 255 255 / 0.72);
   }
   /* The buttons' names show beside their icons when Settings > Playback says so; otherwise only screen readers get them. */
   .controls:not(.labelled) .tool-label {

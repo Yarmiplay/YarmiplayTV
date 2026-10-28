@@ -52,6 +52,14 @@ fun VoiceUiState.micControlDescription(showKeyboardShortcut: Boolean): String {
     return if (showKeyboardShortcut) "$base (Ctrl+M)" else "$base — tap to toggle"
 }
 
+/** Player / Room Join–Leave voice control: Leave while in or joining, Join while out. */
+fun VoiceUiState.voiceMembershipDescription(): String =
+    if (voiceMembershipIsLeave) "Leave voice" else "Join voice"
+
+/** Player Ready icon accessibility / tooltip (Room tab keeps full text labels). */
+fun readyControlDescription(ready: Boolean): String =
+    if (ready) "Ready (click to unready)" else "Not ready (click to ready)"
+
 fun VoiceUiState.isSpeaking(username: String): Boolean {
     val id = peers.firstOrNull { it.username == username }?.participantId ?: return false
     return id in speakingIds

@@ -8,6 +8,7 @@ import icon_bookmarks from "@material-design-icons/svg/filled/bookmarks.svg?raw"
 import icon_bug_report from "@material-design-icons/svg/filled/bug_report.svg?raw";
 import icon_check from "@material-design-icons/svg/filled/check.svg?raw";
 import icon_check_circle from "@material-design-icons/svg/filled/check_circle.svg?raw";
+import icon_check_circle_outline from "@material-design-icons/svg/filled/check_circle_outline.svg?raw";
 import icon_chevron_right from "@material-design-icons/svg/filled/chevron_right.svg?raw";
 import icon_close from "@material-design-icons/svg/filled/close.svg?raw";
 import icon_cloud from "@material-design-icons/svg/filled/cloud.svg?raw";
@@ -32,6 +33,8 @@ import icon_forward_5 from "@material-design-icons/svg/filled/forward_5.svg?raw"
 import icon_fullscreen from "@material-design-icons/svg/filled/fullscreen.svg?raw";
 import icon_fullscreen_exit from "@material-design-icons/svg/filled/fullscreen_exit.svg?raw";
 import icon_groups from "@material-design-icons/svg/filled/groups.svg?raw";
+import icon_headset from "@material-design-icons/svg/filled/headset.svg?raw";
+import icon_headset_off from "@material-design-icons/svg/filled/headset_off.svg?raw";
 import icon_home from "@material-design-icons/svg/filled/home.svg?raw";
 import icon_info from "@material-design-icons/svg/filled/info.svg?raw";
 import icon_key from "@material-design-icons/svg/filled/key.svg?raw";
@@ -43,6 +46,7 @@ import icon_logout from "@material-design-icons/svg/filled/logout.svg?raw";
 import icon_meeting_room from "@material-design-icons/svg/filled/meeting_room.svg?raw";
 import icon_menu_book from "@material-design-icons/svg/filled/menu_book.svg?raw";
 import icon_mic from "@material-design-icons/svg/filled/mic.svg?raw";
+import icon_mic_off from "@material-design-icons/svg/filled/mic_off.svg?raw";
 import icon_more_vert from "@material-design-icons/svg/filled/more_vert.svg?raw";
 import icon_movie from "@material-design-icons/svg/filled/movie.svg?raw";
 import icon_new_releases from "@material-design-icons/svg/filled/new_releases.svg?raw";
@@ -92,6 +96,7 @@ const RAW = {
   bug_report: icon_bug_report,
   check: icon_check,
   check_circle: icon_check_circle,
+  check_circle_outline: icon_check_circle_outline,
   chevron_right: icon_chevron_right,
   close: icon_close,
   cloud: icon_cloud,
@@ -116,6 +121,8 @@ const RAW = {
   fullscreen: icon_fullscreen,
   fullscreen_exit: icon_fullscreen_exit,
   groups: icon_groups,
+  headset: icon_headset,
+  headset_off: icon_headset_off,
   home: icon_home,
   info: icon_info,
   key: icon_key,
@@ -127,6 +134,7 @@ const RAW = {
   meeting_room: icon_meeting_room,
   menu_book: icon_menu_book,
   mic: icon_mic,
+  mic_off: icon_mic_off,
   more_vert: icon_more_vert,
   movie: icon_movie,
   new_releases: icon_new_releases,

@@ -53,6 +53,8 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Headset
+import androidx.compose.material.icons.filled.HeadsetOff
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.OpenInFull
@@ -125,6 +127,7 @@ import com.yarmiplaytv.ui.theme.onVideoLabel
 import com.yarmiplaytv.voice.VoiceUiState
 import com.yarmiplaytv.voice.micControlDescription
 import com.yarmiplaytv.voice.micControlLive
+import com.yarmiplaytv.voice.voiceMembershipDescription
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.filled.Menu
@@ -570,10 +573,10 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                             )
                                         }
                                         if (inRoom) {
-                                            ReadyChip(
+                                            ReadyIconButton(
                                                 ready = room.isReady == true,
                                                 onClick = { container.sync.toggleReady(); touch() },
-                                                modifier = Modifier.testTag("player_ready"),
+                                                onVideo = false,
                                             )
                                         }
                                         // Mic beside Ready — full 48dp target (not crushed by the volume row).
@@ -582,6 +585,12 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                             onToggle = { container.voice.toggleMic(); touch() },
                                             onVideo = false,
                                             showKeyboardShortcut = false,
+                                        )
+                                        PlayerVoiceMembershipButton(
+                                            portraitVoice,
+                                            onJoin = { container.voice.join(); touch() },
+                                            onLeave = { container.voice.leave(); touch() },
+                                            onVideo = false,
                                         )
                                     }
                                 }
@@ -677,13 +686,14 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     ) {
-                                        // When the room card is hidden, keep Mic reachable next to a Ready chip here.
+                                        // When the room card is hidden, keep Ready/Mic/voice reachable here.
                                         if (room.status == ConnectionStatus.DISCONNECTED) {
                                             if (inRoom) {
-                                                ReadyChip(
-                                                    room.isReady == true,
-                                                    { container.sync.toggleReady(); touch() },
-                                                    Modifier.testTag("player_ready_controls"),
+                                                ReadyIconButton(
+                                                    ready = room.isReady == true,
+                                                    onClick = { container.sync.toggleReady(); touch() },
+                                                    modifier = Modifier.testTag("player_ready_controls"),
+                                                    onVideo = false,
                                                 )
                                             }
                                             PlayerMicButton(
@@ -691,6 +701,12 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                                 onToggle = { container.voice.toggleMic(); touch() },
                                                 onVideo = false,
                                                 showKeyboardShortcut = false,
+                                            )
+                                            PlayerVoiceMembershipButton(
+                                                portraitVoice,
+                                                onJoin = { container.voice.join(); touch() },
+                                                onLeave = { container.voice.leave(); touch() },
+                                                onVideo = false,
                                             )
                                         }
                                         PlayerVolumeControl(
@@ -862,13 +878,25 @@ private fun BottomControls(
         TvSeekBar(state, position, onInteract, container.seekFrames, segments) { container.player.seek(it) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             PlayerVolumeControl(onInteract, Modifier.padding(end = 8.dp))
-            if (inRoom) ReadyChip(ready, { container.sync.toggleReady(); onInteract() }, Modifier.testTag("player_ready"))
+            if (inRoom) {
+                ReadyIconButton(
+                    ready = ready,
+                    onClick = { container.sync.toggleReady(); onInteract() },
+                    onVideo = true,
+                )
+            }
             // Beside Ready — same toggleMic() path as the Room tab (OPEN_MIC mute / TOGGLE latch).
             PlayerMicButton(
                 voiceUi,
                 onToggle = { container.voice.toggleMic(); onInteract() },
                 onVideo = true,
                 showKeyboardShortcut = container.deviceKind == DeviceKind.DESKTOP,
+            )
+            PlayerVoiceMembershipButton(
+                voiceUi,
+                onJoin = { container.voice.join(); onInteract() },
+                onLeave = { container.voice.leave(); onInteract() },
+                onVideo = true,
             )
             Spacer(Modifier.weight(1f))
             rememberRelaySave(container)?.let { RelaySaveButton(it, onInteract) }
@@ -916,7 +944,39 @@ private fun PlayerMicButton(
             if (live) Icons.Filled.Mic else Icons.Filled.MicOff,
             contentDescription = ui.micControlDescription(showKeyboardShortcut),
             tint = tint,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(26.dp),
+        )
+    }
+}
+
+/** Headset Join / Leave voice on the player bar — distinct from the Mic mute icon. */
+@Composable
+private fun PlayerVoiceMembershipButton(
+    ui: VoiceUiState,
+    onJoin: () -> Unit,
+    onLeave: () -> Unit,
+    onVideo: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (!ui.showVoiceMembershipButton) return
+    val inVoice = ui.voiceMembershipIsLeave
+    val tint = when {
+        inVoice && onVideo -> Color.White
+        inVoice -> AppColors.Text
+        onVideo -> Color.White.copy(alpha = 0.72f)
+        else -> AppColors.TextDim
+    }
+    IconButton(
+        onClick = { if (inVoice) onLeave() else onJoin() },
+        modifier = modifier
+            .requiredSize(48.dp)
+            .testTag(if (inVoice) "player_voice_leave" else "player_voice_join"),
+    ) {
+        Icon(
+            if (inVoice) Icons.Filled.Headset else Icons.Filled.HeadsetOff,
+            contentDescription = ui.voiceMembershipDescription(),
+            tint = tint,
+            modifier = Modifier.size(26.dp),
         )
     }
 }
