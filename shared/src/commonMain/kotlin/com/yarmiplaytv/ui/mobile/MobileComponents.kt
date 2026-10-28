@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -20,12 +21,14 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -34,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -129,6 +133,7 @@ fun SideNavItem(label: String, icon: ImageVector, selected: Boolean, onClick: ()
     )
 }
 
+/** Room tab / menus: text Ready chip (player bars use [ReadyIconButton] instead). */
 @Composable
 fun ReadyChip(ready: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     FilterChip(
@@ -150,6 +155,32 @@ fun ReadyChip(ready: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier
         ),
         modifier = modifier,
     )
+}
+
+/**
+ * Player-bar Ready: filled green check when ready, outlined/dimmed when not.
+ * 48dp touch target to match Mic and other player icons.
+ */
+@Composable
+fun ReadyIconButton(
+    ready: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier.testTag("player_ready"),
+    onVideo: Boolean = false,
+) {
+    val tint = when {
+        ready -> AppColors.Ready
+        onVideo -> Color.White.copy(alpha = 0.72f)
+        else -> AppColors.NotReady
+    }
+    IconButton(onClick, modifier.requiredSize(48.dp)) {
+        Icon(
+            if (ready) Icons.Filled.CheckCircle else Icons.Filled.CheckCircleOutline,
+            contentDescription = com.yarmiplaytv.voice.readyControlDescription(ready),
+            tint = tint,
+            modifier = Modifier.size(26.dp),
+        )
+    }
 }
 
 @Composable

@@ -534,8 +534,15 @@ class PlayerControlsUiTest {
         assertEquals("Mic is 48dp tall", 48f * densityDpi, mic.height, 1.5f)
         assertEquals("Mic is 48dp wide", 48f * densityDpi, mic.width, 1.5f)
         val ready = onNodeWithTag("player_ready").fetchSemanticsNode().boundsInRoot
+        assertEquals("Ready is 48dp tall", 48f * densityDpi, ready.height, 1.5f)
+        assertEquals("Ready is 48dp wide", 48f * densityDpi, ready.width, 1.5f)
         assertTrue("Mic stays next to Ready on the room card", kotlin.math.abs(mic.center.y - ready.center.y) < 24f * densityDpi)
         assertTrue("Mic is after Ready", mic.left >= ready.right - 1f)
+        val voice = onNodeWithTag("player_voice_leave").fetchSemanticsNode().boundsInRoot
+        assertEquals("Headset Join/Leave is 48dp tall", 48f * densityDpi, voice.height, 1.5f)
+        assertEquals("Headset Join/Leave is 48dp wide", 48f * densityDpi, voice.width, 1.5f)
+        assertTrue("Headset stays next to Mic", kotlin.math.abs(voice.center.y - mic.center.y) < 24f * densityDpi)
+        assertTrue("Headset is after Mic", voice.left >= mic.right - 1f)
     }
 
     @Test
