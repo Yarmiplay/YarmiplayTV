@@ -750,7 +750,8 @@ private fun ControlsBar(
             if (pip.supported && state.fileLoaded) {
                 IconAction(Icons.Filled.PictureInPictureAlt, pictureInPictureLabel, pip.toggle, Modifier.testTag("pip"), tint = OnVideo.Text)
             }
-            ActionButton("Menus", onOpenMenus, Modifier.testTag("menus"), icon = Icons.Filled.Menu, container = ON_VIDEO_BUTTON)
+            // Icon-only like Browse/Exit — no pill/label; IconAction's accent focus ring for D-pad.
+            IconAction(Icons.Filled.Menu, "Menus", onOpenMenus, Modifier.testTag("menus"), tint = OnVideo.Text)
             IconAction(Icons.Filled.Home, "Browse", onHome, tint = OnVideo.Text)
             IconAction(Icons.AutoMirrored.Filled.Logout, "Exit", { container.exitApp() }, Modifier.testTag("player_exit"), tint = OnVideo.Text)
         })
@@ -777,9 +778,6 @@ private fun ButtonRow(modifier: Modifier = Modifier, start: @Composable RowScope
         if (scroll.canScrollForward) MoreArrow(Icons.AutoMirrored.Filled.KeyboardArrowRight, Modifier.align(Alignment.CenterEnd).offset(x = MORE_ARROW))
     }
 }
-
-/** The bar's labelled buttons let the video show through a little; focused, they're opaque with the accent border. */
-private val ON_VIDEO_BUTTON: Color @Composable get() = AppColors.SurfaceHigh.copy(alpha = 0.7f)
 
 /** Room for a focused button to grow at the row's ends. */
 private val SCALE_ROOM = 4.dp
