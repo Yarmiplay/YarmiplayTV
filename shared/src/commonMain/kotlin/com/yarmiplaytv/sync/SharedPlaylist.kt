@@ -169,6 +169,9 @@ class SharedPlaylist(scope: CoroutineScope, private val sync: SyncController) {
     /** Replaces the playlist, e.g. with one loaded from a file. */
     fun replace(files: List<String>) = apply(files.map { it.trim() }.filter { it.isNotEmpty() }.distinct())
 
+    /** Clears every entry (Syncplay `playlistChange` with an empty list). Undo restores the previous list. */
+    fun clear() = replace(emptyList())
+
     fun undo() {
         val client = sync.client ?: return
         val previous = history.removeLastOrNull() ?: return

@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.8.6" date="2026-10-30">
+      <description>
+        <p>Empty playlist: clear the shared room playlist from phone, tablet, TV, desktop, and web after a short confirmation.</p>
+      </description>
+    </release>
     <release version="2.8.5" date="2026-10-28">
       <description>
         <p>Android TV player: Menus is icon-only with no pill background; D-pad focus and accessibility label unchanged.</p>

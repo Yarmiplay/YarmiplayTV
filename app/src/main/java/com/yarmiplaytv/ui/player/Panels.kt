@@ -129,6 +129,7 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
         val np = nowPlaying
         val canAddCurrent = np != null && room.playlist.none { Filenames.same(it, np.fileName) }
         val canUndo by container.playlist.shared.canUndo.collectAsStateWithLifecycle()
+        var confirmEmpty by remember { mutableStateOf(false) }
         // The buttons wrap rather than squeeze the last ones into slivers in the panel's width.
         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 12.dp)) {
             ActionButton("Add from your libraries", { nav.popTo(Screen.Home) }, if (room.playlist.isEmpty()) Modifier.focusRequester(focus) else Modifier, icon = Icons.Filled.Home)
@@ -139,6 +140,32 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
                 ActionButton("Sort A to Z", { container.playlist.shared.sortAlphabetically() }, Modifier.testTag("playlist_sort"), icon = Icons.Filled.SortByAlpha)
             }
             if (canUndo) ActionButton("Undo", { container.playlist.shared.undo() }, Modifier.testTag("playlist_undo"), icon = Icons.AutoMirrored.Filled.Undo)
+            if (room.playlist.isNotEmpty() && !confirmEmpty) {
+                ActionButton(
+                    "Empty playlist",
+                    { confirmEmpty = true },
+                    Modifier.testTag("playlist_empty"),
+                    icon = Icons.Filled.Delete,
+                    tint = AppColors.Error,
+                )
+            }
+        }
+        if (confirmEmpty && room.playlist.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Remove every entry for everyone in the room?", color = AppColors.TextDim, modifier = Modifier.weight(1f))
+                ActionButton(
+                    "Empty playlist",
+                    { confirmEmpty = false; container.playlist.shared.clear() },
+                    Modifier.testTag("playlist_empty_confirm"),
+                    icon = Icons.Filled.Delete,
+                    tint = AppColors.Error,
+                )
+                ActionButton("Cancel", { confirmEmpty = false })
+            }
         }
         if (room.playlist.isEmpty()) {
             Text("The playlist is empty.", color = AppColors.TextDim)

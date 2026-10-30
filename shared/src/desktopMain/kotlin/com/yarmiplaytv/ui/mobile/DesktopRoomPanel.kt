@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -288,6 +290,7 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
     var selected by remember { mutableStateOf(emptySet<Int>()) }
     var anchor by remember { mutableStateOf<Int?>(null) }
     var addingUrls by remember { mutableStateOf(false) }
+    var confirmEmpty by remember { mutableStateOf(false) }
     val listFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
     LaunchedEffect(playlist) { selected = selected.filter { it in playlist.indices }.toSet() }
@@ -378,6 +381,14 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
             }
             ToolButton(Icons.Filled.SortByAlpha, "Sort A to Z", enabled = playlist.size > 1) { shared.sortAlphabetically() }
             ToolButton(Icons.AutoMirrored.Filled.Undo, "Undo (Ctrl+Z)", enabled = canUndo) { shared.undo() }
+            if (playlist.isNotEmpty()) {
+                TooltipArea(tooltip = { Tooltip("Empty playlist") }) {
+                    IconButton(
+                        { confirmEmpty = true },
+                        modifier = Modifier.testTag("playlist_empty"),
+                    ) { Icon(Icons.Filled.Delete, contentDescription = "Empty playlist", tint = AppColors.Error) }
+                }
+            }
             Spacer(Modifier.weight(1f))
             Box {
                 var open by remember { mutableStateOf(false) }
@@ -408,6 +419,23 @@ private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
             }
         }
         if (addingUrls) UrlField(onAdd = { text -> container.playlist.addUrlsToRoomPlaylist(text.split(Regex("\\s+"))) > 0 }, onClose = { addingUrls = false })
+        if (confirmEmpty) {
+            AlertDialog(
+                onDismissRequest = { confirmEmpty = false },
+                title = { Text("Empty the playlist?") },
+                text = { Text("Remove every entry from this room's shared playlist. Everyone in the room sees the change. Undo brings the list back.") },
+                confirmButton = {
+                    TextButton(
+                        {
+                            confirmEmpty = false
+                            shared.clear()
+                        },
+                        Modifier.testTag("playlist_empty_confirm"),
+                    ) { Text("Empty playlist") }
+                },
+                dismissButton = { TextButton({ confirmEmpty = false }) { Text("Cancel") } },
+            )
+        }
 
         if (playlist.isEmpty()) {
             Text(

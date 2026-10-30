@@ -21,6 +21,7 @@
   let savedPlaylists = $state<SavedPlaylist[]>([]);
   let showSaved = $state(false);
   let savePrompt = $state(false);
+  let emptyPrompt = $state(false);
   let playlistNameInput = $state("");
 
   $effect(() => {
@@ -59,6 +60,10 @@
   const playlist = $derived(room?.playlist ?? []);
   const connected = $derived(room?.status === "CONNECTED");
   const locked = $derived(room ? followsOperators(room) : false);
+
+  $effect(() => {
+    if (playlist.length === 0) emptyPrompt = false;
+  });
 
   function click(i: number, event: MouseEvent) {
     if (event.shiftKey && anchor !== null) {
@@ -117,8 +122,31 @@
       <button class="button quiet small" onclick={handleSaveCurrent} disabled={playlist.length === 0}><Icon name="bookmarks" size={18} />Save</button>
       <button class="button quiet small" onclick={() => (showSaved = !showSaved)}><Icon name="queue_music" size={18} />Saved ({savedPlaylists.length})</button>
       <button class="button quiet small" onclick={() => session?.undo()} disabled={locked || !canUndo}><Icon name="undo" size={18} />Undo</button>
+      {#if playlist.length > 0}
+        <button
+          class="button quiet small"
+          data-testid="playlist_empty"
+          disabled={locked}
+          onclick={() => (emptyPrompt = true)}
+        ><Icon name="delete" size={18} />Empty playlist</button>
+      {/if}
       <button class="button quiet small" onclick={() => (menu = !menu)} disabled={locked} aria-expanded={menu}><Icon name="more_vert" size={18} />More</button>
     </div>
+    {#if emptyPrompt}
+      <div class="actions confirm" data-testid="playlist_empty_confirm_row">
+        <span class="dim small">Remove every entry for everyone in the room?</span>
+        <button
+          class="button small"
+          data-testid="playlist_empty_confirm"
+          onclick={() => {
+            session?.clearPlaylist();
+            emptyPrompt = false;
+            selected = new Set();
+          }}
+        ><Icon name="delete" size={18} />Empty playlist</button>
+        <button class="button quiet small" type="button" onclick={() => (emptyPrompt = false)}>Cancel</button>
+      </div>
+    {/if}
     {#if menu}
       <div class="actions">
         <button class="button quiet small" onclick={() => (session?.shuffle(false), (menu = false))}><Icon name="shuffle" size={18} />Shuffle remaining</button>

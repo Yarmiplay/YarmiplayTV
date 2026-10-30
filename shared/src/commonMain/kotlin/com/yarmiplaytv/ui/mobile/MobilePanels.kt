@@ -149,6 +149,7 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
         var saving by rememberSaveable { mutableStateOf(false) }
         var showingSaved by rememberSaveable { mutableStateOf(false) }
         var saveName by rememberSaveable { mutableStateOf("") }
+        var confirmEmpty by rememberSaveable { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
 
         FlowRow(
@@ -188,6 +189,17 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
             ) {
                 Text("Saved (${savedPlaylists.size})")
             }
+            if (room.playlist.isNotEmpty()) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { confirmEmpty = true },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("playlist_empty"),
+                ) {
+                    Icon(Icons.Filled.Delete, contentDescription = null, tint = AppColors.Error)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Empty playlist")
+                }
+            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -198,6 +210,23 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
                 }
                 if (canUndo) IconButton({ container.playlist.shared.undo() }, Modifier.testTag("playlist_undo")) { Icon(Icons.AutoMirrored.Filled.Undo, "Undo") }
             }
+        }
+        if (confirmEmpty) {
+            AlertDialog(
+                onDismissRequest = { confirmEmpty = false },
+                title = { Text("Empty the playlist?") },
+                text = { Text("Remove every entry from this room's shared playlist. Everyone in the room sees the change. Undo brings the list back.") },
+                confirmButton = {
+                    TextButton(
+                        {
+                            confirmEmpty = false
+                            container.playlist.shared.clear()
+                        },
+                        Modifier.testTag("playlist_empty_confirm"),
+                    ) { Text("Empty playlist") }
+                },
+                dismissButton = { TextButton({ confirmEmpty = false }) { Text("Cancel") } },
+            )
         }
         if (saving) {
             Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
