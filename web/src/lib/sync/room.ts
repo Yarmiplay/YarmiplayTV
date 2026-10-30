@@ -1012,6 +1012,11 @@ export class RoomSession {
     this.apply([...new Set(files.map((f) => f.trim()).filter(Boolean))]);
   }
 
+  /** Clears every entry (Syncplay playlistChange with []). Undo restores the previous list. */
+  clearPlaylist() {
+    this.replacePlaylist([]);
+  }
+
   undo() {
     const client = this.client;
     const previous = this.history.pop();
