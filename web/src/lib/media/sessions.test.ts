@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { jellyfinSession } from "./jellyfin/client";
+import { jellyfinKeyOf } from "./jellyfin/source";
 import type { PlexSession } from "./plex/client";
 import { loadSessions, saveSessions, type KeyValueStorage } from "./sessions";
 
@@ -45,6 +46,17 @@ describe("sessions", () => {
     expect(sessions.jellyfin[0]).toEqual(jf);
     expect(sessions.jellyfin[1]).toMatchObject({ sharedBy: "host.example:8999", candidateUrls: ["https://a", "https://b"], noLongerShared: true });
     expect(sessions.plex).toEqual([px]);
+  });
+
+  it("keeps two Jellyfin entries that share a ServerId but differ by URL", () => {
+    const storage = new MemoryStorage();
+    const lan = jellyfinSession({ serverUrl: "http://192.168.1.20:8096", serverName: "LAN", serverId: "srv", userId: "u1", userName: "yarmi", accessToken: "lan" });
+    const remote = jellyfinSession({ serverUrl: "https://home.duckdns.org:8920", serverName: "Remote", serverId: "srv", userId: "u1", userName: "yarmi", accessToken: "remote" });
+    saveSessions(storage, { jellyfin: [lan, remote], plex: [] });
+    const loaded = loadSessions(storage);
+    expect(loaded.jellyfin).toHaveLength(2);
+    expect(jellyfinKeyOf(loaded.jellyfin[0]!)).not.toBe(jellyfinKeyOf(loaded.jellyfin[1]!));
+    expect(loaded.jellyfin.map((j) => j.accessToken).sort()).toEqual(["lan", "remote"]);
   });
 
   it("missing, broken or refused storage reads as no servers", () => {

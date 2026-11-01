@@ -31,9 +31,42 @@ import type { BaseItemDto, ItemsResult, MediaSegmentsResult, MediaSourceInfo, Pl
 
 export const JELLYFIN_KIND = "jellyfin";
 
-/** The [MediaSource.key] of [session]'s server; signing in to the same server again gives the same key. */
-export const jellyfinKeyOf = (session: Pick<JellyfinSession, "serverId" | "serverUrl">): string =>
-  `${JELLYFIN_KIND}:${session.serverId || session.serverUrl}`;
+/**
+ * Identity of a saved Jellyfin entry: its base URL (not ServerId).
+ * The same Jellyfin instance at a LAN IP and a public URL are two entries so both stay saved.
+ * Signing in again at the same address replaces that entry.
+ */
+export const jellyfinKeyOf = (session: Pick<JellyfinSession, "serverId" | "serverUrl">): string => {
+  const url = session.serverUrl.trim().replace(/\/+$/, "");
+  return `${JELLYFIN_KIND}:${url || session.serverId}`;
+};
+
+/** Pre-2.8.7 key for a session (`jellyfin:<ServerId>`), or null when ServerId is empty. */
+export const jellyfinLegacyKeyOf = (session: Pick<JellyfinSession, "serverId">): string | null => {
+  const id = session.serverId.trim();
+  return id ? `${JELLYFIN_KIND}:${id}` : null;
+};
+
+/**
+ * Rewrites a preferred-server / MAL key that used `jellyfin:<ServerId>` to `jellyfin:<url>`
+ * for [servers]. Leaves the key unchanged when it doesn't match a legacy id.
+ */
+export const jellyfinMigrateStoredKey = (
+  key: string,
+  servers: Array<Pick<JellyfinSession, "serverId" | "serverUrl">>,
+): string => {
+  if (!key || !key.startsWith(`${JELLYFIN_KIND}:`)) return key;
+  for (const session of servers) {
+    const legacy = jellyfinLegacyKeyOf(session);
+    if (!legacy) continue;
+    const modern = jellyfinKeyOf(session);
+    if (legacy === modern) continue;
+    if (key === legacy || key.startsWith(`${legacy}/`) || key.startsWith(`${legacy}|`)) {
+      return modern + key.slice(legacy.length);
+    }
+  }
+  return key;
+};
 
 const TICKS_PER_SECOND = 10_000_000;
 const PAGE_SIZE = 2000;

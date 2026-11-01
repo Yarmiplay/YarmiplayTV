@@ -13,6 +13,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -79,6 +80,32 @@ class JellyfinSourceTest {
     private fun baseUrl() = server.url("/").toString().trimEnd('/')
 
     private fun session() = JellyfinSession(baseUrl(), "Benny", "srv", "u1", "yarmi", "tok")
+
+    @Test
+    fun keyOfUsesNormalizedUrlNotServerId() {
+        val lan = JellyfinSession("http://192.168.1.20:8096/", "Home", "srv", "u1", "sam", "tok")
+        val remote = JellyfinSession("https://home.duckdns.org:8920", "Home", "srv", "u1", "sam", "tok")
+        assertEquals("jellyfin:http://192.168.1.20:8096", JellyfinSource.keyOf(lan))
+        assertEquals("jellyfin:https://home.duckdns.org:8920", JellyfinSource.keyOf(remote))
+        assertNotEquals(JellyfinSource.keyOf(lan), JellyfinSource.keyOf(remote))
+        assertEquals("jellyfin:srv", JellyfinSource.legacyKeyOf(lan))
+    }
+
+    @Test
+    fun migrateStoredKeyRewritesLegacyServerIdKeys() {
+        val lan = JellyfinSession("http://192.168.1.20:8096", "Home", "srv", "u1", "sam", "tok")
+        assertEquals("jellyfin:http://192.168.1.20:8096", JellyfinSource.migrateStoredKey("jellyfin:srv", listOf(lan)))
+        assertEquals(
+            "jellyfin:http://192.168.1.20:8096/series-1",
+            JellyfinSource.migrateStoredKey("jellyfin:srv/series-1", listOf(lan)),
+        )
+        assertEquals(
+            "jellyfin:http://192.168.1.20:8096/series-1|1",
+            JellyfinSource.migrateStoredKey("jellyfin:srv/series-1|1", listOf(lan)),
+        )
+        assertEquals("jellyfin:other", JellyfinSource.migrateStoredKey("jellyfin:other", listOf(lan)))
+        assertEquals("plex:mid", JellyfinSource.migrateStoredKey("plex:mid", listOf(lan)))
+    }
 
     @Test
     fun mediaSegmentsGiveTheIntroAndOutro() = runBlocking {
@@ -170,7 +197,7 @@ class JellyfinSourceTest {
     @Test
     fun findExactOnlyAcceptsTheExactName() = runBlocking {
         val source = JellyfinSource(client, session())
-        assertEquals("jellyfin:srv", source.findExact(fileName)?.playable?.sourceKey)
+        assertEquals("jellyfin:${baseUrl()}", source.findExact(fileName)?.playable?.sourceKey)
         assertNull(source.findExact("hyperdimension_neptunia_-_s01e01_-_the_goddess_(neptune)_of_planeptune.mkv"))
         assertNull(source.findExact("[Group] Hyperdimension Neptunia S01E01 [1080p].mkv"))
     }

@@ -3,6 +3,8 @@ import {
   clientInfo,
   JellyfinClient,
   JellyfinSource,
+  jellyfinKeyOf,
+  jellyfinMigrateStoredKey,
   loadSessions,
   PlexClient,
   PlexSource,
@@ -13,7 +15,7 @@ import {
   type Sessions,
 } from "../lib/media";
 import { Store } from "../lib/store";
-import { settings } from "./settings";
+import { changeSettings, settings } from "./settings";
 
 /**
  * The media servers this browser is signed in to (Settings > Media servers): Jellyfin and Plex sessions kept under the
@@ -44,6 +46,13 @@ export const plexClient = new PlexClient(info());
 
 export const sessions = new Store<Sessions>(loadSessions(storage));
 
+// 2.8.7+: rewrite preferred keys still stored as jellyfin:<ServerId> to jellyfin:<url>.
+{
+  const preferred = settings.value.preferredServer;
+  const migrated = jellyfinMigrateStoredKey(preferred, sessions.value.jellyfin);
+  if (migrated !== preferred) changeSettings((s) => ({ ...s, preferredServer: migrated }));
+}
+
 function build(s: Sessions): MediaSource[] {
   return [...s.jellyfin.map((j) => new JellyfinSource(jellyfinClient, j)), ...s.plex.map((p) => new PlexSource(plexClient, p))];
 }
@@ -58,7 +67,19 @@ function change(next: Sessions) {
 }
 
 export function addJellyfin(session: JellyfinSession) {
-  const others = sessions.value.jellyfin.filter((j) => !(j.serverId === session.serverId && j.userId === session.userId));
+  const key = jellyfinKeyOf(session);
+  const others = sessions.value.jellyfin.filter((j) => jellyfinKeyOf(j) !== key);
+  change({ ...sessions.value, jellyfin: [...others, session] });
+}
+
+/** Updates a saved Jellyfin entry when its address (and thus key) changed, e.g. a shared host moved. */
+export function replaceJellyfin(previous: JellyfinSession, session: JellyfinSession) {
+  const oldKey = jellyfinKeyOf(previous);
+  const newKey = jellyfinKeyOf(session);
+  const others = sessions.value.jellyfin.filter((j) => {
+    const k = jellyfinKeyOf(j);
+    return k !== oldKey && k !== newKey;
+  });
   change({ ...sessions.value, jellyfin: [...others, session] });
 }
 

@@ -29,7 +29,7 @@ import { episodeFromFile, type NowPlaying } from "../lib/sync/room";
 import { followsOperators, type RoomState } from "../lib/syncplay/client";
 import { isLoopbackHost } from "../lib/syncplay/transport";
 import { library, player, session } from "./context";
-import { sourceByKey, sources } from "./media";
+import { sessions, sourceByKey, sources } from "./media";
 import { settings } from "./settings";
 
 /**
@@ -68,6 +68,8 @@ export const mal = new MalService({
   storage: prefixedStorage("ytv:"),
   session: prefixedStorage("ytv:", () => sessionStorage),
 });
+// 2.8.7+: rewrite MAL keys still stored as jellyfin:<ServerId> to jellyfin:<url>.
+mal.store.migrateJellyfinKeys(sessions.value.jellyfin);
 const tracker = new MalTracker(mal);
 
 /** Sign-in finishes on mal-callback.html, which hands the code back to this page. */

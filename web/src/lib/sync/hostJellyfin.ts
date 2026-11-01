@@ -31,6 +31,8 @@ export interface HostJellyfinDeps {
   /** Settings' "Add media servers shared by Syncplay hosts". */
   enabled(): boolean;
   save(session: JellyfinSession): void;
+  /** When a shared entry's address changed; defaults to [save]. */
+  replace?(previous: JellyfinSession, session: JellyfinSession): void;
   /** Sends the Quick Connect code to the Syncplay server for its guest account. */
   authorize(code: string): Promise<AuthorizeResult>;
   notify(text: string, isError?: boolean): void;
@@ -104,7 +106,9 @@ export class HostJellyfinSharing {
         const url = await this.probe(urls, shared.serverId);
         if (url === null) return;
         const moved = { ...existing, serverUrl: url, candidateUrls: urls };
-        if (await jellyfin.validate(moved).catch(() => false)) this.deps.save(moved);
+        if (await jellyfin.validate(moved).catch(() => false)) {
+          (this.deps.replace ?? ((_, next) => this.deps.save(next)))(existing, moved);
+        }
         return;
       }
       // A server the user signed in to themselves stays theirs, even with an expired sign-in.
