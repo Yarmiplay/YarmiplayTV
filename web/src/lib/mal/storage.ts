@@ -1,4 +1,5 @@
-import { jellyfinMigrateStoredKey, type JellyfinSession } from "../media/jellyfin/source";
+import type { JellyfinSession } from "../media/jellyfin/client";
+import { jellyfinMigrateStoredKey } from "../media/jellyfin/source";
 import { Store } from "../store";
 import type { MalMapping } from "./matcher";
 import { compactUpdate, readAccount, readQueue, type MalAccount, type MalQueued } from "./models";
