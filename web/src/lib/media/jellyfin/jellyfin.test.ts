@@ -3,7 +3,7 @@ import { fakeServer, type Answer, type Recorded } from "../fakeServer.testutil";
 import { clientInfo } from "../http";
 import { MediaSourceError } from "../mediaSource";
 import { JellyfinClient, jellyfinSession } from "./client";
-import { JellyfinSource } from "./source";
+import { JellyfinSource, jellyfinKeyOf, jellyfinLegacyKeyOf, jellyfinMigrateStoredKey } from "./source";
 
 // Ported from JellyfinSourceTest.kt (MockWebServer becomes a fake fetch; discovery over UDP has no browser version).
 const BASE = "http://jf.test:8096";
@@ -205,7 +205,7 @@ describe("Jellyfin", () => {
 
   it("findExact only accepts the exact name", async () => {
     const { source } = setup();
-    expect((await source.findExact(fileName))?.playable.sourceKey).toBe("jellyfin:srv");
+    expect((await source.findExact(fileName))?.playable.sourceKey).toBe(`jellyfin:${BASE}`);
     expect(await source.findExact("hyperdimension_neptunia_-_s01e01_-_the_goddess_(neptune)_of_planeptune.mkv")).toBeNull();
     expect(await source.findExact("[Group] Hyperdimension Neptunia S01E01 [1080p].mkv")).toBeNull();
   });
@@ -239,5 +239,15 @@ describe("Jellyfin", () => {
     expect(error).toBeInstanceOf(MediaSourceError);
     expect((error as MediaSourceError).message).toBe("Cannot reach jf.test:8096 (fetch failed)");
     expect((error as MediaSourceError).httpCode).toBeNull();
+  });
+
+  it("keys are by URL so the same ServerId at two addresses stays distinct", () => {
+    const lan = jellyfinSession({ serverUrl: "http://192.168.1.20:8096/", serverName: "Home", serverId: "srv", userId: "u1", userName: "yarmi", accessToken: "a" });
+    const remote = jellyfinSession({ serverUrl: "https://home.duckdns.org:8920", serverName: "Home", serverId: "srv", userId: "u1", userName: "yarmi", accessToken: "b" });
+    expect(jellyfinKeyOf(lan)).toBe("jellyfin:http://192.168.1.20:8096");
+    expect(jellyfinKeyOf(remote)).toBe("jellyfin:https://home.duckdns.org:8920");
+    expect(jellyfinKeyOf(lan)).not.toBe(jellyfinKeyOf(remote));
+    expect(jellyfinLegacyKeyOf(lan)).toBe("jellyfin:srv");
+    expect(jellyfinMigrateStoredKey("jellyfin:srv/series-1|1", [lan])).toBe("jellyfin:http://192.168.1.20:8096/series-1|1");
   });
 });

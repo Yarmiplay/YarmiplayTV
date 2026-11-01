@@ -4,6 +4,8 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
+import com.yarmiplaytv.media.jellyfin.JellyfinSource
+import com.yarmiplaytv.media.mal.MalMapping
 import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
 import kotlinx.coroutines.CoroutineScope
@@ -17,6 +19,7 @@ import kotlinx.coroutines.runBlocking
 import okio.Path.Companion.toOkioPath
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -147,6 +150,47 @@ class DesktopSettingsTest {
     fun `device id is generated once`() = runBlocking {
         val store = desktopSettingsStore(tmp.newFolder("ids"))
         assertEquals(store.deviceId(), store.deviceId())
+    }
+
+    @Test
+    fun `jellyfin preferred and MAL keys migrate from ServerId to URL`() = runBlocking {
+        val dir = tmp.newFolder("jf-keys")
+        val lan = JellyfinSession("http://192.168.1.20:8096", "Living Room", "srv1", "u1", "sam", "tok1")
+        val remote = JellyfinSession("https://home.duckdns.org:8920", "Living Room", "srv1", "u1", "sam", "tok1")
+        val firstRun = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        val store = desktopSettingsStore(dir, firstRun)
+        store.saveServers(listOf(lan, remote), emptyList())
+        // Simulate pre-2.8.7 keys written while only one entry existed.
+        store.saveServerPrefs(preferredServer = "jellyfin:srv1", reportPlayback = true)
+        store.saveMalMapping("jellyfin:srv1/series-1|1", MalMapping(malId = 42, offset = 0))
+        store.saveMalIgnored(setOf("jellyfin:srv1/series-2"), mapOf("jellyfin:srv1/series-2" to "Show"))
+        firstRun.coroutineContext.job.cancelAndJoin()
+
+        val secondRun = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        val next = desktopSettingsStore(dir, secondRun)
+        val settings = next.current()
+        assertEquals(listOf(lan, remote), settings.jellyfinServers)
+        assertEquals(JellyfinSource.keyOf(lan), settings.preferredServer)
+        assertEquals(MalMapping(42, 0), settings.malMappings["${JellyfinSource.keyOf(lan)}/series-1|1"])
+        assertTrue(settings.malIgnored.contains("${JellyfinSource.keyOf(lan)}/series-2"))
+        assertEquals("Show", settings.malIgnoredNames["${JellyfinSource.keyOf(lan)}/series-2"])
+
+        next.migrateJellyfinKeysIfNeeded()
+        assertEquals(JellyfinSource.keyOf(lan), next.current().preferredServer)
+        secondRun.cancel()
+    }
+
+    @Test
+    fun `two jellyfin URLs with the same ServerId stay as separate saved servers`() = runBlocking {
+        val store = desktopSettingsStore(tmp.newFolder("jf-multi"))
+        val lan = JellyfinSession("http://192.168.1.20:8096", "Home LAN", "srv", "u1", "sam", "tok-lan")
+        val remote = JellyfinSession("https://home.duckdns.org:8920", "Home remote", "srv", "u1", "sam", "tok-remote")
+        store.saveServers(listOf(lan, remote), emptyList())
+        val saved = store.current().jellyfinServers
+        assertEquals(2, saved.size)
+        assertEquals(lan.accessToken, saved.first { it.serverUrl == lan.serverUrl }.accessToken)
+        assertEquals(remote.accessToken, saved.first { it.serverUrl == remote.serverUrl }.accessToken)
+        assertNotEquals(JellyfinSource.keyOf(lan), JellyfinSource.keyOf(remote))
     }
 
     @Test

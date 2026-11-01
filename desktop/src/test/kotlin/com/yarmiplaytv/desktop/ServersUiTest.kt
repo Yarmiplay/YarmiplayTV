@@ -22,11 +22,14 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
+import com.yarmiplaytv.media.jellyfin.JellyfinSource
 import com.yarmiplaytv.media.plex.PlexSession
+import com.yarmiplaytv.media.plex.PlexSource
 import com.yarmiplaytv.ui.mobile.MobileServersScreen
 import com.yarmiplaytv.ui.mobile.MobileTheme
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
+import com.yarmiplaytv.ui.shared.serverTag
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -89,10 +92,16 @@ class ServersUiTest {
 
     @Test
     fun `every server is listed and signing out removes only that one`() = runComposeUiTest {
+        val living = jellyfin("living", "Living room")
+        val office = jellyfin("office", "Office")
+        val den = PlexSession("http://127.0.0.1:1/den", "Den", "den", "sam", "server-token", "account-token")
+        val livingTag = serverTag(JellyfinSource.keyOf(living))
+        val officeTag = serverTag(JellyfinSource.keyOf(office))
+        val denTag = serverTag(PlexSource.keyOf(den))
         onMain {
-            app.addJellyfin(jellyfin("living", "Living room"))
-            app.addJellyfin(jellyfin("office", "Office"))
-            app.addPlex(PlexSession("http://127.0.0.1:1/den", "Den", "den", "sam", "server-token", "account-token"))
+            app.addJellyfin(living)
+            app.addJellyfin(office)
+            app.addPlex(den)
         }
 
         val lifecycle = object : LifecycleOwner {
@@ -107,14 +116,14 @@ class ServersUiTest {
             }
         }
 
-        listOf("jellyfin_living", "jellyfin_office", "plex_den").forEach { onNodeWithTag("server_$it").assertIsDisplayed() }
+        listOf(livingTag, officeTag, denTag).forEach { onNodeWithTag("server_$it").assertIsDisplayed() }
         onNodeWithText("Living room").assertIsDisplayed()
         onNodeWithText("Office").assertIsDisplayed()
 
-        onNodeWithTag("signout_jellyfin_office").performClick()
-        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("server_jellyfin_office").fetchSemanticsNodes().isEmpty() }
-        onNodeWithTag("server_jellyfin_living").assertIsDisplayed()
-        onNodeWithTag("server_plex_den").assertIsDisplayed()
+        onNodeWithTag("signout_$officeTag").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("server_$officeTag").fetchSemanticsNodes().isEmpty() }
+        onNodeWithTag("server_$livingTag").assertIsDisplayed()
+        onNodeWithTag("server_$denTag").assertIsDisplayed()
 
         val saved = runBlocking {
             withTimeout(5_000) {

@@ -33,6 +33,8 @@ class HostJellyfinSharing(
     private val saved: () -> List<JellyfinSession>,
     private val enabled: () -> Boolean,
     private val save: (JellyfinSession) -> Unit,
+    /** When a shared entry's address changed; defaults to [save]. */
+    private val replace: (previous: JellyfinSession, session: JellyfinSession) -> Unit = { _, next -> save(next) },
 ) {
     private data class Offer(val shared: SharedJellyfin, val session: YarmiplaySession?, val on: Boolean)
 
@@ -77,7 +79,7 @@ class HostJellyfinSharing(
                 // Its address doesn't answer from here; another one of the host's may.
                 val url = probe(candidates, shared.serverId) ?: return
                 val moved = existing.copy(serverUrl = url, candidateUrls = candidates, lanAddress = lanAddress(url, session))
-                if (runCatching { jellyfin.validate(moved) }.getOrDefault(false)) save(moved)
+                if (runCatching { jellyfin.validate(moved) }.getOrDefault(false)) replace(existing, moved)
                 return
             }
             // A server the user signed in to themselves stays theirs, even with an expired sign-in.

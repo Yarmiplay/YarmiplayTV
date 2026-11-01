@@ -227,6 +227,7 @@ class AppContainer(
         saved = { jellyfinServers.value.map { it.session } },
         enabled = { settings.value.addSharedServers },
         save = ::addJellyfin,
+        replace = ::replaceJellyfin,
     )
     /** Starts checking only when the host calls [Updates.checkOnLaunch]. */
     val updates = Updates(scope, settingsStore, appVersion)
@@ -252,6 +253,8 @@ class AppContainer(
 
     init {
         scope.launch { WhatsNew.onLaunch(settingsStore, appVersion) }
+        // 2.8.7+: rewrite preferred / MAL keys still stored as jellyfin:<ServerId> to jellyfin:<url>.
+        scope.launch { settingsStore.migrateJellyfinKeysIfNeeded() }
         scope.launch {
             settings.collect { s ->
                 sync.syncSettings = s.sync
@@ -392,8 +395,27 @@ class AppContainer(
         }
     }
 
-    /** Adds a Jellyfin server, or replaces the saved sign-in for the same server. */
+    /** Adds a Jellyfin server, or replaces the saved sign-in for the same address. */
     fun addJellyfin(session: JellyfinSession) = put(JellyfinSource(jellyfinClient, session))
+
+    /**
+     * Updates a saved Jellyfin entry when its address (and thus [MediaSource.key]) changed,
+     * e.g. a host-shared server moved to another of the host's addresses.
+     */
+    fun replaceJellyfin(previous: JellyfinSession, session: JellyfinSession) {
+        if (previous.serverUrl.trim().trimEnd('/') == session.serverUrl.trim().trimEnd('/')) {
+            addJellyfin(session)
+            return
+        }
+        rememberLanAddress(session)
+        val oldKey = JellyfinSource.keyOf(previous)
+        val newSource = JellyfinSource(jellyfinClient, session)
+        val updated = _servers.updateAndGet { list ->
+            sorted(list.filter { it.key != oldKey && it.key != newSource.key } + newSource)
+        }
+        save(updated)
+        scope.launch { runCatching { newSource.refreshIndex() } }
+    }
 
     /** Adds a Plex server, or replaces the saved sign-in for the same server. */
     fun addPlex(session: PlexSession) = put(PlexSource(plexClient, session))

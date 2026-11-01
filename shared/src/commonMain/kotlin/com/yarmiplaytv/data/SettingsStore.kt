@@ -459,11 +459,19 @@ class SettingsStore(
         val defaults = AppSettings(playback = PlaybackPrefs(pictureInPicture = !isTv, stayConnectedMinimized = !isTv))
         val jellyfinServers = p[Keys.jfServers]?.let { decode(it, jellyfinList) } ?: listOfNotNull(legacyJellyfin(p))
         val plexServers = p[Keys.pxServers]?.let { decode(it, plexList) } ?: listOfNotNull(legacyPlex(p))
-        val preferred = when (val saved = p[Keys.preferredServer] ?: "") {
+        val preferredRaw = when (val saved = p[Keys.preferredServer] ?: "") {
             JellyfinSource.KIND -> jellyfinServers.firstOrNull()?.let(JellyfinSource::keyOf) ?: ""
             PlexSource.KIND -> plexServers.firstOrNull()?.let(PlexSource::keyOf) ?: ""
             else -> saved
         }
+        // 2.8.7+: Jellyfin keys are by URL; rewrite preferred / MAL keys still stored as jellyfin:<ServerId>.
+        val preferred = JellyfinSource.migrateStoredKey(preferredRaw, jellyfinServers)
+        val malMappingsRaw = p[Keys.malMappings]?.let { runCatching { json.decodeFromString(malMappingsSerializer, it) }.getOrNull() } ?: emptyMap()
+        val malIgnoredRaw = p[Keys.malIgnored] ?: emptySet()
+        val malIgnoredNamesRaw = p[Keys.malIgnoredNames]?.associate { it.substringBefore('\t') to it.substringAfter('\t', "") } ?: emptyMap()
+        val malMappings = malMappingsRaw.mapKeys { (k, _) -> JellyfinSource.migrateStoredKey(k, jellyfinServers) }
+        val malIgnored = malIgnoredRaw.map { JellyfinSource.migrateStoredKey(it, jellyfinServers) }.toSet()
+        val malIgnoredNames = malIgnoredNamesRaw.mapKeys { (k, _) -> JellyfinSource.migrateStoredKey(k, jellyfinServers) }
         return AppSettings(
             syncplay = SyncplayProfile(
                 host = p[Keys.host] ?: defaults.syncplay.host,
@@ -540,12 +548,44 @@ class SettingsStore(
             mal = p[Keys.malAccount]?.let { runCatching { json.decodeFromString(MalAccount.serializer(), it) }.getOrNull() },
             malAutoUpdate = p[Keys.malAuto] ?: defaults.malAutoUpdate,
             malAskFirst = p[Keys.malAsk] ?: defaults.malAskFirst,
-            malMappings = p[Keys.malMappings]?.let { runCatching { json.decodeFromString(malMappingsSerializer, it) }.getOrNull() } ?: emptyMap(),
-            malIgnored = p[Keys.malIgnored] ?: emptySet(),
-            malIgnoredNames = p[Keys.malIgnoredNames]?.associate { it.substringBefore('	') to it.substringAfter('	', "") } ?: emptyMap(),
+            malMappings = malMappings,
+            malIgnored = malIgnored,
+            malIgnoredNames = malIgnoredNames,
             malQueue = p[Keys.malQueue]?.let { runCatching { json.decodeFromString(malQueueSerializer, it) }.getOrNull() } ?: emptyList(),
             savedRooms = p[Keys.savedRooms]?.let(SavedRooms::decode) ?: emptyList(),
         )
+    }
+
+    /**
+     * Writes remapped Jellyfin preferred / MAL keys (ServerId → URL) back to disk once after upgrading to 2.8.7+.
+     * Safe to call every launch; no-ops when nothing needs rewriting.
+     */
+    suspend fun migrateJellyfinKeysIfNeeded() = dataStore.edit { prefs ->
+        val jellyfin = prefs[Keys.jfServers]?.let { decode(it, jellyfinList) } ?: listOfNotNull(legacyJellyfin(prefs))
+        if (jellyfin.isEmpty()) return@edit
+        val preferred = prefs[Keys.preferredServer]
+        if (preferred != null) {
+            val migrated = JellyfinSource.migrateStoredKey(preferred, jellyfin)
+            if (migrated != preferred) prefs[Keys.preferredServer] = migrated
+        }
+        val mappingsRaw = prefs[Keys.malMappings]?.let { runCatching { json.decodeFromString(malMappingsSerializer, it) }.getOrNull() }
+        if (mappingsRaw != null) {
+            val migrated = mappingsRaw.mapKeys { (k, _) -> JellyfinSource.migrateStoredKey(k, jellyfin) }
+            if (migrated != mappingsRaw) prefs[Keys.malMappings] = json.encodeToString(malMappingsSerializer, migrated)
+        }
+        val ignoredRaw = prefs[Keys.malIgnored]
+        if (ignoredRaw != null) {
+            val migrated = ignoredRaw.map { JellyfinSource.migrateStoredKey(it, jellyfin) }.toSet()
+            if (migrated != ignoredRaw) prefs[Keys.malIgnored] = migrated
+        }
+        val namesRaw = prefs[Keys.malIgnoredNames]
+        if (namesRaw != null) {
+            val parsed = namesRaw.associate { it.substringBefore('\t') to it.substringAfter('\t', "") }
+            val migrated = parsed.mapKeys { (k, _) -> JellyfinSource.migrateStoredKey(k, jellyfin) }
+            if (migrated != parsed) {
+                prefs[Keys.malIgnoredNames] = migrated.map { (k, v) -> "$k\t${v.replace('\t', ' ')}" }.toSet()
+            }
+        }
     }
 
     // --- MyAnimeList: everything under mal_*, on this device only -------------------------------

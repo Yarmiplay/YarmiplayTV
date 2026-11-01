@@ -2,7 +2,7 @@ import { HostJellyfinSharing, type AuthorizeResult } from "../lib/sync/hostJelly
 import type { RoomSession } from "../lib/sync/room";
 import type { SyncplayClient, SyncplayEvent } from "../lib/syncplay/client";
 import { session } from "./context";
-import { addJellyfin, jellyfinClient, sessions } from "./media";
+import { addJellyfin, jellyfinClient, replaceJellyfin, sessions } from "./media";
 import { settings } from "./settings";
 
 /**
@@ -35,6 +35,7 @@ const sharing = new HostJellyfinSharing({
   saved: () => sessions.value.jellyfin,
   enabled: () => settings.value.addSharedServers,
   save: addJellyfin,
+  replace: replaceJellyfin,
   authorize: async (code) => {
     const client = current?.syncClient;
     return client ? authorizeWith(client, code) : null;

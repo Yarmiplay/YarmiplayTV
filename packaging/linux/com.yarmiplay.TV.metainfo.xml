@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.8.7" date="2026-11-01">
+      <description>
+        <p>Jellyfin: keep separate saved entries for the same server at different addresses (e.g. LAN and remote URL) instead of replacing one with the other.</p>
+      </description>
+    </release>
     <release version="2.8.6" date="2026-10-30">
       <description>
         <p>Empty playlist: clear the shared room playlist from phone, tablet, TV, desktop, and web after a short confirmation.</p>

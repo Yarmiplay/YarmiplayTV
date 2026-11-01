@@ -496,8 +496,37 @@ class JellyfinSource(
     companion object {
         const val KIND = "jellyfin"
 
-        /** The [key] of [session]'s server; signing in to the same server again gives the same key. */
-        fun keyOf(session: JellyfinSession): String = "$KIND:${session.serverId.ifEmpty { session.serverUrl }}"
+        /**
+         * Identity of a saved Jellyfin entry: its base URL (not ServerId).
+         * The same Jellyfin instance at a LAN IP and a public URL are two entries so both stay saved.
+         * Signing in again at the same address replaces that entry.
+         */
+        fun keyOf(session: JellyfinSession): String {
+            val url = session.serverUrl.trim().trimEnd('/')
+            return "$KIND:${url.ifEmpty { session.serverId }}"
+        }
+
+        /** Pre-2.8.7 key for a session (`jellyfin:<ServerId>`), or null when ServerId is empty. */
+        fun legacyKeyOf(session: JellyfinSession): String? =
+            session.serverId.trim().takeIf { it.isNotEmpty() }?.let { "$KIND:$it" }
+
+        /**
+         * Rewrites a preferred-server / MAL key that used `jellyfin:<ServerId>` to `jellyfin:<url>`
+         * for [servers]. Leaves the key unchanged when it doesn't match a legacy id.
+         */
+        fun migrateStoredKey(key: String, servers: List<JellyfinSession>): String {
+            if (key.isEmpty() || !key.startsWith("$KIND:")) return key
+            for (session in servers) {
+                val legacy = legacyKeyOf(session) ?: continue
+                val modern = keyOf(session)
+                if (legacy == modern) continue
+                if (key == legacy || key.startsWith("$legacy/") || key.startsWith("$legacy|")) {
+                    return modern + key.removePrefix(legacy)
+                }
+            }
+            return key
+        }
+
         private const val TICKS_PER_SECOND = 10_000_000.0
         private const val PAGE_SIZE = 2000
         private const val MIN_REFRESH_MS = 30_000L

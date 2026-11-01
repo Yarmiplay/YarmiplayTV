@@ -1,3 +1,5 @@
+import type { JellyfinSession } from "../media/jellyfin/client";
+import { jellyfinMigrateStoredKey } from "../media/jellyfin/source";
 import { Store } from "../store";
 import type { MalMapping } from "./matcher";
 import { compactUpdate, readAccount, readQueue, type MalAccount, type MalQueued } from "./models";
@@ -216,5 +218,39 @@ export class MalStore {
   clear() {
     for (const key of ALL_KEYS) this.write(key, null);
     this.settings.set(defaultMalSettings());
+  }
+
+  /**
+   * Rewrites preferred-style MAL keys still stored as `jellyfin:<ServerId>` to `jellyfin:<url>` (2.8.7+).
+   * Safe to call every launch; no-ops when nothing needs rewriting.
+   */
+  migrateJellyfinKeys(servers: Array<Pick<JellyfinSession, "serverId" | "serverUrl">>) {
+    if (servers.length === 0) return;
+    const mapKey = (key: string) => jellyfinMigrateStoredKey(key, servers);
+    const mappings: Record<string, MalMapping> = {};
+    let mappingsChanged = false;
+    for (const [k, v] of Object.entries(this.value.mappings)) {
+      const next = mapKey(k);
+      if (next !== k) mappingsChanged = true;
+      mappings[next] = v;
+    }
+    const ignored = this.value.ignored.map(mapKey);
+    const ignoredChanged = ignored.some((k, i) => k !== this.value.ignored[i]);
+    const ignoredNames: Record<string, string> = {};
+    let namesChanged = false;
+    for (const [k, v] of Object.entries(this.value.ignoredNames)) {
+      const next = mapKey(k);
+      if (next !== k) namesChanged = true;
+      ignoredNames[next] = v;
+    }
+    if (mappingsChanged) {
+      this.write(MalKeys.mappings, JSON.stringify(mappings));
+      this.change({ mappings });
+    }
+    if (ignoredChanged || namesChanged) {
+      this.write(MalKeys.ignored, JSON.stringify(ignored));
+      this.write(MalKeys.ignoredNames, JSON.stringify(Object.entries(ignoredNames).map(([k, v]) => `${k}\t${v}`)));
+      this.change({ ignored, ignoredNames });
+    }
   }
 }
