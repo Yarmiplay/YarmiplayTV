@@ -24,14 +24,24 @@ import java.net.URI
 import java.nio.file.Paths
 
 data class DesktopMpvOptions(
-    /** mpv --hwdec value; "no" forces software decoding. */
-    val hwdec: String = "auto",
+    /**
+     * mpv --hwdec value. Prefer `auto-copy` with the GL→CPU readback path so NVDEC/D3D11
+     * decode stays predictable on mid-range Windows GPUs; `no` forces software.
+     */
+    val hwdec: String = "auto-copy",
     val audioLanguages: String = "",
     val subtitleLanguages: String = "eng,en",
     val cacheMegabytes: Int = 128,
     /** "auto" (GPU, falling back to software), "gl" or "sw". */
     val render: String = System.getProperty("yarmiplaytv.render") ?: "auto",
     val logLevel: String = "warn",
+    /**
+     * Cap the longest edge of the GL FBO / PBO readback (pixels). 0 = uncapped.
+     * Default 1920 keeps 4K windows from reading back 4K BGRA every frame.
+     */
+    val maxRenderEdge: Int = 1920,
+    /** When true: smaller FBO (1280), lighter demux cache, software-leaning defaults. */
+    val lowEnd: Boolean = false,
 )
 
 /**
@@ -43,25 +53,38 @@ class DesktopMpvPlayer(
     options: DesktopMpvOptions = DesktopMpvOptions(),
     refreshRateHz: () -> Double = ::defaultRefreshRate,
 ) : Player, AutoCloseable {
+    private val effectiveOptions = if (options.lowEnd) {
+        options.copy(
+            hwdec = if (options.hwdec == "no") "no" else "auto-copy",
+            cacheMegabytes = minOf(options.cacheMegabytes, 64),
+            maxRenderEdge = if (options.maxRenderEdge <= 0) 1280 else minOf(options.maxRenderEdge, 1280),
+        )
+    } else options
+
     private val core = MpvCore(
         buildMap {
-            put("hwdec", options.hwdec)
+            put("hwdec", effectiveOptions.hwdec)
             put("tls-verify", "no")
             put("cache", "yes")
-            put("demuxer-max-bytes", "${options.cacheMegabytes}MiB")
-            put("demuxer-max-back-bytes", "${options.cacheMegabytes / 2}MiB")
+            put("demuxer-max-bytes", "${effectiveOptions.cacheMegabytes}MiB")
+            put("demuxer-max-back-bytes", "${effectiveOptions.cacheMegabytes / 2}MiB")
             put("save-position-on-quit", "no")
             put("osd-duration", "2500")
             put("sub-scale-with-window", "yes")
             put("user-agent", "YarmiplayTV")
             put("audio-client-name", "YarmiplayTV")
-            if (options.audioLanguages.isNotBlank()) put("alang", options.audioLanguages)
-            if (options.subtitleLanguages.isNotBlank()) put("slang", options.subtitleLanguages)
+            if (effectiveOptions.audioLanguages.isNotBlank()) put("alang", effectiveOptions.audioLanguages)
+            if (effectiveOptions.subtitleLanguages.isNotBlank()) put("slang", effectiveOptions.subtitleLanguages)
         },
-        logLevel = options.logLevel,
+        logLevel = effectiveOptions.logLevel,
     )
 
-    val renderer: VideoRenderer = VideoRenderer.create(core.lib, core.handle, options.render) {
+    val renderer: VideoRenderer = VideoRenderer.create(
+        core.lib,
+        core.handle,
+        effectiveOptions.render,
+        maxRenderEdge = effectiveOptions.maxRenderEdge,
+    ) {
         System.err.println("mpv: GPU renderer unavailable, using software: ${it.message}")
     }
 
@@ -118,6 +141,9 @@ class DesktopMpvPlayer(
             "width" to LibMpv.FORMAT_INT64,
             "height" to LibMpv.FORMAT_INT64,
             "video-params/aspect" to LibMpv.FORMAT_DOUBLE,
+            "frame-drop-count" to LibMpv.FORMAT_INT64,
+            "decoder-frame-drop-count" to LibMpv.FORMAT_INT64,
+            "avsync" to LibMpv.FORMAT_DOUBLE,
         ).forEach { (name, format) -> core.observe(name, format) }
         core.startEvents(::onEvent)
         compensator.start(scope)
@@ -364,6 +390,11 @@ class DesktopMpvPlayer(
             "eof-reached" -> (value as? Boolean)?.let { v -> _state.update { it.copy(eofReached = v) } }
             "video-codec" -> _state.update { it.copy(videoCodec = value as? String) }
             "hwdec-current" -> _state.update { it.copy(hwdec = value as? String) }
+            "frame-drop-count" -> (value as? Long)?.let { v -> _state.update { it.copy(frameDrops = v) } }
+            "decoder-frame-drop-count" -> (value as? Long)?.let { v -> _state.update { it.copy(decoderFrameDrops = v) } }
+            "avsync" -> (value as? Double)?.let { v ->
+                _state.update { it.copy(avSync = v, displayLatencyMs = compensator.appliedMs) }
+            }
         }
     }
 

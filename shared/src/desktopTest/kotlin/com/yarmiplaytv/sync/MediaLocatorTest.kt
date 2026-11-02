@@ -179,4 +179,16 @@ class MediaLocatorTest {
         withRelay.markLocalUntrusted(FileLocalLibrary.uriOf(partialFile.toPath()))
         assertTrue(withRelay.locateForRoom(movie) is RoomLocation.Relay)
     }
+
+    @Test
+    fun `untrusted local still beats Jellyfin when no larger relay exists`() = runBlocking {
+        val media = tmp.newFolder("LocalWins")
+        val file = File(media, movie).apply { writeBytes(ByteArray(10)) }
+        local.addFolder(FileLocalLibrary.uriOf(media.toPath()))
+        withTimeout(10_000) { while (local.files.value.isEmpty()) delay(20) }
+        servers.value = listOf(FakeMediaSource(JF, exact = mapOf(movie to 10)))
+        locator.markLocalUntrusted(FileLocalLibrary.uriOf(file.toPath()))
+        val location = locate()
+        assertTrue("expected Local, got $location", location is RoomLocation.Local)
+    }
 }

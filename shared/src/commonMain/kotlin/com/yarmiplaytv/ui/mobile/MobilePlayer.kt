@@ -509,7 +509,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         val specs = listOfNotNull(
                                             if (state.duration > 0) formatClock(state.duration) else nowPlaying?.durationHint?.takeIf { it > 0 }?.let { formatClock(it) },
                                             nowPlaying?.sizeBytes?.takeIf { it > 0 }?.let { formatSize(it) },
-                                            playbackInfo(state).takeIf { it.isNotBlank() },
+                                            playbackInfo(state, showStats = settings.playback.showPlaybackStats).takeIf { it.isNotBlank() },
                                         ).joinToString(" · ")
                                         if (specs.isNotBlank()) {
                                             Text(
@@ -631,7 +631,15 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                             delay(250)
                                         }
                                     }
-                                    TvSeekBar(state, position, ::touch, container.seekFrames, segments, onVideo = false) { container.player.seek(it) }
+                                    TvSeekBar(
+                                        state,
+                                        position,
+                                        ::touch,
+                                        container.seekFrames,
+                                        segments,
+                                        onVideo = false,
+                                        showStats = settings.playback.showPlaybackStats,
+                                    ) { container.player.seek(it) }
 
                                     Spacer(Modifier.height(8.dp))
 
@@ -879,6 +887,7 @@ private fun BottomControls(
     modifier: Modifier = Modifier,
 ) {
     val state by container.player.state.collectAsStateWithLifecycle()
+    val settings by container.settings.collectAsStateWithLifecycle()
     var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -894,7 +903,14 @@ private fun BottomControls(
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         val segments by container.skips.segments.collectAsStateWithLifecycle()
-        TvSeekBar(state, position, onInteract, container.seekFrames, segments) { container.player.seek(it) }
+        TvSeekBar(
+            state,
+            position,
+            onInteract,
+            container.seekFrames,
+            segments,
+            showStats = settings.playback.showPlaybackStats,
+        ) { container.player.seek(it) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             PlayerVolumeControl(onInteract, Modifier.padding(end = 8.dp))
             if (inRoom) {

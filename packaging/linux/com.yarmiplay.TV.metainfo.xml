@@ -88,7 +88,7 @@
   <releases>
     <release version="2.9.0" date="2026-11-02">
       <description>
-        <p>Voice: prefer Syncplay-port media (same /yarmiplay/voice path as browsers) with legacy 9000 fallback; clear notice when the server lacks voice; receiving-audio diagnostic. Desktop: faster mpv defaults, drop/A-V stats, Low-end option; prefer local media over Jellyfin/Plex; voice RAM jitter prune.</p>
+        <p>Voice: Syncplay-port media path (same /yarmiplay/voice as browsers) with legacy 9000 fallback; notice when the server lacks voice; receiving-audio diagnostic. Always prefer a local media-folder match over Jellyfin/Plex. Desktop: auto-copy hwdec, capped readback, capped display-latency compensation, Low-end performance option, optional drop/A-V stats; softer sync slowdown threshold.</p>
       </description>
     </release>
     <release version="2.8.9" date="2026-11-02">

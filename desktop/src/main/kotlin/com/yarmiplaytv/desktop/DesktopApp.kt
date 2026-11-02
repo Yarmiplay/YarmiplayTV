@@ -158,11 +158,15 @@ private fun createContainer(configDir: File, store: SettingsStore): AppContainer
         deviceName = DevicePlatform.deviceModel.ifEmpty { "Desktop" },
         appVersion = APP_VERSION,
         createPlayer = { initial ->
+            val lowEnd = initial.playback.lowEndPerformance
             DesktopMpvPlayer(
                 DesktopMpvOptions(
-                    hwdec = if (initial.playback.hardwareDecoding) "auto" else "no",
+                    // auto-copy: predictable with GL→CPU readback on Windows mid-range GPUs (e.g. GTX 1060).
+                    hwdec = if (initial.playback.hardwareDecoding) "auto-copy" else "no",
                     audioLanguages = initial.playback.audioLanguages,
                     subtitleLanguages = initial.playback.subtitleLanguages,
+                    lowEnd = lowEnd,
+                    maxRenderEdge = if (lowEnd) 1280 else 1920,
                 ),
             )
         },

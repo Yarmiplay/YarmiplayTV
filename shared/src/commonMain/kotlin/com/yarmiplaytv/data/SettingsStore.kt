@@ -174,6 +174,13 @@ data class PlaybackPrefs(
     val detectOnAnyNetwork: Boolean = false,
     /** mpv `sub-scale`. 1 is the normal size; G and F change it by a tenth. */
     val subtitleScale: Double = SubtitleScale.DEFAULT,
+    /**
+     * Desktop: smaller video readback (1280 edge), lighter demux cache. Helps mid/low GPUs
+     * (e.g. GTX 1060) where GL→CPU frame copy dominates latency. Takes effect after restart.
+     */
+    val lowEndPerformance: Boolean = false,
+    /** Desktop: show dropped-frame / A-V offset / display-latency under the seek bar. */
+    val showPlaybackStats: Boolean = false,
 )
 
 data class AppSettings(
@@ -405,6 +412,8 @@ class SettingsStore(
         val detectSkips = booleanPreferencesKey("pb_detect_skips")
         val detectAnyNetwork = booleanPreferencesKey("pb_detect_any_network")
         val subScale = doublePreferencesKey("pb_sub_scale")
+        val lowEndPerformance = booleanPreferencesKey("pb_low_end")
+        val showPlaybackStats = booleanPreferencesKey("pb_show_stats")
 
         /** JSON lists of [JellyfinSession] and [PlexSession]. */
         val jfServers = stringPreferencesKey("jf_servers")
@@ -506,6 +515,8 @@ class SettingsStore(
                 detectSkips = p[Keys.detectSkips] ?: defaults.playback.detectSkips,
                 detectOnAnyNetwork = p[Keys.detectAnyNetwork] ?: defaults.playback.detectOnAnyNetwork,
                 subtitleScale = p[Keys.subScale] ?: defaults.playback.subtitleScale,
+                lowEndPerformance = p[Keys.lowEndPerformance] ?: false,
+                showPlaybackStats = p[Keys.showPlaybackStats] ?: false,
             ),
             jellyfinServers = jellyfinServers,
             lastJellyfinUrl = p[Keys.jfLastUrl] ?: "",
@@ -873,6 +884,8 @@ class SettingsStore(
             it[Keys.detectSkips] = prefs.detectSkips
             it[Keys.detectAnyNetwork] = prefs.detectOnAnyNetwork
             it[Keys.subScale] = prefs.subtitleScale
+            it[Keys.lowEndPerformance] = prefs.lowEndPerformance
+            it[Keys.showPlaybackStats] = prefs.showPlaybackStats
         }
     }
 

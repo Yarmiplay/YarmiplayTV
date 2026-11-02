@@ -101,6 +101,14 @@ data class PlaybackState(
     val displayAspect: Double = 0.0,
     /** The file's chapters, in order; empty when it has none. */
     val chapters: List<Chapter> = emptyList(),
+    /** mpv `frame-drop-count` (VO drops); null when the platform does not report it. */
+    val frameDrops: Long? = null,
+    /** mpv `decoder-frame-drop-count`; null when unknown. */
+    val decoderFrameDrops: Long? = null,
+    /** mpv `avsync` in seconds (negative = audio behind); null when unknown. */
+    val avSync: Double? = null,
+    /** Display handoff compensation currently applied to audio, in ms (desktop). */
+    val displayLatencyMs: Double? = null,
 )
 
 /** A chapter of the playing file: its [title] (when it has one) and where it starts, in seconds. */

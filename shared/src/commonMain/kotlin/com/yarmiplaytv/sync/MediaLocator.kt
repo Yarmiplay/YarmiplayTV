@@ -50,22 +50,28 @@ class MediaLocator(
     val hasServers: Boolean get() = servers.value.isNotEmpty()
 
     /**
-     * A file someone in the room picked: local media folders first (unless a larger copy is available on the room's
-     * relay, or the local copy had an uninitiated demuxer jump); then an exact filename on any server (the preferred
-     * one breaks ties); only when no server has it exactly, a looser match (normalized name, then title search) on the
-     * preferred server, then the others; last, another viewer's copy through the Syncplay server's file relay.
+     * A file someone in the room picked: local media folders first. A larger room-relay copy (or an untrusted
+     * local URI after an uninitiated demuxer jump) may replace local with relay — but a local match never loses
+     * to Jellyfin/Plex. Then exact filename on any server (preferred breaks ties); then looser matches; last, relay.
      */
     suspend fun locateForRoom(fileName: String): RoomLocation {
         val relayed = relay(fileName)
         val localMatch = local.resolve(fileName)
         if (localMatch != null) {
             val localSize = localMatch.file.sizeBytes
-            val untrusted = localMatch.file.uri in untrustedLocalUris || (relayed != null && localSize > 0 && relayed.size > localSize)
-            if (!untrusted) return RoomLocation.Local(localMatch)
-            if (relayed != null && (localSize <= 0 || relayed.size >= localSize)) return RoomLocation.Relay(relayed)
+            val incompleteVsRelay = relayed != null && localSize > 0 && relayed.size > localSize
+            val untrusted = localMatch.file.uri in untrustedLocalUris
+            // Prefer a complete peer relay over a short/broken local file — never fall through to a server.
+            if ((untrusted || incompleteVsRelay) &&
+                relayed != null &&
+                (localSize <= 0 || relayed.size >= localSize)
+            ) {
+                return RoomLocation.Relay(relayed)
+            }
+            return RoomLocation.Local(localMatch)
         }
         val servers = ordered(servers.value)
-        if (servers.isEmpty()) return relayOr(fileName, "Not in your media folders", fallback = localMatch)
+        if (servers.isEmpty()) return relayOr(fileName, "Not in your media folders", fallback = null)
 
         val exact = coroutineScope {
             servers.map { s -> async { runCatching { s.findExact(fileName) }.getOrNull()?.let { s to it } } }.awaitAll()

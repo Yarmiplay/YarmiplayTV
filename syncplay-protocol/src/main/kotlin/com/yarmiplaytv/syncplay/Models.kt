@@ -140,7 +140,8 @@ object Constants {
     const val SEEK_THRESHOLD = 1.0
     const val DEFAULT_REWIND_THRESHOLD = 4.0
     const val SLOWDOWN_RATE = 0.95
-    const val DEFAULT_SLOWDOWN_KICKIN_THRESHOLD = 1.5
+    /** Was 1.5; raised so soft 0.95× catch-up is less mushy on desktop with display handoff latency. */
+    const val DEFAULT_SLOWDOWN_KICKIN_THRESHOLD = 2.5
     const val SLOWDOWN_RESET_THRESHOLD = 0.1
     const val DIFFERENT_DURATION_THRESHOLD = 2.5
     const val PROTOCOL_TIMEOUT = 12.5
