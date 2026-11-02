@@ -81,10 +81,13 @@ export const openWebSocket: TransportFactory = (host, port, tls) =>
     };
     socket.onmessage = (event) => {
       if (typeof event.data !== "string") {
-        if (event.data instanceof ArrayBuffer) transport.onBinary(event.data);
-        else if (ArrayBuffer.isView(event.data)) {
+        if (event.data instanceof ArrayBuffer) {
+          transport.onBinary(event.data);
+        } else if (ArrayBuffer.isView(event.data)) {
           const view = event.data;
-          transport.onBinary(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength));
+          const copy = new Uint8Array(view.byteLength);
+          copy.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+          transport.onBinary(copy.buffer);
         }
         return;
       }
