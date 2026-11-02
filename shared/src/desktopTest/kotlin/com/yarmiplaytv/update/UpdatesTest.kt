@@ -191,6 +191,17 @@ class UpdatesTest {
     }
 
     @Test
+    fun `a failed install with exit detail shows the reason`() {
+        server.enqueue(MockResponse().setBody(manifest()))
+        val updates = updates(FakeInstaller())
+        updates.checkOnLaunch(failedInstall = "1.2.0|exit=5|Access denied")
+        awaitTrue { updates.state.value != null }
+        val message = (updates.state.value as UpdateState.Failed).message
+        assertTrue(message.contains("exit code 5"))
+        assertTrue(message.contains("Access denied"))
+    }
+
+    @Test
     fun `a failed download keeps the notice with the error`() {
         server.enqueue(MockResponse().setBody(manifest()))
         val updates = updates(FakeInstaller(failWith = "checksum mismatch"))

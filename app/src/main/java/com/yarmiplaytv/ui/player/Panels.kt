@@ -226,12 +226,13 @@ internal fun RoomPanel(container: AppContainer, nav: Navigator, focus: FocusRequ
         current
     }
     val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
+    val voiceLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { RoomPanelTop(container, room, relayStatus, skip, focus) }
         item {
             voiceBanner(voiceUi)?.let { Text(it, color = if (voiceUi.micLive) AppColors.Ready else AppColors.TextDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("tv_voice_banner")) }
             if (voiceUi.showMicButton) {
-                TvMicButton(voiceUi, onToggle = { container.voice.toggleTalk() })
+                TvMicButton(voiceUi, onToggle = { container.voice.toggleTalk() }, level = voiceLevel)
             }
             if (voiceUi.showVoiceMembershipButton) {
                 if (voiceUi.voiceMembershipIsLeave) {

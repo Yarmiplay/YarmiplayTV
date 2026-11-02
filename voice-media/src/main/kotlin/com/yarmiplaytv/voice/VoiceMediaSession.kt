@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -39,8 +40,11 @@ class VoiceMediaSession(
     private var inbound = Channel<Triple<Long, Int, ByteArray>>(Channel.UNLIMITED)
     private val mixBuf = ShortArray(960)
     private val receivedFrames = AtomicBoolean(false)
-    private val lastRms = java.util.concurrent.atomic.AtomicReference(0.0)
+    private val lastRms = AtomicReference(0.0)
+    private val captureRms = AtomicReference(0.0)
     private val lastSender = java.util.concurrent.atomic.AtomicLong(Long.MIN_VALUE)
+    /** Senders with real (non-PLC) audible PCM this playback tick — no hangover. */
+    private val audibleSenders = AtomicReference<Set<Long>>(emptySet())
     private val jitter = VoiceJitterBuffer()
     private val noise = VoiceNoiseSuppressor()
     private val preOpus = VoicePcm.FrameAccumulator()
@@ -51,7 +55,35 @@ class VoiceMediaSession(
     val receivedInbound: Boolean get() = transport?.receivedInbound == true
     val decodedAudio: Boolean get() = receivedFrames.get()
     val lastRemoteRms: Double get() = lastRms.get()
+    /** Post-NS capture RMS (0…~32768) while transmitting; decays when muted / not capturing. */
+    val lastCaptureRms: Double get() = captureRms.get()
+    /**
+     * 0…1 mic activity for UI rings: post noise-suppression level while unmuted/transmitting.
+     * Near-silence after VAD stays near 0.
+     */
+    val captureLevel: Float
+        get() {
+            if (!transmitting.get() || selfMuted.get()) return 0f
+            // ~800 RMS ≈ quiet speech after NS; clamp for a smooth ring.
+            return (captureRms.get() / 2500.0).coerceIn(0.0, 1.0).toFloat()
+        }
     val lastRemoteSender: Long? get() = lastSender.get().takeUnless { it == Long.MIN_VALUE }
+
+    /**
+     * Remote senders whose audio we are actually playing right now (decoded packet with energy).
+     * Empties the same 20 ms tick silence / PLC / local mute stops heard audio — no linger.
+     */
+    fun audibleSenderIds(): Set<Long> = audibleSenders.get()
+
+    /**
+     * True while we are transmitting unmuted speech energy, for [sendVoiceActivity].
+     * False the moment capture RMS is near silence or muted — not tied to "mic open",
+     * and not held by VAD hangover.
+     */
+    fun capturingSpeech(): Boolean {
+        if (!transmitting.get() || selfMuted.get()) return false
+        return captureRms.get() > 120.0
+    }
 
     fun resetReceiveStats() {
         receivedFrames.set(false)
@@ -113,19 +145,25 @@ class VoiceMediaSession(
         transport = null
         codec = null
         transmitting.set(false)
+        captureRms.set(0.0)
+        audibleSenders.set(emptySet())
         jitter.clear()
         preOpus.clear()
     }
 
     fun setTransmitting(on: Boolean) {
         transmitting.set(on && !selfMuted.get())
+        if (!transmitting.get()) captureRms.set(0.0)
     }
 
     fun isTransmitting(): Boolean = transmitting.get()
 
     fun setSelfMuted(muted: Boolean) {
         selfMuted.set(muted)
-        if (muted) transmitting.set(false)
+        if (muted) {
+            transmitting.set(false)
+            captureRms.set(0.0)
+        }
     }
 
     fun isSelfMuted(): Boolean = selfMuted.get()
@@ -157,8 +195,15 @@ class VoiceMediaSession(
         val opus = codec ?: return false
         val t = transport ?: return false
         if (pcm.isEmpty()) return true
-        if (!transmitting.get() || selfMuted.get()) return true
+        if (!transmitting.get() || selfMuted.get()) {
+            captureRms.set(0.0)
+            return true
+        }
         val cleaned = noise.process(pcm)
+        // Meter post-NS audio (before VAD zeroing) so the mic ring tracks real pickup.
+        val rms = VoicePcm.rms(cleaned)
+        val prev = captureRms.get()
+        captureRms.set(prev * 0.55 + rms * 0.45)
         for (frame in preOpus.push(cleaned)) {
             // Skip frames the VAD gated to (near) silence when NS is on — already zeroed.
             if (noise.isEnabled() && !noise.lastSpeech && isNearSilence(frame)) continue
@@ -193,20 +238,23 @@ class VoiceMediaSession(
             val start = System.nanoTime()
             val senders = jitter.primedSenders()
             if (senders.isEmpty()) {
+                audibleSenders.set(emptySet())
                 delay(5)
                 continue
             }
+            val heard = LinkedHashSet<Long>()
             for (sender in senders) {
                 if (peerMuted[sender] == true) {
                     jitter.poll(sender, decode = { null }, plc = { null }, fec = { null })
                     continue
                 }
-                val pcm = jitter.poll(
+                val frame = jitter.poll(
                     sender,
                     decode = { opus.decode(it) },
                     plc = { opus.decodePlc() },
                     fec = { opus.decodeFec(it) },
                 ) ?: continue
+                val pcm = frame.pcm
                 lastSender.set(sender)
                 val vol = peerVolume.getOrDefault(sender, 1f) * outputGain
                 val scaled = when {
@@ -218,7 +266,10 @@ class VoiceMediaSession(
                 }
                 var sumSq = 0.0
                 for (s in scaled) sumSq += s.toDouble() * s.toDouble()
-                lastRms.set(sqrt(sumSq / scaled.size.coerceAtLeast(1)))
+                val rms = sqrt(sumSq / scaled.size.coerceAtLeast(1))
+                lastRms.set(rms)
+                // Speaking UI: only real packets with energy count — PLC/silence drops the name this tick.
+                if (!frame.concealed && rms >= AUDIBLE_RMS) heard += sender
                 receivedFrames.set(true)
                 onRemotePcm?.invoke(sender, scaled)
                 if (onRemotePcm == null) {
@@ -233,10 +284,16 @@ class VoiceMediaSession(
                     }
                 }
             }
+            audibleSenders.set(heard)
             val elapsedMs = (System.nanoTime() - start) / 1_000_000L
             val sleep = (20L - elapsedMs).coerceAtLeast(1L)
             delay(sleep)
         }
+    }
+
+    companion object {
+        /** Decoded PCM below this is treated as silence for the speaking-name overlay. */
+        private const val AUDIBLE_RMS = 80.0
     }
 
     private fun isNearSilence(frame: ShortArray): Boolean {
@@ -251,3 +308,6 @@ fun participantSenderId(participantId: String): Long? {
     if (!participantId.startsWith('c')) return null
     return participantId.drop(1).toLongOrNull()
 }
+
+/** Map numeric yv1 sender id → Syncplay participant id (`c17`). */
+fun senderParticipantId(senderId: Long): String = "c$senderId"

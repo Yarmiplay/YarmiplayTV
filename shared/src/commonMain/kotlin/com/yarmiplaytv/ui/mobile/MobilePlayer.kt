@@ -124,7 +124,10 @@ import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.SurfaceInk
 import com.yarmiplaytv.ui.theme.OnVideo
 import com.yarmiplaytv.ui.theme.onVideoLabel
+import com.yarmiplaytv.voice.MicWithActivity
+import com.yarmiplaytv.voice.VoiceSpeakingOverlay
 import com.yarmiplaytv.voice.VoiceUiState
+import com.yarmiplaytv.voice.audibleSpeakingNames
 import com.yarmiplaytv.voice.micControlDescription
 import com.yarmiplaytv.voice.micControlLive
 import com.yarmiplaytv.voice.voiceMembershipDescription
@@ -334,6 +337,15 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         )
 
                         val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
+                        val voiceLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
+                        val speakingNames = remember(voiceUi, settings) { voiceUi.audibleSpeakingNames(settings) }
+                        // Edge speaking list — only while someone is heard; nothing when idle.
+                        VoiceSpeakingOverlay(
+                            speakingNames,
+                            Modifier
+                                .align(if (isPortrait) Alignment.TopStart else Alignment.CenterStart)
+                                .padding(start = 12.dp, top = if (isPortrait) 56.dp else 0.dp),
+                        )
 
                         androidx.compose.animation.AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
                             Box(Modifier.fillMaxSize().testTag(if (isPortrait) "video_overlay" else "player_controls")) {
@@ -354,6 +366,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                             room,
                                             playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls },
                                             micLive = voiceUi.micControlLive(),
+                                            micLevel = voiceLevel,
                                         )
                                     }
                                     if (pip.supported && state.fileLoaded) {
@@ -406,6 +419,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         inRoom = inRoom,
                                         ready = room.isReady == true,
                                         voiceUi = voiceUi,
+                                        voiceLevel = voiceLevel,
                                         onInteract = ::touch,
                                         onSheet = { openSheet(it); touch() },
                                         onMenus = { openMenus(); touch() },
@@ -580,11 +594,13 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                             )
                                         }
                                         // Mic beside Ready — full 48dp target (not crushed by the volume row).
+                                        val portraitLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
                                         PlayerMicButton(
                                             portraitVoice,
                                             onToggle = { container.voice.toggleMic(); touch() },
                                             onVideo = false,
                                             showKeyboardShortcut = false,
+                                            level = portraitLevel,
                                         )
                                         PlayerVoiceMembershipButton(
                                             portraitVoice,
@@ -696,11 +712,13 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                                     onVideo = false,
                                                 )
                                             }
+                                            val controlsLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
                                             PlayerMicButton(
                                                 portraitVoice,
                                                 onToggle = { container.voice.toggleMic(); touch() },
                                                 onVideo = false,
                                                 showKeyboardShortcut = false,
+                                                level = controlsLevel,
                                             )
                                             PlayerVoiceMembershipButton(
                                                 portraitVoice,
@@ -854,6 +872,7 @@ private fun BottomControls(
     inRoom: Boolean,
     ready: Boolean,
     voiceUi: VoiceUiState,
+    voiceLevel: Float = 0f,
     onInteract: () -> Unit,
     onSheet: (PlayerSheet) -> Unit,
     onMenus: () -> Unit,
@@ -891,6 +910,7 @@ private fun BottomControls(
                 onToggle = { container.voice.toggleMic(); onInteract() },
                 onVideo = true,
                 showKeyboardShortcut = container.deviceKind == DeviceKind.DESKTOP,
+                level = voiceLevel,
             )
             PlayerVoiceMembershipButton(
                 voiceUi,
@@ -929,6 +949,7 @@ private fun PlayerMicButton(
     onToggle: () -> Unit,
     onVideo: Boolean,
     showKeyboardShortcut: Boolean = false,
+    level: Float = 0f,
     modifier: Modifier = Modifier,
 ) {
     if (!ui.showMicButton) return
@@ -940,11 +961,13 @@ private fun PlayerMicButton(
     }
     // requiredSize keeps a 48dp touch target even when a tight parent would otherwise crush the IconButton.
     IconButton(onToggle, modifier.requiredSize(48.dp).testTag("player_mic_toggle")) {
-        Icon(
-            if (live) Icons.Filled.Mic else Icons.Filled.MicOff,
-            contentDescription = ui.micControlDescription(showKeyboardShortcut),
+        MicWithActivity(
+            live = live,
+            level = level,
             tint = tint,
-            modifier = Modifier.size(26.dp),
+            contentDescription = ui.micControlDescription(showKeyboardShortcut),
+            iconSize = 26.dp,
+            ringSize = 40.dp,
         )
     }
 }
@@ -1042,23 +1065,36 @@ private fun Chip(text: String, color: Color, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun RoomStatusChip(room: RoomState, streaming: String? = null, micLive: Boolean = false) {
+private fun RoomStatusChip(
+    room: RoomState,
+    streaming: String? = null,
+    micLive: Boolean = false,
+    micLevel: Float = 0f,
+) {
     when (room.status) {
         ConnectionStatus.CONNECTED -> {
             val ready = room.users.count { it.isReady == true }
             val via = streaming?.let { " · ${it.withPing(room.rttMillis)}" }.orEmpty()
-            val mic = if (micLive) " · Mic" else ""
-            Chip(
-                "${ManagedRooms.label(room.room)} · ${room.users.size} · $ready ready$via$mic",
-                AppColors.Ready,
-                if (streaming != null) {
-                    Modifier.widthIn(max = 420.dp).testTag("relay_streaming")
-                } else if (micLive) {
-                    Modifier.testTag("status_mic_live")
-                } else {
-                    Modifier
-                },
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = if (micLive) Modifier.testTag("status_mic_live") else Modifier,
+            ) {
+                Chip(
+                    "${ManagedRooms.label(room.room)} · ${room.users.size} · $ready ready$via",
+                    AppColors.Ready,
+                    if (streaming != null) Modifier.widthIn(max = 420.dp).testTag("relay_streaming") else Modifier,
+                )
+                if (micLive) {
+                    com.yarmiplaytv.voice.MicActivityRing(
+                        level = micLevel,
+                        active = true,
+                        color = AppColors.Ready,
+                        modifier = Modifier.padding(start = 8.dp),
+                        size = 18.dp,
+                        stroke = 1.5.dp,
+                    )
+                }
+            }
         }
         ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> Chip("Connecting…", AppColors.NotReady)
         ConnectionStatus.DISCONNECTED -> Chip("Not in a room", OnVideo.Text.copy(alpha = 0.6f))

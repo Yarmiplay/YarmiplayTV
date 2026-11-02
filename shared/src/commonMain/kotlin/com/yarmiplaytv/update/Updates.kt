@@ -148,8 +148,9 @@ class Updates(
         // Already showing one, maybe downloading it: leave it be.
         if (_state.value != null) return
         val update = checker.check(platform, currentVersion) ?: return
-        if (update.version == failedInstall) {
-            showFailed(update, INSTALL_FAILED)
+        val failedVersion = failedInstallVersion(failedInstall)
+        if (failedVersion != null && update.version == failedVersion) {
+            showFailed(update, installFailedMessage(failedInstall))
             return
         }
         if (update.version == settingsStore.current().dismissedUpdate) return
@@ -276,5 +277,34 @@ class Updates(
         const val INSTALL_FAILED = "The installer didn't finish. Try again, or get it from the download page."
 
         fun downloadFailed(error: Throwable) = "Couldn't download it: ${error.message ?: "the download failed"}"
+
+        /**
+         * Version from [FAILED_INSTALL]-style payloads: `2.8.9` or `2.8.9|exit=1|Access denied`.
+         * Null when [raw] is blank.
+         */
+        fun failedInstallVersion(raw: String?): String? =
+            raw?.substringBefore('|')?.trim()?.takeIf { it.isNotEmpty() }
+
+        /** User-facing sentence for a failed self-update, including exit code / detail when present. */
+        fun installFailedMessage(raw: String?): String {
+            val text = raw?.trim().orEmpty()
+            if (text.isEmpty()) return INSTALL_FAILED
+            val parts = text.split('|', limit = 3)
+            if (parts.size == 1) return INSTALL_FAILED
+            var exit: Int? = null
+            var detail: String? = null
+            if (parts.size >= 2) {
+                val second = parts[1].trim()
+                exit = second.removePrefix("exit=").trim().toIntOrNull() ?: second.toIntOrNull()
+                if (parts.size >= 3) detail = parts[2].trim().ifEmpty { null }
+                else if (exit == null && second.isNotEmpty() && !second.startsWith("exit=")) detail = second
+            }
+            val bits = buildList {
+                exit?.let { add("exit code $it") }
+                detail?.takeIf { it.isNotBlank() }?.let { add(it) }
+            }
+            if (bits.isEmpty()) return INSTALL_FAILED
+            return "The installer didn't finish (${bits.joinToString(": ")}). Try again, or get it from the download page."
+        }
     }
 }

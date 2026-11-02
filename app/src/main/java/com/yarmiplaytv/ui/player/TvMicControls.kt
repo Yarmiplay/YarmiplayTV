@@ -2,11 +2,11 @@ package com.yarmiplaytv.ui.player
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -14,11 +14,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.yarmiplaytv.ui.components.IconAction
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.OnVideo
+import com.yarmiplaytv.voice.MicWithActivity
 import com.yarmiplaytv.voice.TvVoiceKeys
 import com.yarmiplaytv.voice.VoiceUiState
 import com.yarmiplaytv.voice.voiceBanner
@@ -31,6 +33,7 @@ fun TvMicButton(
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
     onVideo: Boolean = false,
+    level: Float = 0f,
 ) {
     if (!ui.showMicButton) return
     val live = ui.micLive
@@ -41,13 +44,29 @@ fun TvMicButton(
     }
     val mod = (if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier)
         .testTag("tv_mic_toggle")
-    IconAction(
-        if (live) Icons.Filled.Mic else Icons.Filled.MicOff,
-        if (live) "Mic live — press to mute" else "Mic off — press to talk",
-        onToggle,
-        mod,
-        tint = tint,
-    )
+        .size(48.dp)
+    Surface(
+        onClick = onToggle,
+        modifier = mod,
+        shape = ClickableSurfaceDefaults.shape(CircleShape),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = AppColors.Accent,
+            contentColor = tint,
+            focusedContentColor = AppColors.OnAccent,
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.1f),
+    ) {
+        MicWithActivity(
+            live = live,
+            level = level,
+            tint = tint,
+            contentDescription = if (live) "Mic live — press to mute" else "Mic off — press to talk",
+            iconSize = 26.dp,
+            ringSize = 40.dp,
+            modifier = Modifier.align(Alignment.Center),
+        )
+    }
 }
 
 /** One-time hint the first time TV voice is available with a usable mic. */

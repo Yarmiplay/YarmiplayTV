@@ -66,6 +66,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import android.os.SystemClock
 import com.yarmiplaytv.voice.TvVoiceKeys
+import com.yarmiplaytv.voice.VoiceSpeakingOverlay
+import com.yarmiplaytv.voice.audibleSpeakingNames
 import com.yarmiplaytv.voice.micControlLive
 import com.yarmiplaytv.voice.readyControlDescription
 import com.yarmiplaytv.voice.voiceMembershipDescription
@@ -181,6 +183,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
     val micFocus = remember { FocusRequester() }
     val panelFocus = remember { FocusRequester() }
     val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
+    val voiceLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
     val tabFocus = remember { PanelKind.entries.associateWith { FocusRequester() } }
     val focusManager = LocalFocusManager.current
     val panels = PanelKind.entries.filter { it != PanelKind.MAL || container.mal.client.configured }
@@ -401,6 +404,10 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 ToastHost(toasts, Modifier.align(Alignment.TopStart).padding(32.dp))
                 TvMalNotice(container, Modifier.align(Alignment.TopEnd).padding(32.dp))
                 // Mic live sits on RoomChip (status cluster) while HUD is up — no video overlay badge.
+                VoiceSpeakingOverlay(
+                    voiceUi.audibleSpeakingNames(settings),
+                    Modifier.align(Alignment.CenterStart).padding(start = 24.dp),
+                )
                 if (voiceUi.showMicHint) {
                     LaunchedEffect(voiceUi.showMicHint) {
                         delay(12_000)
@@ -438,6 +445,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                         controlsFocus = controlsFocus,
                         micFocus = micFocus,
                         voiceUi = voiceUi,
+                        voiceLevel = voiceLevel,
                         pip = pip,
                         onTogglePause = ::togglePause,
                         onSeek = ::seekBy,
@@ -450,6 +458,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                         playerStreamingLabel(container, controlsVisible = true, state.fileLoaded),
                         Modifier.align(Alignment.TopEnd).padding(32.dp),
                         micLive = voiceUi.micControlLive(),
+                        micLevel = voiceLevel,
                     )
                 }
 
@@ -659,6 +668,7 @@ private fun ControlsBar(
     controlsFocus: FocusRequester,
     micFocus: FocusRequester,
     voiceUi: com.yarmiplaytv.voice.VoiceUiState,
+    voiceLevel: Float = 0f,
     pip: PictureInPicture,
     onTogglePause: () -> Unit,
     onSeek: (Double) -> Unit,
@@ -723,7 +733,7 @@ private fun ControlsBar(
                 )
             }
             // Every remote can focus this and press OK — primary TV talk control (tap toggle).
-            TvMicButton(voiceUi, onToggle = { container.voice.toggleTalk() }, focusRequester = micFocus, onVideo = true)
+            TvMicButton(voiceUi, onToggle = { container.voice.toggleTalk() }, focusRequester = micFocus, onVideo = true, level = voiceLevel)
             if (voiceUi.showVoiceMembershipButton) {
                 val inVoice = voiceUi.voiceMembershipIsLeave
                 IconAction(
@@ -831,6 +841,7 @@ private fun RoomChip(
     streaming: String? = null,
     modifier: Modifier = Modifier,
     micLive: Boolean = false,
+    micLevel: Float = 0f,
 ) {
     val text: String
     val color: Color
@@ -838,9 +849,8 @@ private fun RoomChip(
         ConnectionStatus.CONNECTED -> {
             val ready = room.users.count { it.isReady == true }
             val ping = if (room.rttMillis > 0) " · %.0f ms".format(room.rttMillis) else ""
-            val mic = if (micLive) " · Mic" else ""
             text = "${ManagedRooms.label(room.room)} · ${room.users.size} watching · $ready ready$ping" +
-                (streaming?.let { " · $it" } ?: "") + mic
+                (streaming?.let { " · $it" } ?: "")
             color = AppColors.Ready
         }
         ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> { text = "Connecting to Syncplay…"; color = AppColors.NotReady }
@@ -851,10 +861,22 @@ private fun RoomChip(
         micLive -> modifier.testTag("status_mic_live")
         else -> modifier
     }
-    if (streaming != null && room.status == ConnectionStatus.CONNECTED) {
-        StreamingChip(text, tag)
-    } else {
-        VideoChip(text, color, tag)
+    Row(tag, verticalAlignment = Alignment.CenterVertically) {
+        if (streaming != null && room.status == ConnectionStatus.CONNECTED) {
+            StreamingChip(text, Modifier)
+        } else {
+            VideoChip(text, color, Modifier)
+        }
+        if (micLive) {
+            com.yarmiplaytv.voice.MicActivityRing(
+                level = micLevel,
+                active = true,
+                color = AppColors.Ready,
+                modifier = Modifier.padding(start = 8.dp),
+                size = 18.dp,
+                stroke = 1.5.dp,
+            )
+        }
     }
 }
 

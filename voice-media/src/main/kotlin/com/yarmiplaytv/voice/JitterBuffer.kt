@@ -6,6 +6,12 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
+ * One paced playback frame from [VoiceJitterBuffer.poll].
+ * [concealed] is true for FEC/PLC (gap fill) — not real audio from the sender this tick.
+ */
+data class JitterFrame(val pcm: ShortArray, val concealed: Boolean)
+
+/**
  * Per-sender adaptive jitter buffer (~40–80 ms) with Opus FEC / PLC on gaps.
  * Packets are enqueued by sequence; [poll] returns the next 20 ms PCM frame on the playback clock.
  */
@@ -56,7 +62,7 @@ class VoiceJitterBuffer(
         decode: (ByteArray) -> ShortArray?,
         plc: () -> ShortArray?,
         fec: (ByteArray) -> ShortArray?,
-    ): ShortArray? {
+    ): JitterFrame? {
         val slot = peers[sender] ?: return null
         synchronized(slot) {
             if (!slot.primed) return null
@@ -73,16 +79,16 @@ class VoiceJitterBuffer(
             val packet = slot.packets.remove(next)
             slot.nextSeq = next + 1
             if (packet != null) {
-                return decode(packet) ?: silence()
+                return JitterFrame(decode(packet) ?: silence(), concealed = false)
             }
             slot.missing.incrementAndGet()
             // Try FEC using the following packet if present.
             val following = slot.packets[next + 1]
             if (following != null) {
                 val concealed = fec(following)
-                if (concealed != null) return concealed
+                if (concealed != null) return JitterFrame(concealed, concealed = true)
             }
-            return plc() ?: silence()
+            return JitterFrame(plc() ?: silence(), concealed = true)
         }
     }
 

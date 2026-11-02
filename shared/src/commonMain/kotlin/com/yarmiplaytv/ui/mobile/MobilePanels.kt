@@ -420,15 +420,19 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
         if (voiceUi.showVoiceMembershipButton) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (voiceUi.showMicButton) {
+                    val voiceLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
                     IconButton(
                         { container.voice.toggleMic() },
                         Modifier.testTag("voice_self_mic"),
                     ) {
                         val live = voiceUi.micControlLive()
-                        Icon(
-                            if (live) Icons.Filled.Mic else Icons.Filled.MicOff,
-                            voiceUi.micControlDescription(showKeyboardShortcut = container.deviceKind == DeviceKind.DESKTOP),
+                        com.yarmiplaytv.voice.MicWithActivity(
+                            live = live,
+                            level = voiceLevel,
                             tint = if (live) AppColors.Ready else AppColors.TextDim,
+                            contentDescription = voiceUi.micControlDescription(showKeyboardShortcut = container.deviceKind == DeviceKind.DESKTOP),
+                            iconSize = 24.dp,
+                            ringSize = 36.dp,
                         )
                     }
                     Text(

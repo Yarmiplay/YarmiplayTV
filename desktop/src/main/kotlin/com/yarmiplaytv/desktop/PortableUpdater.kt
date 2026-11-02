@@ -35,8 +35,9 @@ internal class PortableUpdater(
             val exe = psQuoted(launcher.name)
             val replaced = REPLACED.joinToString(",") { psQuoted(it) }
             return buildString {
-                append("Wait-Process -Id ${pids.joinToString(",")} -ErrorAction SilentlyContinue; ")
-                append("\$ok = \$false; \$dir = $dir; \$tmp = Join-Path \$env:TEMP ('YarmiplayTV-update-' + [guid]::NewGuid()); ")
+                append(psWaitForAppExit(pids))
+                append("Unblock-File -LiteralPath ${psQuoted(zip.path)} -ErrorAction SilentlyContinue; ")
+                append("\$ok = \$false; \$code = -1; \$detail = ''; \$dir = $dir; \$tmp = Join-Path \$env:TEMP ('YarmiplayTV-update-' + [guid]::NewGuid()); ")
                 append("try { ")
                 append("Expand-Archive -LiteralPath ${psQuoted(zip.path)} -DestinationPath \$tmp -Force -ErrorAction Stop; ")
                 // The zip holds the app in a YarmiplayTV folder.
@@ -45,12 +46,13 @@ internal class PortableUpdater(
                 append("foreach (\$n in $replaced) { \$d = Join-Path \$dir \$n; if (Test-Path -LiteralPath \$d) { Move-Item -LiteralPath \$d -Destination (\$d + '.old') -Force -ErrorAction Stop } }; ")
                 append("try { ")
                 append("Get-ChildItem -LiteralPath \$src -Force | Where-Object { \$_.Name -ne 'data' } | Copy-Item -Destination \$dir -Recurse -Force -ErrorAction Stop; ")
-                append("\$ok = \$true ")
+                append("\$ok = \$true; \$code = 0 ")
                 append("} catch { ")
+                append("\$detail = \$_.Exception.Message; \$code = 1; ")
                 append("foreach (\$n in $replaced) { \$d = Join-Path \$dir \$n; if (Test-Path -LiteralPath (\$d + '.old')) { Remove-Item -LiteralPath \$d -Recurse -Force -ErrorAction SilentlyContinue; Move-Item -LiteralPath (\$d + '.old') -Destination \$d -Force } } ")
                 append("}; ")
                 append("if (\$ok) { foreach (\$n in $replaced) { Remove-Item -LiteralPath (Join-Path \$dir (\$n + '.old')) -Recurse -Force -ErrorAction SilentlyContinue } } ")
-                append("} catch { }; ")
+                append("} catch { \$detail = \$_.Exception.Message; \$code = 1 }; ")
                 append("Remove-Item -LiteralPath \$tmp -Recurse -Force -ErrorAction SilentlyContinue; ")
                 append("Remove-Item -LiteralPath ${psQuoted(zip.path)} -ErrorAction SilentlyContinue; ")
                 if (relaunch) append(psRelaunch(launcher, args, version))
