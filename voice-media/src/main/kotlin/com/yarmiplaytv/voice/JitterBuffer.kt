@@ -14,11 +14,16 @@ data class JitterFrame(val pcm: ShortArray, val concealed: Boolean)
 /**
  * Per-sender adaptive jitter buffer (~40–80 ms) with Opus FEC / PLC on gaps.
  * Packets are enqueued by sequence; [poll] returns the next 20 ms PCM frame on the playback clock.
+ *
+ * Senders that stop delivering packets are pruned after [maxConcealment] consecutive concealed
+ * ticks so leave/rejoin watch parties do not keep running Opus PLC forever.
  */
 class VoiceJitterBuffer(
     private val frameSamples: Int = VoicePcm.frameSamples,
     private val minFrames: Int = 2, // 40 ms
     private val maxFrames: Int = 4, // 80 ms
+    /** Drop a primed peer after this many PLC/FEC ticks with an empty queue (~1.5 s at 20 ms). */
+    private val maxConcealment: Int = 75,
 ) {
     private class PeerSlot {
         val packets = java.util.TreeMap<Int, ByteArray>()
@@ -27,11 +32,19 @@ class VoiceJitterBuffer(
         var target = 3 // 60 ms start
         val late = AtomicInteger(0)
         val missing = AtomicInteger(0)
+        /** Consecutive concealed polls since the last real packet. */
+        var concealRun = 0
     }
 
     private val peers = ConcurrentHashMap<Long, PeerSlot>()
 
     fun clear() = peers.clear()
+
+    fun remove(sender: Long) {
+        peers.remove(sender)
+    }
+
+    fun senderCount(): Int = peers.size
 
     fun push(sender: Long, sequence: Int, opus: ByteArray) {
         if (opus.isEmpty()) return
@@ -45,6 +58,7 @@ class VoiceJitterBuffer(
                 slot.packets.pollFirstEntry()
             }
             slot.packets[sequence] = opus.copyOf()
+            slot.concealRun = 0
             if (!slot.primed && slot.packets.size >= slot.target) {
                 slot.primed = true
                 slot.nextSeq = slot.packets.firstKey()
@@ -53,7 +67,8 @@ class VoiceJitterBuffer(
     }
 
     /**
-     * Decode the next frame for [sender] into PCM (or PLC). Returns null if not primed yet.
+     * Decode the next frame for [sender] into PCM (or PLC). Returns null if not primed yet,
+     * or if the peer was pruned for prolonged silence.
      * [decode] should decode an Opus packet; [plc] generates concealment; [fec] tries FEC from the
      * next packet when the expected one is missing.
      */
@@ -79,9 +94,15 @@ class VoiceJitterBuffer(
             val packet = slot.packets.remove(next)
             slot.nextSeq = next + 1
             if (packet != null) {
+                slot.concealRun = 0
                 return JitterFrame(decode(packet) ?: silence(), concealed = false)
             }
             slot.missing.incrementAndGet()
+            slot.concealRun++
+            if (slot.concealRun >= maxConcealment && slot.packets.isEmpty()) {
+                peers.remove(sender, slot)
+                return null
+            }
             // Try FEC using the following packet if present.
             val following = slot.packets[next + 1]
             if (following != null) {
