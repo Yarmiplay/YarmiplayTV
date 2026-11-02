@@ -689,8 +689,8 @@ private fun PlaylistRow(
                     fontWeight = if (current) FontWeight.SemiBold else FontWeight.Medium,
                     fontStyle = if (available) FontStyle.Normal else FontStyle.Italic,
                     color = if (available) AppColors.Text else AppColors.TextDim,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    // Whole name wraps; do not ellipsize (RoomPanelUiTest long-name height check).
+                    softWrap = true,
                     modifier = Modifier.weight(1f),
                 )
             }

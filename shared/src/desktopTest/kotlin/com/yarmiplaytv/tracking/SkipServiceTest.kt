@@ -249,16 +249,22 @@ class SkipServiceTest {
         return s
     }
 
+    /** Local skip-detect waits for pause (or DETECT_WHILE_PLAYING_MILLIS); tests pause so listening starts promptly. */
+    private fun pauseLocalDetect() {
+        player.state.value = player.state.value.copy(paused = true)
+    }
+
     @Test
     fun `listening finds the opening and ending nothing else knows`() {
         val season = listening()
         val s = playEpisode(season, 2)
+        pauseLocalDetect()
         eventually("the opening and ending", millis = 60_000) { s.segments.value.size == 2 }
         val (opening, ending) = s.segments.value
         assertEquals(20.0, opening.start, 1.0)
         assertEquals(110.0, opening.end, 1.0)
         assertEquals(1390.0, ending.end, 1.0)
-        at(21.5)
+        player.state.value = player.state.value.copy(paused = false, position = 21.5)
         eventually("the button") { s.prompt.value?.label == "Skip opening" }
     }
 
@@ -266,6 +272,7 @@ class SkipServiceTest {
     fun `only what the chapters leave out is listened for`() {
         val season = listening()
         val s = playEpisode(season, 2, listOf(Chapter("Cold open", 0.0), Chapter("Opening", 20.0), Chapter("Part A", 110.0)))
+        pauseLocalDetect()
         eventually("the ending", millis = 60_000) { s.segments.value.size == 2 }
         assertEquals(SkipSegment(SkipSegment.Kind.OPENING, 20.0, 110.0), s.segments.value.first())
         assertTrue("only the end was read: ${season.reads}", season.reads.isNotEmpty() && season.reads.all { it.second > 1000 })
@@ -285,11 +292,13 @@ class SkipServiceTest {
     fun `turning listening off stops it, and on starts it again`() {
         val season = listening().apply { hang = true }
         val s = playEpisode(season, 2)
+        pauseLocalDetect()
         eventually("reading", millis = 10_000) { season.reads.isNotEmpty() }
         settings.value = AppSettings(playback = PlaybackPrefs(detectSkips = false))
         eventually("the read to stop", millis = 15_000) { season.sawCancel }
         season.hang = false
         settings.value = AppSettings(playback = PlaybackPrefs(detectSkips = true))
+        pauseLocalDetect()
         eventually("the opening and ending", millis = 60_000) { s.segments.value.size == 2 }
     }
 
@@ -310,6 +319,7 @@ class SkipServiceTest {
     fun `a file that changes while listening drops what was heard`() {
         val season = listening().apply { hang = true }
         val s = playEpisode(season, 2)
+        pauseLocalDetect()
         eventually("reading", millis = 10_000) { season.reads.isNotEmpty() }
         nowPlaying.value = NowPlaying("Other", "other.mkv", 5, 100.0, "file:///other.mkv")
         player.state.value = PlaybackState(url = "file:///other.mkv", fileLoaded = true, duration = 100.0)

@@ -120,7 +120,8 @@ class LocalFilesUiTest {
 
         showLocalFiles()
         onNodeWithTag("local_folder").performClick()
-        waitUntil(timeoutMillis = 20_000) { thumbnails() >= 1 }
+        // Serialized background mpv grabs (wait=true) after ListeningTest can take >20s on CI.
+        waitUntil(timeoutMillis = 45_000) { thumbnails() >= 1 }
         // Waits for the broken file's attempt (or makes it) and checks it failed; its row stays on the icon.
         val broken = app.local.files.value.single { it.name == "Broken Download.mkv" }
         assertNull(runBlocking { app.thumbnails!!.thumbnail(broken) })
