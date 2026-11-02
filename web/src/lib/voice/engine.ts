@@ -102,6 +102,7 @@ export class WebVoiceEngine {
       }
     }
     this.decoders.clear();
+    this.peerGain.clear();
     try {
       void this.playCtx?.close();
     } catch {

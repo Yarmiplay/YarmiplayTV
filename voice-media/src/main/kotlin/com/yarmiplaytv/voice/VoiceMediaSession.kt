@@ -3,6 +3,7 @@ package com.yarmiplaytv.voice
 import com.yarmiplaytv.syncplay.VoiceMediaParams
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -37,7 +38,8 @@ class VoiceMediaSession(
     private var transport: Yv1Transport? = null
     private var decodeJob: Job? = null
     private var playbackJob: Job? = null
-    private var inbound = Channel<Triple<Long, Int, ByteArray>>(Channel.UNLIMITED)
+    /** Bounded so a stalled ingest path cannot retain unbounded Opus copies. */
+    private var inbound = boundedInbound()
     private val mixBuf = ShortArray(960)
     private val receivedFrames = AtomicBoolean(false)
     private val lastRms = AtomicReference(0.0)
@@ -110,7 +112,7 @@ class VoiceMediaSession(
         val bitrate = seat.maxBitrate.coerceIn(24_000, 64_000)
         val opus = OpusCodec(bitrate, fec = seat.fec, dtx = false, seat.clockRate, seat.channels)
         codec = opus
-        inbound = Channel(Channel.UNLIMITED)
+        inbound = boundedInbound()
         val frames = inbound
         val t = Yv1Transport(
             host = seat.host,
@@ -147,8 +149,11 @@ class VoiceMediaSession(
         transmitting.set(false)
         captureRms.set(0.0)
         audibleSenders.set(emptySet())
+        peerMuted.clear()
+        peerVolume.clear()
         jitter.clear()
         preOpus.clear()
+        noise.reset()
     }
 
     fun setTransmitting(on: Boolean) {
@@ -245,7 +250,11 @@ class VoiceMediaSession(
             val heard = LinkedHashSet<Long>()
             for (sender in senders) {
                 if (peerMuted[sender] == true) {
-                    jitter.poll(sender, decode = { null }, plc = { null }, fec = { null })
+                    // Still advance/prune so a muted leaverslot does not linger forever.
+                    if (jitter.poll(sender, decode = { null }, plc = { null }, fec = { null }) == null) {
+                        peerMuted.remove(sender)
+                        peerVolume.remove(sender)
+                    }
                     continue
                 }
                 val frame = jitter.poll(
@@ -253,7 +262,12 @@ class VoiceMediaSession(
                     decode = { opus.decode(it) },
                     plc = { opus.decodePlc() },
                     fec = { opus.decodeFec(it) },
-                ) ?: continue
+                )
+                if (frame == null) {
+                    peerMuted.remove(sender)
+                    peerVolume.remove(sender)
+                    continue
+                }
                 val pcm = frame.pcm
                 lastSender.set(sender)
                 val vol = peerVolume.getOrDefault(sender, 1f) * outputGain
@@ -294,6 +308,12 @@ class VoiceMediaSession(
     companion object {
         /** Decoded PCM below this is treated as silence for the speaking-name overlay. */
         private const val AUDIBLE_RMS = 80.0
+
+        /** Cap inbound Opus frames (~1.28 s at 20 ms) — drop oldest if ingest stalls. */
+        private const val INBOUND_CAP = 64
+
+        private fun boundedInbound() =
+            Channel<Triple<Long, Int, ByteArray>>(INBOUND_CAP, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     }
 
     private fun isNearSilence(frame: ShortArray): Boolean {
