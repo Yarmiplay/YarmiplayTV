@@ -5,6 +5,9 @@ import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -188,11 +191,14 @@ actual fun RoomSidePanel(container: AppContainer) {
     val density = LocalDensity.current
     Row(Modifier.fillMaxHeight().testTag("room_panel")) {
         // Drag the left edge to resize — video keeps the remaining width beside the panel.
+        val resizeHover = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+        val resizeHovered by resizeHover.collectIsHoveredAsState()
         Box(
             Modifier
-                .width(6.dp)
+                .width(8.dp)
                 .fillMaxHeight()
                 .testTag("room_panel_resize")
+                .hoverable(resizeHover)
                 .pointerInput(Unit) {
                     detectDragGestures { change, amount ->
                         change.consume()
@@ -200,7 +206,10 @@ actual fun RoomSidePanel(container: AppContainer) {
                         panel.widthDp = (panel.widthDp - deltaDp).coerceIn(PANEL_WIDTH_MIN, PANEL_WIDTH_MAX)
                     }
                 }
-                .background(AppColors.SurfaceHigh.copy(alpha = 0.5f)),
+                .background(
+                    if (resizeHovered) AppColors.Accent.copy(alpha = 0.45f)
+                    else AppColors.SurfaceHigh.copy(alpha = 0.55f),
+                ),
         )
         Surface(
             Modifier.width(panel.widthDp.dp).fillMaxHeight()
