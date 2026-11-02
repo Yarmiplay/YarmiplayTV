@@ -66,6 +66,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import android.os.SystemClock
 import com.yarmiplaytv.voice.TvVoiceKeys
+import com.yarmiplaytv.voice.VoiceSpeakingOverlay
+import com.yarmiplaytv.voice.audibleSpeakingNames
 import com.yarmiplaytv.voice.micControlLive
 import com.yarmiplaytv.voice.readyControlDescription
 import com.yarmiplaytv.voice.voiceMembershipDescription
@@ -401,6 +403,10 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 ToastHost(toasts, Modifier.align(Alignment.TopStart).padding(32.dp))
                 TvMalNotice(container, Modifier.align(Alignment.TopEnd).padding(32.dp))
                 // Mic live sits on RoomChip (status cluster) while HUD is up — no video overlay badge.
+                VoiceSpeakingOverlay(
+                    voiceUi.audibleSpeakingNames(settings),
+                    Modifier.align(Alignment.CenterStart).padding(start = 24.dp),
+                )
                 if (voiceUi.showMicHint) {
                     LaunchedEffect(voiceUi.showMicHint) {
                         delay(12_000)

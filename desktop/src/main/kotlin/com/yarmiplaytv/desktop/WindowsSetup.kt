@@ -131,7 +131,10 @@ internal fun assertInstallable(source: File, dest: File) {
     }
 }
 
-/** Copies [source] onto [dest], then deletes files in [dest] that the new image doesn't have. [onFraction] is 0 to 1. */
+/**
+ * Copies [source] onto [dest], then deletes files in [dest] that the new image doesn't have. [onFraction] is 0 to 1.
+ * Retries individual files when Windows still has them locked (common right after the app exits).
+ */
 internal fun copyAppImage(source: File, dest: File, onFraction: (Float) -> Unit) {
     val files = source.walkTopDown().filter { it.isFile }.toList()
     val total = files.sumOf { it.length() }.coerceAtLeast(1L)
@@ -140,17 +143,8 @@ internal fun copyAppImage(source: File, dest: File, onFraction: (Float) -> Unit)
     for (file in files) {
         val target = dest.resolve(file.relativeTo(source))
         target.parentFile?.mkdirs()
-        file.inputStream().use { input ->
-            target.outputStream().use { output ->
-                val buf = ByteArray(256 * 1024)
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    output.write(buf, 0, n)
-                    copied += n
-                }
-            }
-        }
+        copyFileWithRetry(file, target)
+        copied += file.length()
         val pct = ((copied * 100) / total).toInt()
         if (pct != lastPct) {
             lastPct = pct
@@ -164,6 +158,35 @@ internal fun copyAppImage(source: File, dest: File, onFraction: (Float) -> Unit)
         else if (file.isDirectory && file.list().isNullOrEmpty()) file.delete()
     }
     onFraction(1f)
+}
+
+/** Retries when the destination is still locked by a process that has not fully released the file. */
+internal fun copyFileWithRetry(source: File, target: File, attempts: Int = 10) {
+    var last: Exception? = null
+    repeat(attempts) { attempt ->
+        try {
+            source.inputStream().use { input ->
+                target.outputStream().use { output ->
+                    val buf = ByteArray(256 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        output.write(buf, 0, n)
+                    }
+                }
+            }
+            return
+        } catch (e: Exception) {
+            last = e
+            try {
+                Thread.sleep(300L * (attempt + 1).toLong())
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw e
+            }
+        }
+    }
+    throw last ?: error("Couldn't copy ${source.name}")
 }
 
 /** Little-endian zip length, then [SETUP_PAYLOAD_MAGIC]. Sits at the end of setup.exe. */
@@ -194,29 +217,41 @@ internal fun performInstall(
     val dest = choices.directory
     assertInstallable(source, dest)
     if (!File(source, "YarmiplayTV.exe").isFile) error("The setup package is missing YarmiplayTV.exe")
-    if (discovered.msiProductCodes.isNotEmpty()) {
-        progress(0.05f, "Removing the previous version…")
-        host.uninstallProducts(discovered.msiProductCodes) { progress(0.08f, it) }
+    try {
+        if (discovered.msiProductCodes.isNotEmpty()) {
+            progress(0.05f, "Removing the previous version…")
+            host.uninstallProducts(discovered.msiProductCodes) { progress(0.08f, it) }
+        }
+        progress(0.12f, "Copying files…")
+        if (!dest.mkdirs() && !dest.isDirectory) {
+            error("Couldn't create the install folder (${dest.path})")
+        }
+        try {
+            copyAppImage(source, dest) { fraction ->
+                val pct = (fraction * 100).toInt().coerceIn(0, 100)
+                progress(0.12f + 0.73f * fraction, "Copying files · $pct%")
+            }
+        } catch (e: Exception) {
+            error("Couldn't replace files in ${dest.path}: ${e.message ?: e.javaClass.simpleName}")
+        }
+        val previous = discovered.directory
+        if (discovered.managedByUs && previous != null && previous.canonicalFile != dest.canonicalFile &&
+            File(previous, "YarmiplayTV.exe").isFile
+        ) {
+            progress(0.88f, "Removing the previous copy…")
+            previous.deleteRecursively()
+        }
+        progress(0.92f, "Adding shortcuts…")
+        val exe = File(dest, "YarmiplayTV.exe")
+        val kb = (dest.walkTopDown().filter { it.isFile }.sumOf { it.length() } / 1024L).toInt().coerceAtLeast(1)
+        host.runScript(installScript(exe, dest, APP_VERSION, kb, choices, paths.desktopShortcut, paths.startMenuShortcut))
+        progress(1f, "Installed")
+        writeUpdateStatus(null)
+        if (choices.launchWhenFinished) host.launch(exe)
+    } catch (e: Exception) {
+        writeUpdateStatus(e.message ?: "Couldn't install")
+        throw e
     }
-    progress(0.12f, "Copying files…")
-    dest.mkdirs()
-    copyAppImage(source, dest) { fraction ->
-        val pct = (fraction * 100).toInt().coerceIn(0, 100)
-        progress(0.12f + 0.73f * fraction, "Copying files · $pct%")
-    }
-    val previous = discovered.directory
-    if (discovered.managedByUs && previous != null && previous.canonicalFile != dest.canonicalFile &&
-        File(previous, "YarmiplayTV.exe").isFile
-    ) {
-        progress(0.88f, "Removing the previous copy…")
-        previous.deleteRecursively()
-    }
-    progress(0.92f, "Adding shortcuts…")
-    val exe = File(dest, "YarmiplayTV.exe")
-    val kb = (dest.walkTopDown().filter { it.isFile }.sumOf { it.length() } / 1024L).toInt().coerceAtLeast(1)
-    host.runScript(installScript(exe, dest, APP_VERSION, kb, choices, paths.desktopShortcut, paths.startMenuShortcut))
-    progress(1f, "Installed")
-    if (choices.launchWhenFinished) host.launch(exe)
 }
 
 internal fun performUninstall(
@@ -451,9 +486,11 @@ private fun installUnattended(argv: Array<String>, source: File, probe: ProbeRes
         ui.close()
         0
     } catch (e: Exception) {
-        System.err.println(e.message ?: "Couldn't install")
-        ui.progress(1f, e.message ?: "Couldn't install")
-        Thread.sleep(2500)
+        val message = e.message ?: "Couldn't install"
+        System.err.println(message)
+        writeUpdateStatus(message)
+        ui.progress(1f, message)
+        Thread.sleep(3500)
         ui.close()
         1
     }

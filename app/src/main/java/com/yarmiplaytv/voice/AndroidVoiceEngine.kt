@@ -149,8 +149,16 @@ class AndroidVoiceEngine(
     override fun setSelfMuted(muted: Boolean) {
         val media = session.get()
         media?.setSelfMuted(muted)
-        syncCapture(media)
+        // Mute stops capture here; unmute waits for [setTransmitting] so the UI isn't blocked twice.
+        if (muted) syncCapture(media)
     }
+
+    override fun captureLevel(): Float = session.get()?.captureLevel ?: 0f
+
+    override fun audibleParticipantIds(): Set<String> =
+        session.get()?.audibleSenderIds()?.mapTo(linkedSetOf()) { senderParticipantId(it) } ?: emptySet()
+
+    override fun capturingSpeech(): Boolean = session.get()?.capturingSpeech() == true
 
     /** Hold [AudioRecord] only while we are transmitting; release it when muted / mic off. */
     private fun syncCapture(media: VoiceMediaSession?) {

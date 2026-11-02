@@ -12,6 +12,7 @@ import com.yarmiplaytv.syncplay.VoiceClosedReason
 import com.yarmiplaytv.syncplay.VoiceMediaParams
 import com.yarmiplaytv.syncplay.VoicePeer
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +24,11 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * Joins room voice when the server offers it and the client setting is on.
@@ -40,6 +45,10 @@ class VoiceController(
 ) {
     private val _ui = MutableStateFlow(VoiceUiState())
     val ui: StateFlow<VoiceUiState> = _ui.asStateFlow()
+
+    private val _captureLevel = MutableStateFlow(0f)
+    /** 0…1 post-NS mic level for the activity ring; 0 when muted / not transmitting. */
+    val captureLevel: StateFlow<Float> = _captureLevel.asStateFlow()
 
     private val settings = MutableStateFlow(AppSettings())
     private var connectJob: Job? = null
@@ -59,6 +68,8 @@ class VoiceController(
     private var autoMutedByPlayback = false
     /** Last known "file loaded and playing" from [bindPlayback]; used to auto-mute on voice connect. */
     private var playbackPlaying = false
+    /** Serializes mute/transmit engine work so rapid toggles can't reopen capture out of order. */
+    private val transmitMutex = Mutex()
 
     init {
         engine.onDeviceLost = { input ->
@@ -68,6 +79,30 @@ class VoiceController(
             }
         }
         settingsStore.settings.onEach { settings.value = it }.launchIn(scope)
+        scope.launch {
+            var lastReportedSpeech: Boolean? = null
+            while (isActive) {
+                val ui = _ui.value
+                val live = ui.micControlLive() && !ui.selfMuted
+                val next = if (live) engine.captureLevel() else 0f
+                if (next != _captureLevel.value) _captureLevel.value = next
+                // Speaking names track locally heard audio — clear the same poll as silence (no linger).
+                if (ui.connection == VoiceConnection.CONNECTED) {
+                    val heard = engine.audibleParticipantIds()
+                    if (heard != ui.speakingIds) {
+                        _ui.update { it.copy(speakingIds = heard) }
+                    }
+                    val speech = engine.capturingSpeech()
+                    if (speech != lastReportedSpeech) {
+                        lastReportedSpeech = speech
+                        sync.client?.sendVoiceActivity(speech)
+                    }
+                } else if (lastReportedSpeech != null) {
+                    lastReportedSpeech = null
+                }
+                delay(33)
+            }
+        }
 
         combine(
             sync.room.map { it.yarmiplay.voiceAvailable to it.yarmiplay.voice }.distinctUntilChanged(),
@@ -144,10 +179,13 @@ class VoiceController(
         if (!fromAuto) autoMutedByPlayback = false
         val was = selfMuted
         selfMuted = muted
-        engine.setSelfMuted(muted)
+        // Optimistic UI first — capture open/close and cues must not stall the Mic button.
+        val mode = _ui.value.talkMode
+        val wantTalk = computeWantTransmitting()
         _ui.update {
             it.copy(
                 selfMuted = muted,
+                talking = wantTalk,
                 showMicPermissionSettings = false,
                 statusLine = when {
                     muted && fromAuto -> "Mic muted while playing"
@@ -156,10 +194,11 @@ class VoiceController(
                 },
             )
         }
-        updateTransmitting()
+        if (muted) _captureLevel.value = 0f
+        applyTransmitEngine(wantTalk, alsoSelfMuted = muted)
         // OPEN_MIC had no cue before; join/leave sounds still come from [onPeers].
-        if (was != muted && !fromAuto && _ui.value.talkMode == VoiceTalkMode.OPEN_MIC) {
-            playMicCue(!muted)
+        if (was != muted && !fromAuto && mode == VoiceTalkMode.OPEN_MIC) {
+            scope.launch(Dispatchers.Default) { playMicCue(!muted) }
         }
     }
 
@@ -286,7 +325,6 @@ class VoiceController(
         if (!fromAuto) autoMutedByPlayback = false
         val was = talkLatched
         talkLatched = on
-        if (was != on && !fromAuto) playMicCue(on)
         updateTransmitting()
         _ui.update {
             it.copy(
@@ -295,6 +333,9 @@ class VoiceController(
                 showMicHint = false,
                 showMicPermissionSettings = false,
             )
+        }
+        if (was != on && !fromAuto) {
+            scope.launch(Dispatchers.Default) { playMicCue(on) }
         }
         if (!fromAuto && (on || was)) dismissMicHint()
     }
@@ -489,10 +530,8 @@ class VoiceController(
             is SyncplayEvent.VoiceJoined -> scope.launch { onJoined(event) }
             is SyncplayEvent.VoiceClosed -> onClosed(event.reason)
             is SyncplayEvent.VoicePeersChanged -> onPeers(event.peers)
-            is SyncplayEvent.VoiceActivity -> _ui.update {
-                val next = if (event.speaking) it.speakingIds + event.participantId else it.speakingIds - event.participantId
-                it.copy(speakingIds = next)
-            }
+            // Speaking overlay uses locally heard PCM (polled); ignore protocol speaking flags for UI.
+            is SyncplayEvent.VoiceActivity -> Unit
             is SyncplayEvent.Disconnected, SyncplayEvent.SessionEnded -> tearDown(VoiceConnection.OFF, null)
             else -> Unit
         }
@@ -620,8 +659,8 @@ class VoiceController(
             }
         }
         lastPeers = peers
-        val speaking = peers.filter { it.speaking }.map { it.participantId }.toSet()
-        _ui.update { it.copy(peers = peers, speakingIds = speaking) }
+        // Keep peers; speakingIds stay driven by audible receive energy (instant clear on silence).
+        _ui.update { it.copy(peers = peers) }
         peers.forEach { applyPeerAudio(it.username, it.participantId) }
     }
 
@@ -637,10 +676,10 @@ class VoiceController(
         engine.playSound(if (on) VoiceSound.MIC_ON else VoiceSound.MIC_OFF, vol)
     }
 
-    private fun updateTransmitting() {
+    private fun computeWantTransmitting(): Boolean {
         val ui = _ui.value
         val mode = ui.talkMode
-        val want = when {
+        return when {
             selfMuted -> false
             ui.connection != VoiceConnection.CONNECTED -> false
             ui.capture == VoiceCaptureKind.NONE -> false
@@ -649,7 +688,12 @@ class VoiceController(
             mode == VoiceTalkMode.PUSH_TO_TALK -> pttHeld
             else -> true // OPEN_MIC
         }
-        engine.setTransmitting(want)
+    }
+
+    private fun updateTransmitting() {
+        val ui = _ui.value
+        val mode = ui.talkMode
+        val want = computeWantTransmitting()
         _ui.update {
             it.copy(
                 talking = want,
@@ -657,8 +701,21 @@ class VoiceController(
                 statusLine = statusFor(it.capture, latched = talkLatched, mode),
             )
         }
-        if (ui.connection == VoiceConnection.CONNECTED) {
-            sync.client?.sendVoiceActivity(want)
+        if (!want) _captureLevel.value = 0f
+        applyTransmitEngine(want, alsoSelfMuted = null)
+        // voiceActivity is reported from the capture/heard poll (actual speech), not mic-open.
+    }
+
+    /**
+     * Applies mute/transmit to the engine off the UI path. [alsoSelfMuted] non-null also updates
+     * [VoiceEngine.setSelfMuted] in the same serialized step (avoids double capture open/close).
+     */
+    private fun applyTransmitEngine(wantTransmit: Boolean, alsoSelfMuted: Boolean?) {
+        scope.launch(Dispatchers.Default) {
+            transmitMutex.withLock {
+                if (alsoSelfMuted != null) engine.setSelfMuted(alsoSelfMuted)
+                engine.setTransmitting(wantTransmit)
+            }
         }
     }
 

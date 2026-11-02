@@ -76,6 +76,21 @@ interface VoiceEngine {
 
     /** Play a short UI sound (join/leave/mic). [volume] 0–1. */
     fun playSound(kind: VoiceSound, volume: Float)
+
+    /**
+     * 0…1 post-noise-suppression mic level while unmuted and transmitting; 0 when muted / idle.
+     * Polled for the Mic activity ring — must be cheap and non-blocking.
+     */
+    fun captureLevel(): Float = 0f
+
+    /**
+     * Participant ids (`c17`) whose decoded audio we are hearing right now.
+     * Empty the same tick they go silent / PLC / locally muted — no linger. Cheap to poll.
+     */
+    fun audibleParticipantIds(): Set<String> = emptySet()
+
+    /** True while local capture has speech energy (for reporting voiceActivity). */
+    fun capturingSpeech(): Boolean = false
 }
 
 enum class VoiceSound { JOIN, LEAVE, MIC_ON, MIC_OFF }
@@ -98,4 +113,7 @@ class NullVoiceEngine : VoiceEngine {
     override fun setInputDeviceId(id: String?) = Unit
     override fun setOutputDeviceId(id: String?) = Unit
     override fun playSound(kind: VoiceSound, volume: Float) = Unit
+    override fun captureLevel(): Float = 0f
+    override fun audibleParticipantIds(): Set<String> = emptySet()
+    override fun capturingSpeech(): Boolean = false
 }

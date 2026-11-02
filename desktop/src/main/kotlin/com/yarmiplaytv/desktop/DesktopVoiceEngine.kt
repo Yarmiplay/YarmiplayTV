@@ -8,6 +8,7 @@ import com.yarmiplaytv.voice.VoiceEngine
 import com.yarmiplaytv.voice.VoiceMediaSession
 import com.yarmiplaytv.voice.VoiceSound
 import com.yarmiplaytv.voice.participantSenderId
+import com.yarmiplaytv.voice.senderParticipantId
 import java.io.BufferedInputStream
 import java.util.concurrent.atomic.AtomicReference
 import javax.sound.sampled.AudioSystem
@@ -92,8 +93,16 @@ class DesktopVoiceEngine : VoiceEngine {
     override fun setSelfMuted(muted: Boolean) {
         val media = session.get()
         media?.setSelfMuted(muted)
-        syncCapture(media)
+        // Mute stops capture here; unmute waits for [setTransmitting] so the UI isn't blocked twice.
+        if (muted) syncCapture(media)
     }
+
+    override fun captureLevel(): Float = session.get()?.captureLevel ?: 0f
+
+    override fun audibleParticipantIds(): Set<String> =
+        session.get()?.audibleSenderIds()?.mapTo(linkedSetOf()) { senderParticipantId(it) } ?: emptySet()
+
+    override fun capturingSpeech(): Boolean = session.get()?.capturingSpeech() == true
 
     private fun syncCapture(media: VoiceMediaSession?) {
         if (media == null || session.get() !== media) {
@@ -238,27 +247,33 @@ class DesktopVoiceEngine : VoiceEngine {
 
     private fun startCapture(media: VoiceMediaSession) {
         stopCapture()
-        var id = inputDeviceId
-        var line = JvmVoiceDevices.openCapture(id, media.frameSamples)
-        if (line == null && !id.isNullOrEmpty()) {
-            inputDeviceId = null
-            onDeviceLost?.invoke(true)
-            id = null
-            line = JvmVoiceDevices.openCapture(null, media.frameSamples)
-        }
-        if (line == null) {
-            println("DesktopVoice capture open failed device=${id ?: "system default"} (need 48 kHz mono PCM)")
-            return
-        }
-        captureLine = line
+        val preferredId = inputDeviceId
         val frameBytes = media.frameSamples * 2
-        println(
-            "DesktopVoice capture format=PCM16LE rate=48000 ch=1 " +
-                "frameSamples=${media.frameSamples} bytesPerFrame=$frameBytes device=${id ?: "system default"}",
-        )
         val buf = ByteArray(frameBytes)
         val pcm = ShortArray(media.frameSamples)
+        // Open the line on this worker thread so mute/unmute never blocks the UI on Java Sound.
         captureThread = thread(name = "voice-capture", isDaemon = true) {
+            var id = preferredId
+            var line = JvmVoiceDevices.openCapture(id, media.frameSamples)
+            if (line == null && !id.isNullOrEmpty()) {
+                inputDeviceId = null
+                onDeviceLost?.invoke(true)
+                id = null
+                line = JvmVoiceDevices.openCapture(null, media.frameSamples)
+            }
+            if (line == null) {
+                println("DesktopVoice capture open failed device=${id ?: "system default"} (need 48 kHz mono PCM)")
+                return@thread
+            }
+            if (session.get() !== media || Thread.currentThread().isInterrupted) {
+                runCatching { line.stop(); line.close() }
+                return@thread
+            }
+            captureLine = line
+            println(
+                "DesktopVoice capture format=PCM16LE rate=48000 ch=1 " +
+                    "frameSamples=${media.frameSamples} bytesPerFrame=$frameBytes device=${id ?: "system default"}",
+            )
             try {
                 while (!Thread.currentThread().isInterrupted && session.get() === media) {
                     var read = 0
@@ -275,6 +290,9 @@ class DesktopVoiceEngine : VoiceEngine {
                     kotlinx.coroutines.runBlocking { media.offerCapturePcm(pcm) }
                 }
             } catch (_: Exception) {
+            } finally {
+                runCatching { line.stop(); line.close() }
+                if (captureLine === line) captureLine = null
             }
         }
     }

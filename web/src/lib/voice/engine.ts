@@ -49,6 +49,12 @@ export class WebVoiceEngine {
   private deviceChangeHandler: (() => void) | null = null;
   onDeviceLost: ((input: boolean) => void) | null = null;
   private onSpeaking: ((speaking: boolean) => void) | null = null;
+  /** Last capture RMS (0…1-ish); used for speech activity, not mic-open. */
+  private captureRms = 0;
+  private lastSpoke = false;
+  /** Participant ids with real decoded energy this moment — no linger. */
+  private audible = new Set<string>();
+  private audibleExpiry = new Map<string, number>();
 
   async connect(seat: VoiceJoinedSeat, onSpeaking?: (speaking: boolean) => void): Promise<boolean> {
     this.disconnect();
@@ -105,19 +111,52 @@ export class WebVoiceEngine {
     this.key = null;
     this.token = null;
     this.transmitting = false;
+    this.captureRms = 0;
+    this.lastSpoke = false;
+    this.audible.clear();
+    this.audibleExpiry.clear();
+    this.onSpeaking?.(false);
   }
 
   setTransmitting(on: boolean) {
     this.transmitting = on && !this.selfMuted;
     void this.syncCapture();
-    this.onSpeaking?.(this.transmitting);
+    if (!this.transmitting) {
+      this.captureRms = 0;
+      this.reportSpeaking(false);
+    }
   }
 
   setSelfMuted(muted: boolean) {
     this.selfMuted = muted;
     if (muted) this.transmitting = false;
     void this.syncCapture();
-    this.onSpeaking?.(this.transmitting);
+    if (muted || !this.transmitting) {
+      this.captureRms = 0;
+      this.reportSpeaking(false);
+    }
+  }
+
+  /** Participant ids whose audio we are hearing right now (empty when silent). */
+  audibleParticipantIds(): Set<string> {
+    const now = performance.now();
+    for (const [id, until] of this.audibleExpiry) {
+      if (until <= now) {
+        this.audible.delete(id);
+        this.audibleExpiry.delete(id);
+      }
+    }
+    return new Set(this.audible);
+  }
+
+  capturingSpeech(): boolean {
+    return this.transmitting && !this.selfMuted && this.captureRms > 0.02;
+  }
+
+  private reportSpeaking(on: boolean) {
+    if (on === this.lastSpoke) return;
+    this.lastSpoke = on;
+    this.onSpeaking?.(on);
   }
 
   private async syncCapture() {
@@ -366,12 +405,23 @@ export class WebVoiceEngine {
     const proc = ctx.createScriptProcessor(960, 1, 1);
     proc.onaudioprocess = (ev) => {
       if (!this.encoder || this.encoder.state !== "configured") return;
-      if (!this.transmitting || this.selfMuted) return;
+      if (!this.transmitting || this.selfMuted) {
+        this.captureRms = 0;
+        this.reportSpeaking(false);
+        return;
+      }
       const input = ev.inputBuffer.getChannelData(0);
       const interleaved = new Float32Array(input.length);
+      let sum = 0;
       for (let i = 0; i < input.length; i++) {
-        interleaved[i] = Math.max(-1, Math.min(1, input[i] * this.inputGain));
+        const s = Math.max(-1, Math.min(1, input[i] * this.inputGain));
+        interleaved[i] = s;
+        sum += s * s;
       }
+      const rms = Math.sqrt(sum / Math.max(1, input.length));
+      this.captureRms = this.captureRms * 0.55 + rms * 0.45;
+      // Instant clear when this frame is near silence — no hangover for voiceActivity.
+      this.reportSpeaking(rms > 0.02);
       try {
         this.encoder.encode(
           new AudioData({
@@ -436,6 +486,17 @@ export class WebVoiceEngine {
           const data = new Float32Array(frames);
           audio.copyTo(data, { planeIndex: 0 });
           audio.close();
+          let sum = 0;
+          for (let i = 0; i < frames; i++) sum += data[i] * data[i];
+          const rms = Math.sqrt(sum / Math.max(1, frames));
+          // Mark heard only while this packet has energy; expiry ≈ one frame so silence drops instantly.
+          if (rms >= 0.01 && gain > 0) {
+            this.audible.add(senderKey);
+            this.audibleExpiry.set(senderKey, performance.now() + 25);
+          } else {
+            this.audible.delete(senderKey);
+            this.audibleExpiry.delete(senderKey);
+          }
           const buffer = ctx.createBuffer(1, frames, 48000);
           const channel = buffer.getChannelData(0);
           for (let i = 0; i < frames; i++) channel[i] = data[i] * gain;

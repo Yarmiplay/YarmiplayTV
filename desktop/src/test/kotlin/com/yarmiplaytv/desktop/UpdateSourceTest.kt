@@ -85,7 +85,8 @@ class UpdateSourceTest {
         assertTrue("data stays", script.contains("Where-Object { \$_.Name -ne 'data' }"))
         assertTrue("only the app's folders are swapped", script.contains("foreach (\$n in 'app','runtime')"))
         assertTrue("put back on failure", script.contains("Move-Item -LiteralPath (\$d + '.old') -Destination \$d"))
-        assertTrue(script.contains("\$env:YARMIPLAYTV_UPDATE_FAILED = '1.9.0'"))
+        assertTrue(script.contains("\$env:YARMIPLAYTV_UPDATE_FAILED = \$sig"))
+        assertTrue(script.contains("'1.9.0' + '|exit='"))
         assertTrue(script.endsWith("-ArgumentList '--room \"it''s mine\"'"))
         assertFalse(PortableUpdater.script(File("x.zip"), launcher, emptyList(), "1.9.0", listOf(1), relaunch = false).contains("Start-Process"))
     }
@@ -145,6 +146,8 @@ class UpdateSourceTest {
         assertFalse(script.contains("/quiet"))
         assertTrue(script.contains("Wait-Process -Id 1,2"))
         assertTrue(script.contains("YARMIPLAYTV_UPDATE_FAILED"))
+        assertTrue(script.contains("Unblock-File"))
+        assertTrue(script.contains("Get-Process -Name 'YarmiplayTV'"))
         assertTrue(script.contains("keep"))
     }
 

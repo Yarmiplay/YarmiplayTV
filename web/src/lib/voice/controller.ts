@@ -51,6 +51,7 @@ export class VoiceController {
   private onDeviceLostClear: ((input: boolean) => void) | null = null;
   private playbackUnsub: (() => void) | null = null;
   private lastPlaying: boolean | null = null;
+  private heardPoll: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly client: () => SyncplayClient | null) {
     this.engine.onDeviceLost = (input) => this.onDeviceLostClear?.(input);
@@ -74,6 +75,8 @@ export class VoiceController {
     this.playbackUnsub = null;
     this.lastPlaying = null;
     this.autoMutedByPlayback = false;
+    if (this.heardPoll) clearInterval(this.heardPoll);
+    this.heardPoll = null;
     this.engine.disconnect();
     this.leftByUser = false;
     this.ui.set(idle());
@@ -300,9 +303,12 @@ export class VoiceController {
           showMic: true,
         }));
         this.engine.setTransmitting(!this.ui.value.selfMuted);
+        this.startHeardPoll();
         break;
       }
       case "voiceClosed":
+        if (this.heardPoll) clearInterval(this.heardPoll);
+        this.heardPoll = null;
         this.engine.disconnect();
         this.ui.update((u) => ({
           ...u,
@@ -329,19 +335,10 @@ export class VoiceController {
         }
         break;
       case "voicePeers":
-        this.ui.update((u) => ({
-          ...u,
-          peers: ev.peers,
-          speakingIds: new Set(ev.peers.filter((p) => p.speaking).map((p) => p.participantId)),
-        }));
+        // speakingIds stay driven by locally heard decode energy (instant clear on silence).
+        this.ui.update((u) => ({ ...u, peers: ev.peers }));
         break;
       case "voiceActivity":
-        this.ui.update((u) => {
-          const next = new Set(u.speakingIds);
-          if (ev.speaking) next.add(ev.participantId);
-          else next.delete(ev.participantId);
-          return { ...u, speakingIds: next };
-        });
         break;
       case "disconnected":
       case "sessionEnded":
@@ -352,5 +349,17 @@ export class VoiceController {
       default:
         break;
     }
+  }
+
+  /** Poll receive energy so speaking names drop the same tick audio stops (no linger). */
+  private startHeardPoll() {
+    if (this.heardPoll) clearInterval(this.heardPoll);
+    this.heardPoll = setInterval(() => {
+      if (!this.ui.value.connected) return;
+      const heard = this.engine.audibleParticipantIds();
+      const cur = this.ui.value.speakingIds;
+      if (heard.size === cur.size && [...heard].every((id) => cur.has(id))) return;
+      this.ui.update((u) => ({ ...u, speakingIds: heard }));
+    }, 33);
   }
 }

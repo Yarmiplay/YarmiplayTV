@@ -46,10 +46,12 @@ class VoiceQualityTest {
         var decoded = 0
         var plc = 0
         val a = jb.poll(1L, decode = { decoded++; ShortArray(960) { 100 } }, plc = { plc++; ShortArray(960) }, fec = { null })
-        assertEquals(960, a!!.size)
+        assertEquals(960, a!!.pcm.size)
+        assertEquals(false, a.concealed)
         assertEquals(1, decoded)
         val b = jb.poll(1L, decode = { decoded++; ShortArray(960) { 100 } }, plc = { plc++; ShortArray(960) { 1 } }, fec = { null })
-        assertEquals(960, b!!.size)
+        assertEquals(960, b!!.pcm.size)
+        assertEquals(true, b.concealed)
         assertEquals(1, plc)
     }
 
