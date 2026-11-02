@@ -57,6 +57,8 @@ class VoiceController(
      * restores only in that case — never overrides a mute the user set themselves.
      */
     private var autoMutedByPlayback = false
+    /** Last known "file loaded and playing" from [bindPlayback]; used to auto-mute on voice connect. */
+    private var playbackPlaying = false
 
     init {
         engine.onDeviceLost = { input ->
@@ -140,10 +142,25 @@ class VoiceController(
 
     private fun applySelfMuted(muted: Boolean, fromAuto: Boolean) {
         if (!fromAuto) autoMutedByPlayback = false
+        val was = selfMuted
         selfMuted = muted
         engine.setSelfMuted(muted)
-        _ui.update { it.copy(selfMuted = muted, showMicPermissionSettings = false) }
+        _ui.update {
+            it.copy(
+                selfMuted = muted,
+                showMicPermissionSettings = false,
+                statusLine = when {
+                    muted && fromAuto -> "Mic muted while playing"
+                    muted -> "Mic muted"
+                    else -> statusFor(it.capture, talkLatched, it.talkMode)
+                },
+            )
+        }
         updateTransmitting()
+        // OPEN_MIC had no cue before; join/leave sounds still come from [onPeers].
+        if (was != muted && !fromAuto && _ui.value.talkMode == VoiceTalkMode.OPEN_MIC) {
+            playMicCue(!muted)
+        }
     }
 
     /**
@@ -154,7 +171,10 @@ class VoiceController(
         playback
             .map { it.fileLoaded && !it.paused }
             .distinctUntilChanged()
-            .onEach { playing -> onPlaybackPlayingChanged(playing) }
+            .onEach { playing ->
+                playbackPlaying = playing
+                onPlaybackPlayingChanged(playing)
+            }
             .launchIn(scope)
     }
 
@@ -583,6 +603,8 @@ class VoiceController(
             maybeOfferHint(connected, hintShown)
         }
         updateTransmitting()
+        // bindPlayback may have emitted "playing" before we were connected; apply auto-mute now.
+        onPlaybackPlayingChanged(playbackPlaying)
     }
 
     private fun onPeers(peers: List<VoicePeer>) {

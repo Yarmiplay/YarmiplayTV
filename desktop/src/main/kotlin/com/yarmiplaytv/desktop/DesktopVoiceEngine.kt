@@ -164,11 +164,15 @@ class DesktopVoiceEngine : VoiceEngine {
             VoiceSound.MIC_ON -> "voice_mic_on.wav"
             VoiceSound.MIC_OFF -> "voice_mic_off.wav"
         }
+        // Packaged at the jar root by desktop processResources (copied from shared composeResources/files).
         val stream = listOf(
+            "/$name",
             "/composeResources/com.yarmiplaytv.shared.generated.resources/files/$name",
             "/files/$name",
-            "/$name",
-        ).firstNotNullOfOrNull { path -> javaClass.getResourceAsStream(path) } ?: return
+        ).firstNotNullOfOrNull { path -> javaClass.getResourceAsStream(path) } ?: run {
+            println("DesktopVoice missing sound resource: $name")
+            return
+        }
         runCatching {
             clip?.close()
             val audio = AudioSystem.getAudioInputStream(BufferedInputStream(stream))
@@ -181,7 +185,7 @@ class DesktopVoiceEngine : VoiceEngine {
                 }
                 c.start()
             }
-        }
+        }.onFailure { println("DesktopVoice playSound $name failed: ${it.message}") }
     }
 
     private fun openPlayback() {
@@ -193,6 +197,9 @@ class DesktopVoiceEngine : VoiceEngine {
             onDeviceLost?.invoke(false)
             id = null
             line = JvmVoiceDevices.openPlayback(null, frameSamples)
+        }
+        if (line == null) {
+            println("DesktopVoice playback open failed device=${id ?: "system default"} (need 48 kHz mono PCM)")
         }
         playbackLine = line
     }
@@ -239,7 +246,10 @@ class DesktopVoiceEngine : VoiceEngine {
             id = null
             line = JvmVoiceDevices.openCapture(null, media.frameSamples)
         }
-        if (line == null) return
+        if (line == null) {
+            println("DesktopVoice capture open failed device=${id ?: "system default"} (need 48 kHz mono PCM)")
+            return
+        }
         captureLine = line
         val frameBytes = media.frameSamples * 2
         println(
