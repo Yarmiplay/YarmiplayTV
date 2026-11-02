@@ -42,8 +42,17 @@ dependencies {
     testImplementation(compose.uiTest)
 }
 
+// Join/leave/mic cues live under shared composeResources for Android; the shared module does not
+// apply the Compose Multiplatform resources plugin, so desktop never got them on the classpath.
+tasks.named<ProcessResources>("processResources") {
+    from(rootProject.file("shared/src/commonMain/composeResources/files")) {
+        include("voice_*.wav")
+    }
+}
+
 tasks.test {
     dependsOn(":player-mpv-desktop:prepareLibmpv")
+    dependsOn(tasks.named("processResources"))
     maxParallelForks = 1
     val screenshots = layout.buildDirectory.dir("desktop-screenshots")
     outputs.dir(screenshots).withPropertyName("screenshots")
@@ -55,7 +64,7 @@ tasks.test {
     testLogging { events("passed", "skipped", "failed") }
 }
 
-val appVersion = "2.8.7"
+val appVersion = "2.8.8"
 val libmpvDir = project(":player-mpv-desktop").layout.buildDirectory.dir("libmpv")
 
 /** Draws the app logo (the two play triangles of ic_logo.xml on the banner gradient) as png, ico and icns. */
