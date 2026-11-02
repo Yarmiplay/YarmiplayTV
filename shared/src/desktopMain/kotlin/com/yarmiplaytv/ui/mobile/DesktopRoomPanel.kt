@@ -4,8 +4,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.draganddrop.dragAndDropTarget
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,38 +13,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.onClick
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CreateNewFolder
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SearchOff
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.SortByAlpha
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -64,48 +45,28 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draganddrop.DragAndDropEvent
-import androidx.compose.ui.draganddrop.DragAndDropTarget
-import androidx.compose.ui.draganddrop.DragData
-import androidx.compose.ui.draganddrop.dragData
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
-import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.isCtrlPressed
-import androidx.compose.ui.input.pointer.isMetaPressed
-import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.AlignmentLine
 import androidx.compose.ui.layout.FirstBaseline
-import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -121,34 +82,24 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
 import com.yarmiplaytv.AppContainer
-import com.yarmiplaytv.local.FileLocalLibrary
-import com.yarmiplaytv.local.LocalMatcher
 import com.yarmiplaytv.sync.FeedMessage
-import com.yarmiplaytv.sync.PlaylistEdits
 import com.yarmiplaytv.syncplay.ConnectionStatus
-import com.yarmiplaytv.ui.player.sizeWarning
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.SurfaceInk
-import java.awt.dnd.DropTargetDragEvent
-import java.awt.dnd.DropTargetDropEvent
-import java.net.URI
-import java.nio.file.Files
-import java.nio.file.Paths
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /** The desktop side panel's state; the window's Enter shortcut calls [focusChat]. */
 object DesktopRoomPanel {
     var open by mutableStateOf(false)
     var tab by mutableStateOf(RoomPanelTab.CHAT)
+    /** Session width of the docked panel (drag the left edge to resize). */
+    var widthDp by mutableFloatStateOf(PANEL_WIDTH_DEFAULT)
     /** Chat messages from others that arrived while the chat tab wasn't showing. */
     internal var unread by mutableIntStateOf(0)
     internal var chatFocusRequests by mutableIntStateOf(0)
@@ -175,7 +126,9 @@ actual fun toggleRoomSidePanel(tab: RoomPanelTab): Boolean {
     return true
 }
 
-private val PANEL_WIDTH = 380.dp
+internal const val PANEL_WIDTH_DEFAULT = 400f
+internal const val PANEL_WIDTH_MIN = 300f
+internal const val PANEL_WIDTH_MAX = 640f
 
 /**
  * New messages beside the Chat tab's name: a count in the theme's accent, level with the name. A circle for one or two
@@ -232,404 +185,72 @@ actual fun RoomSidePanel(container: AppContainer) {
     LaunchedEffect(chatShowing) { if (chatShowing) panel.unread = 0 }
     if (!panel.open) return
 
-    Surface(
-        Modifier.width(PANEL_WIDTH).fillMaxHeight().testTag("room_panel")
-            // Keys the focused field or list didn't use stay in the panel, so typing never reaches the
-            // player's shortcuts. Esc still goes on to leave full screen or go back.
-            .onKeyEvent { it.key != Key.Escape && !it.isCtrlPressed && !it.isAltPressed && !it.isMetaPressed },
-        color = AppColors.Surface,
-        contentColor = AppColors.OnSurface,
-    ) {
-        SurfaceInk {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TabRow(selectedTabIndex = panel.tab.ordinal, containerColor = AppColors.Surface, modifier = Modifier.weight(1f)) {
-                    RoomPanelTab.entries.forEach { tab ->
-                        // Less side padding than a text tab's, so the Chat tab's count fits beside its name at full size.
-                        Tab(selected = panel.tab == tab, onClick = { panel.tab = tab }, modifier = Modifier.testTag("panel_tab_${tab.name}")) {
-                            Row(
-                                Modifier.height(TAB_HEIGHT).padding(horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                Text(tab.label, style = MaterialTheme.typography.titleSmall, maxLines = 1)
-                                if (tab == RoomPanelTab.CHAT && panel.unread > 0) UnreadCount(panel.unread)
+    val density = LocalDensity.current
+    Row(Modifier.fillMaxHeight().testTag("room_panel")) {
+        // Drag the left edge to resize — video keeps the remaining width beside the panel.
+        Box(
+            Modifier
+                .width(6.dp)
+                .fillMaxHeight()
+                .testTag("room_panel_resize")
+                .pointerInput(Unit) {
+                    detectDragGestures { change, amount ->
+                        change.consume()
+                        val deltaDp = amount.x / density.density
+                        panel.widthDp = (panel.widthDp - deltaDp).coerceIn(PANEL_WIDTH_MIN, PANEL_WIDTH_MAX)
+                    }
+                }
+                .background(AppColors.SurfaceHigh.copy(alpha = 0.5f)),
+        )
+        Surface(
+            Modifier.width(panel.widthDp.dp).fillMaxHeight()
+                // Keys the focused field or list didn't use stay in the panel, so typing never reaches the
+                // player's shortcuts. Esc still goes on to leave full screen or go back.
+                .onKeyEvent { it.key != Key.Escape && !it.isCtrlPressed && !it.isAltPressed && !it.isMetaPressed },
+            color = AppColors.Surface,
+            contentColor = AppColors.OnSurface,
+        ) {
+            SurfaceInk {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TabRow(selectedTabIndex = panel.tab.ordinal, containerColor = AppColors.Surface, modifier = Modifier.weight(1f)) {
+                        RoomPanelTab.entries.forEach { tab ->
+                            // Less side padding than a text tab's, so the Chat tab's count fits beside its name at full size.
+                            Tab(selected = panel.tab == tab, onClick = { panel.tab = tab }, modifier = Modifier.testTag("panel_tab_${tab.name}")) {
+                                Row(
+                                    Modifier.height(TAB_HEIGHT).padding(horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Text(tab.label, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                                    if (tab == RoomPanelTab.CHAT && panel.unread > 0) UnreadCount(panel.unread)
+                                }
                             }
                         }
                     }
+                    IconButton({ panel.open = false }) { Icon(Icons.Filled.Close, "Close the panel") }
                 }
-                IconButton({ panel.open = false }) { Icon(Icons.Filled.Close, "Close the panel") }
-            }
-            when (panel.tab) {
-                RoomPanelTab.ROOM -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
-                    RoomUsersContent(container)
-                }
-                RoomPanelTab.PLAYLIST -> DesktopPlaylist(container, Modifier.weight(1f))
-                RoomPanelTab.CHAT -> DesktopChat(container, Modifier.weight(1f))
-                RoomPanelTab.MAL -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
-                    val mal by container.mal.state.collectAsState()
-                    MalContent(container, mal)
-                    Spacer(Modifier.height(16.dp))
-                    MalFindSection(container)
-                }
-            }
-        }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
-@Composable
-private fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
-    val room by container.sync.room.collectAsState()
-    val settings by container.settings.collectAsState()
-    val localFiles by container.local.files.collectAsState()
-    val canUndo by container.playlist.shared.canUndo.collectAsState()
-    val shared = container.playlist.shared
-    val playlist = room.playlist
-    var selected by remember { mutableStateOf(emptySet<Int>()) }
-    var anchor by remember { mutableStateOf<Int?>(null) }
-    var addingUrls by remember { mutableStateOf(false) }
-    var confirmEmpty by remember { mutableStateOf(false) }
-    val listFocus = remember { FocusRequester() }
-    val listState = rememberLazyListState()
-    LaunchedEffect(playlist) { selected = selected.filter { it in playlist.indices }.toSet() }
-    // Matching every entry against a big library takes a while, so the index of its names is built off the UI thread;
-    // until it's ready every entry shows as available.
-    val localIndex by produceState<LocalMatcher.Index?>(null, localFiles) { value = withContext(Dispatchers.Default) { LocalMatcher.Index(localFiles) } }
-    val available = remember(playlist, localIndex) { localIndex?.let { index -> playlist.map { container.playlist.isAvailable(it, index) } }.orEmpty() }
-    // A click selects at once; a second one on the same row soon after plays it. (A click handler that also takes
-    // double clicks holds every single click back until the double-click time has passed.)
-    val doubleClickMs = LocalViewConfiguration.current.doubleTapTimeoutMillis
-    val lastClick = remember { LastClick() }
-    val options = settings.sync
-
-    fun saveOptions(sharedPlaylists: Boolean = options.sharedPlaylists, loop: Boolean = options.loopPlaylist, single: Boolean = options.loopSingleFile) {
-        container.scope.launch { container.settingsStore.savePlaylistOptions(sharedPlaylists, loop, single) }
-    }
-    fun addPaths(paths: List<java.nio.file.Path>, at: Int? = null) =
-        container.playlist.addLocalFilesToRoomPlaylist(paths.flatMap(DesktopDialogs::videosIn).map(FileLocalLibrary::uriOf), at)
-    fun removeSelected() {
-        if (selected.isEmpty()) return
-        shared.remove(selected)
-        selected = emptySet()
-    }
-    fun play(index: Int) = container.playlist.selectIndex(index)
-
-    // Where dragged-in files would be inserted while they hover over the tab, null otherwise.
-    var dropAt by remember { mutableStateOf<Int?>(null) }
-    var listCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
-    val density by rememberUpdatedState(LocalDensity.current.density)
-    val drop = remember(container) {
-        object : DragAndDropTarget {
-            fun indexAt(event: DragAndDropEvent): Int {
-                val count = container.sync.room.value.playlist.size
-                val coords = listCoords?.takeIf { it.isAttached } ?: return count
-                // AWT reports the pointer in points within the window's Compose content, whose root is in pixels.
-                val pointerY = when (val native = event.nativeEvent) {
-                    is DropTargetDragEvent -> native.location.y
-                    is DropTargetDropEvent -> native.location.y
-                    else -> return count
-                }
-                val y = pointerY * density - coords.positionInRoot().y
-                return playlistDropIndex(y, coords.size.height, listState.layoutInfo.visibleItemsInfo, count)
-            }
-            override fun onEntered(event: DragAndDropEvent) { dropAt = indexAt(event) }
-            override fun onMoved(event: DragAndDropEvent) { dropAt = indexAt(event) }
-            override fun onExited(event: DragAndDropEvent) { dropAt = null }
-            override fun onEnded(event: DragAndDropEvent) { dropAt = null }
-            override fun onDrop(event: DragAndDropEvent): Boolean {
-                val at = indexAt(event)
-                dropAt = null
-                val paths = (event.dragData() as? DragData.FilesList)?.readFiles().orEmpty()
-                    .mapNotNull { runCatching { Paths.get(URI(it)) }.getOrNull() }
-                if (paths.isEmpty()) return false
-                addPaths(paths, at)
-                return true
-            }
-        }
-    }
-    val connected = room.status == ConnectionStatus.CONNECTED
-
-    Column(
-        modifier.fillMaxWidth().then(
-            if (connected) Modifier.dragAndDropTarget(shouldStartDragAndDrop = { it.dragData() is DragData.FilesList }, target = drop)
-            else Modifier
-        ),
-    ) {
-        if (!connected) {
-            Text("Join a Syncplay room to use the shared playlist.", color = AppColors.TextDim, modifier = Modifier.padding(16.dp))
-            return@Column
-        }
-        if (!options.sharedPlaylists) {
-            Row(Modifier.fillMaxWidth().background(AppColors.NotReady.copy(alpha = 0.15f)).padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Shared playlists are off: you won't follow the room's picks.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                TextButton({ saveOptions(sharedPlaylists = true) }) { Text("Turn on") }
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ToolButton(Icons.Filled.Add, "Add videos") { addPaths(DesktopDialogs.pickVideos()) }
-            ToolButton(Icons.Filled.CreateNewFolder, "Add the videos in a folder") { DesktopDialogs.pickFolder("Add the videos in a folder")?.let { addPaths(listOf(it)) } }
-            ToolButton(Icons.Filled.Link, "Add URLs") { addingUrls = !addingUrls }
-            Box {
-                var open by remember { mutableStateOf(false) }
-                ToolButton(Icons.Filled.Shuffle, "Shuffle", enabled = playlist.size > 1) { open = true }
-                DropdownMenu(open, { open = false }) {
-                    DropdownMenuItem({ Text("Shuffle what's left") }, { open = false; shared.shuffle(entire = false) })
-                    DropdownMenuItem({ Text("Shuffle everything") }, { open = false; shared.shuffle(entire = true) })
-                }
-            }
-            ToolButton(Icons.Filled.SortByAlpha, "Sort A to Z", enabled = playlist.size > 1) { shared.sortAlphabetically() }
-            ToolButton(Icons.AutoMirrored.Filled.Undo, "Undo (Ctrl+Z)", enabled = canUndo) { shared.undo() }
-            if (playlist.isNotEmpty()) {
-                TooltipArea(tooltip = { Tooltip("Empty playlist") }) {
-                    IconButton(
-                        { confirmEmpty = true },
-                        modifier = Modifier.testTag("playlist_empty"),
-                    ) { Icon(Icons.Filled.Delete, contentDescription = "Empty playlist", tint = AppColors.Error) }
-                }
-            }
-            Spacer(Modifier.weight(1f))
-            Box {
-                var open by remember { mutableStateOf(false) }
-                ToolButton(Icons.Filled.MoreVert, "Playlist options") { open = true }
-                DropdownMenu(open, { open = false }) {
-                    CheckItem("Loop at end of playlist", options.loopPlaylist) { saveOptions(loop = !options.loopPlaylist) }
-                    CheckItem("Loop single file", options.loopSingleFile) { saveOptions(single = !options.loopSingleFile) }
-                    CheckItem("Enable shared playlists", options.sharedPlaylists) { saveOptions(sharedPlaylists = !options.sharedPlaylists) }
-                    HorizontalDivider()
-                    DropdownMenuItem({ Text("Save playlist…") }, {
-                        open = false
-                        // The full name (a managed room's hash included), with what file names can't hold replaced.
-                        DesktopDialogs.savePlaylist("${room.room.replace(Regex("[\\\\/:*?\"<>|]"), "-")}.txt")?.let { path ->
-                            runCatching { Files.writeString(path, PlaylistEdits.format(playlist)) }
-                                .onSuccess { container.sync.postLocal("Saved the playlist to ${path.fileName}") }
-                                .onFailure { container.sync.postLocal("Couldn't save the playlist: ${it.message}", isError = true) }
-                        }
-                    }, enabled = playlist.isNotEmpty())
-                    DropdownMenuItem({ Text("Load playlist…") }, {
-                        open = false
-                        DesktopDialogs.openPlaylist()?.let { path ->
-                            runCatching { PlaylistEdits.parse(Files.readString(path)) }
-                                .onSuccess { shared.replace(it); container.sync.postLocal("Loaded ${it.size} entries from ${path.fileName}") }
-                                .onFailure { container.sync.postLocal("Couldn't read the playlist: ${it.message}", isError = true) }
-                        }
-                    })
-                }
-            }
-        }
-        if (addingUrls) UrlField(onAdd = { text -> container.playlist.addUrlsToRoomPlaylist(text.split(Regex("\\s+"))) > 0 }, onClose = { addingUrls = false })
-        if (confirmEmpty) {
-            AlertDialog(
-                onDismissRequest = { confirmEmpty = false },
-                title = { Text("Empty the playlist?") },
-                text = { Text("Remove every entry from this room's shared playlist. Everyone in the room sees the change. Undo brings the list back.") },
-                confirmButton = {
-                    TextButton(
-                        {
-                            confirmEmpty = false
-                            shared.clear()
-                        },
-                        Modifier.testTag("playlist_empty_confirm"),
-                    ) { Text("Empty playlist") }
-                },
-                dismissButton = { TextButton({ confirmEmpty = false }) { Text("Cancel") } },
-            )
-        }
-
-        if (playlist.isEmpty()) {
-            Text(
-                "The playlist is empty. Add videos, a folder or URLs, or drop videos or folders here.",
-                color = AppColors.TextDim, modifier = Modifier.padding(16.dp),
-            )
-        }
-        var dragFrom by remember { mutableStateOf<Int?>(null) }
-        var dragOffset by remember { mutableFloatStateOf(0f) }
-        val dropLine = AppColors.Accent
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth().testTag("playlist_list")
-                .onGloballyPositioned { listCoords = it }
-                .background(if (dropAt != null) AppColors.Accent.copy(alpha = 0.06f) else Color.Transparent)
-                .drawWithContent {
-                    drawContent()
-                    val at = dropAt ?: return@drawWithContent
-                    val rows = listState.layoutInfo.visibleItemsInfo
-                    val y = rows.firstOrNull { it.index == at }?.offset?.toFloat()
-                        ?: rows.lastOrNull()?.let { (it.offset + it.size).toFloat() } ?: 0f
-                    val thickness = 2.dp.toPx()
-                    val inset = 8.dp.toPx()
-                    drawRect(
-                        dropLine,
-                        topLeft = Offset(inset, (y - thickness / 2).coerceIn(0f, size.height - thickness)),
-                        size = Size(size.width - 2 * inset, thickness),
-                    )
-                }
-                .focusRequester(listFocus).focusable()
-                .onPreviewKeyEvent { event ->
-                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    val ctrl = event.isCtrlPressed || event.isMetaPressed
-                    when {
-                        event.key == Key.Delete || event.key == Key.Backspace -> removeSelected()
-                        event.isAltPressed && event.key == Key.DirectionUp -> selected = shared.shift(selected, -1)
-                        event.isAltPressed && event.key == Key.DirectionDown -> selected = shared.shift(selected, 1)
-                        ctrl && event.key == Key.Z -> shared.undo()
-                        ctrl && event.key == Key.A -> selected = playlist.indices.toSet()
-                        event.key == Key.Enter -> selected.minOrNull()?.let(::play)
-                        event.key == Key.DirectionUp || event.key == Key.DirectionDown -> {
-                            if (playlist.isEmpty()) return@onPreviewKeyEvent true
-                            val from = anchor ?: selected.minOrNull() ?: -1
-                            val to = (from + if (event.key == Key.DirectionUp) -1 else 1).coerceIn(0, playlist.lastIndex)
-                            selected = if (event.isShiftPressed && anchor != null) rangeOf(anchor!!, to) else setOf(to).also { anchor = to }
-                            container.scope.launch { listState.animateScrollToItem(to) }
-                        }
-                        else -> return@onPreviewKeyEvent false
+                when (panel.tab) {
+                    RoomPanelTab.ROOM -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
+                        RoomUsersContent(container)
                     }
-                    true
-                },
-        ) {
-            itemsIndexed(playlist, key = { index, file -> "$index:$file" }) { index, file ->
-                val dragging = dragFrom == index
-                PlaylistRow(
-                    index = index,
-                    file = file,
-                    current = index == room.playlistIndex,
-                    selected = index in selected,
-                    available = available.getOrElse(index) { true },
-                    sizeWarning = room.sizeWarning(file),
-                    modifier = Modifier
-                        .zIndex(if (dragging) 1f else 0f)
-                        .graphicsLayer { translationY = if (dragging) dragOffset else 0f }
-                        .onClick(keyboardModifiers = { isCtrlPressed || isMetaPressed }) {
-                            listFocus.requestFocus()
-                            selected = if (index in selected) selected - index else selected + index
-                            anchor = index
-                        }
-                        .onClick(keyboardModifiers = { isShiftPressed }) {
-                            listFocus.requestFocus()
-                            selected = rangeOf(anchor ?: index, index)
-                        }
-                        .onClick(keyboardModifiers = { !isCtrlPressed && !isMetaPressed && !isShiftPressed }) {
-                            listFocus.requestFocus()
-                            selected = setOf(index)
-                            anchor = index
-                            if (lastClick.isSecond(index, doubleClickMs)) play(index)
-                        }
-                        .pointerInput(index, playlist.size) {
-                            detectDragGestures(
-                                onDragStart = { dragFrom = index; dragOffset = 0f },
-                                onDragEnd = {
-                                    val to = playlistDragTarget(index, dragOffset, listState.layoutInfo.visibleItemsInfo, playlist.lastIndex)
-                                    if (to != index) {
-                                        shared.move(index, to)
-                                        selected = setOf(to)
-                                        anchor = to
-                                    }
-                                    dragFrom = null
-                                    dragOffset = 0f
-                                },
-                                onDragCancel = { dragFrom = null; dragOffset = 0f },
-                                onDrag = { change, amount -> change.consume(); dragOffset += amount.y },
-                            )
-                        },
-                )
-            }
-        }
-        if (dropAt != null) {
-            Text(
-                if (dropAt!! < playlist.size) "Release to insert the videos at the line" else "Release to add the videos at the end",
-                color = AppColors.Accent, style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp).testTag("playlist_drop_hint"),
-            )
-        } else if (playlist.isNotEmpty()) {
-            Text(
-                "Double-click plays · Del removes · drag or Alt+↑↓ moves",
-                color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-            )
-        }
-    }
-}
-
-private fun rangeOf(a: Int, b: Int): Set<Int> = (minOf(a, b)..maxOf(a, b)).toSet()
-
-/** The last click on a playlist row, to tell a double click from two single ones. */
-internal class LastClick(private val now: () -> Long = System::currentTimeMillis) {
-    private var index = -1
-    private var at = 0L
-
-    /** Records a click on row [index]; true when it's the second within [withinMs] on that row (then it starts over). */
-    fun isSecond(index: Int, withinMs: Long): Boolean {
-        val time = now()
-        val second = index == this.index && time - at <= withinMs
-        this.index = if (second) -1 else index
-        at = time
-        return second
-    }
-}
-
-/**
- * Where the row at [from], dragged [offset] pixels, lands among [rows] (rows differ in height, as long names wrap): the
- * row its middle is over, or the first or last row when it's past them.
- */
-internal fun playlistDragTarget(from: Int, offset: Float, rows: List<LazyListItemInfo>, lastIndex: Int): Int {
-    val dragged = rows.firstOrNull { it.index == from } ?: return from
-    val middle = dragged.offset + dragged.size / 2f + offset
-    val over = rows.firstOrNull { middle < it.offset + it.size } ?: rows.last()
-    return over.index.coerceIn(0, lastIndex)
-}
-
-/**
- * The index files dropped at [y] (from the top of a list [height] tall showing [rows]) are inserted at: before the
- * row whose upper half is under the pointer. Outside the list they go at the end.
- */
-internal fun playlistDropIndex(y: Float, height: Int, rows: List<LazyListItemInfo>, count: Int): Int {
-    if (y < 0f || y > height) return count
-    val row = rows.firstOrNull { y < it.offset + it.size / 2f } ?: return rows.lastOrNull()?.let { it.index + 1 } ?: count
-    return row.index
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun PlaylistRow(index: Int, file: String, current: Boolean, selected: Boolean, available: Boolean, sizeWarning: String?, modifier: Modifier) {
-    val background = when {
-        selected -> AppColors.Accent.copy(alpha = 0.30f)
-        current -> AppColors.Accent.copy(alpha = 0.14f)
-        else -> Color.Transparent
-    }
-    Row(
-        modifier.fillMaxWidth().heightIn(min = ROW_HEIGHT).padding(horizontal = 8.dp).clip(RoundedCornerShape(8.dp)).background(background)
-            .padding(horizontal = 8.dp, vertical = 8.dp).testTag("playlist_row_$index"),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (current) Icon(Icons.Filled.PlayArrow, "Playing", tint = AppColors.Accent, modifier = Modifier.width(28.dp))
-        else Text("${index + 1}.", color = AppColors.TextDim, modifier = Modifier.width(28.dp))
-        // The whole name, on as many lines as it takes.
-        Text(
-            file,
-            fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
-            fontStyle = if (available) FontStyle.Normal else FontStyle.Italic,
-            color = if (available) AppColors.Text else AppColors.TextDim,
-            modifier = Modifier.weight(1f),
-        )
-        if (sizeWarning != null) {
-            TooltipArea(tooltip = { Tooltip(sizeWarning) }) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 6.dp)) {
-                    Icon(Icons.Filled.Warning, sizeWarning, tint = AppColors.NotReady, modifier = Modifier.size(18.dp).testTag("playlist_size_warning_$index"))
-                    Text("Size differs", color = AppColors.NotReady, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 4.dp, end = 4.dp))
+                    RoomPanelTab.PLAYLIST -> DesktopPlaylist(container, Modifier.weight(1f))
+                    RoomPanelTab.CHAT -> DesktopChat(container, Modifier.weight(1f))
+                    RoomPanelTab.MAL -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
+                        val mal by container.mal.state.collectAsState()
+                        MalContent(container, mal)
+                        Spacer(Modifier.height(16.dp))
+                        MalFindSection(container)
+                    }
                 }
             }
-        }
-        if (!available) {
-            TooltipArea(tooltip = { Tooltip("Not in your media folders; it's looked up on your media servers when it's picked") }) {
-                Icon(Icons.Filled.SearchOff, "Not found here", tint = AppColors.TextDim, modifier = Modifier.size(18.dp))
             }
         }
     }
 }
 
 @Composable
-private fun UrlField(onAdd: (String) -> Boolean, onClose: () -> Unit) {
+internal fun UrlField(onAdd: (String) -> Boolean, onClose: () -> Unit) {
     var text by remember { mutableStateOf("") }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
@@ -759,21 +380,21 @@ private fun ChatLine(msg: FeedMessage, onBlock: (() -> Unit)?) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ToolButton(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun ToolButton(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
     TooltipArea(tooltip = { Tooltip(label) }) {
         IconButton(onClick, enabled = enabled, modifier = Modifier.testTag("playlist_$label")) { Icon(icon, contentDescription = label) }
     }
 }
 
 @Composable
-private fun Tooltip(text: String) {
+internal fun Tooltip(text: String) {
     Surface(color = AppColors.Background, shape = RoundedCornerShape(6.dp), shadowElevation = 4.dp) {
         Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
     }
 }
 
 @Composable
-private fun CheckItem(label: String, checked: Boolean, onClick: () -> Unit) {
+internal fun CheckItem(label: String, checked: Boolean, onClick: () -> Unit) {
     DropdownMenuItem(
         text = { Text(label) },
         onClick = onClick,

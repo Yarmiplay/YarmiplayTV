@@ -156,7 +156,7 @@ class RoomPanelUiTest {
         setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
                 MobileTheme {
-                    Box(Modifier.size(380.dp, 640.dp).background(AppColors.Background)) { RoomSidePanel(alice) }
+                    Box(Modifier.size(420.dp, 640.dp).background(AppColors.Background)) { RoomSidePanel(alice) }
                 }
             }
         }
@@ -185,7 +185,7 @@ class RoomPanelUiTest {
         setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
                 MobileTheme {
-                    Box(Modifier.size(380.dp, 640.dp).background(AppColors.Background)) { RoomSidePanel(alice) }
+                    Box(Modifier.size(420.dp, 640.dp).background(AppColors.Background)) { RoomSidePanel(alice) }
                 }
             }
         }
