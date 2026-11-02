@@ -91,10 +91,23 @@ sealed interface SyncplayEvent {
         val maxBitrate: Int = 32_000,
         val fec: Boolean = true,
         val dtx: Boolean = true,
-    ) : SyncplayEvent
+        /** `syncplay` when media rides the Syncplay connection. */
+        val mux: String? = null,
+        /** Syncplay port from the server (same connection — do not open a new socket). */
+        val port: Int? = null,
+        val transport: String = "yv1",
+    ) : SyncplayEvent {
+        val usesSyncplayMux: Boolean
+            get() = mux.equals("syncplay", ignoreCase = true) ||
+                transport.equals("yv1-syncplay", ignoreCase = true)
+    }
 
     /** The server closed our voice seat. */
-    data class VoiceClosed(val reason: VoiceClosedReason) : SyncplayEvent
+    data class VoiceClosed(
+        val reason: VoiceClosedReason,
+        /** Server copy when present (e.g. `voice disabled on this server`). */
+        val message: String? = null,
+    ) : SyncplayEvent
 
     /** Who else is in voice right now (full list each time). */
     data class VoicePeersChanged(val peers: List<VoicePeer>) : SyncplayEvent

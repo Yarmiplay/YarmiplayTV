@@ -138,7 +138,8 @@ class SyncEngineTest {
     fun `small drift slows playback and recovers`() {
         serverState(100.0, paused = false)
         step(1.0)
-        engine.updateGlobalState(player.position - 2.0, false, false, "alice", 0.0)
+        // Drift must exceed DEFAULT_SLOWDOWN_KICKIN_THRESHOLD (2.5s).
+        engine.updateGlobalState(player.position - 3.0, false, false, "alice", 0.0)
         assertEquals(Constants.SLOWDOWN_RATE, player.speed, 0.0001)
         engine.updateGlobalState(player.position, false, false, "alice", 0.0)
         assertEquals(1.0, player.speed, 0.0001)

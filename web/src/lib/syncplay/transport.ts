@@ -9,8 +9,12 @@ export interface Transport {
   /** The name dialled. */
   readonly host: string;
   send(line: string): void;
+  /** One yv1 packet as a binary WebSocket message (VOICE_PROTOCOL §6.0.2 Syncplay mux). */
+  sendBinary(packet: ArrayBuffer | Uint8Array): void;
   close(): void;
   onLine: (line: string) => void;
+  /** Inbound binary yv1 frames on `/yarmiplay/ws` when the seat opted into mux. */
+  onBinary: (packet: ArrayBuffer) => void;
   /** Once, when the connection ends; [reason] for the log. */
   onClose: (reason: string) => void;
 }
@@ -60,17 +64,33 @@ export const openWebSocket: TransportFactory = (host, port, tls) =>
       send: (line) => {
         if (socket.readyState === WebSocket.OPEN) socket.send(line);
       },
+      sendBinary: (packet) => {
+        if (socket.readyState !== WebSocket.OPEN) return;
+        socket.send(packet instanceof Uint8Array ? packet : new Uint8Array(packet));
+      },
       close: () => socket.close(),
       onLine: () => {},
+      onBinary: () => {},
       onClose: () => {},
     };
+    socket.binaryType = "arraybuffer";
     socket.onopen = () => {
       opened = true;
       clearTimeout(timer);
       resolve(transport);
     };
     socket.onmessage = (event) => {
-      if (typeof event.data !== "string") return;
+      if (typeof event.data !== "string") {
+        if (event.data instanceof ArrayBuffer) {
+          transport.onBinary(event.data);
+        } else if (ArrayBuffer.isView(event.data)) {
+          const view = event.data;
+          const copy = new Uint8Array(view.byteLength);
+          copy.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+          transport.onBinary(copy.buffer);
+        }
+        return;
+      }
       // A message may hold one line, or several from a server that batches them.
       for (const line of event.data.split(/\r?\n/)) if (line.trim()) transport.onLine(line);
     };

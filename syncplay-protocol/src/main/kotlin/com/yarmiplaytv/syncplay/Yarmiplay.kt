@@ -86,18 +86,31 @@ data class YarmiplayCapabilities(
     val roomSettings: Boolean = false,
     /** Room voice chat on this server (YarmiplayServerTV 2.0+). Older servers omit it. */
     val voice: Boolean = false,
+    /**
+     * Host turned voice off while Yarmiplay extensions stay on (server 2.1.0+).
+     * Older servers omit it; clients treat absent as false.
+     */
+    val voiceDisabled: Boolean = false,
 ) {
     /** Vanilla mode: the host switched every extension off, and the session token is revoked. */
     val allOff: Boolean get() = !fileRelay && !jellyfin && !https
 }
 
 /**
- * How to join voice when [YarmiplayCapabilities.voice] is true.
- * Media is Opus `yv1` frames (UDP 9000, TLS TCP fallback; browsers use `/yarmiplay/voice`).
- * See docs/plans/VOICE_PROTOCOL.md.
+ * How to join voice when [YarmiplayCapabilities.voice] is true, or the short
+ * `{enabled:false,message}` object when the host turned voice off (server 2.1.0+).
+ *
+ * Preferred media (2.1.0+ / [mux] = `syncplay`): yv1 frames on the Syncplay connection
+ * (`0x1E` + length + packet, or binary WebSocket on `/yarmiplay/ws`).
+ * Legacy (server 2.0.x): UDP/TCP 9000 or `/yarmiplay/voice`.
+ * See docs/VOICE_PROTOCOL.md / docs/plans/VOICE_PROTOCOL.md.
  */
 data class VoiceDescriptor(
     val version: Int = 1,
+    /** False when the host disabled voice; [message] is shown as-is. */
+    val enabled: Boolean = true,
+    /** Exact server copy when [enabled] is false (e.g. `voice disabled on this server`). */
+    val message: String? = null,
     val codec: String = "opus",
     val clockRate: Int = 48_000,
     val channels: Int = 1,
@@ -107,14 +120,35 @@ data class VoiceDescriptor(
     val dtx: Boolean = true,
     /** Wire name: `yv1` (version 1). Older draft values are ignored; clients still use yv1. */
     val transport: String = "yv1",
+    /**
+     * `syncplay` when media rides the Syncplay connection (server 2.1.0+).
+     * Absent on older servers that used UDP/TCP 9000.
+     */
+    val mux: String? = null,
+    /** Syncplay port hint from the descriptor (same port the client is already on). */
+    val port: Int? = null,
     val udpPort: Int = 9000,
     val tcpPort: Int = 9000,
-    /** Browser media socket path on the Syncplay port. */
+    /** Legacy browser media socket path on the Syncplay port (`/yarmiplay/voice`). */
     val wsPath: String = "/yarmiplay/voice",
     val maxParticipants: Int = 8,
     /** Lower-case hex SHA-256 of the voice TLS certificate (DER). Empty until the server sends it. */
     val fingerprint: String = "",
-)
+) {
+    /** Prefer Syncplay-connection mux (TCP `0x1E` frames / binary `/yarmiplay/ws`). */
+    val usesSyncplayMux: Boolean
+        get() = mux.equals("syncplay", ignoreCase = true) ||
+            transport.equals("yv1-syncplay", ignoreCase = true)
+}
+
+/**
+ * Sends/receives sealed yv1 packets on the existing Syncplay connection (native TCP mux or
+ * binary WebSocket on `/yarmiplay/ws`). Implemented by [SyncplayClient].
+ */
+interface SyncplayVoiceMux {
+    fun send(packet: ByteArray)
+    fun setOnPacket(handler: ((ByteArray) -> Unit)?)
+}
 
 /** One other person in the voice room, as the server last told us. */
 data class VoicePeer(
@@ -126,7 +160,9 @@ data class VoicePeer(
 
 /**
  * Secrets and ports from `voiceJoined` for opening the `yv1` media path.
- * [host] is the Syncplay host (no port); media uses [udpPort] / [tcpPort].
+ *
+ * Preferred (server 2.1.0+ / [syncplayMux] set): yv1 on the Syncplay connection.
+ * Fallback: `/yarmiplay/voice` WebSocket on [syncplayPort], then legacy UDP/TCP 9000.
  */
 data class VoiceMediaParams(
     val host: String,
@@ -147,6 +183,23 @@ data class VoiceMediaParams(
      * Used when UDP is known blocked, and by e2e tests of the fallback.
      */
     val forceTcp: Boolean = false,
+    /**
+     * Syncplay TCP port (default 8999). When > 0 and [syncplayMux] is null, try
+     * `/yarmiplay/voice` on this port before legacy UDP/TCP 9000.
+     */
+    val syncplayPort: Int = 0,
+    /** Use `wss` when the Syncplay session is already TLS. */
+    val secure: Boolean = false,
+    /**
+     * When true (server advertises Syncplay mux / media-only), skip legacy 9000
+     * after a Syncplay-port path failure.
+     */
+    val syncplayMediaOnly: Boolean = false,
+    /**
+     * When non-null, send/receive yv1 on the Syncplay connection (TCP `0x1E` mux or
+     * binary `/yarmiplay/ws`) instead of opening a second socket.
+     */
+    val syncplayMux: SyncplayVoiceMux? = null,
 )
 
 /** Why the server closed our voice seat. */
@@ -240,7 +293,7 @@ data class YarmiplayInfo(
     val tls: ServerTls? = null,
     /** The current room's shared settings; null until the server sent them (or when it doesn't keep any). */
     val roomSettings: RoomSettings? = null,
-    /** Codec/ports when [capabilities].voice is true; null when voice is off or the server is older. */
+    /** Codec/ports when [capabilities].voice is true; or `{enabled:false,message}` when disabled. */
     val voice: VoiceDescriptor? = null,
 ) {
     val relayActive: Boolean get() = session && capabilities.fileRelay
@@ -248,8 +301,21 @@ data class YarmiplayInfo(
     /** Whether the room's settings are shared through the server (else each device decides for itself). */
     val roomSettingsShared: Boolean get() = session && capabilities.roomSettings
 
-    /** Whether this session offers room voice (server capability + descriptor). */
-    val voiceAvailable: Boolean get() = session && capabilities.voice && voice != null
+    /** Whether this session offers room voice (server capability + enabled descriptor). */
+    val voiceAvailable: Boolean
+        get() = session && capabilities.voice && voice != null && voice.enabled
+
+    /**
+     * Exact notice when the host turned voice off (`voice disabled on this server`),
+     * or null when voice is available / the server never offered it.
+     */
+    val voiceDisabledMessage: String?
+        get() = when {
+            voice != null && !voice.enabled ->
+                voice.message?.takeIf { it.isNotBlank() } ?: "voice disabled on this server"
+            session && capabilities.voiceDisabled -> "voice disabled on this server"
+            else -> null
+        }
 }
 
 /**

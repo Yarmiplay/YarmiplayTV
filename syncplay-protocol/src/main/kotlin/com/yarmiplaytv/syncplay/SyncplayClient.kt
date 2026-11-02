@@ -93,6 +93,8 @@ class SyncplayClient(
     private var outgoing: Channel<String>? = null
     private var stopped = true
     private var fatalError: String? = null
+    /** Inbound Syncplay-mux yv1 packets (VOICE_PROTOCOL §6.0.1); set while a voice seat is open. */
+    @Volatile private var voiceMuxListener: ((ByteArray) -> Unit)? = null
 
     private var logged = false
     private var clientIgnoringOnTheFly = 0
@@ -455,15 +457,24 @@ class SyncplayClient(
         sendHello()
         try {
             while (isActive) {
-                val line = t.readLine() ?: throw IOException("Server closed the connection")
-                lastMessageTime = clock.now()
-                if (line.isBlank()) continue
-                log("<< ${redact(line)}")
-                handleLine(line)
-                if (fatalError != null) throw IOException(fatalError)
+                when (val inbound = t.readInbound()) {
+                    null -> throw IOException("Server closed the connection")
+                    is SyncplayInbound.VoicePacket -> {
+                        lastMessageTime = clock.now()
+                        voiceMuxListener?.invoke(inbound.bytes)
+                    }
+                    is SyncplayInbound.Line -> {
+                        lastMessageTime = clock.now()
+                        if (inbound.text.isBlank()) continue
+                        log("<< ${redact(inbound.text)}")
+                        handleLine(inbound.text)
+                        if (fatalError != null) throw IOException(fatalError)
+                    }
+                }
             }
         } finally {
             writer.cancel()
+            voiceMuxListener = null
         }
     }
 
@@ -951,11 +962,19 @@ class SyncplayClient(
                         ?: 32_000,
                     fec = if ("fec" in j) j.bool("fec") else state.value.yarmiplay.voice?.fec ?: true,
                     dtx = if ("dtx" in j) j.bool("dtx") else state.value.yarmiplay.voice?.dtx ?: true,
+                    mux = j.str("mux") ?: state.value.yarmiplay.voice?.mux,
+                    port = (j["port"] as? JsonPrimitive)?.intOrNull ?: state.value.yarmiplay.voice?.port,
+                    transport = j.str("transport") ?: state.value.yarmiplay.voice?.transport ?: "yv1",
                 ),
             )
         }
         (message["voiceClosed"] as? JsonObject)?.let { c ->
-            emit(SyncplayEvent.VoiceClosed(VoiceClosedReason.parse(c.str("reason"))))
+            emit(
+                SyncplayEvent.VoiceClosed(
+                    reason = VoiceClosedReason.parse(c.str("reason")),
+                    message = c.str("message"),
+                ),
+            )
         }
         when (val peersEl = message["voicePeers"]) {
             is JsonObject -> emit(SyncplayEvent.VoicePeersChanged((peersEl["peers"] as? JsonArray)?.mapNotNull { parseVoicePeer(it) }.orEmpty()))
@@ -968,16 +987,46 @@ class SyncplayClient(
         }
     }
 
-    /** Ask the server for a seat in this Syncplay room's voice channel. */
-    fun joinVoice(version: Int = state.value.yarmiplay.voice?.version ?: 1) {
+    /**
+     * Ask the server for a seat in this Syncplay room's voice channel.
+     * When the server advertises Syncplay mux (`voice.mux == "syncplay"`), opts in with `"mux": true`
+     * so media rides this connection (VOICE_PROTOCOL §5.1 / §6.0).
+     */
+    fun joinVoice(
+        version: Int = state.value.yarmiplay.voice?.version ?: 1,
+        mux: Boolean = state.value.yarmiplay.voice?.usesSyncplayMux == true,
+    ) {
         scope.launch {
-            sendYarmiplay { putJsonObject("voiceJoin") { put("version", version) } }
+            sendYarmiplay {
+                putJsonObject("voiceJoin") {
+                    put("version", version)
+                    if (mux) put("mux", true)
+                }
+            }
         }
     }
 
     /** Leave voice without leaving the Syncplay room. */
     fun leaveVoice() {
+        voiceMuxListener = null
         scope.launch { sendYarmiplay { putJsonObject("voiceLeave") { } } }
+    }
+
+    /**
+     * Mux pipe for [VoiceMediaParams.syncplayMux]: sealed yv1 packets on this Syncplay connection.
+     * Cleared when the session ends or [leaveVoice] runs.
+     */
+    fun voiceMux(): SyncplayVoiceMux = object : SyncplayVoiceMux {
+        override fun send(packet: ByteArray) {
+            scope.launch {
+                runCatching { transport?.writeVoicePacket(packet) }
+                    .onFailure { log("voice mux send failed: ${it.message}") }
+            }
+        }
+
+        override fun setOnPacket(handler: ((ByteArray) -> Unit)?) {
+            voiceMuxListener = handler
+        }
     }
 
     /** Report local speaking for the room's speaking indicators. */
@@ -1400,6 +1449,7 @@ class SyncplayClient(
                 prefetch = o.bool("prefetch"),
                 roomSettings = o.bool("roomSettings"),
                 voice = o.bool("voice"),
+                voiceDisabled = o.bool("voiceDisabled"),
             )
         }
 
@@ -1411,9 +1461,21 @@ class SyncplayClient(
 
         internal fun parseVoiceDescriptor(element: JsonElement?): VoiceDescriptor? {
             val o = element as? JsonObject ?: return null
+            val enabled = if ("enabled" in o) o.bool("enabled") else true
+            val message = o.str("message")
+            // Host turned voice off: `{ "enabled": false, "message": "voice disabled on this server" }`.
+            if (!enabled) {
+                return VoiceDescriptor(
+                    version = (o["version"] as? JsonPrimitive)?.intOrNull ?: 1,
+                    enabled = false,
+                    message = message?.takeIf { it.isNotBlank() } ?: "voice disabled on this server",
+                )
+            }
             val version = (o["version"] as? JsonPrimitive)?.intOrNull ?: return null
             return VoiceDescriptor(
                 version = version,
+                enabled = true,
+                message = message,
                 codec = o.str("codec") ?: "opus",
                 clockRate = (o["clockRate"] as? JsonPrimitive)?.intOrNull ?: 48_000,
                 channels = (o["channels"] as? JsonPrimitive)?.intOrNull ?: 1,
@@ -1422,6 +1484,8 @@ class SyncplayClient(
                 fec = if ("fec" in o) o.bool("fec") else true,
                 dtx = if ("dtx" in o) o.bool("dtx") else true,
                 transport = o.str("transport") ?: "yv1",
+                mux = o.str("mux"),
+                port = (o["port"] as? JsonPrimitive)?.intOrNull,
                 udpPort = (o["udpPort"] as? JsonPrimitive)?.intOrNull ?: 9000,
                 tcpPort = (o["tcpPort"] as? JsonPrimitive)?.intOrNull ?: 9000,
                 wsPath = o.str("wsPath") ?: "/yarmiplay/voice",

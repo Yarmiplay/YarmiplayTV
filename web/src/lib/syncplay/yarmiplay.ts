@@ -68,6 +68,8 @@ export interface Capabilities {
   mal: boolean;
   /** Room voice chat (YarmiplayServerTV 2.0+). */
   voice: boolean;
+  /** Host turned voice off while extensions stay on (optional; prefer voice.enabled). */
+  voiceDisabled: boolean;
 }
 
 export const noCapabilities = (): Capabilities => ({
@@ -80,11 +82,18 @@ export const noCapabilities = (): Capabilities => ({
   websocket: false,
   mal: false,
   voice: false,
+  voiceDisabled: false,
 });
 
-/** How to join voice when [Capabilities.voice] is true (`yv1` frames on `/yarmiplay/voice`). */
+/**
+ * How to join voice when [Capabilities.voice] is true, or `{enabled:false,message}` when disabled.
+ * Preferred media (2.1.0+): yv1 binary on `/yarmiplay/ws` when mux is `syncplay`.
+ * Legacy: `/yarmiplay/voice` WebSocket.
+ */
 export interface VoiceDescriptor {
   version: number;
+  enabled: boolean;
+  message: string | null;
   codec: string;
   clockRate: number;
   channels: number;
@@ -93,12 +102,19 @@ export interface VoiceDescriptor {
   fec: boolean;
   dtx: boolean;
   transport: string;
+  /** `syncplay` when media rides the Syncplay `/yarmiplay/ws` socket. */
+  mux: string | null;
+  /** Syncplay port hint (same connection). */
+  port: number | null;
   udpPort: number;
   tcpPort: number;
   wsPath: string;
   maxParticipants: number;
   fingerprint: string;
 }
+
+export const usesSyncplayMux = (v: VoiceDescriptor | null | undefined): boolean =>
+  !!v && (v.mux?.toLowerCase() === "syncplay" || v.transport.toLowerCase() === "yv1-syncplay");
 
 export interface VoicePeer {
   participantId: string;

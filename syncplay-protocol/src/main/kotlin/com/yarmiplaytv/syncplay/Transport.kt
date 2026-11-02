@@ -4,12 +4,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
-import java.io.BufferedWriter
 import java.io.Closeable
+import java.io.EOFException
 import java.io.IOException
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
+import java.io.InputStream
+import java.io.OutputStream
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -20,15 +19,46 @@ import javax.net.ssl.SSLSocketFactory
 /** Opens a connection to `host:port` whose TLS certificate is verified as `tlsName`. */
 typealias TransportFactory = (host: String, port: Int, tlsName: String) -> Transport
 
-/** Line-oriented connection to a Syncplay server. */
+/**
+ * One record from the Syncplay byte stream (VOICE_PROTOCOL §6.0.1).
+ * JSON lines and voice frames share the same TCP/TLS connection when the client opts in with `mux`.
+ */
+sealed class SyncplayInbound {
+    data class Line(val text: String) : SyncplayInbound()
+    data class VoicePacket(val bytes: ByteArray) : SyncplayInbound() {
+        override fun equals(other: Any?): Boolean =
+            other is VoicePacket && bytes.contentEquals(other.bytes)
+        override fun hashCode(): Int = bytes.contentHashCode()
+    }
+}
+
+/** Marker byte for a Syncplay-mux voice record (`0x1E` Record Separator). */
+const val VOICE_MUX_MARKER: Int = 0x1E
+const val VOICE_MUX_MIN_PACKET: Int = 56
+const val VOICE_MUX_MAX_PACKET: Int = 1200
+const val SYNCPLAY_MAX_LINE: Int = 65_536
+
+/** Line-oriented (and optionally muxed) connection to a Syncplay server. */
 interface Transport : Closeable {
     val isTls: Boolean
     /** The IP address the connection reached, once connected (null when unknown, e.g. in tests). */
     val remoteAddress: String? get() = null
     suspend fun connect()
-    /** Returns null when the connection is closed. */
+    /**
+     * Next Syncplay record. Default wraps [readLine] for scripted tests.
+     * Production [SocketTransport] demuxes JSON lines and `0x1E` voice frames.
+     */
+    suspend fun readInbound(): SyncplayInbound? = readLine()?.let { SyncplayInbound.Line(it) }
+    /** Returns null when the connection is closed. Prefer [readInbound] when mux may be active. */
     suspend fun readLine(): String?
     suspend fun writeLine(line: String)
+    /**
+     * Write one yv1 packet as a Syncplay-mux voice record (`0x1E` + BE u16 length + packet).
+     * Unsupported on transports that only speak JSON lines.
+     */
+    suspend fun writeVoicePacket(packet: ByteArray) {
+        throw IOException("This Syncplay connection does not support voice mux frames")
+    }
     /** Upgrade the current connection to TLS (Syncplay's STARTTLS). */
     suspend fun startTls()
 }
@@ -37,6 +67,8 @@ interface Transport : Closeable {
  * Dials [host] and, on STARTTLS, verifies the server's certificate as [tlsName] (SNI and hostname check). That's
  * [host] itself unless the server is reached at another address than the name on its certificate, e.g. its LAN
  * address at home. The trust store is always [sslSocketFactory]'s, the platform default outside tests.
+ *
+ * Reads demux JSON lines and Syncplay-mux voice records on the same byte stream (VOICE_PROTOCOL §6.0.1).
  */
 class SocketTransport(
     private val host: String,
@@ -46,8 +78,8 @@ class SocketTransport(
     private val tlsName: String = host,
 ) : Transport {
     @Volatile private var socket: Socket? = null
-    private var reader: BufferedReader? = null
-    private var writer: BufferedWriter? = null
+    private var input: InputStream? = null
+    private var output: OutputStream? = null
     private val writeLock = Mutex()
 
     override var isTls: Boolean = false
@@ -90,20 +122,70 @@ class SocketTransport(
 
     private fun attach(s: Socket) {
         socket = s
-        reader = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8))
-        writer = BufferedWriter(OutputStreamWriter(s.getOutputStream(), Charsets.UTF_8))
+        input = s.getInputStream()
+        output = s.getOutputStream()
     }
 
-    override suspend fun readLine(): String? = withContext(Dispatchers.IO) {
-        reader?.readLine()
+    override suspend fun readLine(): String? {
+        while (true) {
+            when (val inbound = readInbound()) {
+                null -> return null
+                is SyncplayInbound.Line -> return inbound.text
+                is SyncplayInbound.VoicePacket -> continue // drop unexpected voice when caller only wants lines
+            }
+        }
+    }
+
+    override suspend fun readInbound(): SyncplayInbound? = withContext(Dispatchers.IO) {
+        val inp = input ?: return@withContext null
+        while (true) {
+            val first = readByteOrNull(inp) ?: return@withContext null
+            when {
+                first == VOICE_MUX_MARKER -> {
+                    val hi = readByteOrNull(inp) ?: return@withContext null
+                    val lo = readByteOrNull(inp) ?: return@withContext null
+                    val n = (hi shl 8) or lo
+                    if (n !in VOICE_MUX_MIN_PACKET..VOICE_MUX_MAX_PACKET) {
+                        throw IOException("Invalid Syncplay voice frame length $n")
+                    }
+                    val packet = ByteArray(n)
+                    readFully(inp, packet)
+                    return@withContext SyncplayInbound.VoicePacket(packet)
+                }
+                first == '{'.code || first == 0x09 || first == 0x0A || first == 0x0D || first == 0x20 -> {
+                    val line = readJsonLine(inp, first)
+                    if (line == null) return@withContext null
+                    if (line.isEmpty()) continue
+                    if (line.length > SYNCPLAY_MAX_LINE) throw IOException("Syncplay line too long")
+                    return@withContext SyncplayInbound.Line(line)
+                }
+                else -> throw IOException("Unexpected Syncplay byte 0x${first.toString(16)}")
+            }
+        }
+        @Suppress("UNREACHABLE_CODE")
+        null
     }
 
     override suspend fun writeLine(line: String) = writeLock.withLock {
         withContext(Dispatchers.IO) {
-            val w = writer ?: error("Not connected")
-            w.write(line)
-            w.write("\r\n")
-            w.flush()
+            val out = output ?: error("Not connected")
+            out.write(line.toByteArray(Charsets.UTF_8))
+            out.write(CRLF)
+            out.flush()
+        }
+    }
+
+    override suspend fun writeVoicePacket(packet: ByteArray) = writeLock.withLock {
+        withContext(Dispatchers.IO) {
+            val out = output ?: error("Not connected")
+            if (packet.size !in VOICE_MUX_MIN_PACKET..VOICE_MUX_MAX_PACKET) {
+                throw IOException("Voice packet size ${packet.size} out of range")
+            }
+            out.write(VOICE_MUX_MARKER)
+            out.write((packet.size ushr 8) and 0xff)
+            out.write(packet.size and 0xff)
+            out.write(packet)
+            out.flush()
         }
     }
 
@@ -122,5 +204,37 @@ class SocketTransport(
     override fun close() {
         runCatching { socket?.close() }
         socket = null
+        input = null
+        output = null
+    }
+
+    private companion object {
+        val CRLF = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte())
+
+        fun readByteOrNull(inp: InputStream): Int? {
+            val b = inp.read()
+            return if (b < 0) null else b
+        }
+
+        fun readFully(inp: InputStream, dest: ByteArray) {
+            var off = 0
+            while (off < dest.size) {
+                val n = inp.read(dest, off, dest.size - off)
+                if (n < 0) throw EOFException("Unexpected end of Syncplay stream")
+                off += n
+            }
+        }
+
+        /** Read through the next LF; return the trimmed line without the newline. */
+        fun readJsonLine(inp: InputStream, first: Int): String? {
+            val buf = StringBuilder()
+            var c = first
+            while (true) {
+                if (c == 0x0A) break
+                if (c != 0x0D) buf.append(c.toChar())
+                c = readByteOrNull(inp) ?: return if (buf.isEmpty()) null else buf.toString().trim()
+            }
+            return buf.toString().trim()
+        }
     }
 }

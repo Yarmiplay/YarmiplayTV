@@ -38,16 +38,18 @@ class LatencyCompensator(
             while (isActive) {
                 delay(1_000)
                 val handoff = renderer.recentHandoffMs() ?: continue
-                val estimate = handoff + 1000.0 / refreshRateHz().coerceIn(20.0, 500.0)
+                val estimate = (handoff + 1000.0 / refreshRateHz().coerceIn(20.0, 500.0))
+                    .coerceIn(0.0, MAX_COMPENSATION_MS)
                 if (abs(estimate - appliedMs) > THRESHOLD_MS || appliedMs == 0.0) apply(estimate, force = false)
             }
         }
     }
 
     private fun apply(ms: Double, force: Boolean) {
-        if (!force && abs(ms - appliedMs) < 0.5) return
-        appliedMs = ms
-        core.setDouble("audio-delay", userAudioDelay + ms / 1000)
+        val capped = ms.coerceIn(0.0, MAX_COMPENSATION_MS)
+        if (!force && abs(capped - appliedMs) < 0.5) return
+        appliedMs = capped
+        core.setDouble("audio-delay", userAudioDelay + capped / 1000)
     }
 
     fun stop() {
@@ -57,5 +59,7 @@ class LatencyCompensator(
 
     private companion object {
         const val THRESHOLD_MS = 4.0
+        /** Avoid runaway audio lag when readback stalls (e.g. GPU hiccup on mid-range cards). */
+        const val MAX_COMPENSATION_MS = 80.0
     }
 }

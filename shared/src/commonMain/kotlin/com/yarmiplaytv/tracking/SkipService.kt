@@ -2,6 +2,7 @@ package com.yarmiplaytv.tracking
 
 import com.yarmiplaytv.Logger
 import com.yarmiplaytv.data.AppSettings
+import com.yarmiplaytv.local.SeekFrames
 import com.yarmiplaytv.media.aniskip.AniSkipClient
 import com.yarmiplaytv.media.MediaSource
 import com.yarmiplaytv.media.SkipSegment
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
 
@@ -189,6 +191,14 @@ class SkipService(
                     listOf(fromChapters, fromServer, fromAniSkip).none { source -> source.any { it.kind == kind } }
                 }.toSet()
                 if (missing.isEmpty()) return@launch
+                // Local files: wait for a pause (or a short idle timeout) before a second mpv
+                // decode — listening during play fights auto-copy + readback on mid GPUs.
+                if (SeekFrames.canPreview(fileUrl)) {
+                    withTimeoutOrNull(DETECT_WHILE_PLAYING_MILLIS) {
+                        player.state.first { it.url == fileUrl && it.fileLoaded && it.paused }
+                    }
+                    if (url != fileUrl) return@launch
+                }
                 // Read now: the server copies of a file on this device can be found after it starts.
                 val np = nowPlaying.value?.takeIf { it.url == fileUrl } ?: return@launch
                 val found = detector.detect(np, loaded.duration, missing)
@@ -286,5 +296,7 @@ class SkipService(
         private const val MAX_TRIES = 4
         private const val END_SLACK_SECONDS = 2.0
         private const val CHAPTERS_SETTLE_MILLIS = 2_000L
+        /** How long to wait for a pause before listening on a local file while it is playing. */
+        private const val DETECT_WHILE_PLAYING_MILLIS = 90_000L
     }
 }

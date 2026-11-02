@@ -24,14 +24,24 @@ import java.net.URI
 import java.nio.file.Paths
 
 data class DesktopMpvOptions(
-    /** mpv --hwdec value; "no" forces software decoding. */
-    val hwdec: String = "auto",
+    /**
+     * mpv --hwdec value. Prefer `auto-copy` with the GL→CPU readback path so NVDEC/D3D11
+     * decode stays predictable on mid-range Windows GPUs; `no` forces software.
+     */
+    val hwdec: String = "auto-copy",
     val audioLanguages: String = "",
     val subtitleLanguages: String = "eng,en",
     val cacheMegabytes: Int = 128,
     /** "auto" (GPU, falling back to software), "gl" or "sw". */
     val render: String = System.getProperty("yarmiplaytv.render") ?: "auto",
     val logLevel: String = "warn",
+    /**
+     * Cap the longest edge of the GL FBO / PBO readback (pixels). 0 = uncapped.
+     * Default 1920 keeps 4K windows from reading back 4K BGRA every frame.
+     */
+    val maxRenderEdge: Int = 1920,
+    /** When true: smaller FBO (1280), lighter demux cache, software-leaning defaults. */
+    val lowEnd: Boolean = false,
 )
 
 /**
@@ -43,25 +53,19 @@ class DesktopMpvPlayer(
     options: DesktopMpvOptions = DesktopMpvOptions(),
     refreshRateHz: () -> Double = ::defaultRefreshRate,
 ) : Player, AutoCloseable {
+    private val effectiveOptions = effective(options)
+
     private val core = MpvCore(
-        buildMap {
-            put("hwdec", options.hwdec)
-            put("tls-verify", "no")
-            put("cache", "yes")
-            put("demuxer-max-bytes", "${options.cacheMegabytes}MiB")
-            put("demuxer-max-back-bytes", "${options.cacheMegabytes / 2}MiB")
-            put("save-position-on-quit", "no")
-            put("osd-duration", "2500")
-            put("sub-scale-with-window", "yes")
-            put("user-agent", "YarmiplayTV")
-            put("audio-client-name", "YarmiplayTV")
-            if (options.audioLanguages.isNotBlank()) put("alang", options.audioLanguages)
-            if (options.subtitleLanguages.isNotBlank()) put("slang", options.subtitleLanguages)
-        },
-        logLevel = options.logLevel,
+        mpvOptions(effectiveOptions),
+        logLevel = effectiveOptions.logLevel,
     )
 
-    val renderer: VideoRenderer = VideoRenderer.create(core.lib, core.handle, options.render) {
+    val renderer: VideoRenderer = VideoRenderer.create(
+        core.lib,
+        core.handle,
+        effectiveOptions.render,
+        maxRenderEdge = effectiveOptions.maxRenderEdge,
+    ) {
         System.err.println("mpv: GPU renderer unavailable, using software: ${it.message}")
     }
 
@@ -118,6 +122,9 @@ class DesktopMpvPlayer(
             "width" to LibMpv.FORMAT_INT64,
             "height" to LibMpv.FORMAT_INT64,
             "video-params/aspect" to LibMpv.FORMAT_DOUBLE,
+            "frame-drop-count" to LibMpv.FORMAT_INT64,
+            "decoder-frame-drop-count" to LibMpv.FORMAT_INT64,
+            "avsync" to LibMpv.FORMAT_DOUBLE,
         ).forEach { (name, format) -> core.observe(name, format) }
         core.startEvents(::onEvent)
         compensator.start(scope)
@@ -141,6 +148,7 @@ class DesktopMpvPlayer(
         core.setString("force-media-title", mediaTitle ?: "")
         core.setString("start", if (startPosition > 0) startPosition.toString() else "none")
         openError = null
+        MpvBackgroundLoad.setPlayerActive(true)
         val target = mpvTarget(url)
         latestLoad = ++loadsIssued
         core.command("loadfile", target, "replace")
@@ -314,6 +322,7 @@ class DesktopMpvPlayer(
             }
             is MpvEvent.EndFile -> {
                 _state.update { it.copy(fileLoaded = false) }
+                MpvBackgroundLoad.setPlayerActive(false)
                 val failedToOpen = openingLatest && filesStarted == latestLoad
                 openingLatest = false
                 if (failedToOpen) {
@@ -364,6 +373,11 @@ class DesktopMpvPlayer(
             "eof-reached" -> (value as? Boolean)?.let { v -> _state.update { it.copy(eofReached = v) } }
             "video-codec" -> _state.update { it.copy(videoCodec = value as? String) }
             "hwdec-current" -> _state.update { it.copy(hwdec = value as? String) }
+            "frame-drop-count" -> (value as? Long)?.let { v -> _state.update { it.copy(frameDrops = v) } }
+            "decoder-frame-drop-count" -> (value as? Long)?.let { v -> _state.update { it.copy(decoderFrameDrops = v) } }
+            "avsync" -> (value as? Double)?.let { v ->
+                _state.update { it.copy(avSync = v, displayLatencyMs = compensator.appliedMs) }
+            }
         }
     }
 
@@ -432,6 +446,7 @@ class DesktopMpvPlayer(
     }
 
     override fun close() {
+        MpvBackgroundLoad.setPlayerActive(false)
         scope.cancel()
         compensator.stop()
         renderer.close()
@@ -442,6 +457,50 @@ class DesktopMpvPlayer(
         const val MAX_VOLUME = 130.0
         private const val SEEK_SETTLE_NS = 1_500_000_000L
         private const val UNINITIATED_JUMP_THRESHOLD = 1.0
+
+        fun effective(options: DesktopMpvOptions): DesktopMpvOptions =
+            if (options.lowEnd) {
+                options.copy(
+                    hwdec = if (options.hwdec == "no") "no" else "auto-copy",
+                    cacheMegabytes = minOf(options.cacheMegabytes, 64),
+                    maxRenderEdge = if (options.maxRenderEdge <= 0) 1280 else minOf(options.maxRenderEdge, 1280),
+                )
+            } else options
+
+        /**
+         * Option map applied once at construct — identical for local `file://` and Jellyfin `http(s)`.
+         * Local-only stutter comes from higher native res under auto-copy and competing secondary mpv,
+         * not from a forked profile here.
+         */
+        fun mpvOptions(options: DesktopMpvOptions): Map<String, String> = buildMap {
+            put("hwdec", options.hwdec)
+            put("hwdec-codecs", "h264,hevc,vp9,av1,mpeg2video,mpeg2")
+            put("tls-verify", "no")
+            put("cache", "yes")
+            put("demuxer-max-bytes", "${options.cacheMegabytes}MiB")
+            put("demuxer-max-back-bytes", "${options.cacheMegabytes / 2}MiB")
+            put("demuxer-thread", "yes")
+            put("framedrop", "vo")
+            put("video-sync", "audio")
+            put("scale", "bilinear")
+            put("cscale", "bilinear")
+            put("dscale", "bilinear")
+            put("dither", "no")
+            put("correct-downscaling", "no")
+            put("sigmoid-upscaling", "no")
+            put("deband", "no")
+            put("save-position-on-quit", "no")
+            put("osd-duration", "2500")
+            put("sub-scale-with-window", "yes")
+            put("user-agent", "YarmiplayTV")
+            put("audio-client-name", "YarmiplayTV")
+            if (options.audioLanguages.isNotBlank()) put("alang", options.audioLanguages)
+            if (options.subtitleLanguages.isNotBlank()) put("slang", options.subtitleLanguages)
+            if (options.lowEnd) {
+                put("vd-lavc-threads", "4")
+                put("sub-ass-hinting", "none")
+            }
+        }
 
         // Same numbering as libmpv's mpv_log_level (and the Android player's PlayerEvent.Log levels).
         private const val LOG_ERROR = 20

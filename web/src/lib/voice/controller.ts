@@ -1,7 +1,7 @@
 import { Store } from "../store";
 import type { SyncplayClient, SyncplayEvent } from "../syncplay/client";
-import { voiceAvailable } from "../syncplay/client";
-import type { VoicePeer } from "../syncplay/yarmiplay";
+import { voiceAvailable, voiceDisabledMessage } from "../syncplay/client";
+import { usesSyncplayMux, type VoicePeer } from "../syncplay/yarmiplay";
 import { WebVoiceEngine } from "./engine";
 
 export type VoiceUi = {
@@ -14,6 +14,8 @@ export type VoiceUi = {
   selfMuted: boolean;
   transmitting: boolean;
   status: string | null;
+  /** Host turned voice off — show [status] as the server message. */
+  voiceDisabledOnServer: boolean;
   /** Single flip: Leave while in/joining, Join while out. */
   membershipIsLeave: boolean;
   showMic: boolean;
@@ -29,12 +31,15 @@ const idle = (): VoiceUi => ({
   selfMuted: false,
   transmitting: false,
   status: null,
+  voiceDisabledOnServer: false,
   membershipIsLeave: false,
   showMic: false,
 });
 
 /**
- * Joins browser voice when the server offers it. Media uses `/yarmiplay/voice` (VOICE_PROTOCOL §6.4).
+ * Joins browser voice when the server offers it.
+ * Preferred: binary yv1 on `/yarmiplay/ws` when `voice.mux == syncplay`;
+ * fallback: `/yarmiplay/voice` (VOICE_PROTOCOL §6.4).
  */
 export class VoiceController {
   readonly ui = new Store<VoiceUi>(idle());
@@ -220,14 +225,25 @@ export class VoiceController {
   private reconcile() {
     const c = this.client();
     const y = c?.state.yarmiplay;
+    const disabledMsg = y ? voiceDisabledMessage(y) : null;
     const available = !!y && voiceAvailable(y) && this.enabled;
-    this.ui.update((u) => ({ ...u, available }));
+    this.ui.update((u) => ({
+      ...u,
+      available,
+      voiceDisabledOnServer: !!disabledMsg && this.enabled,
+      status: disabledMsg && this.enabled ? disabledMsg : u.status,
+    }));
     if (!available) {
       this.leftByUser = false;
       if (this.ui.value.connected || this.ui.value.participantId || this.ui.value.connecting) {
         c?.leaveVoice();
         this.engine.disconnect();
-        this.ui.update(() => ({ ...idle(), available: false }));
+        this.ui.update(() => ({
+          ...idle(),
+          available: false,
+          voiceDisabledOnServer: !!disabledMsg && this.enabled,
+          status: disabledMsg && this.enabled ? disabledMsg : null,
+        }));
       }
       return;
     }
@@ -267,15 +283,22 @@ export class VoiceController {
       case "voiceJoined": {
         const c = this.client();
         if (!c) return;
+        const useMux = usesSyncplayMux(c.state.yarmiplay.voice) || ev.mux === "syncplay";
         const ok = await this.engine.connect(
           {
             host: c.config.host,
-            port: c.config.port,
+            port: typeof ev.port === "number" ? ev.port : c.config.port,
             secure: c.config.useTls,
             token: ev.token,
             key: ev.key,
             wsPath: ev.wsPath,
             maxBitrate: ev.maxBitrate,
+            mux: useMux
+              ? {
+                  send: (packet) => c.sendVoiceMuxPacket(packet),
+                  setOnPacket: (handler) => c.setVoiceMuxHandler(handler),
+                }
+              : null,
           },
           (speaking) => c.sendVoiceActivity(speaking),
         );
@@ -320,14 +343,17 @@ export class VoiceController {
           transmitting: false,
           showMic: false,
           membershipIsLeave: false,
+          voiceDisabledOnServer: ev.reason === "disabled",
           status:
             ev.reason === "full"
               ? "Voice room is full"
-              : ev.reason === "disabled" || ev.reason === "vanilla"
-                ? "Voice chat turned off on the server"
-                : ev.reason === "left"
-                  ? "Left voice"
-                  : null,
+              : ev.reason === "disabled"
+                ? ev.message?.trim() || "voice disabled on this server"
+                : ev.reason === "vanilla"
+                  ? "Voice chat turned off on the server"
+                  : ev.reason === "left"
+                    ? "Left voice"
+                    : null,
         }));
         if (ev.reason === "room") {
           this.leftByUser = false;

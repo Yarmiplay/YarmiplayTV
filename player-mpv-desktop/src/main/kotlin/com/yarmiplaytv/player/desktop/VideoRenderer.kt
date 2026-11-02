@@ -80,10 +80,25 @@ abstract class VideoRenderer internal constructor(
         startError?.let { throw it }
     }
 
-    /** The video view's size in pixels; mpv renders at exactly this size. */
+    /**
+     * Longest edge for the GL FBO / PBO readback. 0 = match the view exactly.
+     * Capping cuts PCIe/readback cost on mid-range GPUs when the window is 1440p/4K.
+     */
+    @Volatile var maxRenderEdge: Int = 1920
+
+    /** The video view's size in pixels (optionally capped by [maxRenderEdge]); mpv renders at this size. */
     fun setSize(width: Int, height: Int) = signal {
-        val w = width.coerceAtLeast(2)
-        val h = height.coerceAtLeast(2)
+        var w = width.coerceAtLeast(2)
+        var h = height.coerceAtLeast(2)
+        val cap = maxRenderEdge
+        if (cap > 0) {
+            val long = maxOf(w, h)
+            if (long > cap) {
+                val scale = cap.toDouble() / long
+                w = (w * scale).toInt().coerceAtLeast(2)
+                h = (h * scale).toInt().coerceAtLeast(2)
+            }
+        }
         if (w != this.width || h != this.height) {
             this.width = w
             this.height = h
@@ -195,9 +210,15 @@ abstract class VideoRenderer internal constructor(
          * GPU rendering unless [mode] is "sw" or the GPU path can't start (e.g. no OpenGL in a VM).
          * [onFallback] receives the reason when it falls back.
          */
-        fun create(lib: LibMpv, mpv: Pointer, mode: String = "auto", onFallback: (Throwable) -> Unit = {}): VideoRenderer {
+        fun create(
+            lib: LibMpv,
+            mpv: Pointer,
+            mode: String = "auto",
+            maxRenderEdge: Int = 1920,
+            onFallback: (Throwable) -> Unit = {},
+        ): VideoRenderer {
             if (mode != "sw") {
-                val gl = GlVideoRenderer(lib, mpv)
+                val gl = GlVideoRenderer(lib, mpv, maxRenderEdge = maxRenderEdge)
                 try {
                     gl.start()
                     return gl
@@ -233,8 +254,16 @@ abstract class VideoRenderer internal constructor(
  * mpv renders on the GPU (hardware decoding, scaling, colour conversion) into a framebuffer sized to the view;
  * the result is read back through a pixel buffer object and handed to Skia.
  */
-internal class GlVideoRenderer(lib: LibMpv, mpv: Pointer) : VideoRenderer(lib, mpv, "mpv-render-gl") {
+internal class GlVideoRenderer(
+    lib: LibMpv,
+    mpv: Pointer,
+    maxRenderEdge: Int = 1920,
+) : VideoRenderer(lib, mpv, "mpv-render-gl") {
     override val kind = "opengl"
+
+    init {
+        this.maxRenderEdge = maxRenderEdge
+    }
 
     private var context: GlContext? = null
     private var getProcAddress: LibMpv.GetProcAddress? = null

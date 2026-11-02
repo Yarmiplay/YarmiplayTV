@@ -91,6 +91,7 @@ internal fun TvSeekBar(
     /** The opening and ending, marked on the track. */
     segments: List<SkipSegment> = emptyList(),
     onVideo: Boolean = true,
+    showStats: Boolean = false,
     onSeek: (Double) -> Unit,
 ) {
     var dragging by remember { mutableStateOf<Float?>(null) }
@@ -124,7 +125,7 @@ internal fun TvSeekBar(
         Row(Modifier.fillMaxWidth()) {
             Text(formatClock(shown), color = labelColor, style = MaterialTheme.typography.bodyMedium, modifier = labelModifier)
             Spacer(Modifier.weight(1f))
-            playbackInfo(state).takeIf { it.isNotEmpty() }?.let {
+            playbackInfo(state, showStats).takeIf { it.isNotEmpty() }?.let {
                 Text(it, color = labelColor, style = MaterialTheme.typography.bodyMedium, modifier = labelModifier)
             }
             Spacer(Modifier.width(24.dp))

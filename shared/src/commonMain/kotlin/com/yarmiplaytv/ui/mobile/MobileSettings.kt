@@ -552,8 +552,30 @@ private fun PlaybackSettings(container: AppContainer) {
     fun savePlayback(change: (PlaybackPrefs) -> PlaybackPrefs) =
         container.scope.launch { container.settingsStore.savePlayback(change(container.settings.value.playback)) }
     val pb = settings.playback
-    SettingsToggle("Hardware decoding", "MediaCodec with software fallback. Takes effect after restarting the app", pb.hardwareDecoding) { on ->
+    SettingsToggle(
+        "Hardware decoding",
+        if (container.deviceKind == DeviceKind.DESKTOP) {
+            "Hardware decode with copy-back for the desktop player. Takes effect after restarting the app"
+        } else {
+            "MediaCodec with software fallback. Takes effect after restarting the app"
+        },
+        pb.hardwareDecoding,
+    ) { on ->
         savePlayback { it.copy(hardwareDecoding = on) }
+    }
+    if (container.deviceKind == DeviceKind.DESKTOP) {
+        SettingsToggle(
+            "Low-end performance",
+            "Smaller video readback and lighter cache for mid/low GPUs (e.g. GTX 1060). Takes effect after restart",
+            pb.lowEndPerformance,
+            Modifier.testTag("toggle_low_end"),
+        ) { on -> savePlayback { it.copy(lowEndPerformance = on) } }
+        SettingsToggle(
+            "Show playback stats",
+            "Dropped frames, A/V offset, and display latency under the seek bar",
+            pb.showPlaybackStats,
+            Modifier.testTag("toggle_playback_stats"),
+        ) { on -> savePlayback { it.copy(showPlaybackStats = on) } }
     }
     if (autoPictureInPictureSetting) {
         SettingsToggle(

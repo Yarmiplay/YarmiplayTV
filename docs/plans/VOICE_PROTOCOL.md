@@ -1,11 +1,16 @@
-# Yarmiplay voice protocol (version 1)
+# Yarmiplay voice protocol (version 1 → Syncplay connection mux)
 
-Normative copy of YarmiplayServerTV `docs/VOICE_PROTOCOL.md` (PR #2 / 2.0.0).
-YarmiplayTV 2.7.0 implements against this document.
+Normative copy of YarmiplayServerTV `docs/VOICE_PROTOCOL.md` (PR #5 / 2.1.0).
+YarmiplayTV 2.9.0 implements against that document.
 
-See the server repository for the full text. Client-relevant rules:
+Client-relevant rules:
 
-- Native clients: 20 ms Opus frames (48 kHz mono) on UDP **9000** with AES-256-GCM (`yv1` packets), falling back to TLS over TCP **9000** (fingerprint-pinned, cert name `voice.local`).
-- Browsers: the same sealed frames as binary WebSocket messages on `GET /yarmiplay/voice?t=<seat token>` on the Syncplay port.
-- Signaling stays on the existing Syncplay / `/yarmiplay/ws` session (`voiceJoin`, `voiceJoined`, `voicePeers`, `voiceActivity`, `voiceLeave`, `voiceClosed`).
+- **Preferred (2.9.0 / server 2.1.0):** `voiceJoin` with `{version:1,mux:true}`; media on the **same**
+  Syncplay connection — TCP/TLS records `0x1E` + BE u16 length (56..=1200) + one yv1 packet; browsers
+  send the same yv1 packet as a **binary** WebSocket message on `/yarmiplay/ws`. Descriptor:
+  `voice.mux = "syncplay"`, `voice.port` = Syncplay port. No separate voice port.
+- **Legacy fallback (server 2.0.x):** omit `mux`; native UDP/TCP **9000** or `/yarmiplay/voice` WS.
+- Signaling stays JSON lines on Syncplay / text side of `/yarmiplay/ws`.
+- When voice is off: `voice: {enabled:false,message:"voice disabled on this server"}` — show that
+  message as-is (distinct from an older server that never offered voice).
 - No WebRTC, SDP, ICE, or `voiceSignal`.

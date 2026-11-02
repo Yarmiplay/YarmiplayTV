@@ -86,9 +86,9 @@
   </content_rating>
 
   <releases>
-    <release version="2.8.10" date="2026-11-02">
+    <release version="2.9.0" date="2026-11-02">
       <description>
-        <p>Voice: stop keeping departed speakers in the jitter buffer (endless PLC / RAM waste on long watch parties); bound the inbound audio queue. Mic activity ring and speaking names already shipped in 2.8.9.</p>
+        <p>Voice: Syncplay-connection mux (0x1E framing / binary /yarmiplay/ws) with legacy /yarmiplay/voice and 9000 fallback; shows "voice disabled on this server" when the host turns voice off; receiving-audio diagnostic. Always prefer a local media-folder match over Jellyfin/Plex. Desktop: playlist panel polish, auto-copy hwdec, capped readback, Low-end performance option.</p>
       </description>
     </release>
     <release version="2.8.9" date="2026-11-02">
