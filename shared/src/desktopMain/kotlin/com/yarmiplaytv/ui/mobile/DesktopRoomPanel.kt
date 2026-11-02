@@ -191,7 +191,7 @@ actual fun RoomSidePanel(container: AppContainer) {
     val density = LocalDensity.current
     Row(Modifier.fillMaxHeight().testTag("room_panel")) {
         // Drag the left edge to resize — video keeps the remaining width beside the panel.
-        val resizeHover = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+        val resizeHover = remember { MutableInteractionSource() }
         val resizeHovered by resizeHover.collectIsHoveredAsState()
         Box(
             Modifier
