@@ -44,8 +44,7 @@ fun VoiceUiState.audibleSpeakingNames(settings: AppSettings): List<String> {
     return peers.asSequence()
         .filter { peer ->
             val id = peer.participantId
-            id != null &&
-                id != self &&
+            id != self &&
                 id in speakingIds &&
                 !(settings.voicePeerPrefs[peer.username]?.muted ?: false)
         }

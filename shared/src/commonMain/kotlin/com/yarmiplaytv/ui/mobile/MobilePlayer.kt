@@ -366,6 +366,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                             room,
                                             playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls },
                                             micLive = voiceUi.micControlLive(),
+                                            micLevel = voiceLevel,
                                         )
                                     }
                                     if (pip.supported && state.fileLoaded) {
@@ -1064,23 +1065,36 @@ private fun Chip(text: String, color: Color, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun RoomStatusChip(room: RoomState, streaming: String? = null, micLive: Boolean = false) {
+private fun RoomStatusChip(
+    room: RoomState,
+    streaming: String? = null,
+    micLive: Boolean = false,
+    micLevel: Float = 0f,
+) {
     when (room.status) {
         ConnectionStatus.CONNECTED -> {
             val ready = room.users.count { it.isReady == true }
             val via = streaming?.let { " · ${it.withPing(room.rttMillis)}" }.orEmpty()
-            val mic = if (micLive) " · Mic" else ""
-            Chip(
-                "${ManagedRooms.label(room.room)} · ${room.users.size} · $ready ready$via$mic",
-                AppColors.Ready,
-                if (streaming != null) {
-                    Modifier.widthIn(max = 420.dp).testTag("relay_streaming")
-                } else if (micLive) {
-                    Modifier.testTag("status_mic_live")
-                } else {
-                    Modifier
-                },
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = if (micLive) Modifier.testTag("status_mic_live") else Modifier,
+            ) {
+                Chip(
+                    "${ManagedRooms.label(room.room)} · ${room.users.size} · $ready ready$via",
+                    AppColors.Ready,
+                    if (streaming != null) Modifier.widthIn(max = 420.dp).testTag("relay_streaming") else Modifier,
+                )
+                if (micLive) {
+                    com.yarmiplaytv.voice.MicActivityRing(
+                        level = micLevel,
+                        active = true,
+                        color = AppColors.Ready,
+                        modifier = Modifier.padding(start = 8.dp),
+                        size = 18.dp,
+                        stroke = 1.5.dp,
+                    )
+                }
+            }
         }
         ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> Chip("Connecting…", AppColors.NotReady)
         ConnectionStatus.DISCONNECTED -> Chip("Not in a room", OnVideo.Text.copy(alpha = 0.6f))

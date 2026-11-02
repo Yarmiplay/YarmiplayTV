@@ -117,9 +117,14 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     private fun stopCapture() {
-        captureThread?.interrupt()
+        val t = captureThread
         captureThread = null
+        t?.interrupt()
         closeCaptureLine()
+        // Join so a rapid unmute doesn't open a second TargetDataLine while Windows still holds the first.
+        if (t != null && t.isAlive) {
+            runCatching { t.join(750) }
+        }
     }
 
     override fun setInputGain(gain: Float) {

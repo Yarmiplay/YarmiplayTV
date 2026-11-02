@@ -88,6 +88,8 @@
   let voiceMembershipIsLeave = $state(false);
   let voiceShowMic = $state(false);
   let voiceSelfMuted = $state(false);
+  let voiceMicLevel = $state(0);
+  let speakingNames = $state<string[]>([]);
   $effect(() => {
     const v = session?.voice;
     if (!v) {
@@ -96,15 +98,29 @@
       voiceMembershipIsLeave = false;
       voiceShowMic = false;
       voiceSelfMuted = false;
+      voiceMicLevel = 0;
+      speakingNames = [];
       return;
     }
-    return v.ui.subscribe((ui) => {
+    const stopUi = v.ui.subscribe((ui) => {
       voiceMicLive = !!ui.showMic && ui.connected && !ui.selfMuted && ui.transmitting;
       voiceAvailable = !!ui.available;
       voiceMembershipIsLeave = !!ui.membershipIsLeave;
       voiceShowMic = !!ui.showMic;
       voiceSelfMuted = !!ui.selfMuted;
+      const self = ui.participantId;
+      speakingNames = ui.peers
+        .filter((p) => p.participantId !== self && ui.speakingIds.has(p.participantId))
+        .map((p) => p.username)
+        .filter((n, i, a) => a.indexOf(n) === i);
     });
+    const levelPoll = setInterval(() => {
+      voiceMicLevel = voiceMicLive ? v.captureLevel() : 0;
+    }, 33);
+    return () => {
+      stopUi();
+      clearInterval(levelPoll);
+    };
   });
 
   onMount(() => {
@@ -546,6 +562,17 @@
       </div>
     {/if}
 
+    {#if speakingNames.length > 0}
+      <div class="voice-speaking" data-testid="voice_speaking_overlay">
+        {#each speakingNames as name (name)}
+          <div class="voice-speaking-row" data-testid={`voice_speaking_${name}`}>
+            <span class="voice-speaking-dot" aria-hidden="true"></span>
+            <span>{name}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
     {#if skipPrompt}
       <button class="skip" onclick={() => skip.skipNow()}>
         <span class="skip-icon"><Icon name="skip_next" size={22} /></span>{skipPrompt.label}<kbd>S</kbd>
@@ -579,7 +606,7 @@
           <span class="title">{s.name}</span>
           {#if room && inRoom}
             <button class="chip room-chip" data-testid={voiceMicLive ? "status_mic_live" : undefined} onclick={() => (panel = panel === "room" ? null : "room")}>
-              {ManagedRooms.label(room.room)} · {room.users.length} · {readyCount} ready{#if voiceMicLive} · Mic{/if}
+              {ManagedRooms.label(room.room)} · {room.users.length} · {readyCount} ready{#if voiceMicLive}<span class="status-mic-ring" style={`--mic-ring:${0.35 + 0.55 * voiceMicLevel}`} aria-hidden="true"></span>{/if}
             </button>
           {/if}
           <button class="tool" onclick={pictureInPicture} aria-label="Picture-in-picture (P)" title="Picture-in-picture (P)"><Icon name="picture_in_picture_alt" size={24} /><span class="tool-label">Picture-in-picture</span></button>
@@ -669,9 +696,12 @@
             {/if}
             {#if voiceShowMic}
               <button
-                class="tool icon-only"
+                class="tool icon-only mic-activity"
                 class:live={voiceMicLive}
                 data-testid="player_mic_toggle"
+                style={voiceMicLive && voiceMicLevel > 0.02
+                  ? `--mic-ring:${0.35 + 0.55 * voiceMicLevel}; --mic-scale:${0.72 + 0.28 * voiceMicLevel}`
+                  : undefined}
                 onclick={() => {
                   const ui = session?.voice.ui.value;
                   if (ui?.showMic) session?.voice.setSelfMuted(!ui.selfMuted);
@@ -1106,6 +1136,54 @@
   .tool.icon-only.ready,
   .tool.icon-only.live {
     color: var(--ready);
+  }
+  .tool.icon-only.mic-activity.live {
+    position: relative;
+  }
+  .tool.icon-only.mic-activity.live::after {
+    content: "";
+    position: absolute;
+    inset: 4px;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--ready) calc(var(--mic-ring, 0) * 100%), transparent);
+    transform: scale(var(--mic-scale, 0.72));
+    pointer-events: none;
+  }
+  .status-mic-ring {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-left: 6px;
+    vertical-align: middle;
+    border-radius: 50%;
+    border: 1.5px solid color-mix(in srgb, var(--ready) calc(var(--mic-ring, 0.5) * 100%), transparent);
+  }
+  .voice-speaking {
+    position: absolute;
+    left: 12px;
+    top: 56px;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgb(0 0 0 / 0.45);
+    color: #fff;
+    font-size: 13px;
+    pointer-events: none;
+  }
+  .voice-speaking-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .voice-speaking-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent, #6cf);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #6cf) 35%, transparent);
   }
   .tool.icon-only:not(.ready):not(.live):not(.in-voice) {
     color: rgb(255 255 255 / 0.72);

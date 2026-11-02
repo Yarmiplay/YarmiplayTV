@@ -30,9 +30,6 @@ class VoiceSpeakingOverlayTest {
         assertEquals(listOf("alice"), ui.audibleSpeakingNames(settings))
         // Instant clear: empty speakingIds → no names (no fade/linger in the list helper).
         assertTrue(ui.copy(speakingIds = emptySet()).audibleSpeakingNames(settings).isEmpty())
-        assertTrue(
-            ui.copy(speakingIds = setOf("c2") - "c2").audibleSpeakingNames(settings).isEmpty(),
-        )
     }
 
     @Test

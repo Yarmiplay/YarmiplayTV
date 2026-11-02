@@ -153,6 +153,12 @@ export class WebVoiceEngine {
     return this.transmitting && !this.selfMuted && this.captureRms > 0.02;
   }
 
+  /** 0…1 mic activity for the ring UI; 0 when muted / not transmitting. */
+  captureLevel(): number {
+    if (!this.transmitting || this.selfMuted) return 0;
+    return Math.min(1, this.captureRms / 0.12);
+  }
+
   private reportSpeaking(on: boolean) {
     if (on === this.lastSpoke) return;
     this.lastSpoke = on;

@@ -351,6 +351,11 @@ export class VoiceController {
     }
   }
 
+  /** 0…1 post-capture mic level for the activity ring. */
+  captureLevel(): number {
+    return this.engine.captureLevel();
+  }
+
   /** Poll receive energy so speaking names drop the same tick audio stops (no linger). */
   private startHeardPoll() {
     if (this.heardPoll) clearInterval(this.heardPoll);
