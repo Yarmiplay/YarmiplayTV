@@ -52,8 +52,9 @@ class VoiceBannerTest {
             available = false,
             enabledByClient = true,
             voiceDisabledOnServer = true,
+            voiceDisabledMessage = "voice disabled on this server",
         )
-        assertEquals("Voice disabled on this server", voiceBanner(ui))
+        assertEquals("voice disabled on this server", voiceBanner(ui))
     }
 
     @Test

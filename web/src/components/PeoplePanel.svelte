@@ -109,28 +109,30 @@
       </button>
     </section>
 
-    {#if voice?.available}
+    {#if voice?.available || voice?.voiceDisabledOnServer}
       <section class="voice" data-testid="voice_panel">
         {#if voice.status}<p class="dim small" data-testid="voice_banner">{voice.status}</p>{/if}
-        <div class="voice-row">
-          {#if voice.showMic}
-            <button
-              class="button quiet"
-              data-testid="voice_self_mic"
-              title={voice.selfMuted ? "Unmute mic (Ctrl+M)" : "Mute mic (Ctrl+M)"}
-              aria-label={voice.selfMuted ? "Unmute mic (Ctrl+M)" : "Mute mic (Ctrl+M)"}
-              onclick={() => session?.voice.setSelfMuted(!voice?.selfMuted)}
-            >
-              <Icon name={voice.selfMuted ? "volume_off" : "volume_up"} size={20} />
-              {voice.selfMuted ? "Mic muted" : "Mic on"}
-            </button>
-          {/if}
-          {#if voice.membershipIsLeave}
-            <button class="button quiet" data-testid="voice_leave" onclick={() => session?.voice.leave()}>Leave voice</button>
-          {:else}
-            <button class="button" data-testid="voice_join" onclick={() => session?.voice.join()}>Join voice</button>
-          {/if}
-        </div>
+        {#if voice.available}
+          <div class="voice-row">
+            {#if voice.showMic}
+              <button
+                class="button quiet"
+                data-testid="voice_self_mic"
+                title={voice.selfMuted ? "Unmute mic (Ctrl+M)" : "Mute mic (Ctrl+M)"}
+                aria-label={voice.selfMuted ? "Unmute mic (Ctrl+M)" : "Mute mic (Ctrl+M)"}
+                onclick={() => session?.voice.setSelfMuted(!voice?.selfMuted)}
+              >
+                <Icon name={voice.selfMuted ? "volume_off" : "volume_up"} size={20} />
+                {voice.selfMuted ? "Mic muted" : "Mic on"}
+              </button>
+            {/if}
+            {#if voice.membershipIsLeave}
+              <button class="button quiet" data-testid="voice_leave" onclick={() => session?.voice.leave()}>Leave voice</button>
+            {:else}
+              <button class="button" data-testid="voice_join" onclick={() => session?.voice.join()}>Join voice</button>
+            {/if}
+          </div>
+        {/if}
       </section>
     {/if}
 

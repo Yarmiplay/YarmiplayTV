@@ -30,6 +30,16 @@ class VoiceProtocolTest {
     }
 
     @Test
+    fun `disabled voice object carries exact server message`() {
+        val voice = SyncplayClient.parseVoiceDescriptor(
+            json.parseToJsonElement("""{"enabled":false,"message":"voice disabled on this server"}"""),
+        )!!
+        assertFalse(voice.enabled)
+        assertEquals("voice disabled on this server", voice.message)
+        assertFalse(voice.usesSyncplayMux)
+    }
+
+    @Test
     fun `capabilities voice and descriptor parse yv1`() {
         val caps = SyncplayClient.parseCapabilities(
             json.parseToJsonElement("""{"fileRelay":true,"voice":true,"roomSettings":true}""").jsonObject,
@@ -42,26 +52,28 @@ class VoiceProtocolTest {
             ),
         )!!
         assertEquals(1, voice.version)
+        assertTrue(voice.enabled)
         assertEquals("opus", voice.codec)
         assertEquals(9000, voice.udpPort)
         assertEquals(9000, voice.tcpPort)
         assertEquals("yv1", voice.transport)
+        assertNull(voice.mux)
         assertEquals("/yarmiplay/voice", voice.wsPath)
         assertEquals(64, voice.fingerprint.length)
+        assertFalse(voice.usesSyncplayMux)
     }
 
     @Test
-    fun `descriptor parse yv1-syncplay version 2`() {
+    fun `descriptor parse syncplay mux`() {
         val voice = SyncplayClient.parseVoiceDescriptor(
             json.parseToJsonElement(
-                """{"version":2,"codec":"opus","clockRate":48000,"channels":1,"ptime":20,"maxBitrate":32000,"fec":true,"dtx":true,"transport":"yv1-syncplay","udpPort":0,"tcpPort":0,"wsPath":"/yarmiplay/voice","maxParticipants":8,"fingerprint":""}""",
+                """{"version":1,"enabled":true,"codec":"opus","clockRate":48000,"channels":1,"ptime":20,"maxBitrate":32000,"fec":true,"dtx":true,"transport":"yv1","mux":"syncplay","port":8999,"wsPath":"/yarmiplay/voice","maxParticipants":8}""",
             ),
         )!!
-        assertEquals(2, voice.version)
-        assertEquals("yv1-syncplay", voice.transport)
-        assertEquals(0, voice.udpPort)
-        assertEquals(0, voice.tcpPort)
-        assertEquals("", voice.fingerprint)
+        assertEquals(1, voice.version)
+        assertEquals("syncplay", voice.mux)
+        assertEquals(8999, voice.port)
+        assertTrue(voice.usesSyncplayMux)
     }
 
     @Test
@@ -79,5 +91,17 @@ class VoiceProtocolTest {
         assertEquals(VoiceClosedReason.REPLACED, VoiceClosedReason.parse("replaced"))
         assertEquals(VoiceClosedReason.VERSION, VoiceClosedReason.parse("version"))
         assertEquals(VoiceClosedReason.UNKNOWN, VoiceClosedReason.parse("wat"))
+    }
+
+    @Test
+    fun `mux voice record framing`() {
+        val packet = ByteArray(56) { i -> if (i < 2) if (i == 0) 0x59 else 0x56 else 0 }
+        val framed = ByteArray(3 + packet.size)
+        framed[0] = VOICE_MUX_MARKER.toByte()
+        framed[1] = 0
+        framed[2] = 56
+        packet.copyInto(framed, 3)
+        assertEquals(VOICE_MUX_MARKER, framed[0].toInt() and 0xff)
+        assertEquals(56, ((framed[1].toInt() and 0xff) shl 8) or (framed[2].toInt() and 0xff))
     }
 }

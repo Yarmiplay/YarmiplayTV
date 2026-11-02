@@ -10,6 +10,14 @@ export type VoiceJoinedSeat = {
   key: string;
   wsPath: string;
   maxBitrate?: number;
+  /**
+   * When set, media rides the Syncplay `/yarmiplay/ws` socket (binary yv1) instead of
+   * opening `/yarmiplay/voice` (VOICE_PROTOCOL §6.0.2).
+   */
+  mux?: {
+    send: (packet: Uint8Array) => void;
+    setOnPacket: (handler: ((packet: ArrayBuffer) => void) | null) => void;
+  } | null;
 };
 
 export type VoiceAudioDevice = {
@@ -19,12 +27,13 @@ export type VoiceAudioDevice = {
 };
 
 /**
- * Browser voice media: binary WebSocket to `/yarmiplay/voice?t=<token>`, AES-GCM `yv1`
- * frames, Opus via WebCodecs when available.
+ * Browser voice media: preferred Syncplay-mux binary frames on `/yarmiplay/ws`, with
+ * legacy fallback to `/yarmiplay/voice?t=<token>`. AES-GCM `yv1` + Opus via WebCodecs.
  * Mic list via `enumerateDevices`; speaker via `setSinkId` where the browser supports it.
  */
 export class WebVoiceEngine {
   private ws: WebSocket | null = null;
+  private mux: VoiceJoinedSeat["mux"] = null;
   private key: Uint8Array | null = null;
   private token: bigint | null = null;
   private seq = (Math.random() * 0xffffffff) >>> 0;
@@ -65,13 +74,21 @@ export class WebVoiceEngine {
     this.token = token;
     this.key = key;
     this.closed = false;
-    const path = seat.wsPath.startsWith("/") ? seat.wsPath : `/${seat.wsPath}`;
-    const url = `${seat.secure ? "wss" : "ws"}://${seat.host}:${seat.port}${path}?t=${seat.token}`;
+    this.maxBitrate = seat.maxBitrate ?? 32_000;
     try {
+      if (seat.mux) {
+        this.mux = seat.mux;
+        this.mux.setOnPacket((packet) => void this.onPacket(new Uint8Array(packet)));
+        // Keepalives optional on mux; still useful against idle proxies.
+        this.keepaliveTimer = setInterval(() => void this.sendKeepalive(), 5000);
+        this.listenDeviceChanges();
+        return true;
+      }
+      const path = seat.wsPath.startsWith("/") ? seat.wsPath : `/${seat.wsPath}`;
+      const url = `${seat.secure ? "wss" : "ws"}://${seat.host}:${seat.port}${path}?t=${seat.token}`;
       await this.openSocket(url);
       await this.sendKeepalive();
       this.keepaliveTimer = setInterval(() => void this.sendKeepalive(), 5000);
-      this.maxBitrate = seat.maxBitrate ?? 32_000;
       // Capture starts only while transmitting so mute releases getUserMedia.
       this.listenDeviceChanges();
       return true;
@@ -87,6 +104,8 @@ export class WebVoiceEngine {
     if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
     this.keepaliveTimer = null;
     void this.sendBye();
+    this.mux?.setOnPacket(null);
+    this.mux = null;
     try {
       this.ws?.close();
     } catch {
@@ -333,11 +352,15 @@ export class WebVoiceEngine {
   }
 
   private async sendPacket(type: number, plain: Uint8Array) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.key || this.token === null) return;
+    if (!this.key || this.token === null) return;
+    const canMux = !!this.mux;
+    const canWs = !!this.ws && this.ws.readyState === WebSocket.OPEN;
+    if (!canMux && !canWs) return;
     const seq = this.seq++ >>> 0;
     const packet = await seal(this.key, type, this.token, 0n, seq, this.timestamp >>> 0, plain);
     if (packet.length < YV1.MIN_PACKET || packet.length > YV1.MAX_PACKET) return;
-    this.ws.send(packet);
+    if (canMux) this.mux!.send(packet);
+    else this.ws!.send(packet);
   }
 
   private async sendKeepalive() {
@@ -345,7 +368,9 @@ export class WebVoiceEngine {
   }
 
   private async sendBye() {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.key || this.token === null) return;
+    if ((!this.mux && (!this.ws || this.ws.readyState !== WebSocket.OPEN)) || !this.key || this.token === null) {
+      return;
+    }
     try {
       await this.sendPacket(YV1.TYPE_BYE, new Uint8Array(0));
     } catch {

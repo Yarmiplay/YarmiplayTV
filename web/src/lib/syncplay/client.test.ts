@@ -13,12 +13,18 @@ class ScriptedTransport implements Transport {
   readonly tls = false;
   readonly host = "yarmi.example";
   readonly sent: string[] = [];
+  readonly sentBinary: Uint8Array[] = [];
   closed = false;
   onLine: (line: string) => void = () => {};
+  onBinary: (packet: ArrayBuffer) => void = () => {};
   onClose: (reason: string) => void = () => {};
 
   send(line: string) {
     if (!this.closed) this.sent.push(line);
+  }
+  sendBinary(packet: ArrayBuffer | Uint8Array) {
+    if (this.closed) return;
+    this.sentBinary.push(packet instanceof Uint8Array ? packet : new Uint8Array(packet));
   }
   close() {
     if (this.closed) return;

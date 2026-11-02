@@ -1,7 +1,7 @@
 # Plan: voice on the Syncplay port (no separate 9000)
 
-**Status:** approved and implementing (YarmiplayServerTV 2.1.0 → NoireServerTV → YarmiplayTV 2.9.0).  
-Includes host voice allow/disallow toggle (`capabilities.voiceDisabled`) and Syncplay-port-only media.
+**Status:** superseded by YarmiplayServerTV PR #5 wire format (Syncplay byte-stream mux / binary `/yarmiplay/ws`).  
+Client 2.9.0 implements that protocol; this plan’s earlier “second WS on `/yarmiplay/voice` only” path remains a **legacy fallback**.
 
 ## Problem
 

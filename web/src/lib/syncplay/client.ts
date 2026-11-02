@@ -28,6 +28,7 @@ import {
   type YarmiplayInfo,
   type YarmiplaySession,
   parseVoiceClosedReason,
+  usesSyncplayMux,
 } from "./yarmiplay";
 
 export interface SyncplayConfig {
@@ -96,7 +97,17 @@ export const isOperator = (s: RoomState) => inManagedRoom(s) && s.users.some((u)
 export const followsOperators = (s: RoomState) => inManagedRoom(s) && !isOperator(s);
 export const relayActive = (y: YarmiplayInfo) => y.session && y.capabilities.fileRelay;
 export const roomSettingsShared = (y: YarmiplayInfo) => y.session && y.capabilities.roomSettings;
-export const voiceAvailable = (y: YarmiplayInfo) => y.session && y.capabilities.voice && y.voice !== null;
+export const voiceAvailable = (y: YarmiplayInfo) =>
+  y.session && y.capabilities.voice && y.voice !== null && y.voice.enabled !== false;
+
+/** Exact host notice when voice is off (`voice disabled on this server`), else null. */
+export const voiceDisabledMessage = (y: YarmiplayInfo): string | null => {
+  if (y.voice && y.voice.enabled === false) {
+    return y.voice.message?.trim() || "voice disabled on this server";
+  }
+  if (y.session && y.capabilities.voiceDisabled) return "voice disabled on this server";
+  return null;
+};
 
 /** One-off things that happened; persistent state lives in [RoomState]. */
 export type SyncplayEvent =
@@ -129,8 +140,11 @@ export type SyncplayEvent =
       wsPath: string;
       fingerprint: string;
       maxBitrate: number;
+      mux: string | null;
+      port: number | null;
+      transport: string;
     }
-  | { type: "voiceClosed"; reason: VoiceClosedReason }
+  | { type: "voiceClosed"; reason: VoiceClosedReason; message: string | null }
   | { type: "voicePeers"; peers: VoicePeer[] }
   | { type: "voiceActivity"; participantId: string; username: string | null; speaking: boolean };
 
@@ -192,6 +206,7 @@ export class SyncplayClient {
   private stopped = true;
   private fatalError: string | null = null;
   private loop: Promise<void> | null = null;
+  private voiceMuxHandler: ((packet: ArrayBuffer) => void) | null = null;
 
   private logged = false;
   private clientIgnoringOnTheFly = 0;
@@ -479,6 +494,10 @@ export class SyncplayClient {
           transport.close();
           reject(new Error(this.fatalError));
         }
+      };
+      transport.onBinary = (packet) => {
+        this.lastMessageTime = this.clock();
+        this.voiceMuxHandler?.(packet);
       };
       this.sendHello();
       void resolve;
@@ -927,11 +946,18 @@ export class SyncplayClient {
           wsPath: str(j, "wsPath") ?? this._state.yarmiplay.voice?.wsPath ?? "/yarmiplay/voice",
           fingerprint: str(j, "fingerprint") ?? "",
           maxBitrate: typeof j.maxBitrate === "number" ? j.maxBitrate : (this._state.yarmiplay.voice?.maxBitrate ?? 32_000),
+          mux: str(j, "mux") ?? this._state.yarmiplay.voice?.mux ?? null,
+          port: typeof j.port === "number" ? j.port : (this._state.yarmiplay.voice?.port ?? null),
+          transport: str(j, "transport") ?? this._state.yarmiplay.voice?.transport ?? "yv1",
         });
       }
     }
     if (isObject(message.voiceClosed)) {
-      this.emit({ type: "voiceClosed", reason: parseVoiceClosedReason(str(message.voiceClosed, "reason")) });
+      this.emit({
+        type: "voiceClosed",
+        reason: parseVoiceClosedReason(str(message.voiceClosed, "reason")),
+        message: str(message.voiceClosed, "message"),
+      });
     }
     const peersEl = message.voicePeers;
     if (isObject(peersEl) && Array.isArray(peersEl.peers)) {
@@ -953,14 +979,29 @@ export class SyncplayClient {
   }
 
   /** Ask the server for a seat in this Syncplay room's voice channel. */
-  joinVoice(version = this._state.yarmiplay.voice?.version ?? 1) {
+  joinVoice(
+    version = this._state.yarmiplay.voice?.version ?? 1,
+    mux = usesSyncplayMux(this._state.yarmiplay.voice),
+  ) {
     if (!voiceAvailable(this._state.yarmiplay)) return;
-    this.sendYarmiplay({ voiceJoin: { version } });
+    this.sendYarmiplay({ voiceJoin: mux ? { version, mux: true } : { version } });
   }
 
   /** Leave voice without leaving the Syncplay room. */
   leaveVoice() {
+    this.setVoiceMuxHandler(null);
     this.sendYarmiplay({ voiceLeave: {} });
+  }
+
+  /** Register a handler for inbound binary yv1 frames on `/yarmiplay/ws` (Syncplay mux). */
+  setVoiceMuxHandler(handler: ((packet: ArrayBuffer) => void) | null) {
+    this.voiceMuxHandler = handler;
+    if (this.transport) this.transport.onBinary = handler ?? (() => {});
+  }
+
+  /** Send one sealed yv1 packet as a binary WebSocket message on `/yarmiplay/ws`. */
+  sendVoiceMuxPacket(packet: Uint8Array) {
+    this.transport?.sendBinary(packet);
   }
 
   sendVoiceActivity(speaking: boolean) {
@@ -1372,15 +1413,42 @@ export function parseCapabilities(element: unknown): Capabilities | null {
     websocket: bool(element, "websocket"),
     mal: bool(element, "mal"),
     voice: bool(element, "voice"),
+    voiceDisabled: bool(element, "voiceDisabled"),
   };
 }
 
 export function parseVoiceDescriptor(element: unknown): VoiceDescriptor | null {
   if (!isObject(element)) return null;
+  const enabled = "enabled" in element ? bool(element, "enabled") : true;
+  const message = str(element, "message");
+  if (!enabled) {
+    return {
+      version: typeof element.version === "number" ? element.version : 1,
+      enabled: false,
+      message: message?.trim() || "voice disabled on this server",
+      codec: "opus",
+      clockRate: 48_000,
+      channels: 1,
+      ptimeMs: 20,
+      maxBitrate: 32_000,
+      fec: true,
+      dtx: true,
+      transport: "yv1",
+      mux: null,
+      port: null,
+      udpPort: 9000,
+      tcpPort: 9000,
+      wsPath: "/yarmiplay/voice",
+      maxParticipants: 8,
+      fingerprint: "",
+    };
+  }
   const version = typeof element.version === "number" ? element.version : null;
   if (version === null) return null;
   return {
     version,
+    enabled: true,
+    message: message ?? null,
     codec: str(element, "codec") ?? "opus",
     clockRate: typeof element.clockRate === "number" ? element.clockRate : 48_000,
     channels: typeof element.channels === "number" ? element.channels : 1,
@@ -1389,6 +1457,8 @@ export function parseVoiceDescriptor(element: unknown): VoiceDescriptor | null {
     fec: "fec" in element ? bool(element, "fec") : true,
     dtx: "dtx" in element ? bool(element, "dtx") : true,
     transport: str(element, "transport") ?? "yv1",
+    mux: str(element, "mux") ?? null,
+    port: typeof element.port === "number" ? element.port : null,
     udpPort: typeof element.udpPort === "number" ? element.udpPort : 9000,
     tcpPort: typeof element.tcpPort === "number" ? element.tcpPort : 9000,
     wsPath: str(element, "wsPath") ?? "/yarmiplay/voice",

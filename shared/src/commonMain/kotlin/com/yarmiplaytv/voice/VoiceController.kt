@@ -113,12 +113,12 @@ class VoiceController(
         combine(
             sync.room.map {
                 val yp = it.yarmiplay
-                val disabled = yp.session && yp.capabilities.voiceDisabled
-                val lacks = yp.session && !yp.voiceAvailable && !yp.capabilities.voiceDisabled
+                val disabledMsg = yp.voiceDisabledMessage
+                val lacks = yp.session && !yp.voiceAvailable && disabledMsg == null
                 Triple(
                     yp.voiceAvailable,
                     yp.voice,
-                    disabled to lacks,
+                    disabledMsg to lacks,
                 )
             }.distinctUntilChanged(),
             settings.map {
@@ -128,17 +128,18 @@ class VoiceController(
             Triple(available, descriptor to keys, flags)
         }.onEach { (available, descAndKeys, flags) ->
             val (descriptor, keys) = descAndKeys
-            val (voiceDisabled, sessionWithoutVoice) = flags
+            val (disabledMsg, sessionWithoutVoice) = flags
             _ui.update {
                 val next = it.copy(
                     available = available,
                     enabledByClient = keys.voiceChat,
                     serverLacksVoice = sessionWithoutVoice,
-                    voiceDisabledOnServer = voiceDisabled,
+                    voiceDisabledOnServer = disabledMsg != null,
+                    voiceDisabledMessage = disabledMsg,
                     talkMode = keys.talkMode,
                     descriptor = descriptor,
                     statusLine = when {
-                        voiceDisabled && keys.voiceChat -> "Voice disabled on this server"
+                        disabledMsg != null && keys.voiceChat -> disabledMsg
                         sessionWithoutVoice && keys.voiceChat -> it.statusLine
                         else -> it.statusLine
                     },
@@ -536,7 +537,7 @@ class VoiceController(
                     statusLine = statusFor(capture, latched = false, effectiveTalkMode(settings.value)),
                 )
             }
-            client.joinVoice(desc.version)
+            client.joinVoice(version = desc.version, mux = desc.usesSyncplayMux)
         }
     }
 
@@ -551,7 +552,7 @@ class VoiceController(
     private fun onEvent(event: SyncplayEvent) {
         when (event) {
             is SyncplayEvent.VoiceJoined -> scope.launch { onJoined(event) }
-            is SyncplayEvent.VoiceClosed -> onClosed(event.reason)
+            is SyncplayEvent.VoiceClosed -> onClosed(event.reason, event.message)
             is SyncplayEvent.VoicePeersChanged -> onPeers(event.peers)
             // Speaking overlay uses locally heard PCM (polled); ignore protocol speaking flags for UI.
             is SyncplayEvent.VoiceActivity -> Unit
@@ -560,12 +561,13 @@ class VoiceController(
         }
     }
 
-    private fun onClosed(reason: VoiceClosedReason) {
+    private fun onClosed(reason: VoiceClosedReason, message: String? = null) {
         when (reason) {
             VoiceClosedReason.REPLACED -> {
                 // Wait for the next voiceJoined with new token/key; keep UI in CONNECTING.
                 awaitingReplace = true
                 engine.disconnect()
+                sync.client?.voiceMux()?.setOnPacket(null)
                 _ui.update {
                     it.copy(
                         connection = VoiceConnection.CONNECTING,
@@ -588,7 +590,10 @@ class VoiceController(
                 tearDown(VoiceConnection.FAILED, "Voice room is full")
             }
             VoiceClosedReason.DISABLED ->
-                tearDown(VoiceConnection.OFF, "Voice disabled on this server")
+                tearDown(
+                    VoiceConnection.OFF,
+                    message?.takeIf { it.isNotBlank() } ?: "voice disabled on this server",
+                )
             VoiceClosedReason.VANILLA ->
                 tearDown(VoiceConnection.OFF, "Voice chat turned off on the server")
             VoiceClosedReason.VERSION -> {
@@ -597,7 +602,7 @@ class VoiceController(
             }
             VoiceClosedReason.ERROR -> {
                 lastFailAtMs = System.currentTimeMillis()
-                tearDown(VoiceConnection.FAILED, "Voice disconnected")
+                tearDown(VoiceConnection.FAILED, message?.takeIf { it.isNotBlank() } ?: "Voice disconnected")
                 scheduleRetry()
             }
             VoiceClosedReason.LEFT -> tearDown(VoiceConnection.OFF, "Left voice")
@@ -625,11 +630,16 @@ class VoiceController(
         val client = sync.client ?: return
         val room = sync.room.value
         val desc = room.yarmiplay.voice
-        val syncplayPort = client.config.port.takeIf { it > 0 } ?: 8999
+        val syncplayPort = event.port
+            ?: desc?.port
+            ?: client.config.port.takeIf { it > 0 }
+            ?: 8999
         val secure = room.tls || client.session.value?.baseUrl?.startsWith("https") == true
-        val syncplayMediaOnly = desc?.let {
+        val useMux = event.usesSyncplayMux || desc?.usesSyncplayMux == true
+        val syncplayMediaOnly = useMux || desc?.let {
             it.version >= 2 || it.transport.equals("yv1-syncplay", ignoreCase = true)
         } == true
+        val mux = if (useMux) client.voiceMux() else null
         val params = VoiceMediaParams(
             host = hostOnly,
             token = event.token,
@@ -647,13 +657,15 @@ class VoiceController(
             syncplayPort = syncplayPort,
             secure = secure,
             syncplayMediaOnly = syncplayMediaOnly,
+            syncplayMux = mux,
         )
         val ok = engine.connect(params)
         if (!ok) {
             lastFailAtMs = System.currentTimeMillis()
+            mux?.setOnPacket(null)
             tearDown(
                 VoiceConnection.FAILED,
-                if (syncplayMediaOnly) "Couldn't open voice on the Syncplay port"
+                if (syncplayMediaOnly) "Couldn't open voice on the Syncplay connection"
                 else "Couldn't connect voice",
             )
             client.leaveVoice()
@@ -761,6 +773,7 @@ class VoiceController(
         connectJob?.cancel()
         connectJob = null
         awaitingReplace = false
+        sync.client?.voiceMux()?.setOnPacket(null)
         engine.disconnect()
         lastPeers = emptyList()
         pttHeld = false
