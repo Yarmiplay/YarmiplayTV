@@ -86,6 +86,11 @@ data class YarmiplayCapabilities(
     val roomSettings: Boolean = false,
     /** Room voice chat on this server (YarmiplayServerTV 2.0+). Older servers omit it. */
     val voice: Boolean = false,
+    /**
+     * Host turned voice off while Yarmiplay extensions stay on (server 2.1.0+).
+     * Older servers omit it; clients treat absent as false.
+     */
+    val voiceDisabled: Boolean = false,
 ) {
     /** Vanilla mode: the host switched every extension off, and the session token is revoked. */
     val allOff: Boolean get() = !fileRelay && !jellyfin && !https

@@ -47,6 +47,16 @@ class VoiceBannerTest {
     }
 
     @Test
+    fun voiceDisabledOnServerShowsClearNotice() {
+        val ui = VoiceUiState(
+            available = false,
+            enabledByClient = true,
+            voiceDisabledOnServer = true,
+        )
+        assertEquals("Voice disabled on this server", voiceBanner(ui))
+    }
+
+    @Test
     fun receivingNamesPreferRxDiagnostic() {
         val ui = VoiceUiState(
             available = true,

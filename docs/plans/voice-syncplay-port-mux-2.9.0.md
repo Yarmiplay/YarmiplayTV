@@ -1,7 +1,7 @@
 # Plan: voice on the Syncplay port (no separate 9000)
 
-**Status:** awaiting owner confirmation before any YarmiplayServerTV / NoireServerTV edits.  
-**Client prep (YarmiplayTV 2.9.0):** allowed to proceed in parallel.
+**Status:** approved and implementing (YarmiplayServerTV 2.1.0 → NoireServerTV → YarmiplayTV 2.9.0).  
+Includes host voice allow/disallow toggle (`capabilities.voiceDisabled`) and Syncplay-port-only media.
 
 ## Problem
 

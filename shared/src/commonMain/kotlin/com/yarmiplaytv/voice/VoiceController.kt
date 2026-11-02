@@ -112,26 +112,36 @@ class VoiceController(
 
         combine(
             sync.room.map {
+                val yp = it.yarmiplay
+                val disabled = yp.session && yp.capabilities.voiceDisabled
+                val lacks = yp.session && !yp.voiceAvailable && !yp.capabilities.voiceDisabled
                 Triple(
-                    it.yarmiplay.voiceAvailable,
-                    it.yarmiplay.voice,
-                    it.yarmiplay.session && !it.yarmiplay.voiceAvailable,
+                    yp.voiceAvailable,
+                    yp.voice,
+                    disabled to lacks,
                 )
             }.distinctUntilChanged(),
             settings.map {
                 VoiceReconcileKeys(it.voiceChat, effectiveTalkMode(it), it.voiceTvMicHintShown, it.voiceAutoJoin)
             }.distinctUntilChanged(),
-        ) { (available, descriptor, sessionWithoutVoice), keys ->
-            Triple(available, descriptor to keys, sessionWithoutVoice)
-        }.onEach { (available, descAndKeys, sessionWithoutVoice) ->
+        ) { (available, descriptor, flags), keys ->
+            Triple(available, descriptor to keys, flags)
+        }.onEach { (available, descAndKeys, flags) ->
             val (descriptor, keys) = descAndKeys
+            val (voiceDisabled, sessionWithoutVoice) = flags
             _ui.update {
                 val next = it.copy(
                     available = available,
                     enabledByClient = keys.voiceChat,
                     serverLacksVoice = sessionWithoutVoice,
+                    voiceDisabledOnServer = voiceDisabled,
                     talkMode = keys.talkMode,
                     descriptor = descriptor,
+                    statusLine = when {
+                        voiceDisabled && keys.voiceChat -> "Voice disabled on this server"
+                        sessionWithoutVoice && keys.voiceChat -> it.statusLine
+                        else -> it.statusLine
+                    },
                 )
                 maybeOfferHint(next, keys.hintShown)
             }
@@ -577,7 +587,9 @@ class VoiceController(
                 lastFailAtMs = System.currentTimeMillis()
                 tearDown(VoiceConnection.FAILED, "Voice room is full")
             }
-            VoiceClosedReason.DISABLED, VoiceClosedReason.VANILLA ->
+            VoiceClosedReason.DISABLED ->
+                tearDown(VoiceConnection.OFF, "Voice disabled on this server")
+            VoiceClosedReason.VANILLA ->
                 tearDown(VoiceConnection.OFF, "Voice chat turned off on the server")
             VoiceClosedReason.VERSION -> {
                 lastFailAtMs = System.currentTimeMillis()

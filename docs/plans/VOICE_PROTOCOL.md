@@ -13,4 +13,6 @@ See the server repository for the full text. Client-relevant rules:
   used the Syncplay-port WebSocket.
 - Signaling stays on the existing Syncplay / `/yarmiplay/ws` session (`voiceJoin`, `voiceJoined`,
   `voicePeers`, `voiceActivity`, `voiceLeave`, `voiceClosed`).
+- When the host turns voice off, `capabilities.voiceDisabled` is true and the client shows
+  **Voice disabled on this server** (distinct from an older server that never offered voice).
 - No WebRTC, SDP, ICE, or `voiceSignal`.

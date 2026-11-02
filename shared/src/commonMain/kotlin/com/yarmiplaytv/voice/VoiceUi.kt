@@ -5,8 +5,10 @@ import com.yarmiplaytv.data.VoicePeerPrefs
 import com.yarmiplaytv.data.VoiceTalkMode
 import com.yarmiplaytv.syncplay.VoicePeer
 
-/** Status line for the room panel when voice UI is shown (or when the server lacks voice). */
+/** Status line for the room panel when voice UI is shown (or when the server lacks / disabled voice). */
 fun voiceBanner(ui: VoiceUiState): String? = when {
+    ui.voiceDisabledOnServer && ui.enabledByClient ->
+        "Voice disabled on this server"
     ui.serverLacksVoice && ui.enabledByClient ->
         "This server doesn't support voice chat (needs YarmiplayServerTV 2.1+ / Noire with voice on the Syncplay port)"
     !ui.showUi -> null

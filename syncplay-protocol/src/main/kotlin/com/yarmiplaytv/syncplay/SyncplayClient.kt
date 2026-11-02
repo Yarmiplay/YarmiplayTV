@@ -1400,6 +1400,7 @@ class SyncplayClient(
                 prefetch = o.bool("prefetch"),
                 roomSettings = o.bool("roomSettings"),
                 voice = o.bool("voice"),
+                voiceDisabled = o.bool("voiceDisabled"),
             )
         }
 

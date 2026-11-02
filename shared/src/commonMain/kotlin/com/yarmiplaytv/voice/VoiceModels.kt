@@ -43,6 +43,11 @@ data class VoiceUiState(
      * the client wants voice.
      */
     val serverLacksVoice: Boolean = false,
+    /**
+     * Host turned voice off on a Yarmiplay server (`capabilities.voiceDisabled`).
+     * Distinct from [serverLacksVoice] (server never had voice / too old).
+     */
+    val voiceDisabledOnServer: Boolean = false,
     val connection: VoiceConnection = VoiceConnection.OFF,
     val selfMuted: Boolean = false,
     val talking: Boolean = false,
