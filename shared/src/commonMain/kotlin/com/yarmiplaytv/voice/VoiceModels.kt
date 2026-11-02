@@ -37,6 +37,12 @@ enum class VoiceConnection {
 data class VoiceUiState(
     val available: Boolean = false,
     val enabledByClient: Boolean = true,
+    /**
+     * Yarmiplay extension session is live but this server does not offer voice
+     * (pre-2.0 / Noire without the voice merge / bind failed). Shown as a notice when
+     * the client wants voice.
+     */
+    val serverLacksVoice: Boolean = false,
     val connection: VoiceConnection = VoiceConnection.OFF,
     val selfMuted: Boolean = false,
     val talking: Boolean = false,
@@ -50,6 +56,8 @@ data class VoiceUiState(
     val participantId: String? = null,
     val peers: List<VoicePeer> = emptyList(),
     val speakingIds: Set<String> = emptySet(),
+    /** Usernames we are currently receiving audible PCM from (RX diagnostic). */
+    val receivingNames: List<String> = emptyList(),
     val descriptor: VoiceDescriptor? = null,
     /** Short status for the room UI (e.g. "Listening only — no mic"). */
     val statusLine: String? = null,

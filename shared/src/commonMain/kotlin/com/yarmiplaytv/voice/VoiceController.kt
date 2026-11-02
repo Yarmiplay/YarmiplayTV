@@ -90,7 +90,10 @@ class VoiceController(
                 if (ui.connection == VoiceConnection.CONNECTED) {
                     val heard = engine.audibleParticipantIds()
                     if (heard != ui.speakingIds) {
-                        _ui.update { it.copy(speakingIds = heard) }
+                        val names = ui.peers
+                            .filter { it.participantId in heard && it.participantId != ui.participantId }
+                            .map { it.username.ifBlank { it.participantId } }
+                        _ui.update { it.copy(speakingIds = heard, receivingNames = names) }
                     }
                     val speech = engine.capturingSpeech()
                     if (speech != lastReportedSpeech) {
@@ -99,24 +102,34 @@ class VoiceController(
                     }
                 } else if (lastReportedSpeech != null) {
                     lastReportedSpeech = null
+                    if (ui.receivingNames.isNotEmpty() || ui.speakingIds.isNotEmpty()) {
+                        _ui.update { it.copy(speakingIds = emptySet(), receivingNames = emptyList()) }
+                    }
                 }
                 delay(33)
             }
         }
 
         combine(
-            sync.room.map { it.yarmiplay.voiceAvailable to it.yarmiplay.voice }.distinctUntilChanged(),
+            sync.room.map {
+                Triple(
+                    it.yarmiplay.voiceAvailable,
+                    it.yarmiplay.voice,
+                    it.yarmiplay.session && !it.yarmiplay.voiceAvailable,
+                )
+            }.distinctUntilChanged(),
             settings.map {
                 VoiceReconcileKeys(it.voiceChat, effectiveTalkMode(it), it.voiceTvMicHintShown, it.voiceAutoJoin)
             }.distinctUntilChanged(),
-        ) { (available, descriptor), keys ->
-            available to (descriptor to keys)
-        }.onEach { (available, descAndKeys) ->
+        ) { (available, descriptor, sessionWithoutVoice), keys ->
+            Triple(available, descriptor to keys, sessionWithoutVoice)
+        }.onEach { (available, descAndKeys, sessionWithoutVoice) ->
             val (descriptor, keys) = descAndKeys
             _ui.update {
                 val next = it.copy(
                     available = available,
                     enabledByClient = keys.voiceChat,
+                    serverLacksVoice = sessionWithoutVoice,
                     talkMode = keys.talkMode,
                     descriptor = descriptor,
                 )
@@ -598,7 +611,13 @@ class VoiceController(
         awaitingReplace = false
         val hostOnly = sync.server?.substringBefore(':')?.takeIf { it.isNotEmpty() } ?: return
         val client = sync.client ?: return
-        val desc = sync.room.value.yarmiplay.voice
+        val room = sync.room.value
+        val desc = room.yarmiplay.voice
+        val syncplayPort = client.config.port.takeIf { it > 0 } ?: 8999
+        val secure = room.tls || client.session.value?.baseUrl?.startsWith("https") == true
+        val syncplayMediaOnly = desc?.let {
+            it.version >= 2 || it.transport.equals("yv1-syncplay", ignoreCase = true)
+        } == true
         val params = VoiceMediaParams(
             host = hostOnly,
             token = event.token,
@@ -606,18 +625,25 @@ class VoiceController(
             udpPort = event.udpPort,
             tcpPort = event.tcpPort,
             fingerprint = event.fingerprint.ifEmpty { desc?.fingerprint.orEmpty() },
-            wsPath = event.wsPath,
+            wsPath = event.wsPath.ifEmpty { desc?.wsPath ?: "/yarmiplay/voice" },
             maxBitrate = event.maxBitrate,
             fec = event.fec,
             dtx = event.dtx,
             clockRate = event.clockRate,
             channels = event.channels,
             ptimeMs = event.ptimeMs,
+            syncplayPort = syncplayPort,
+            secure = secure,
+            syncplayMediaOnly = syncplayMediaOnly,
         )
         val ok = engine.connect(params)
         if (!ok) {
             lastFailAtMs = System.currentTimeMillis()
-            tearDown(VoiceConnection.FAILED, "Couldn't connect voice")
+            tearDown(
+                VoiceConnection.FAILED,
+                if (syncplayMediaOnly) "Couldn't open voice on the Syncplay port"
+                else "Couldn't connect voice",
+            )
             client.leaveVoice()
             scheduleRetry()
             return
@@ -733,6 +759,7 @@ class VoiceController(
                 participantId = null,
                 peers = emptyList(),
                 speakingIds = emptySet(),
+                receivingNames = emptyList(),
                 talking = false,
                 talkLatched = false,
                 showMicHint = false,

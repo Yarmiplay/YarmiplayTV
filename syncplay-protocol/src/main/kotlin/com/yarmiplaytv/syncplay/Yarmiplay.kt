@@ -126,7 +126,10 @@ data class VoicePeer(
 
 /**
  * Secrets and ports from `voiceJoined` for opening the `yv1` media path.
- * [host] is the Syncplay host (no port); media uses [udpPort] / [tcpPort].
+ *
+ * Preferred media (2.9.0+): binary WebSocket on the Syncplay port
+ * (`ws[s]://host:syncplayPort/wsPath?t=token`) — same path browsers already use.
+ * Legacy (server 2.0.x): UDP [udpPort] then fingerprint-pinned TLS TCP [tcpPort] (default 9000).
  */
 data class VoiceMediaParams(
     val host: String,
@@ -147,6 +150,18 @@ data class VoiceMediaParams(
      * Used when UDP is known blocked, and by e2e tests of the fallback.
      */
     val forceTcp: Boolean = false,
+    /**
+     * Syncplay TCP port (default 8999). When > 0, native clients try `/yarmiplay/voice`
+     * on this port before legacy UDP/TCP 9000.
+     */
+    val syncplayPort: Int = 0,
+    /** Use `wss` when the Syncplay session is already TLS. */
+    val secure: Boolean = false,
+    /**
+     * When true (server `transport=yv1-syncplay` / voice.version ≥ 2), skip legacy 9000
+     * entirely after a Syncplay-port WebSocket failure.
+     */
+    val syncplayMediaOnly: Boolean = false,
 )
 
 /** Why the server closed our voice seat. */

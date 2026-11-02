@@ -36,6 +36,7 @@ class VoiceMediaSession(
     private val lock = Mutex()
     private var codec: OpusCodec? = null
     private var transport: Yv1Transport? = null
+    private var wsTransport: Yv1WsTransport? = null
     private var decodeJob: Job? = null
     private var playbackJob: Job? = null
     /** Bounded so a stalled ingest path cannot retain unbounded Opus copies. */
@@ -52,11 +53,16 @@ class VoiceMediaSession(
     private val preOpus = VoicePcm.FrameAccumulator()
 
     val frameSamples: Int get() = codec?.frameSamples ?: 960
-    val running: Boolean get() = transport != null
+    val running: Boolean get() = transport != null || wsTransport != null
     val usingTcp: Boolean get() = transport?.usingTcp == true
-    val receivedInbound: Boolean get() = transport?.receivedInbound == true
+    /** True when media is on the Syncplay-port WebSocket (not legacy UDP/TCP 9000). */
+    val usingSyncplayWs: Boolean get() = wsTransport != null
+    val receivedInbound: Boolean get() = transport?.receivedInbound == true || wsTransport?.receivedInbound == true
     val decodedAudio: Boolean get() = receivedFrames.get()
     val lastRemoteRms: Double get() = lastRms.get()
+    /** 0…1 remote mix level for RX diagnostics (from last decoded frame RMS). */
+    val receiveLevel: Float
+        get() = (lastRms.get() / 2500.0).coerceIn(0.0, 1.0).toFloat()
     /** Post-NS capture RMS (0…~32768) while transmitting; decays when muted / not capturing. */
     val lastCaptureRms: Double get() = captureRms.get()
     /**
@@ -114,6 +120,44 @@ class VoiceMediaSession(
         codec = opus
         inbound = boundedInbound()
         val frames = inbound
+        val onAudio: (Long, ByteArray, Int, Int) -> Unit =
+            { sender, frame, sequence, _ -> frames.trySend(Triple(sender, sequence, frame)) }
+
+        // Prefer Syncplay-port WebSocket (same path as browsers) when the port is known.
+        if (seat.syncplayPort > 0) {
+            val ws = Yv1WsTransport(
+                host = seat.host,
+                syncplayPort = seat.syncplayPort,
+                secure = seat.secure,
+                wsPath = seat.wsPath,
+                tokenHex = seat.token,
+                token = token,
+                key = key,
+                scope = scope,
+                onAudio = onAudio,
+            )
+            if (ws.start()) {
+                wsTransport = ws
+                decodeJob = scope.launch { ingestLoop(frames) }
+                playbackJob = scope.launch { playbackLoop(opus) }
+                return true
+            }
+            ws.close()
+            if (seat.syncplayMediaOnly) {
+                println(
+                    "VoiceMediaSession Syncplay-port media failed host=${seat.host} " +
+                        "port=${seat.syncplayPort} secure=${seat.secure} (no legacy 9000 fallback)",
+                )
+                codec = null
+                frames.close()
+                return false
+            }
+            println(
+                "VoiceMediaSession Syncplay-port media failed; falling back to legacy UDP/TCP " +
+                    "${seat.udpPort}/${seat.tcpPort}",
+            )
+        }
+
         val t = Yv1Transport(
             host = seat.host,
             udpPort = seat.udpPort,
@@ -123,12 +167,16 @@ class VoiceMediaSession(
             fingerprintHex = seat.fingerprint,
             scope = scope,
             forceTcp = seat.forceTcp,
-            onAudio = { sender, frame, sequence, _ -> frames.trySend(Triple(sender, sequence, frame)) },
+            onAudio = onAudio,
         )
         if (!t.start()) {
             t.close()
             codec = null
             frames.close()
+            println(
+                "VoiceMediaSession legacy media open failed host=${seat.host} " +
+                    "udp=${seat.udpPort} tcp=${seat.tcpPort}",
+            )
             return false
         }
         transport = t
@@ -145,6 +193,8 @@ class VoiceMediaSession(
         inbound.close()
         transport?.close()
         transport = null
+        wsTransport?.close()
+        wsTransport = null
         codec = null
         transmitting.set(false)
         captureRms.set(0.0)
@@ -198,7 +248,7 @@ class VoiceMediaSession(
      */
     suspend fun offerCapturePcm(pcm: ShortArray): Boolean {
         val opus = codec ?: return false
-        val t = transport ?: return false
+        if (transport == null && wsTransport == null) return false
         if (pcm.isEmpty()) return true
         if (!transmitting.get() || selfMuted.get()) {
             captureRms.set(0.0)
@@ -216,7 +266,8 @@ class VoiceMediaSession(
                 (frame[i] * inputGain).roundToInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
             }
             val encoded = opus.encode(gained) ?: continue
-            t.sendAudio(encoded, opus.frameSamples)
+            wsTransport?.sendAudio(encoded, opus.frameSamples)
+                ?: transport?.sendAudio(encoded, opus.frameSamples)
         }
         return true
     }

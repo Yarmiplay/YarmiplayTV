@@ -5,18 +5,24 @@ import com.yarmiplaytv.data.VoicePeerPrefs
 import com.yarmiplaytv.data.VoiceTalkMode
 import com.yarmiplaytv.syncplay.VoicePeer
 
-/** Status line for the room panel when voice UI is shown. */
+/** Status line for the room panel when voice UI is shown (or when the server lacks voice). */
 fun voiceBanner(ui: VoiceUiState): String? = when {
+    ui.serverLacksVoice && ui.enabledByClient ->
+        "This server doesn't support voice chat (needs YarmiplayServerTV 2.1+ / Noire with voice on the Syncplay port)"
     !ui.showUi -> null
     ui.connection == VoiceConnection.CONNECTING -> "Connecting voice…"
     ui.connection == VoiceConnection.FAILED -> ui.statusLine ?: "Voice couldn't connect"
     ui.connection == VoiceConnection.OFF -> ui.statusLine
     ui.listenOnly -> "No microphone available — listening only"
     ui.talkMode == VoiceTalkMode.OPEN_MIC && ui.selfMuted -> ui.statusLine ?: "Mic muted"
+    ui.receivingNames.isNotEmpty() ->
+        "Receiving audio from ${ui.receivingNames.joinToString(", ")}"
     ui.micLive -> "Mic live"
     ui.talkMode == VoiceTalkMode.TOGGLE -> ui.statusLine ?: "Mic off — press Mic to talk"
     ui.talkMode == VoiceTalkMode.PUSH_TO_TALK || ui.capture == VoiceCaptureKind.PUSH_TO_TALK ->
         ui.statusLine ?: "Hold to talk"
+    ui.connection == VoiceConnection.CONNECTED && ui.peers.any { it.participantId != ui.participantId } ->
+        "Voice connected — waiting for their audio"
     ui.connection == VoiceConnection.CONNECTED -> "Voice connected"
     else -> ui.statusLine
 }
