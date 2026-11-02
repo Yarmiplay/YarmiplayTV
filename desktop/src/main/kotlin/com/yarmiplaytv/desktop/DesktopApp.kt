@@ -174,7 +174,9 @@ private fun createContainer(configDir: File, store: SettingsStore): AppContainer
         deviceKeys = FileDeviceKeyStore(File(configDir, "device-keys")),
         cacheDir = if (DesktopPaths.portableDir() != null) File(configDir, "cache") else DesktopPaths.cacheDir(),
         screenshotStore = FolderScreenshotStore(File(System.getProperty("java.io.tmpdir"), "yarmiplaytv-screenshots"), pictures::value),
-        frameGrabber = FrameGrabber { uri, width, target -> MpvFrameGrabber.grab(FileLocalLibrary.pathOf(uri).toString(), width, target) },
+        frameGrabber = FrameGrabber { uri, width, target ->
+            MpvFrameGrabber.grab(FileLocalLibrary.pathOf(uri).toString(), width, target, wait = true)
+        },
         seekFrames = MpvSeekFrames,
         malClientId = MAL_CLIENT_ID,
         audioDecoder = MpvAudioDecoder,

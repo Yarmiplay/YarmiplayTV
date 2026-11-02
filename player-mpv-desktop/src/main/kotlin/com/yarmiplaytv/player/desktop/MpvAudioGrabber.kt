@@ -42,7 +42,7 @@ object MpvAudioGrabber {
         languages: String,
         sink: (ShortArray, Int) -> Unit,
         cancelled: () -> Boolean,
-    ): Boolean {
+    ): Boolean = MpvBackgroundLoad.runExclusive {
         val out = File.createTempFile("yarmiplaytv-sound", ".pcm")
         try {
             val core = MpvCore(options(out, start, seconds, rate, languages), logLevel = "no")
@@ -53,20 +53,20 @@ object MpvAudioGrabber {
                     if (event is MpvEvent.EndFile) ended = event
                     if (event is MpvEvent.EndFile || event == MpvEvent.Shutdown) done.countDown()
                 }
-                if (core.command("loadfile", path) < 0) return false
+                if (core.command("loadfile", path) < 0) return@runExclusive false
                 val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS)
                 while (!done.await(POLL_MILLIS, TimeUnit.MILLISECONDS)) {
-                    if (cancelled() || System.nanoTime() > deadline) return false
+                    if (cancelled() || System.nanoTime() > deadline) return@runExclusive false
                 }
             }
             // An error ending (no audio, can't open) leaves nothing worth hearing.
-            if ((ended?.error ?: 0) < 0 || out.length() < 2) return false
+            if ((ended?.error ?: 0) < 0 || out.length() < 2) return@runExclusive false
             out.inputStream().buffered().use { input ->
                 val bytes = ByteArray(CHUNK_SAMPLES * 2)
                 val samples = ShortArray(CHUNK_SAMPLES)
                 var carry = -1
                 while (true) {
-                    if (cancelled()) return false
+                    if (cancelled()) return@runExclusive false
                     var n = 0
                     if (carry >= 0) {
                         bytes[0] = carry.toByte()
@@ -81,7 +81,7 @@ object MpvAudioGrabber {
                     sink(samples, n / 2)
                 }
             }
-            return true
+            true
         } finally {
             out.delete()
         }

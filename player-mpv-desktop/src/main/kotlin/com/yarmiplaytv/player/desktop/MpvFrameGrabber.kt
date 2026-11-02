@@ -12,34 +12,48 @@ import java.util.concurrent.TimeUnit
  * with mpv's image output.
  */
 object MpvFrameGrabber {
-    private const val TIMEOUT_SECONDS = 20L
+    private const val TIMEOUT_SECONDS = 8L
+    /** Cap scrub/list decode width so a 4K local remux does not spawn a full-res second decoder. */
+    private const val MAX_WIDTH = 480
 
     /**
      * Writes a frame of the video at [path], [width] pixels wide, to [target]; false when mpv can't decode one.
      * [start] is where, as mpv's `start` option takes it (seconds, or a percentage).
+     *
+     * Seek scrub uses [wait]=false (skip if another grab is running). List thumbnails use [wait]=true
+     * so they serialize behind scrub instead of failing permanently.
      */
-    fun grab(path: String, width: Int, target: File, start: String = "10%"): Boolean {
-        val outDir = Files.createTempDirectory("yarmiplaytv-frame").toFile()
-        try {
-            val core = MpvCore(options(width, outDir, start), logLevel = "no")
-            core.use {
-                val done = CountDownLatch(1)
-                core.startEvents { event -> if (event is MpvEvent.EndFile || event == MpvEvent.Shutdown) done.countDown() }
-                if (core.command("loadfile", path) < 0) return false
-                done.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            }
-            val frame = outDir.listFiles { file -> file.extension == "jpg" && file.length() > 0 }?.minByOrNull { it.name } ?: return false
-            Files.move(frame.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            return true
-        } finally {
-            outDir.deleteRecursively()
+    fun grab(path: String, width: Int, target: File, start: String = "10%", wait: Boolean = false): Boolean {
+        val capped = width.coerceIn(64, MAX_WIDTH)
+        val run: (() -> Boolean) -> Boolean? = if (wait) {
+            { block -> MpvBackgroundLoad.runExclusive(block) }
+        } else {
+            { block -> MpvBackgroundLoad.tryRun(block) }
         }
+        return run {
+            val outDir = Files.createTempDirectory("yarmiplaytv-frame").toFile()
+            try {
+                val core = MpvCore(options(capped, outDir, start), logLevel = "no")
+                core.use {
+                    val done = CountDownLatch(1)
+                    core.startEvents { event -> if (event is MpvEvent.EndFile || event == MpvEvent.Shutdown) done.countDown() }
+                    if (core.command("loadfile", path) < 0) return@run false
+                    done.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                }
+                val frame = outDir.listFiles { file -> file.extension == "jpg" && file.length() > 0 }?.minByOrNull { it.name }
+                    ?: return@run false
+                Files.move(frame.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                true
+            } finally {
+                outDir.deleteRecursively()
+            }
+        } ?: false
     }
 
     private fun options(width: Int, outDir: File, start: String) = mapOf(
         "vo" to "image",
         "vo-image-format" to "jpg",
-        "vo-image-jpeg-quality" to "85",
+        "vo-image-jpeg-quality" to "75",
         "vo-image-outdir" to outDir.absolutePath,
         // By default past the black frames and logos most videos open with; the keyframe before is close enough.
         "start" to start,
