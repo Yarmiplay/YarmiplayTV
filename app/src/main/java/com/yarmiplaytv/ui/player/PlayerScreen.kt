@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SkipNext
@@ -100,6 +101,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Icon
@@ -112,8 +115,10 @@ import com.yarmiplaytv.media.SkipSegment
 import com.yarmiplaytv.player.SurfacePlayer
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.relay.RelayHint
+import com.yarmiplaytv.sync.PlaylistController
 import com.yarmiplaytv.sync.PlaylistStatus
 import com.yarmiplaytv.syncplay.ConnectionStatus
+import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.tracking.SkipService
 import com.yarmiplaytv.ui.components.ActionButton
@@ -221,6 +226,15 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
             }
         }
     }
+    // A card's focused button goes when it does (e.g. Search again shows "Finding the file…"); the remote keeps working.
+    val cardTakesRemote = statusCardTakesRemote(status, nowPlaying == null, state.fileLoaded)
+    LaunchedEffect(cardTakesRemote) {
+        if (cardTakesRemote) return@LaunchedEffect
+        delay(30)
+        if (overlay == Overlay.Hidden) runCatching { rootFocus.requestFocus() }
+    }
+    // Coming back to the player (from another screen, or to the app) looks again for a file whose search gave up.
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { container.playlist.retryGivenUp() }
     LaunchedEffect(overlay, interaction, hideAfter) {
         if (overlay == Overlay.Controls && !state.paused && hideAfter > 0) {
             delay(hideAfter * 1000L)
@@ -393,7 +407,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 }
 
                 // Status in the middle of the screen (resolving/loading/nothing playing).
-                CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom, overlay == Overlay.Hidden)
+                CenterStatus(container, nav, status, room, nowPlaying == null, state.fileLoaded, inRoom, overlay == Overlay.Hidden)
                 RelayOnPlayer(container, state.fileLoaded, overlay != Overlay.Hidden)
 
                 if (state.buffering && state.fileLoaded) {
@@ -564,11 +578,17 @@ private fun StatusActions(modifier: Modifier = Modifier, content: @Composable Ro
     )
 }
 
+/** Looks for the room's file again: the media folders first, then the media servers. */
+@Composable
+private fun SearchAgainButton(container: AppContainer, modifier: Modifier = Modifier) =
+    ActionButton("Search again", { container.playlist.searchAgain() }, modifier.testTag("search_again"), icon = Icons.Filled.Refresh, primary = true)
+
 @Composable
 private fun CenterStatus(
     container: AppContainer,
     nav: Navigator,
     status: PlaylistStatus,
+    room: RoomState,
     nothingLoaded: Boolean,
     fileLoaded: Boolean,
     inRoom: Boolean,
@@ -589,20 +609,25 @@ private fun CenterStatus(
                     is PlaylistStatus.Failed -> status.fileName to status.reason
                     else -> "" to ""
                 }
+                // A file that wasn't found starts on Search again; one that failed to play, on Dismiss.
+                val notFound = status is PlaylistStatus.NotFound
                 LaunchedEffect(status, canFocus) { if (canFocus) runCatching { delay(50); focus.requestFocus() } }
                 Panel(Modifier.width(820.dp)) {
                     Column(Modifier.padding(32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(if (status is PlaylistStatus.NotFound) "Couldn't find this file" else "Couldn't play this file", style = MaterialTheme.typography.headlineSmall)
+                        Text(if (notFound) "Couldn't find this file" else "Couldn't play this file", style = MaterialTheme.typography.headlineSmall)
                         Text(file, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(reason, color = AppColors.TextDim)
                         StatusActions(Modifier.padding(top = 8.dp)) {
+                            if (notFound) {
+                                SearchAgainButton(container, Modifier.focusRequester(focus))
+                            }
                             if (container.mediaSource.value != null) {
-                                ActionButton("Pick manually", { nav.push(Screen.Search(pickFor = file)) }, icon = Icons.Filled.Search, primary = true)
+                                ActionButton("Pick manually", { nav.push(Screen.Search(pickFor = file)) }, icon = Icons.Filled.Search, primary = !notFound)
                             } else {
-                                ActionButton("Connect Jellyfin", { nav.push(Screen.JellyfinLogin) }, primary = true)
+                                ActionButton("Connect Jellyfin", { nav.push(Screen.JellyfinLogin) }, primary = !notFound)
                                 ActionButton("Connect Plex", { nav.push(Screen.PlexLogin) })
                             }
-                            ActionButton("Dismiss", { container.playlist.dismissStatus() }, Modifier.focusRequester(focus))
+                            ActionButton("Dismiss", { container.playlist.dismissStatus() }, if (notFound) Modifier else Modifier.focusRequester(focus))
                         }
                     }
                 }
@@ -622,16 +647,37 @@ private fun CenterStatus(
                 }
             }
             PlaylistStatus.Idle -> if (nothingLoaded) {
-                LaunchedEffect(canFocus) { if (canFocus) runCatching { delay(50); focus.requestFocus() } }
+                // The room's file, when it isn't playing here (its search gave up, or was dismissed): Search again leads.
+                val entry = PlaylistController.searchableEntry(status, room, playingFileName = null)
+                LaunchedEffect(canFocus, entry != null) { if (canFocus) runCatching { delay(50); focus.requestFocus() } }
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("Nothing playing", color = OnVideo.Text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.onVideoLabel())
-                    Text(
-                        if (inRoom) "Pick something to watch, or wait for someone in the room to choose a file." else "Pick something to watch.",
-                        color = OnVideo.Text,
-                        modifier = Modifier.onVideoLabel(),
-                    )
+                    if (entry != null) {
+                        Text(
+                            entry,
+                            color = OnVideo.Text,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 820.dp).onVideoLabel(),
+                        )
+                        Text("The room picked this file, but it isn't playing here.", color = OnVideo.Text, modifier = Modifier.onVideoLabel())
+                    } else {
+                        Text(
+                            if (inRoom) "Pick something to watch, or wait for someone in the room to choose a file." else "Pick something to watch.",
+                            color = OnVideo.Text,
+                            modifier = Modifier.onVideoLabel(),
+                        )
+                    }
                     StatusActions {
-                        ActionButton("Browse", { nav.popTo(Screen.Home) }, Modifier.focusRequester(focus), icon = Icons.Filled.Home, primary = true)
+                        if (entry != null) SearchAgainButton(container, Modifier.focusRequester(focus))
+                        ActionButton(
+                            "Browse",
+                            { nav.popTo(Screen.Home) },
+                            if (entry == null) Modifier.focusRequester(focus) else Modifier,
+                            icon = Icons.Filled.Home,
+                            primary = entry == null,
+                        )
                         ActionButton("Exit", { container.exitApp() }, icon = Icons.AutoMirrored.Filled.Logout)
                     }
                 }

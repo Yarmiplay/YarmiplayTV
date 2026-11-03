@@ -14,6 +14,7 @@ import com.yarmiplaytv.support.AppState
 import com.yarmiplaytv.support.AppState.Companion.onMain
 import com.yarmiplaytv.support.AppState.Companion.waitUntil
 import com.yarmiplaytv.media.CompositeMediaSource
+import com.yarmiplaytv.sync.PlaylistStatus
 import com.yarmiplaytv.support.FakeJellyfin
 import com.yarmiplaytv.support.FakePlex
 import com.yarmiplaytv.support.FakeSyncplayServer
@@ -25,6 +26,7 @@ import com.yarmiplaytv.update.Update
 import org.junit.After
 import org.junit.AfterClass
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.BeforeClass
@@ -408,26 +410,38 @@ class TvNavigationTest {
         scenarios.fileNotFound()
         launch()
         tv.await("Couldn't find this file")
-        tv.awaitFocus("Dismiss")
+        tv.awaitFocus("Search again")
         tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
-        tv.awaitFocus("Connect Plex")
-        tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
+        tv.awaitFocus("Search again")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
         tv.awaitFocus("Connect Jellyfin")
-        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT, times = 2)
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Connect Plex")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Dismiss")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
         tv.awaitFocus("Dismiss")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
         tv.await("Nothing playing")
+        // The room's file is still there to look for.
+        tv.await("Harbor Lights S02E05.mkv")
+        tv.awaitFocus("Search again")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
         tv.awaitFocus("Browse")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        tv.awaitFocus("Exit")
+        tv.key(KeyEvent.KEYCODE_DPAD_LEFT, times = 2)
+        tv.awaitFocus("Search again")
     }
 
     @Test
     fun fileNotFoundDismissWithBack() {
         scenarios.fileNotFound()
         launch()
-        tv.awaitFocus("Dismiss")
+        tv.awaitFocus("Search again")
         tv.back()
         tv.await("Nothing playing")
-        tv.awaitFocus("Browse")
+        tv.awaitFocus("Search again")
     }
 
     @Test
@@ -436,13 +450,63 @@ class TvNavigationTest {
         scenarios.fileNotFound()
         launch()
         tv.await("Pick manually")
-        tv.awaitFocus("Dismiss")
-        tv.key(KeyEvent.KEYCODE_DPAD_LEFT)
+        tv.awaitFocus("Search again")
+        tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
         tv.awaitFocus("Pick manually")
         tv.key(KeyEvent.KEYCODE_DPAD_RIGHT)
         tv.awaitFocus("Dismiss")
         tv.back()
         tv.await("Nothing playing")
+    }
+
+    @Test
+    fun searchAgainFindsTheFileOnceItIsThere() {
+        scenarios.fileNotFound(ON_JELLYFIN)
+        launch()
+        tv.await("Couldn't find this file")
+        tv.awaitFocus("Search again")
+        state.signInJellyfin(jellyfin)
+        tv.await("Pick manually")
+        tv.awaitFocus("Search again")
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitUntil(15_000) { container.playlist.nowPlaying.value?.fileName == ON_JELLYFIN }
+        tv.awaitGone("Couldn't find this file")
+    }
+
+    @Test
+    fun searchAgainFromNothingPlaying() {
+        scenarios.fileNotFound(ON_JELLYFIN)
+        launch()
+        tv.awaitFocus("Search again")
+        tv.back()
+        tv.await("Nothing playing")
+        tv.awaitFocus("Search again")
+        // Still nowhere to look: the card comes back, on Search again.
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        tv.await("Couldn't find this file")
+        tv.awaitFocus("Search again")
+        tv.back()
+        tv.awaitFocus("Search again")
+        state.signInJellyfin(jellyfin)
+        tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitUntil(15_000) { container.playlist.nowPlaying.value?.fileName == ON_JELLYFIN }
+        tv.awaitGone("Nothing playing")
+    }
+
+    @Test
+    fun reopeningThePlayerLooksAgainForAGivenUpFile() {
+        scenarios.fileNotFound(ON_JELLYFIN)
+        launch()
+        tv.awaitFocus("Search again")
+        tv.back()
+        tv.await("Nothing playing")
+        tv.back()
+        tv.awaitGone("Nothing playing")
+        state.signInJellyfin(jellyfin)
+        assertTrue(container.playlist.status.value !is PlaylistStatus.Resolving)
+        tv.click("Open player")
+        waitUntil(15_000) { container.playlist.nowPlaying.value?.fileName == ON_JELLYFIN }
+        tv.awaitGone("Couldn't find this file")
     }
 
     @Test
@@ -466,6 +530,8 @@ class TvNavigationTest {
 
     companion object {
             private const val HIDE_HINT = "▼ Hide"
+        /** A file the fake Jellyfin has, so it's found once that server is signed in. */
+        private const val ON_JELLYFIN = "Paper Boats (2018).mkv"
         private val state = AppState()
         private lateinit var syncplay: FakeSyncplayServer
         private lateinit var jellyfin: FakeJellyfin
