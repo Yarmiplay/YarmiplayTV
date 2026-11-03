@@ -595,6 +595,7 @@ private fun CenterStatus(
     canFocus: Boolean,
 ) {
     val focus = remember { FocusRequester() }
+    val mediaSource by container.mediaSource.collectAsStateWithLifecycle()
     val hideLoading = container.relay?.let { relay ->
         val relayStatus by relay.status.collectAsStateWithLifecycle()
         relayStatus.let { it != null && it.playbackHint(fileLoaded) != RelayHint.None }
@@ -621,7 +622,7 @@ private fun CenterStatus(
                             if (notFound) {
                                 SearchAgainButton(container, Modifier.focusRequester(focus))
                             }
-                            if (container.mediaSource.value != null) {
+                            if (mediaSource != null) {
                                 ActionButton("Pick manually", { nav.push(Screen.Search(pickFor = file)) }, icon = Icons.Filled.Search, primary = !notFound)
                             } else {
                                 ActionButton("Connect Jellyfin", { nav.push(Screen.JellyfinLogin) }, primary = !notFound)
