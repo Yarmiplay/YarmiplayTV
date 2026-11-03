@@ -144,9 +144,9 @@ class RoomPanelUiTest {
     }
 
     @Test
-    fun `the playlist shows the whole of a long name`() = runComposeUiTest {
+    fun `the playlist keeps a long name to two lines with an ellipsis`() = runComposeUiTest {
         val alice = join("alice")
-        val long = "[SubsPlease] Sousou no Frieren - 28 (1080p) [Batch Release, Dual Audio, Extended Edition] [ABCDEF12].mkv"
+        val long = "[SubsPlease] Tensei Kizoku, Kantei Skill de Nariagaru - 30 (1080p) [518A744A].mkv"
         onMain { alice.playlist.shared.add(listOf(long, "two.mkv")) }
         awaitTrue("the playlist to arrive") { alice.sync.room.value.playlist.size == 2 }
 
@@ -162,13 +162,15 @@ class RoomPanelUiTest {
         }
         waitUntil { onAllNodesWithTag("playlist_row_1").fetchSemanticsNodes().isNotEmpty() }
         screenshot("panel_playlist_long_name")
-        // It wraps onto more lines instead of being cut short, and the short one stays one line.
         val tall = onNodeWithTag("playlist_row_0").getBoundsInRoot().let { it.bottom - it.top }
         val short = onNodeWithTag("playlist_row_1").getBoundsInRoot().let { it.bottom - it.top }
-        assertTrue("the long row is $tall tall, the short one $short", tall > short * 2)
+        // Title is capped at two lines; meta can add a little height, but not the old unbounded wrap.
+        assertTrue("the long row is $tall tall, the short one $short", tall < short * 3.5f && tall >= short)
         val layout = mutableListOf<TextLayoutResult>()
-        onNodeWithText(long).fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
-        assertTrue("the name is cut short", layout.single().let { !it.hasVisualOverflow && !it.isLineEllipsized(it.lineCount - 1) })
+        onNodeWithTag("playlist_title_0").fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
+        val result = layout.single()
+        assertTrue("title stays within two lines (was ${result.lineCount})", result.lineCount in 1..2)
+        assertTrue("long title is ellipsized", result.isLineEllipsized(result.lineCount - 1) || result.hasVisualOverflow)
     }
 
     @Test

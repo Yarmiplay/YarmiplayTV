@@ -12,6 +12,8 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,8 +32,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Movie
@@ -41,13 +45,18 @@ import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,6 +67,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -105,6 +115,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.data.SavedPlaylist
+import com.yarmiplaytv.data.defaultSavedPlaylistName
+import com.yarmiplaytv.data.formatSavedPlaylistDate
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.local.LocalFile
 import com.yarmiplaytv.local.LocalMatcher
@@ -175,11 +188,18 @@ internal fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
     val mediaSource by container.mediaSource.collectAsState()
     val shared = container.playlist.shared
     val playlist = room.playlist
+    val savedPlaylists by container.settingsStore.savedPlaylists.collectAsState(emptyList())
     var selected by remember { mutableStateOf(emptySet<Int>()) }
     var anchor by remember { mutableStateOf<Int?>(null) }
     var addingUrls by remember { mutableStateOf(false) }
     var confirmEmpty by remember { mutableStateOf(false) }
     var contextIndex by remember { mutableStateOf<Int?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var showingSaved by remember { mutableStateOf(false) }
+    var saveName by remember { mutableStateOf("") }
+    var renamingId by remember { mutableStateOf<String?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
     val listFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
     LaunchedEffect(playlist) {
@@ -314,6 +334,32 @@ internal fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
             if (selected.isNotEmpty()) {
                 ToolButton(Icons.Filled.Remove, "Remove selected (${selected.size})") { removeSelected() }
             }
+            OutlinedButton(
+                onClick = {
+                    saveName = defaultSavedPlaylistName(playlist)
+                    saving = !saving
+                    if (saving) showingSaved = false
+                },
+                enabled = playlist.isNotEmpty(),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.testTag("playlist_Save playlist"),
+            ) {
+                Icon(Icons.Filled.Bookmarks, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Save playlist", style = MaterialTheme.typography.labelLarge)
+            }
+            OutlinedButton(
+                onClick = {
+                    showingSaved = !showingSaved
+                    if (showingSaved) saving = false
+                },
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.testTag("playlist_Load playlist"),
+            ) {
+                Icon(Icons.Filled.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Load playlist", style = MaterialTheme.typography.labelLarge)
+            }
             Spacer(Modifier.weight(1f))
             if (playlist.isNotEmpty()) {
                 TooltipArea(tooltip = { Tooltip("Empty playlist") }) {
@@ -330,24 +376,75 @@ internal fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
                     CheckItem("Loop single file", options.loopSingleFile) { saveOptions(single = !options.loopSingleFile) }
                     CheckItem("Enable shared playlists", options.sharedPlaylists) { saveOptions(sharedPlaylists = !options.sharedPlaylists) }
                     HorizontalDivider()
-                    DropdownMenuItem({ Text("Save playlist…") }, {
+                    DropdownMenuItem({ Text("Export playlist to file…") }, {
                         open = false
                         DesktopDialogs.savePlaylist("${room.room.replace(Regex("[\\\\/:*?\"<>|]"), "-")}.txt")?.let { path ->
                             runCatching { Files.writeString(path, PlaylistEdits.format(playlist)) }
-                                .onSuccess { container.sync.postLocal("Saved the playlist to ${path.fileName}") }
-                                .onFailure { container.sync.postLocal("Couldn't save the playlist: ${it.message}", isError = true) }
+                                .onSuccess { container.sync.postLocal("Exported the playlist to ${path.fileName}") }
+                                .onFailure { container.sync.postLocal("Couldn't export the playlist: ${it.message}", isError = true) }
                         }
                     }, enabled = playlist.isNotEmpty())
-                    DropdownMenuItem({ Text("Load playlist…") }, {
+                    DropdownMenuItem({ Text("Import playlist from file…") }, {
                         open = false
                         DesktopDialogs.openPlaylist()?.let { path ->
                             runCatching { PlaylistEdits.parse(Files.readString(path)) }
-                                .onSuccess { shared.replace(it); container.sync.postLocal("Loaded ${it.size} entries from ${path.fileName}") }
+                                .onSuccess { shared.replace(it); container.sync.postLocal("Imported ${it.size} entries from ${path.fileName}") }
                                 .onFailure { container.sync.postLocal("Couldn't read the playlist: ${it.message}", isError = true) }
                         }
                     })
                 }
             }
+        }
+        if (saving) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = saveName,
+                    onValueChange = { saveName = it },
+                    label = { Text("Playlist name") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f).testTag("playlist_save_name"),
+                )
+                Button(
+                    onClick = {
+                        if (saveName.isNotBlank() && playlist.isNotEmpty()) {
+                            scope.launch {
+                                container.settingsStore.savePlaylist(saveName, playlist)
+                                saving = false
+                                showingSaved = true
+                                container.sync.postLocal("Saved playlist \"$saveName\" (${playlist.size} entries)")
+                            }
+                        }
+                    },
+                    enabled = saveName.isNotBlank(),
+                    modifier = Modifier.testTag("playlist_save_confirm"),
+                ) { Text("Save") }
+                TextButton({ saving = false }) { Text("Cancel") }
+            }
+        }
+        if (showingSaved) {
+            SavedPlaylistsBox(
+                savedPlaylists = savedPlaylists,
+                renamingId = renamingId,
+                renameText = renameText,
+                onRenameText = { renameText = it },
+                onStartRename = { sp -> renamingId = sp.id; renameText = sp.name },
+                onConfirmRename = { id ->
+                    scope.launch {
+                        if (container.settingsStore.renameSavedPlaylist(id, renameText)) {
+                            renamingId = null
+                        }
+                    }
+                },
+                onCancelRename = { renamingId = null },
+                onAdd = { shared.add(it.entries) },
+                onReplace = { shared.replace(it.entries) },
+                onDelete = { scope.launch { container.settingsStore.deleteSavedPlaylist(it) } },
+                onClose = { showingSaved = false; renamingId = null },
+            )
         }
         if (addingUrls) {
             UrlField(
@@ -608,7 +705,99 @@ private fun rememberPlaylistRowMeta(
     }.value
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SavedPlaylistsBox(
+    savedPlaylists: List<SavedPlaylist>,
+    renamingId: String?,
+    renameText: String,
+    onRenameText: (String) -> Unit,
+    onStartRename: (SavedPlaylist) -> Unit,
+    onConfirmRename: (String) -> Unit,
+    onCancelRename: () -> Unit,
+    onAdd: (SavedPlaylist) -> Unit,
+    onReplace: (SavedPlaylist) -> Unit,
+    onDelete: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .background(AppColors.SurfaceHigh, RoundedCornerShape(10.dp))
+            .padding(12.dp)
+            .testTag("playlist_saved_box"),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Saved playlists", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+            TextButton(onClose) { Text("Close") }
+        }
+        if (savedPlaylists.isEmpty()) {
+            Text("No saved playlists yet.", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+        } else {
+            savedPlaylists.forEach { sp ->
+                Column(
+                    Modifier.fillMaxWidth().background(AppColors.Surface, RoundedCornerShape(8.dp)).padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (renamingId == sp.id) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedTextField(
+                                value = renameText,
+                                onValueChange = onRenameText,
+                                singleLine = true,
+                                modifier = Modifier.weight(1f).testTag("playlist_rename_${sp.id}"),
+                            )
+                            Button(
+                                onClick = { onConfirmRename(sp.id) },
+                                enabled = renameText.isNotBlank(),
+                                modifier = Modifier.testTag("playlist_rename_confirm_${sp.id}"),
+                            ) { Text("Rename") }
+                            TextButton(onCancelRename) { Text("Cancel") }
+                        }
+                    } else {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(sp.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                val date = formatSavedPlaylistDate(sp.createdAt)
+                                val meta = buildString {
+                                    append(if (sp.entries.size == 1) "1 item" else "${sp.entries.size} items")
+                                    if (date.isNotEmpty()) append(" · ").append(date)
+                                }
+                                Text(meta, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                FilledTonalButton(
+                                    onClick = { onAdd(sp) },
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                ) { Text("Add") }
+                                Button(
+                                    onClick = { onReplace(sp) },
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                ) { Text("Replace") }
+                                TextButton(onClick = { onStartRename(sp) }) { Text("Rename") }
+                                IconButton(
+                                    onClick = { onDelete(sp.id) },
+                                    modifier = Modifier.size(32.dp).testTag("playlist_delete_saved_${sp.id}"),
+                                ) { Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = AppColors.TextDim) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 private fun PlaylistRow(
     index: Int,
@@ -660,38 +849,17 @@ private fun PlaylistRow(
                 is String -> AsyncImage(thumb, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             }
         }
-        Box(Modifier.width(28.dp), contentAlignment = Alignment.Center) {
-            if (current) Icon(Icons.Filled.PlayArrow, "Playing", tint = accent, modifier = Modifier.size(20.dp))
-            else Text(
-                "${index + 1}",
-                color = AppColors.TextDim,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-            )
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (current) {
-                    Text(
-                        "Now",
-                        color = AppColors.OnAccent,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(accent)
-                            .padding(horizontal = 6.dp, vertical = 1.dp)
-                            .testTag("playlist_now_$index"),
-                    )
-                }
+        Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            TooltipArea(tooltip = { Tooltip(file) }) {
                 Text(
                     title,
                     fontWeight = if (current) FontWeight.SemiBold else FontWeight.Medium,
                     fontStyle = if (available) FontStyle.Normal else FontStyle.Italic,
                     color = if (available) AppColors.Text else AppColors.TextDim,
-                    // Whole name wraps; do not ellipsize (RoomPanelUiTest long-name height check).
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                     softWrap = true,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth().testTag("playlist_title_$index"),
                 )
             }
             if (showPath) {
@@ -703,40 +871,70 @@ private fun PlaylistRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-        }
-        val source = playlistSourceLabel(meta.source)
-        if (source.isNotEmpty()) {
-            TooltipArea(tooltip = { Tooltip(playlistSourceHint(meta.source)) }) {
-                Text(
-                    source,
-                    color = accent,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(accent.copy(alpha = 0.12f))
-                        .padding(horizontal = 7.dp, vertical = 3.dp)
-                        .testTag("playlist_source_$index"),
-                )
-            }
-        }
-        formatPlaylistDuration(meta.durationSeconds)?.let { dur ->
-            Text(
-                dur,
-                color = AppColors.TextDim,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                modifier = Modifier.width(52.dp).testTag("playlist_duration_$index"),
-            )
-        }
-        if (sizeWarning != null) {
-            TooltipArea(tooltip = { Tooltip(sizeWarning) }) {
-                Icon(Icons.Filled.Warning, sizeWarning, tint = AppColors.NotReady, modifier = Modifier.size(18.dp).testTag("playlist_size_warning_$index"))
-            }
-        }
-        if (!available) {
-            TooltipArea(tooltip = { Tooltip("Not in your media folders; looked up on media servers when picked") }) {
-                Icon(Icons.Filled.SearchOff, "Not found here", tint = AppColors.TextDim, modifier = Modifier.size(18.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (current) {
+                        Icon(Icons.Filled.PlayArrow, "Playing", tint = accent, modifier = Modifier.size(16.dp))
+                    } else {
+                        Text(
+                            "${index + 1}",
+                            color = AppColors.TextDim,
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                        )
+                    }
+                    if (current) {
+                        Text(
+                            "Now",
+                            color = AppColors.OnAccent,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(accent)
+                                .padding(horizontal = 6.dp, vertical = 1.dp)
+                                .testTag("playlist_now_$index"),
+                        )
+                    }
+                }
+                val source = playlistSourceLabel(meta.source)
+                if (source.isNotEmpty()) {
+                    TooltipArea(tooltip = { Tooltip(playlistSourceHint(meta.source)) }) {
+                        Text(
+                            source,
+                            color = accent,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(accent.copy(alpha = 0.12f))
+                                .padding(horizontal = 7.dp, vertical = 3.dp)
+                                .testTag("playlist_source_$index"),
+                        )
+                    }
+                }
+                formatPlaylistDuration(meta.durationSeconds)?.let { dur ->
+                    Text(
+                        dur,
+                        color = AppColors.TextDim,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        modifier = Modifier.testTag("playlist_duration_$index"),
+                    )
+                }
+                if (sizeWarning != null) {
+                    TooltipArea(tooltip = { Tooltip(sizeWarning) }) {
+                        Icon(Icons.Filled.Warning, sizeWarning, tint = AppColors.NotReady, modifier = Modifier.size(18.dp).testTag("playlist_size_warning_$index"))
+                    }
+                }
+                if (!available) {
+                    TooltipArea(tooltip = { Tooltip("Not in your media folders; looked up on media servers when picked") }) {
+                        Icon(Icons.Filled.SearchOff, "Not found here", tint = AppColors.TextDim, modifier = Modifier.size(18.dp))
+                    }
+                }
             }
         }
     }

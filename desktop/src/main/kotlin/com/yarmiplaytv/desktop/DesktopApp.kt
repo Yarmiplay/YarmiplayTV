@@ -29,6 +29,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.window.ApplicationScope
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.yarmiplaytv.AppContainer
@@ -317,6 +318,11 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             fullscreen.attach(window)
             mainWindow = window
             DesktopPlayerInput.toggleFullscreen = { applyFullscreen(!fullscreen.isFullscreen) }
+            DesktopPlayerInput.moveWindow = { dx, dy ->
+                if (!fullscreen.isFullscreen && state.placement == WindowPlacement.Floating) {
+                    window.setLocation(window.x + dx, window.y + dy)
+                }
+            }
             DesktopPip.toggle = { setPip(!DesktopPip.open) }
             runCatching {
                 DesktopVideo::class.java.getResourceAsStream("/icon.png")?.use { stream ->

@@ -245,4 +245,25 @@ class DesktopSettingsTest {
         store.savePlayback(updated)
         assertEquals(1.0f, store.current().playback.tvPlayerScale, 0.001f)
     }
+
+    @Test
+    fun `saved playlists keep entry paths and support rename`() = runBlocking {
+        val folder = tmp.newFolder("saved_playlists")
+        val store = desktopSettingsStore(folder)
+        val entries = listOf("file:///Videos/Show - 01.mkv", "Show - 02.mkv")
+
+        assertEquals("2026-11-03 · Show - 01.mkv", defaultSavedPlaylistName(entries, today = "2026-11-03"))
+        val saved = store.savePlaylist(defaultSavedPlaylistName(entries, today = "2026-11-03"), entries)
+        assertEquals(entries, saved.entries)
+        assertEquals(listOf(saved), store.savedPlaylists.first())
+
+        assertTrue(store.renameSavedPlaylist(saved.id, "Watch later"))
+        val renamed = store.savedPlaylists.first().single()
+        assertEquals("Watch later", renamed.name)
+        assertEquals(entries, renamed.entries)
+        assertTrue(formatSavedPlaylistDate(renamed.createdAt).isNotEmpty())
+
+        store.deleteSavedPlaylist(saved.id)
+        assertTrue(store.savedPlaylists.first().isEmpty())
+    }
 }
