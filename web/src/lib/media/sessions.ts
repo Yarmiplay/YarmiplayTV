@@ -52,6 +52,7 @@ export function decodeJellyfin(r: Record<string, unknown>): JellyfinSession | nu
     sharedBy: str(r, "sharedBy"),
     candidateUrls: Array.isArray(r.candidateUrls) ? r.candidateUrls.filter((u): u is string => typeof u === "string") : [],
     noLongerShared: r.noLongerShared === true,
+    preferHttps: r.preferHttps === true,
   });
 }
 

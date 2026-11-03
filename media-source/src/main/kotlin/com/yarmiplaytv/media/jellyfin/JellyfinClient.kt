@@ -48,6 +48,11 @@ data class JellyfinSession(
      * instead (an HTTPS server found by its IP address, whose certificate is for the name); empty when it has none.
      */
     val lanAddress: String = "",
+    /**
+     * Try `https://` on this host/port before [serverUrl] when [serverUrl] is plain `http://` (ambiguous after
+     * 2.9.1 rewrote some saved HTTPS entries to HTTP). Never written for a URL that is already `https://`.
+     */
+    val preferHttps: Boolean = false,
 ) {
     val isShared: Boolean get() = sharedBy.isNotEmpty()
 }
@@ -107,36 +112,55 @@ class JellyfinClient(
     suspend fun resolveServerUrl(input: String): String = LanHosts.byCertificateName(normalizeServerUrl(input))
 
     /**
-     * [resolveServerUrl], then if that is HTTPS and the server answers with a plain-HTTP TLS handshake error
-     * (e.g. "Unsupported or unrecognized SSL message"), the same host and port over `http://`.
+     * A URL that answers right now: HTTPS first when [input] (or [preferHttps]) calls for it, then plain HTTP on
+     * the same host/port only after a plain-HTTP TLS handshake error. Does not decide what to persist — callers
+     * that sign in should keep the user's preferred scheme via [preferredServerUrl].
      */
-    suspend fun resolveReachableUrl(input: String): String {
-        val httpsOrHttp = resolveServerUrl(input)
-        if (!httpsOrHttp.startsWith("https://", ignoreCase = true)) return httpsOrHttp
+    suspend fun resolveReachableUrl(input: String, preferHttps: Boolean = false): String {
+        val normalized = resolveServerUrl(input)
+        val httpsFirst = when {
+            normalized.startsWith("https://", ignoreCase = true) -> normalized
+            preferHttps -> httpsUrl(normalized) ?: return normalized
+            else -> return normalized
+        }
         return try {
-            publicInfo(httpsOrHttp)
-            httpsOrHttp
+            publicInfo(httpsFirst)
+            httpsFirst
         } catch (httpsErr: MediaSourceException) {
             if (!isPlainHttpSslFailure(httpsErr)) throw httpsErr
-            val http = plainHttpUrl(httpsOrHttp) ?: throw httpsErr
+            val http = plainHttpUrl(httpsFirst) ?: throw httpsErr
             try {
                 publicInfo(http)
                 http
             } catch (httpErr: MediaSourceException) {
-                throw bothSchemesFailed(httpsOrHttp, httpsErr, http, httpErr)
+                throw bothSchemesFailed(httpsFirst, httpsErr, http, httpErr)
             }
         }
     }
 
     /**
-     * When [error] shows [session]'s HTTPS URL is plain HTTP on that port, a copy of the session on `http://`
-     * that still validates; otherwise null.
+     * The URL to keep on a signed-in session: the user's preferred scheme from [input], never the ephemeral
+     * HTTP fallback [resolveReachableUrl] may have used.
      */
-    suspend fun sessionOnPlainHttp(session: JellyfinSession, error: Throwable): JellyfinSession? {
+    suspend fun preferredServerUrl(input: String): String = resolveServerUrl(input)
+
+    /**
+     * When [error] means the probe URL speaks plain HTTP, the same host over `http://` if it still validates.
+     * Returns that working base only — does not change what should be saved ([JellyfinSession.serverUrl]).
+     */
+    suspend fun reachablePlainHttp(session: JellyfinSession, error: Throwable): String? {
         if (!isPlainHttpSslFailure(error)) return null
-        val http = plainHttpUrl(session.serverUrl) ?: return null
-        val moved = session.copy(serverUrl = http, lanAddress = LanHosts.hintFor(http).orEmpty())
-        return moved.takeIf { runCatching { validate(it) }.getOrNull() == true }
+        val probe = preferredProbeUrl(session)
+        val http = plainHttpUrl(probe) ?: plainHttpUrl(session.serverUrl) ?: run {
+            session.serverUrl.takeIf { it.startsWith("http://", ignoreCase = true) }
+        } ?: return null
+        return http.takeIf { runCatching { validateAt(it, session.accessToken) }.getOrNull() == true }
+    }
+
+    /** @deprecated Use [reachablePlainHttp]; kept name for older call sites during 2.9.2. */
+    suspend fun sessionOnPlainHttp(session: JellyfinSession, error: Throwable): JellyfinSession? {
+        val http = reachablePlainHttp(session, error) ?: return null
+        return session.copy(serverUrl = http, lanAddress = LanHosts.hintFor(http).orEmpty())
     }
 
     suspend fun publicInfo(serverUrl: String): PublicSystemInfo =
@@ -150,7 +174,8 @@ class JellyfinClient(
      * (Settings → Quick Connect). Cancel the collecting coroutine to abort.
      */
     fun quickConnect(serverUrl: String, pollIntervalMs: Long = 2500): Flow<QuickConnectState> = flow {
-        val base = resolveReachableUrl(serverUrl)
+        val preferred = preferredServerUrl(serverUrl)
+        val base = resolveReachableUrl(preferred)
         val info = publicInfo(base)
         val initiated: QuickConnectResult = try {
             post(base, null, "QuickConnect/Initiate", null) { }
@@ -166,11 +191,12 @@ class JellyfinClient(
         }
         val auth: AuthenticationResult = post(base, null, "Users/AuthenticateWithQuickConnect",
             json.encodeToString(QuickConnectAuthBody.serializer(), QuickConnectAuthBody(initiated.secret))) { }
-        emit(QuickConnectState.Authorized(sessionFrom(base, info, auth)))
+        emit(QuickConnectState.Authorized(sessionFrom(preferred, info, auth)))
     }
 
     suspend fun login(serverUrl: String, username: String, password: String): JellyfinSession {
-        val base = resolveReachableUrl(serverUrl)
+        val preferred = preferredServerUrl(serverUrl)
+        val base = resolveReachableUrl(preferred)
         val info = publicInfo(base)
         val auth: AuthenticationResult = try {
             post(base, null, "Users/AuthenticateByName",
@@ -178,7 +204,7 @@ class JellyfinClient(
         } catch (e: MediaSourceException) {
             if (e.httpCode == 401) throw MediaSourceException("Wrong username or password", 401) else throw e
         }
-        return sessionFrom(base, info, auth)
+        return sessionFrom(preferred, info, auth)
     }
 
     companion object {
@@ -213,6 +239,33 @@ class JellyfinClient(
             return url.newBuilder().scheme("http").build().toString().trimEnd('/')
         }
 
+        /** Same host and port as [httpUrl] but `https://`, or null when [httpUrl] is not HTTP. */
+        fun httpsUrl(httpUrl: String): String? {
+            val url = httpUrl.toHttpUrlOrNull() ?: return null
+            if (url.isHttps) return null
+            if (!url.scheme.equals("http", ignoreCase = true)) return null
+            return url.newBuilder().scheme("https").build().toString().trimEnd('/')
+        }
+
+        /** First URL to probe for [session]: HTTPS when the saved URL is HTTPS or [JellyfinSession.preferHttps]. */
+        fun preferredProbeUrl(session: JellyfinSession): String {
+            val url = session.serverUrl.trim().trimEnd('/')
+            if (url.startsWith("https://", ignoreCase = true)) return url
+            if (session.preferHttps) return httpsUrl(url) ?: url
+            return url
+        }
+
+        /**
+         * 2.9.1 may have rewritten a saved `https://` entry to `http://`. That is ambiguous with intentional
+         * plain-HTTP servers, so set [JellyfinSession.preferHttps] (keep the stored URL) so connects try HTTPS
+         * first and fall back to HTTP for the session only. New sign-ins that use `https://` keep that scheme.
+         */
+        fun migratePreferHttps(session: JellyfinSession): JellyfinSession {
+            val url = session.serverUrl.trim().trimEnd('/')
+            if (!url.startsWith("http://", ignoreCase = true)) return session
+            return if (session.preferHttps) session else session.copy(preferHttps = true)
+        }
+
         fun bothSchemesFailed(httpsUrl: String, httpsErr: Throwable, httpUrl: String, httpErr: Throwable): MediaSourceException {
             val httpsWhy = httpsErr.message?.substringAfter("(", "")?.trimEnd(')')?.ifBlank { null }
                 ?: httpsErr.message ?: "HTTPS failed"
@@ -226,29 +279,35 @@ class JellyfinClient(
         }
     }
 
-    /** Checks a stored session is still valid. */
-    suspend fun validate(session: JellyfinSession): Boolean = try {
-        getRaw(session.serverUrl, session.accessToken, "Users/Me") { }
+    /** Checks a stored session is still valid at its preferred probe URL (HTTPS first when requested). */
+    suspend fun validate(session: JellyfinSession): Boolean = validateAt(preferredProbeUrl(session), session.accessToken)
+
+    suspend fun validateAt(serverUrl: String, accessToken: String): Boolean = try {
+        getRaw(serverUrl, accessToken, "Users/Me") { }
         true
     } catch (e: MediaSourceException) {
         if (e.httpCode == 401 || e.httpCode == 403) false else throw e
     }
 
     suspend fun logout(session: JellyfinSession) {
-        runCatching { postRaw(session.serverUrl, session.accessToken, "Sessions/Logout", null) { } }
+        val url = preferredProbeUrl(session)
+        runCatching { postRaw(url, session.accessToken, "Sessions/Logout", null) { } }
+        plainHttpUrl(url)?.let { http ->
+            if (http != url) runCatching { postRaw(http, session.accessToken, "Sessions/Logout", null) { } }
+        }
     }
 
-    private fun sessionFrom(base: String, info: PublicSystemInfo, auth: AuthenticationResult): JellyfinSession {
+    private fun sessionFrom(preferredUrl: String, info: PublicSystemInfo, auth: AuthenticationResult): JellyfinSession {
         val user = auth.user ?: throw MediaSourceException("Server returned no user")
         val token = auth.accessToken ?: throw MediaSourceException("Server returned no access token")
         return JellyfinSession(
-            serverUrl = base,
-            serverName = info.serverName ?: base,
+            serverUrl = preferredUrl,
+            serverName = info.serverName ?: preferredUrl,
             serverId = auth.serverId ?: info.id ?: "",
             userId = user.id,
             userName = user.name ?: "",
             accessToken = token,
-            lanAddress = LanHosts.hintFor(base).orEmpty(),
+            lanAddress = LanHosts.hintFor(preferredUrl).orEmpty(),
         )
     }
 

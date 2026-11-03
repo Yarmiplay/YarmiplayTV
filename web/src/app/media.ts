@@ -6,6 +6,7 @@ import {
   jellyfinKeyOf,
   jellyfinMigrateStoredKey,
   loadSessions,
+  migratePreferHttps,
   PlexClient,
   PlexSource,
   saveSessions,
@@ -44,9 +45,16 @@ const info = () => clientInfo({ deviceName: settings.value.deviceName, deviceId:
 export const jellyfinClient = new JellyfinClient(info());
 export const plexClient = new PlexClient(info());
 
-export const sessions = new Store<Sessions>(loadSessions(storage));
+const rawLoaded = loadSessions(storage);
+const migratedJellyfin = rawLoaded.jellyfin.map(migratePreferHttps);
+const loaded: Sessions = { ...rawLoaded, jellyfin: migratedJellyfin };
+export const sessions = new Store<Sessions>(loaded);
+if (JSON.stringify(migratedJellyfin) !== JSON.stringify(rawLoaded.jellyfin)) {
+  saveSessions(storage, loaded);
+}
 
 // 2.8.7+: rewrite preferred keys still stored as jellyfin:<ServerId> to jellyfin:<url>.
+// 2.9.2+: also http:// → https:// after preferHttps migration.
 {
   const preferred = settings.value.preferredServer;
   const migrated = jellyfinMigrateStoredKey(preferred, sessions.value.jellyfin);
@@ -55,12 +63,7 @@ export const sessions = new Store<Sessions>(loadSessions(storage));
 
 function build(s: Sessions): MediaSource[] {
   return [
-    ...s.jellyfin.map(
-      (j) =>
-        new JellyfinSource(jellyfinClient, j, Date.now, (previous, moved) => {
-          replaceJellyfin(previous, moved);
-        }),
-    ),
+    ...s.jellyfin.map((j) => new JellyfinSource(jellyfinClient, j)),
     ...s.plex.map((p) => new PlexSource(plexClient, p)),
   ];
 }
@@ -74,15 +77,18 @@ function change(next: Sessions) {
   sessions.set(next);
 }
 
-/** HTTPS saved as duckdns:8999 while Noire/Jellyfin only speaks HTTP there → rewrite that entry to http://. */
+/**
+ * Prefer HTTPS on each load: validate at the probe URL; on a plain-HTTP SSL failure, adopt HTTP for this page
+ * session only (sources keep requestBase) without rewriting the saved entry.
+ */
 void (async () => {
-  for (const session of sessions.value.jellyfin) {
-    if (!/^https:/i.test(session.serverUrl)) continue;
+  for (const source of sources.value) {
+    if (!(source instanceof JellyfinSource)) continue;
+    source.resetToPreferredProbe();
     try {
-      await jellyfinClient.validate(session);
+      await jellyfinClient.validate(source.session);
     } catch (e) {
-      const moved = await jellyfinClient.sessionOnPlainHttp(session, e);
-      if (moved) replaceJellyfin(session, moved);
+      await source.adoptPlainHttpFallback(e);
     }
   }
 })();

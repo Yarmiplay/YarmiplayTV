@@ -63,6 +63,8 @@ class DesktopSettingsTest {
         val den = PlexSession("https://10-0-0-5.abc.plex.direct:32400", "Benny", "mid", "sam", "srvtok", "acct")
         val office = PlexSession("https://10-0-0-9.def.plex.direct:32400", "Office", "mid2", "sam", "srvtok2", "acct")
         val living = JellyfinSession("http://192.168.1.20:8096", "Living Room", "srv1", "u1", "sam", "tok1")
+        // http:// entries get preferHttps on read (2.9.2: ambiguous with 2.9.1 HTTPS→HTTP rewrites).
+        val livingLoaded = living.copy(preferHttps = true)
         val firstRun = CoroutineScope(Dispatchers.IO + SupervisorJob())
         desktopSettingsStore(dir, firstRun).apply {
             saveSyncplay(profile, autoConnect = true)
@@ -80,7 +82,7 @@ class DesktopSettingsTest {
         assertEquals(profile, settings.syncplay)
         assertEquals(true, settings.autoConnect)
         assertEquals(listOf("file:///C:/Videos/", "file:///D:/Shows/"), settings.localFolders)
-        assertEquals(listOf(living), settings.jellyfinServers)
+        assertEquals(listOf(livingLoaded), settings.jellyfinServers)
         assertEquals(listOf(den, office), settings.plexServers)
         assertEquals("plex:mid2", settings.preferredServer)
         assertEquals(false, settings.reportPlayback)
@@ -107,7 +109,7 @@ class DesktopSettingsTest {
             it[stringPreferencesKey("preferred_server")] = "plex"
         }
         val store = SettingsStore(dataStore)
-        val living = JellyfinSession("http://192.168.1.20:8096", "Living Room", "srv1", "u1", "sam", "tok1")
+        val living = JellyfinSession("http://192.168.1.20:8096", "Living Room", "srv1", "u1", "sam", "tok1", preferHttps = true)
         val benny = PlexSession("https://10-0-0-5.abc.plex.direct:32400", "Benny", "mid", "sam", "srvtok", "acct")
 
         val migrated = store.current()
@@ -157,6 +159,7 @@ class DesktopSettingsTest {
         val dir = tmp.newFolder("jf-keys")
         val lan = JellyfinSession("http://192.168.1.20:8096", "Living Room", "srv1", "u1", "sam", "tok1")
         val remote = JellyfinSession("https://home.duckdns.org:8920", "Living Room", "srv1", "u1", "sam", "tok1")
+        val lanLoaded = lan.copy(preferHttps = true)
         val firstRun = CoroutineScope(Dispatchers.IO + SupervisorJob())
         val store = desktopSettingsStore(dir, firstRun)
         store.saveServers(listOf(lan, remote), emptyList())
@@ -169,14 +172,14 @@ class DesktopSettingsTest {
         val secondRun = CoroutineScope(Dispatchers.IO + SupervisorJob())
         val next = desktopSettingsStore(dir, secondRun)
         val settings = next.current()
-        assertEquals(listOf(lan, remote), settings.jellyfinServers)
-        assertEquals(JellyfinSource.keyOf(lan), settings.preferredServer)
-        assertEquals(MalMapping(42, 0), settings.malMappings["${JellyfinSource.keyOf(lan)}/series-1|1"])
-        assertTrue(settings.malIgnored.contains("${JellyfinSource.keyOf(lan)}/series-2"))
-        assertEquals("Show", settings.malIgnoredNames["${JellyfinSource.keyOf(lan)}/series-2"])
+        assertEquals(listOf(lanLoaded, remote), settings.jellyfinServers)
+        assertEquals(JellyfinSource.keyOf(lanLoaded), settings.preferredServer)
+        assertEquals(MalMapping(42, 0), settings.malMappings["${JellyfinSource.keyOf(lanLoaded)}/series-1|1"])
+        assertTrue(settings.malIgnored.contains("${JellyfinSource.keyOf(lanLoaded)}/series-2"))
+        assertEquals("Show", settings.malIgnoredNames["${JellyfinSource.keyOf(lanLoaded)}/series-2"])
 
         next.migrateJellyfinKeysIfNeeded()
-        assertEquals(JellyfinSource.keyOf(lan), next.current().preferredServer)
+        assertEquals(JellyfinSource.keyOf(lanLoaded), next.current().preferredServer)
         secondRun.cancel()
     }
 

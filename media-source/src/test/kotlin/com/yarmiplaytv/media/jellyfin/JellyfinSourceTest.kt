@@ -248,6 +248,11 @@ class JellyfinSourceTest {
             JellyfinClient.plainHttpUrl("https://yarmiplay.duckdns.org:8999/"),
         )
         assertNull(JellyfinClient.plainHttpUrl("http://yarmiplay.duckdns.org:8999"))
+        assertEquals(
+            "https://yarmiplay.duckdns.org:8999",
+            JellyfinClient.httpsUrl("http://yarmiplay.duckdns.org:8999"),
+        )
+        assertNull(JellyfinClient.httpsUrl("https://yarmiplay.duckdns.org:8999"))
     }
 
     @Test
@@ -263,12 +268,26 @@ class JellyfinSourceTest {
     }
 
     @Test
-    fun loginOverHttpsToAPlainHttpPortFallsBackToHttp() {
-        // A Noire-style port: TLS ClientHello gets a plain-HTTP reply (OpenSSL "Unsupported or unrecognized SSL
-        // message"); the same port answers Jellyfin over cleartext HTTP.
+    fun migratePreferHttpsSetsFlagWithoutRewritingUrl() {
+        val rewritten = JellyfinSession("http://yarmiplay.duckdns.org:8999", "Benny", "srv", "u1", "yarmi", "tok")
+        val migrated = JellyfinClient.migratePreferHttps(rewritten)
+        assertEquals("http://yarmiplay.duckdns.org:8999", migrated.serverUrl)
+        assertTrue(migrated.preferHttps)
+        assertEquals(migrated, JellyfinClient.migratePreferHttps(migrated))
+        assertEquals(
+            "https://yarmiplay.duckdns.org:8999",
+            JellyfinClient.preferredProbeUrl(migrated),
+        )
+    }
+
+    @Test
+    fun loginOverHttpsToAPlainHttpPortKeepsHttpsSaved() {
+        // Connect over HTTP for the handshake, but persist the user's https:// preference.
         plainHttpPeer { http, https ->
             val session = client.login(https, "yarmi", "pw")
-            assertEquals(http, session.serverUrl)
+            assertEquals(https, session.serverUrl)
+            assertTrue(session.serverUrl.startsWith("https://"))
+            assertNotEquals(http, session.serverUrl)
         }
     }
 
@@ -296,20 +315,17 @@ class JellyfinSourceTest {
     }
 
     @Test
-    fun librariesOnHttpsPlainHttpPortRelocateAndNotify() {
+    fun librariesOnHttpsPlainHttpPortUsesHttpWithoutPersisting() {
         plainHttpPeer { http, https ->
             val httpsSession = JellyfinSession(https, "Benny", "srv", "u1", "yarmi", "tok")
-            var relocated: JellyfinSession? = null
-            val source = JellyfinSource(client, httpsSession) { previous, moved ->
-                assertEquals(httpsSession.serverUrl, previous.serverUrl)
-                relocated = moved
-            }
+            val source = JellyfinSource(client, httpsSession)
             val libs = source.libraries()
             assertEquals(listOf("Movies"), libs.map { it.name })
-            assertEquals(http, source.session.serverUrl)
-            assertEquals(http, relocated!!.serverUrl)
-            assertEquals(httpsSession.accessToken, relocated!!.accessToken)
-            assertNotEquals(JellyfinSource.keyOf(httpsSession), JellyfinSource.keyOf(relocated!!))
+            // Saved preference stays HTTPS; only this source instance talks HTTP.
+            assertEquals(https, source.session.serverUrl)
+            assertTrue(source.streamUrl("ep1", null).startsWith("$http/"))
+            source.resetToPreferredProbe()
+            assertTrue(source.streamUrl("ep1", null).startsWith("$https/"))
         }
     }
 

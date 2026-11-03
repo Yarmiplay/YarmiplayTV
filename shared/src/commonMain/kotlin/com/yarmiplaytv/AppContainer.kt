@@ -146,7 +146,10 @@ class AppContainer(
     /** Server-list saves run in the order the changes were made, so an older list never overwrites a newer one. */
     private val saveLock = Mutex()
     private val _servers = MutableStateFlow<List<MediaSource>>(
-        sorted(initial.jellyfinServers.map { jellyfinSource(it) } + initial.plexServers.map { PlexSource(plexClient, it) }),
+        sorted(
+            initial.jellyfinServers.map { jellyfinSource(JellyfinClient.migratePreferHttps(it)) } +
+                initial.plexServers.map { PlexSource(plexClient, it) },
+        ),
     )
     /** Every connected media server: the Jellyfin ones first, each kind in the order it was added. */
     val servers: StateFlow<List<MediaSource>> = _servers.asStateFlow()
@@ -254,6 +257,7 @@ class AppContainer(
     init {
         scope.launch { WhatsNew.onLaunch(settingsStore, appVersion) }
         // 2.8.7+: rewrite preferred / MAL keys still stored as jellyfin:<ServerId> to jellyfin:<url>.
+        // 2.9.2+: preferHttps on http:// entries 2.9.1 may have rewritten from https://.
         scope.launch { settingsStore.migrateJellyfinKeysIfNeeded() }
         scope.launch {
             settings.collect { s ->
@@ -350,15 +354,15 @@ class AppContainer(
 
     private suspend fun checkJellyfin(source: JellyfinSource) {
         val session = source.session
+        source.resetToPreferredProbe()
         val result = runCatching { jellyfinClient.validate(session) }
         val valid = result.getOrNull()
         val failure = result.exceptionOrNull()
         when {
             failure != null && JellyfinClient.isPlainHttpSslFailure(failure) -> {
-                val moved = jellyfinClient.sessionOnPlainHttp(session, failure)
-                if (moved != null) {
-                    Logger.i(TAG, "Jellyfin at ${session.serverUrl} speaks HTTP; saved as ${moved.serverUrl}")
-                    replaceJellyfin(session, moved)
+                if (source.adoptPlainHttpFallback(failure)) {
+                    Logger.i(TAG, "Jellyfin at ${session.serverUrl} speaks HTTP this session; saved URL stays HTTPS-preferred")
+                    runCatching { source.refreshIndex() }
                 } else {
                     Logger.w(TAG, "Jellyfin HTTPS handshake looked like plain HTTP but HTTP also failed: ${failure.message}")
                 }
@@ -411,7 +415,7 @@ class AppContainer(
 
     /**
      * Updates a saved Jellyfin entry when its address (and thus [MediaSource.key]) changed,
-     * e.g. a host-shared server moved to another of the host's addresses, or HTTPS→HTTP fallback.
+     * e.g. a host-shared server moved to another of the host's addresses.
      */
     fun replaceJellyfin(previous: JellyfinSession, session: JellyfinSession) {
         if (previous.serverUrl.trim().trimEnd('/') == session.serverUrl.trim().trimEnd('/')) {
@@ -428,11 +432,7 @@ class AppContainer(
         scope.launch { runCatching { newSource.refreshIndex() } }
     }
 
-    private fun jellyfinSource(session: JellyfinSession) = JellyfinSource(
-        jellyfinClient,
-        session,
-        onPlainHttp = { previous, moved -> replaceJellyfin(previous, moved) },
-    )
+    private fun jellyfinSource(session: JellyfinSession) = JellyfinSource(jellyfinClient, session)
 
     /** Adds a Plex server, or replaces the saved sign-in for the same server. */
     fun addPlex(session: PlexSession) = put(PlexSource(plexClient, session))
