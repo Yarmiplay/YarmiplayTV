@@ -80,7 +80,10 @@ class LocalFilesUiTest {
             createPlayer = { IdlePlayer() },
             createLocalLibrary = { s, scope, folders -> FileLocalLibrary(s, scope, folders, watchForChanges = false) },
             cacheDir = tmp.root.resolve("cache"),
-            frameGrabber = FrameGrabber { uri, width, target -> MpvFrameGrabber.grab(FileLocalLibrary.pathOf(uri).toString(), width, target) },
+            // wait=true: VideoThumbnails may request two previews at once; tryRun would drop one and mark it failed.
+            frameGrabber = FrameGrabber { uri, width, target ->
+                MpvFrameGrabber.grab(FileLocalLibrary.pathOf(uri).toString(), width, target, wait = true)
+            },
         )
     }
 

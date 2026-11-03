@@ -12,7 +12,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
-import java.util.Collections
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Runs two clients against a real syncplay-server. Enabled with SYNCPLAY_TEST_SERVER=host:port,
@@ -28,8 +28,9 @@ class ServerIntegrationTest {
     private lateinit var tvPlayer: RealtimePlayer
     private lateinit var desktop: SyncplayClient
     private lateinit var tv: SyncplayClient
-    private val tvEvents = Collections.synchronizedList(mutableListOf<SyncplayEvent>())
-    private val desktopEvents = Collections.synchronizedList(mutableListOf<SyncplayEvent>())
+    // CopyOnWrite: event collectors append from the client scope while tests iterate (synchronizedList CME).
+    private val tvEvents = CopyOnWriteArrayList<SyncplayEvent>()
+    private val desktopEvents = CopyOnWriteArrayList<SyncplayEvent>()
 
     @Before
     fun setUp() {

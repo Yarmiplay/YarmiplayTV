@@ -1153,7 +1153,11 @@ def main():
     ap.add_argument("--snap-name", default=None, help="Snap Store name, once the snap is published")
     ap.add_argument("--aur-package", default=None, help="AUR package name, once it is published")
     a = ap.parse_args()
-    build(a.dist, a.out, a.version or app_version(root), a.site_url, app_version(root, "desktop"),
+    # When Pages passes --version from the latest GitHub release, use it for both Android and desktop
+    # so JSON-LD / version.json cannot stick on an older green Build's gradle (2.8.10 vs 2.9.0).
+    version = a.version or app_version(root)
+    desktop_version = a.version or app_version(root, "desktop")
+    build(a.dist, a.out, version, a.site_url, desktop_version,
           a.google_verification, a.indexnow_key, linux_stores(a.flathub_id, a.snap_name, a.aur_package))
 
 

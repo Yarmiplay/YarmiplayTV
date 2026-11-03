@@ -1,9 +1,10 @@
 name: Download page
 
-# Publishes the download page (scripts/download_site.py) with the packages of the latest green Build on main,
-# except for the Windows installers, the macOS .dmg and the .deb, which come from the latest release, and the
-# browser version (web/) from main at /watch/. Release runs are for tags, so the branch is checked in the job's
-# condition rather than filtered here.
+# Publishes the download page (scripts/download_site.py) with packages from the latest GitHub release
+# (Windows/macOS/Linux) plus the APK from a green Build of that release's commit when available (else the
+# latest green Build on main). Site version / JSON-LD / changelog always follow the latest release tag when
+# one exists — never an older green Build that lagged behind a tagged release (see the 2.8.10 / 2.9.0 mix-up).
+# The browser version (web/) is built from main at /watch/.
 on:
   workflow_run:
     workflows: [Build, Release, Web]
@@ -38,24 +39,96 @@ jobs:
     outputs:
       site_url: ${{ steps.pages.outputs.base_url }}
     steps:
-      - name: Pick the Build run
+      - name: Pick release, Build run, and site version
         id: run
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.event.workflow_run.name == 'Build' && github.event.workflow_run.id || '' }}
-          RUN_SHA: ${{ github.event.workflow_run.name == 'Build' && github.event.workflow_run.head_sha || '' }}
+          TRIGGER_BUILD_ID: ${{ github.event.workflow_run.name == 'Build' && github.event.workflow_run.id || '' }}
+          TRIGGER_BUILD_SHA: ${{ github.event.workflow_run.name == 'Build' && github.event.workflow_run.head_sha || '' }}
         run: |
-          if [ -z "$RUN_ID" ]; then
-            read -r RUN_ID RUN_SHA < <(gh run list -R "$GITHUB_REPOSITORY" --workflow build.yml --branch main \
-              --event push --status success -L 1 --json databaseId,headSha --jq '.[0] | "\(.databaseId) \(.headSha)"')
+          set -euo pipefail
+          REL_TAG=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)
+          VERSION=
+          SITE_REF=main
+          REL_SHA=
+          if [ -n "$REL_TAG" ]; then
+            VERSION=${REL_TAG#v}
+            # Tag ref so metainfo / gradle match the published release (not an older green Build).
+            SITE_REF=$REL_TAG
+            OBJ=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$REL_TAG")
+            OBJ_TYPE=$(printf '%s' "$OBJ" | jq -r .object.type)
+            OBJ_SHA=$(printf '%s' "$OBJ" | jq -r .object.sha)
+            if [ "$OBJ_TYPE" = "tag" ]; then
+              REL_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$OBJ_SHA" --jq .object.sha)
+            else
+              REL_SHA=$OBJ_SHA
+            fi
+            echo "Latest release $REL_TAG → commit $REL_SHA"
           fi
-          [ -n "$RUN_ID" ] || { echo "no successful Build run on main"; exit 1; }
+
+          app_ver_at() {
+            # Prints appVersion from app/build.gradle.kts at the given commit, or empty.
+            gh api "repos/$GITHUB_REPOSITORY/contents/app/build.gradle.kts?ref=$1" --jq .content \
+              | base64 -d | sed -n 's/^val appVersion = "\([^"]*\)".*/\1/p' | head -1
+          }
+
+          RUN_ID=
+          RUN_SHA=
+          # Prefer a successful Build of the release commit so the APK matches the tagged version.
+          if [ -n "$REL_SHA" ]; then
+            MATCH=$(gh run list -R "$GITHUB_REPOSITORY" --workflow build.yml --commit "$REL_SHA" \
+              --status success -L 10 --json databaseId,headSha,event \
+              --jq '[.[] | select(.event=="push" or .event=="workflow_dispatch")] | .[0] // empty')
+            if [ -n "$MATCH" ]; then
+              RUN_ID=$(printf '%s' "$MATCH" | jq -r .databaseId)
+              RUN_SHA=$(printf '%s' "$MATCH" | jq -r .headSha)
+            fi
+          fi
+          # Else a later green Build on main that still ships the same appVersion (tag Build often fails first).
+          if { [ -z "${RUN_ID:-}" ] || [ "$RUN_ID" = "null" ]; } && [ -n "$VERSION" ]; then
+            while read -r cand_id cand_sha; do
+              [ -n "$cand_id" ] || continue
+              cand_ver=$(app_ver_at "$cand_sha" || true)
+              if [ "$cand_ver" = "$VERSION" ]; then
+                RUN_ID=$cand_id
+                RUN_SHA=$cand_sha
+                echo "Matched Build $RUN_ID ($RUN_SHA) with appVersion $cand_ver"
+                break
+              fi
+            done < <(gh run list -R "$GITHUB_REPOSITORY" --workflow build.yml --branch main \
+              --event push --status success -L 15 --json databaseId,headSha \
+              --jq '.[] | "\(.databaseId) \(.headSha)"')
+          fi
+          if [ -z "${RUN_ID:-}" ] || [ "$RUN_ID" = "null" ]; then
+            if [ -n "$TRIGGER_BUILD_ID" ]; then
+              RUN_ID=$TRIGGER_BUILD_ID
+              RUN_SHA=$TRIGGER_BUILD_SHA
+            else
+              read -r RUN_ID RUN_SHA < <(gh run list -R "$GITHUB_REPOSITORY" --workflow build.yml --branch main \
+                --event push --status success -L 1 --json databaseId,headSha --jq '.[0] | "\(.databaseId) \(.headSha)"')
+            fi
+          fi
+          [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ] || { echo "no successful Build run"; exit 1; }
+
+          # No GitHub release yet: site version comes from the Build commit's gradle via checkout.
+          if [ -z "$VERSION" ]; then
+            SITE_REF=$RUN_SHA
+          else
+            BUILD_VER=$(app_ver_at "$RUN_SHA" || true)
+            if [ -n "$BUILD_VER" ] && [ "$BUILD_VER" != "$VERSION" ]; then
+              echo "::warning::APK Build $RUN_ID is appVersion $BUILD_VER, release is $VERSION — Android sideload APK lags until a green Build of $VERSION exists"
+            fi
+          fi
+
           echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "sha=$RUN_SHA" >> "$GITHUB_OUTPUT"
+          echo "site_ref=$SITE_REF" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using Build $RUN_ID ($RUN_SHA); site ref $SITE_REF; version ${VERSION:-from gradle}"
 
       - uses: actions/checkout@v7
         with:
-          ref: ${{ steps.run.outputs.sha }}
+          ref: ${{ steps.run.outputs.site_ref }}
 
       # Every artifact of the run whose name starts with yarmiplaytv- (the APK now, desktop packages later)
       # lands flat in dist/; download_site.py sorts the files onto platforms by extension.
@@ -89,6 +162,8 @@ jobs:
 
       # The Search Console token is the repository variable GOOGLE_SITE_VERIFICATION (HTML-tag method). The
       # Linux store links appear with the variables that switch on release.yml's store jobs.
+      # --version from the latest release tag keeps JSON-LD / hero text aligned with published installers even
+      # when the APK Build run is still catching up.
       - name: Build the site
         env:
           SITE_URL: ${{ steps.pages.outputs.base_url }}
@@ -96,8 +171,10 @@ jobs:
           FLATHUB_REPO: ${{ vars.FLATHUB_REPO }}
           SNAP_NAME: ${{ vars.SNAP_NAME }}
           AUR_PACKAGE: ${{ vars.AUR_PACKAGE }}
+          SITE_VERSION: ${{ steps.run.outputs.version }}
         run: >
           python3 scripts/download_site.py --dist dist --out _site --site-url "$SITE_URL"
+          ${SITE_VERSION:+--version "$SITE_VERSION"}
           --indexnow-key "$INDEXNOW_KEY" ${GOOGLE_SITE_VERIFICATION:+--google-verification "$GOOGLE_SITE_VERIFICATION"}
           ${FLATHUB_REPO:+--flathub-id "${FLATHUB_REPO##*/}"} ${SNAP_NAME:+--snap-name "$SNAP_NAME"}
           ${AUR_PACKAGE:+--aur-package "$AUR_PACKAGE"}
