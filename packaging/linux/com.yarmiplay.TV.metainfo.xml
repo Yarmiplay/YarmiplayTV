@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.9.4" date="2026-11-03">
+      <description>
+        <p>Android TV: a playlist file that wasn't found has a Search again button, focused for the remote, also on the empty player; reopening the player looks again for it.</p>
+      </description>
+    </release>
     <release version="2.9.3" date="2026-11-03">
       <description>
         <p>Playlist row layout; in-app save/load playlists; desktop video right-click pause and click-drag to move the window.</p>

@@ -139,6 +139,8 @@ class PlaylistController(
 
     private var pending: PendingLoad? = null
     private var resolveJob: Job? = null
+    /** The room's entry whose search last gave up, until something else loads; [retryGivenUp] looks for it again. */
+    private var givenUp: String? = null
 
     private data class Known(val playable: PlayableMedia, val copies: List<ServerCopy>)
 
@@ -365,8 +367,13 @@ class PlaylistController(
         is RoomLocation.Missing -> "not found"
     }
 
-    private fun loadFromRoom(filename: String, resetPosition: Boolean) {
+    /**
+     * Opens the room's entry [filename]. With [fresh] nothing found earlier is reused: the media folders are indexed
+     * again and searched first, then the media servers. [quiet] leaves out the chat message when it isn't found.
+     */
+    private fun loadFromRoom(filename: String, resetPosition: Boolean, fresh: Boolean = false, quiet: Boolean = false) {
         resolveJob?.cancel()
+        givenUp = null
         _openPlayerRequests.value++
         if (Filenames.isUrl(filename)) {
             if (onlySwitchToTrustedDomains && !TrustedDomains.isTrusted(filename, trustedDomains)) {
@@ -377,37 +384,48 @@ class PlaylistController(
             load(urlNowPlaying(filename), resetPosition, fromRoom = true)
             return
         }
-        knownPlayables.entries.firstOrNull { Filenames.same(it.key, filename) }?.value
-            ?.takeUnless { isOutdatedByRelay(filename, it.playable.sizeBytes) }
-            ?.let {
-                load(it.playable.toNowPlaying(it.copies), resetPosition, fromRoom = true)
+        if (fresh) {
+            if (prepared?.let { Filenames.same(it.fileName, filename) } == true) prepared = null
+        } else {
+            knownPlayables.entries.firstOrNull { Filenames.same(it.key, filename) }?.value
+                ?.takeUnless { isOutdatedByRelay(filename, it.playable.sizeBytes) }
+                ?.let {
+                    load(it.playable.toNowPlaying(it.copies), resetPosition, fromRoom = true)
+                    return
+                }
+            takePrepared(filename)?.let { ahead ->
+                _status.value = PlaylistStatus.Resolving(filename)
+                resolveJob = scope.launch {
+                    val found = ahead.await()
+                    Logger.i(TAG, "'$filename' was prepared ahead: ${found.describe()}")
+                    // Missing ahead of time may be there now (e.g. a viewer who has it joined): look again.
+                    play(if (found is RoomLocation.Missing) locate(filename) else found, filename, resetPosition, quiet)
+                }
                 return
             }
-        takePrepared(filename)?.let { ahead ->
-            _status.value = PlaylistStatus.Resolving(filename)
-            resolveJob = scope.launch {
-                val found = ahead.await()
-                Logger.i(TAG, "'$filename' was prepared ahead: ${found.describe()}")
-                // Missing ahead of time may be there now (e.g. a viewer who has it joined): look again.
-                play(if (found is RoomLocation.Missing) locate(filename) else found, filename, resetPosition)
-            }
-            return
         }
         if (!locator.hasServers && !local.hasFolders && !locator.hasRelay(filename)) {
             if (sync.room.value.yarmiplay.relayActive) {
-                _status.value = PlaylistStatus.NotFound(filename, "Nobody in the room is sharing it yet")
-                sync.postLocal("Can't load '$filename': nobody in the room is sharing it yet", isError = true)
+                giveUp(filename, "Nobody in the room is sharing it yet", "Can't load '$filename': nobody in the room is sharing it yet", quiet)
             } else {
-                _status.value = PlaylistStatus.NotFound(filename, "Connect a media server or add a media folder to auto-load playlist items")
-                sync.postLocal("Can't load '$filename': no media server or media folders", isError = true)
+                giveUp(filename, "Connect a media server or add a media folder to auto-load playlist items", "Can't load '$filename': no media server or media folders", quiet)
             }
             return
         }
         _status.value = PlaylistStatus.Resolving(filename)
-        resolveJob = scope.launch { play(locate(filename), filename, resetPosition) }
+        resolveJob = scope.launch {
+            if (fresh && local.hasFolders) local.refresh()
+            play(locate(filename), filename, resetPosition, quiet)
+        }
     }
 
-    private suspend fun play(found: RoomLocation, filename: String, resetPosition: Boolean) {
+    private fun giveUp(filename: String, reason: String, message: String, quiet: Boolean) {
+        _status.value = PlaylistStatus.NotFound(filename, reason)
+        givenUp = filename
+        if (!quiet) sync.postLocal(message, isError = true)
+    }
+
+    private suspend fun play(found: RoomLocation, filename: String, resetPosition: Boolean, quiet: Boolean = false) {
         when (found) {
             is RoomLocation.Local -> {
                 Logger.i(TAG, "Resolved '$filename' locally via ${found.match.kind} -> ${found.match.file.uri}")
@@ -426,10 +444,11 @@ class PlaylistController(
                 load(NowPlaying(name, name, found.file.size, found.file.duration, url, episode = episodeFromFile(name)), resetPosition, fromRoom = true)
             }
             is RoomLocation.Missing -> {
+                // Something else was picked meanwhile (e.g. a manual pick while the player looked again).
+                if (_status.value != PlaylistStatus.Resolving(filename)) return
                 val servers = mediaSource.value?.let { s -> if (s is CompositeMediaSource && s.sources.size > 2) "your media servers" else s.displayName }
                 val where = listOfNotNull(servers, "your media folders".takeIf { local.hasFolders }).joinToString(" or ")
-                _status.value = PlaylistStatus.NotFound(filename, found.reason)
-                sync.postLocal("'$filename' not found in $where", isError = true)
+                giveUp(filename, found.reason, "'$filename' not found in $where", quiet)
             }
         }
     }
@@ -443,6 +462,7 @@ class PlaylistController(
             _nowPlaying.value?.url == media.url &&
             _nowPlaying.value?.sizeBytes == media.sizeBytes &&
             Filenames.same(_nowPlaying.value?.fileName.orEmpty(), media.fileName)
+        givenUp = null
         pending = PendingLoad(media, resetPosition, fromRoom)
         // E.g. a reconnect replays the room's selection while a manual pick of the same file is opening,
         // or the exact same file is already playing.
@@ -699,6 +719,7 @@ class PlaylistController(
     fun resolveManually(item: MediaItem) {
         val status = _status.value as? PlaylistStatus.NotFound
         val source = mediaSource.value ?: return
+        givenUp = null
         scope.launch {
             val playable = runCatching { source.playable(item) }.getOrElse {
                 sync.postLocal("Can't play ${item.name}: ${it.message}", isError = true)
@@ -706,6 +727,7 @@ class PlaylistController(
             }
             val known = remember(playable)
             if (status != null) knownPlayables[status.fileName] = known
+            resolveJob?.cancel()
             _openPlayerRequests.value++
             load(known.toNowPlaying(), resetPosition = true, fromRoom = true)
         }
@@ -739,9 +761,11 @@ class PlaylistController(
     /** Manual pick after a failed lookup: play a local file as the substitute for the playlist entry. */
     fun resolveManuallyLocal(uri: String) {
         val status = _status.value as? PlaylistStatus.NotFound
+        givenUp = null
         scope.launch {
             val known = remember(localPlayable(uri))
             if (status != null) knownPlayables[status.fileName] = known
+            resolveJob?.cancel()
             _openPlayerRequests.value++
             load(known.toNowPlaying(), resetPosition = true, fromRoom = true)
         }
@@ -785,8 +809,33 @@ class PlaylistController(
         _status.value = PlaylistStatus.Idle
     }
 
+    /**
+     * The room's entry this device could look for again: the one whose search gave up, or the room's selection while
+     * nothing of it plays here. Null for URLs, outside a room, and while a lookup or load is under way.
+     */
+    fun searchableEntry(): String? =
+        searchableEntry(_status.value, sync.room.value, _nowPlaying.value?.fileName?.takeIf { player.isFileLoaded })
+
+    /** Looks for [searchableEntry] again from scratch: the media folders (indexed again) first, then the media servers. */
+    fun searchAgain(): Boolean = searchAgain(quiet = false)
+
+    private fun searchAgain(quiet: Boolean): Boolean {
+        val name = searchableEntry() ?: return false
+        Logger.i(TAG, "Searching again for '$name'")
+        loadFromRoom(name, resetPosition = false, fresh = true, quiet = quiet)
+        return true
+    }
+
+    /** The player came back on screen: an entry whose search gave up is looked for again, without a second error message. */
+    fun retryGivenUp(): Boolean {
+        val name = givenUp ?: return false
+        if (searchableEntry()?.let { Filenames.same(it, name) } != true) return false
+        return searchAgain(quiet = true)
+    }
+
     fun stop() {
         resolveJob?.cancel()
+        givenUp = null
         autoPlayJob?.cancel()
         previousMedia = null
         pending = null
@@ -831,6 +880,14 @@ class PlaylistController(
         private const val PREPARE_DELAY_MS = 1_500L
         /** A lookup this old is done again: the servers' libraries may have changed. */
         private const val PREPARED_MAX_AGE_MS = 30 * 60 * 1000L
+
+        /** [searchableEntry] for a [status], the [room] and the file loaded here ([playingFileName], null when none). */
+        fun searchableEntry(status: PlaylistStatus, room: RoomState, playingFileName: String?): String? {
+            (status as? PlaylistStatus.NotFound)?.let { return it.fileName }
+            if (status != PlaylistStatus.Idle || room.status != ConnectionStatus.CONNECTED) return null
+            val name = room.currentPlaylistFile?.takeIf { it.isNotBlank() && !Filenames.isUrl(it) } ?: return null
+            return name.takeUnless { playingFileName != null && Filenames.same(playingFileName, it) }
+        }
 
         /** Next/previous among [size] entries from [index]; with [loop] the ends wrap around. Nothing selected yet: the first. */
         fun skipTarget(size: Int, index: Int?, forward: Boolean, loop: Boolean): Int? = when {

@@ -105,10 +105,10 @@ class Scenarios(private val state: AppState, private val syncplay: FakeSyncplayS
     }
 
     /** Someone in the room picks a file this device has no way to find (no Jellyfin, no media folders). */
-    fun fileNotFound() {
+    fun fileNotFound(fileName: String = "Harbor Lights S02E05.mkv") {
         state.joinRoom(syncplay)
         syncplay.addPeer("Alex", null, ready = true)
-        syncplay.peerSetPlaylist("Alex", listOf("Harbor Lights S02E05.mkv"), index = 0)
+        syncplay.peerSetPlaylist("Alex", listOf(fileName), index = 0)
         waitUntil(10_000) { container.playlist.status.value is PlaylistStatus.NotFound }
         Thread.sleep(300)
     }
