@@ -14,6 +14,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.MouseButton
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.hasAnyAncestor
@@ -22,6 +23,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performSemanticsAction
@@ -46,7 +48,9 @@ import com.yarmiplaytv.ui.mobile.DesktopPlayerInput
 import com.yarmiplaytv.ui.mobile.MobilePlayerScreen
 import com.yarmiplaytv.ui.mobile.MobileTheme
 import com.yarmiplaytv.ui.mobile.PipContent
+import com.yarmiplaytv.ui.mobile.PlayerInput
 import com.yarmiplaytv.ui.mobile.PlayerVolume
+import com.yarmiplaytv.ui.mobile.videoGestures
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.voice.VoiceCaptureKind
@@ -127,6 +131,11 @@ class PlayerControlsUiTest {
     @After
     fun tearDown() {
         DesktopPlayerInput.volume = null
+        DesktopPlayerInput.toggleFullscreen = {}
+        DesktopPlayerInput.moveWindow = { _, _ -> }
+        DesktopPlayerInput.screenPointerForWindowDrag = {
+            runCatching { java.awt.MouseInfo.getPointerInfo()?.location }.getOrNull()
+        }
         DesktopPip.open = false
         DesktopPip.toggle = { DesktopPip.open = !DesktopPip.open }
         // Join before resetMain: leaving Main work running races and fails on macOS CI.
@@ -587,6 +596,59 @@ class PlayerControlsUiTest {
         onNodeWithTag("player_menus").performMouseInput { click() }
         settle()
         onNodeWithTag("player_sheet").assertExists()
+    }
+
+    @Test
+    fun `right-click on the video toggles play pause and drag moves the window`() = runComposeUiTest {
+        val moves = mutableListOf<Pair<Int, Int>>()
+        var fullscreenToggles = 0
+        var pauses = 0
+        DesktopPlayerInput.moveWindow = { dx, dy -> moves += dx to dy }
+        DesktopPlayerInput.toggleFullscreen = { fullscreenToggles++ }
+        // Null screen pointer forces the local-delta fallback used when MouseInfo is unavailable.
+        DesktopPlayerInput.screenPointerForWindowDrag = { null }
+        // Bare gesture surface: the full player stacks status/overlays above player_gestures.
+        val input = PlayerInput(
+            seekStep = 10.0,
+            controlsVisible = false,
+            toggleControls = {},
+            showControls = {},
+            togglePause = { pauses++ },
+            seekBy = {},
+        )
+        mainClock.autoAdvance = false
+        setContent {
+            MobileTheme {
+                Box(Modifier.size(400.dp, 225.dp).testTag("player_gestures").videoGestures(input))
+            }
+        }
+        settle()
+
+        onNodeWithTag("player_gestures").performMouseInput {
+            moveTo(Offset(80f, 80f))
+            press(MouseButton.Secondary)
+            release(MouseButton.Secondary)
+        }
+        settle()
+        assertEquals(1, pauses)
+        assertTrue(moves.isEmpty())
+
+        onNodeWithTag("player_gestures").performMouseInput {
+            moveTo(Offset(100f, 100f))
+            press(MouseButton.Primary)
+            moveBy(Offset(40f, 15f))
+            release(MouseButton.Primary)
+        }
+        settle()
+        assertTrue("drag moves the window: $moves", moves.any { it.first != 0 || it.second != 0 })
+        assertEquals(0, fullscreenToggles)
+
+        onNodeWithTag("player_gestures").performMouseInput {
+            doubleClick(Offset(120f, 90f))
+        }
+        settle()
+        assertEquals(1, fullscreenToggles)
+        assertEquals("right-click only paused once", 1, pauses)
     }
 
     /** Drive VoiceController's private UI flow so the Mic button is composed in player tests. */

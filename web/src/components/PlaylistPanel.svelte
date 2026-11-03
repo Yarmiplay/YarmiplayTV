@@ -3,7 +3,15 @@
   import type { RoomState } from "../lib/syncplay/client";
   import { followsOperators } from "../lib/syncplay/client";
   import * as Filenames from "../lib/syncplay/filenames";
-  import { deleteSavedPlaylist, savePlaylist, savedPlaylistsStore, type SavedPlaylist } from "../lib/data/savedPlaylists";
+  import {
+    defaultSavedPlaylistName,
+    deleteSavedPlaylist,
+    formatSavedPlaylistDate,
+    renameSavedPlaylist,
+    savePlaylist,
+    savedPlaylistsStore,
+    type SavedPlaylist,
+  } from "../lib/data/savedPlaylists";
   import Icon from "./Icon.svelte";
 
   /**
@@ -23,6 +31,8 @@
   let savePrompt = $state(false);
   let emptyPrompt = $state(false);
   let playlistNameInput = $state("");
+  let renamingId = $state<string | null>(null);
+  let renameText = $state("");
 
   $effect(() => {
     if (!session) return;
@@ -36,8 +46,9 @@
 
   function handleSaveCurrent() {
     if (!playlist.length) return;
-    playlistNameInput = room?.room ? `Room ${room.room}` : "My Playlist";
+    playlistNameInput = defaultSavedPlaylistName(playlist);
     savePrompt = true;
+    showSaved = false;
   }
 
   function confirmSave() {
@@ -55,6 +66,16 @@
     } else {
       session.replacePlaylist(sp.entries);
     }
+  }
+
+  function startRename(sp: SavedPlaylist) {
+    renamingId = sp.id;
+    renameText = sp.name;
+  }
+
+  function confirmRename() {
+    if (!renamingId || !renameText.trim()) return;
+    if (renameSavedPlaylist(renamingId, renameText)) renamingId = null;
   }
 
   const playlist = $derived(room?.playlist ?? []);
@@ -119,8 +140,15 @@
         <input type="file" multiple accept="video/*,audio/*,.mkv,.avi,.ts,.m2ts,.webm,.mp3,.flac,.aac,.m4a,.ogg,.opus,.wav" onchange={addFiles} hidden disabled={locked} />
       </label>
       <button class="button quiet small" onclick={() => session?.sortAlphabetically()} disabled={locked || playlist.length < 2}><Icon name="sort_by_alpha" size={18} />Sort A to Z</button>
-      <button class="button quiet small" onclick={handleSaveCurrent} disabled={playlist.length === 0}><Icon name="bookmarks" size={18} />Save</button>
-      <button class="button quiet small" onclick={() => (showSaved = !showSaved)}><Icon name="queue_music" size={18} />Saved ({savedPlaylists.length})</button>
+      <button class="button quiet small" data-testid="playlist_save" onclick={handleSaveCurrent} disabled={playlist.length === 0}><Icon name="bookmarks" size={18} />Save playlist</button>
+      <button
+        class="button quiet small"
+        data-testid="playlist_load"
+        onclick={() => {
+          showSaved = !showSaved;
+          if (showSaved) savePrompt = false;
+        }}
+      ><Icon name="queue_music" size={18} />Load playlist ({savedPlaylists.length})</button>
       <button class="button quiet small" onclick={() => session?.undo()} disabled={locked || !canUndo}><Icon name="undo" size={18} />Undo</button>
       {#if playlist.length > 0}
         <button
@@ -170,10 +198,17 @@
       </form>
     {/if}
     {#if showSaved}
-      <div class="saved-box">
+      <div class="saved-box" data-testid="playlist_saved_box">
         <div class="saved-header">
-          <b>Saved Playlists</b>
-          <button class="button quiet small" onclick={() => (showSaved = false)} aria-label="Close saved playlists"><Icon name="close" size={16} /></button>
+          <b>Saved playlists</b>
+          <button
+            class="button quiet small"
+            onclick={() => {
+              showSaved = false;
+              renamingId = null;
+            }}
+            aria-label="Close saved playlists"
+          ><Icon name="close" size={16} /></button>
         </div>
         {#if savedPlaylists.length === 0}
           <p class="dim small pad">No saved playlists yet.</p>
@@ -181,15 +216,33 @@
           <ul class="saved-items">
             {#each savedPlaylists as sp (sp.id)}
               <li class="saved-row">
-                <div class="saved-info">
-                  <span class="name">{sp.name}</span>
-                  <span class="dim small">{sp.entries.length} {sp.entries.length === 1 ? 'item' : 'items'}</span>
-                </div>
-                <div class="saved-actions">
-                  <button class="button quiet small" onclick={() => loadSaved(sp, "add")} disabled={locked} title="Add to current playlist"><Icon name="playlist_add" size={16} />Add</button>
-                  <button class="button quiet small" onclick={() => loadSaved(sp, "replace")} disabled={locked} title="Replace current playlist"><Icon name="play_arrow" size={16} />Replace</button>
-                  <button class="button quiet small icon-btn" onclick={() => deleteSavedPlaylist(sp.id)} title="Delete saved playlist" aria-label="Delete saved playlist"><Icon name="delete" size={16} /></button>
-                </div>
+                {#if renamingId === sp.id}
+                  <form
+                    class="rename"
+                    onsubmit={(e) => {
+                      e.preventDefault();
+                      confirmRename();
+                    }}
+                  >
+                    <input type="text" bind:value={renameText} aria-label="Rename playlist" />
+                    <button class="button small" type="submit" disabled={!renameText.trim()}>Rename</button>
+                    <button class="button quiet small" type="button" onclick={() => (renamingId = null)}>Cancel</button>
+                  </form>
+                {:else}
+                  <div class="saved-info">
+                    <span class="name">{sp.name}</span>
+                    <span class="dim small"
+                      >{sp.entries.length} {sp.entries.length === 1 ? "item" : "items"}{#if formatSavedPlaylistDate(sp.createdAt)}
+                        · {formatSavedPlaylistDate(sp.createdAt)}{/if}</span
+                    >
+                  </div>
+                  <div class="saved-actions">
+                    <button class="button quiet small" onclick={() => loadSaved(sp, "add")} disabled={locked} title="Add to current playlist"><Icon name="playlist_add" size={16} />Add</button>
+                    <button class="button quiet small" onclick={() => loadSaved(sp, "replace")} disabled={locked} title="Replace current playlist"><Icon name="play_arrow" size={16} />Replace</button>
+                    <button class="button quiet small" onclick={() => startRename(sp)} title="Rename saved playlist">Rename</button>
+                    <button class="button quiet small icon-btn" onclick={() => deleteSavedPlaylist(sp.id)} title="Delete saved playlist" aria-label="Delete saved playlist"><Icon name="delete" size={16} /></button>
+                  </div>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -311,6 +364,26 @@
   }
   .name {
     overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+  .rename {
+    display: flex;
+    flex: 1;
+    gap: 6px;
+    min-width: 0;
+    align-items: center;
+  }
+  .rename input {
+    flex: 1;
+    min-width: 0;
+    background: var(--surface-high);
+    border: 0;
+    border-radius: 8px;
+    padding: 6px 10px;
   }
   .tag {
     font-size: 12px;

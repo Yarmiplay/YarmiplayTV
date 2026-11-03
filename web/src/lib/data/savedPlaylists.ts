@@ -32,9 +32,28 @@ function persistToStorage(playlists: SavedPlaylist[]) {
 
 export const savedPlaylistsStore = new Store<SavedPlaylist[]>(loadFromStorage());
 
+/** Default name: today's date and the first entry's file name. */
+export function defaultSavedPlaylistName(entries: string[], today = new Date().toISOString().slice(0, 10)): string {
+  const first = entries
+    .map((e) => e.trim())
+    .filter(Boolean)
+    .map((e) => e.split(/[/\\]/).pop() || e)
+    .map((e) => e.slice(0, 48))[0];
+  return first ? `${today} · ${first}` : today;
+}
+
+export function formatSavedPlaylistDate(createdAt: number): string {
+  if (!createdAt || createdAt <= 0) return "";
+  try {
+    return new Date(createdAt).toISOString().slice(0, 10);
+  } catch {
+    return "";
+  }
+}
+
 export function savePlaylist(name: string, entries: string[]): SavedPlaylist {
   const cleanEntries = entries.map((e) => e.trim()).filter(Boolean);
-  const cleanName = name.trim() || `Playlist ${new Date().toLocaleDateString()}`;
+  const cleanName = name.trim() || defaultSavedPlaylistName(cleanEntries);
   const playlist: SavedPlaylist = {
     id: `pl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     name: cleanName,
@@ -45,6 +64,21 @@ export function savePlaylist(name: string, entries: string[]): SavedPlaylist {
   savedPlaylistsStore.set(updated);
   persistToStorage(updated);
   return playlist;
+}
+
+export function renameSavedPlaylist(id: string, name: string): boolean {
+  const cleanName = name.trim();
+  if (!cleanName) return false;
+  let renamed = false;
+  const updated = savedPlaylistsStore.value.map((p) => {
+    if (p.id !== id) return p;
+    renamed = true;
+    return { ...p, name: cleanName };
+  });
+  if (!renamed) return false;
+  savedPlaylistsStore.set(updated);
+  persistToStorage(updated);
+  return true;
 }
 
 export function deleteSavedPlaylist(id: string) {

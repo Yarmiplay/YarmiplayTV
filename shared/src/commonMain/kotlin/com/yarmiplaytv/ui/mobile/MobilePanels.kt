@@ -67,6 +67,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.yarmiplaytv.DeviceKind
+import com.yarmiplaytv.data.defaultSavedPlaylistName
+import com.yarmiplaytv.data.formatSavedPlaylistDate
 import com.yarmiplaytv.data.VoiceTalkMode
 import com.yarmiplaytv.voice.VoiceCaptureKind
 import com.yarmiplaytv.voice.VoiceConnection
@@ -149,6 +151,8 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
         var saving by rememberSaveable { mutableStateOf(false) }
         var showingSaved by rememberSaveable { mutableStateOf(false) }
         var saveName by rememberSaveable { mutableStateOf("") }
+        var renamingId by rememberSaveable { mutableStateOf<String?>(null) }
+        var renameText by rememberSaveable { mutableStateOf("") }
         var confirmEmpty by rememberSaveable { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
 
@@ -175,19 +179,25 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
             }
             androidx.compose.material3.OutlinedButton(
                 onClick = {
-                    saveName = if (room.room.isNotEmpty()) "Room ${room.room}" else "My Playlist"
+                    saveName = defaultSavedPlaylistName(room.playlist)
                     saving = !saving
+                    if (saving) showingSaved = false
                 },
                 enabled = room.playlist.isNotEmpty(),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.testTag("playlist_save"),
             ) {
-                Text("Save")
+                Text("Save playlist")
             }
             androidx.compose.material3.OutlinedButton(
-                onClick = { showingSaved = !showingSaved },
+                onClick = {
+                    showingSaved = !showingSaved
+                    if (showingSaved) saving = false
+                },
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.testTag("playlist_load"),
             ) {
-                Text("Saved (${savedPlaylists.size})")
+                Text("Load playlist (${savedPlaylists.size})")
             }
             if (room.playlist.isNotEmpty()) {
                 androidx.compose.material3.OutlinedButton(
@@ -254,39 +264,74 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
         }
         if (showingSaved) {
             Column(
-                Modifier.fillMaxWidth().background(AppColors.SurfaceHigh, RoundedCornerShape(10.dp)).padding(12.dp),
+                Modifier.fillMaxWidth().background(AppColors.SurfaceHigh, RoundedCornerShape(10.dp)).padding(12.dp).testTag("playlist_saved_box"),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Saved Playlists", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                    TextButton(onClick = { showingSaved = false }) { Text("Close") }
+                    Text("Saved playlists", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    TextButton(onClick = { showingSaved = false; renamingId = null }) { Text("Close") }
                 }
                 if (savedPlaylists.isEmpty()) {
                     Text("No saved playlists yet.", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
                 } else {
                     savedPlaylists.forEach { sp ->
-                        Row(
+                        Column(
                             Modifier.fillMaxWidth().background(AppColors.Surface, RoundedCornerShape(8.dp)).padding(8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(sp.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("${sp.entries.size} items", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                androidx.compose.material3.FilledTonalButton(
-                                    onClick = { container.playlist.shared.add(sp.entries) },
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                ) { Text("Add") }
-                                Button(
-                                    onClick = { container.playlist.shared.replace(sp.entries) },
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                ) { Text("Replace") }
-                                IconButton(
-                                    onClick = { scope.launch { container.settingsStore.deleteSavedPlaylist(sp.id) } },
-                                    modifier = Modifier.size(32.dp),
-                                ) { Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = AppColors.TextDim) }
+                            if (renamingId == sp.id) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    OutlinedTextField(
+                                        value = renameText,
+                                        onValueChange = { renameText = it },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                if (container.settingsStore.renameSavedPlaylist(sp.id, renameText)) renamingId = null
+                                            }
+                                        },
+                                        enabled = renameText.isNotBlank(),
+                                    ) { Text("Rename") }
+                                    TextButton(onClick = { renamingId = null }) { Text("Cancel") }
+                                }
+                            } else {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(sp.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        val date = formatSavedPlaylistDate(sp.createdAt)
+                                        val meta = buildString {
+                                            append(if (sp.entries.size == 1) "1 item" else "${sp.entries.size} items")
+                                            if (date.isNotEmpty()) append(" · ").append(date)
+                                        }
+                                        Text(meta, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        androidx.compose.material3.FilledTonalButton(
+                                            onClick = { container.playlist.shared.add(sp.entries) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        ) { Text("Add") }
+                                        Button(
+                                            onClick = { container.playlist.shared.replace(sp.entries) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        ) { Text("Replace") }
+                                        TextButton(onClick = { renamingId = sp.id; renameText = sp.name }) { Text("Rename") }
+                                        IconButton(
+                                            onClick = { scope.launch { container.settingsStore.deleteSavedPlaylist(sp.id) } },
+                                            modifier = Modifier.size(32.dp),
+                                        ) { Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = AppColors.TextDim) }
+                                    }
+                                }
                             }
                         }
                     }
@@ -313,7 +358,12 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
                     if (current) Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.width(28.dp))
                     else Text("${index + 1}.", color = AppColors.TextDim, modifier = Modifier.width(28.dp))
                     Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
-                        Text(file, fontWeight = if (current) FontWeight.Bold else FontWeight.Normal)
+                        Text(
+                            file,
+                            fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                         room.sizeWarning(file)?.let { warning ->
                             Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Filled.Warning, contentDescription = null, tint = AppColors.NotReady, modifier = Modifier.size(14.dp))

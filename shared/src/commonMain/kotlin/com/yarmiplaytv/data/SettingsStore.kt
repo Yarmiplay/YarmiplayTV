@@ -109,6 +109,28 @@ data class SavedPlaylist(
     val createdAt: Long = 0L,
 )
 
+/** Default name when saving the current playlist: today's date and the first entry's file name. */
+fun defaultSavedPlaylistName(
+    entries: List<String>,
+    today: String = java.time.LocalDate.now().toString(),
+): String {
+    val first = entries.asSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .map { it.substringAfterLast('/').substringAfterLast('\\') }
+        .firstOrNull()
+        ?.take(48)
+    return if (first != null) "$today · $first" else today
+}
+
+/** Short date for a saved playlist's [SavedPlaylist.createdAt] (local calendar day). */
+fun formatSavedPlaylistDate(createdAt: Long): String {
+    if (createdAt <= 0L) return ""
+    return runCatching {
+        java.time.Instant.ofEpochMilli(createdAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()
+    }.getOrDefault("")
+}
+
 /**
  * The `sp_saved_rooms` format: one room per line, tab-separated fields (tabs and newlines in values become spaces).
  * Fields added later go at the end, so older lines still read.
@@ -761,6 +783,24 @@ class SettingsStore(
             val updated = existing.filter { it.id != id }
             p[Keys.savedPlaylists] = json.encodeToString(ListSerializer(SavedPlaylist.serializer()), updated)
         }
+    }
+
+    suspend fun renameSavedPlaylist(id: String, name: String): Boolean {
+        val cleanName = name.trim()
+        if (cleanName.isEmpty()) return false
+        var renamed = false
+        dataStore.edit { p ->
+            val existing = p[Keys.savedPlaylists]?.let { raw ->
+                runCatching { json.decodeFromString(ListSerializer(SavedPlaylist.serializer()), raw) }.getOrNull()
+            } ?: emptyList()
+            val updated = existing.map { sp ->
+                if (sp.id != id) sp else sp.copy(name = cleanName).also { renamed = true }
+            }
+            if (renamed) {
+                p[Keys.savedPlaylists] = json.encodeToString(ListSerializer(SavedPlaylist.serializer()), updated)
+            }
+        }
+        return renamed
     }
 
     suspend fun saveUpdatePrefs(check: Boolean, installOnLaunch: Boolean) = dataStore.edit {

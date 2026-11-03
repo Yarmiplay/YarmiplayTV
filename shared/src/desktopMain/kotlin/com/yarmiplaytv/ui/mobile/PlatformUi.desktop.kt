@@ -1,6 +1,7 @@
 package com.yarmiplaytv.ui.mobile
 
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -15,6 +16,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.isCtrlPressed
@@ -23,6 +25,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import java.awt.MouseInfo
 import java.awt.Point
 import java.awt.Toolkit
 import java.awt.image.BufferedImage
@@ -38,6 +41,7 @@ import com.yarmiplaytv.relay.SaveTarget
 import org.xml.sax.InputSource
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.math.roundToInt
 
 actual fun Modifier.exposeTestTags(): Modifier = this
 
@@ -81,6 +85,11 @@ object DesktopPlayerInput {
     var input: State<PlayerInput>? by mutableStateOf(null)
         internal set
     var toggleFullscreen: () -> Unit = {}
+    /**
+     * Moves the main window by screen pixels while dragging the video surface (title-bar style).
+     * The window sets this; no-op until then or when the window isn't free-floating.
+     */
+    var moveWindow: (dx: Int, dy: Int) -> Unit = { _, _ -> }
     /** Changes the volume by the given percentage points. */
     var changeVolume: (Double) -> Unit = {}
     /** The player's volume for the player bar's volume control; without it the control isn't shown. */
@@ -91,7 +100,25 @@ object DesktopPlayerInput {
     var pointerFraction: Pair<Double, Double>? = null
     /** Ctrl+wheel. The window sets this to zoom toward [pointerFraction]. */
     var zoomAt: (Double) -> Unit = {}
+    /** Screen pointer for video-surface window drag; tests override when MouseInfo isn't available. */
+    var screenPointerForWindowDrag: () -> Point? = {
+        runCatching { MouseInfo.getPointerInfo()?.location }.getOrNull()
+    }
 }
+
+/**
+ * Decides what a finished primary-button press on the video means after the pointer went up without a drag.
+ * [previousClickAt] is the uptime of the previous non-drag primary click, or 0.
+ */
+internal fun videoPrimaryClickAction(previousClickAt: Long, clickAt: Long, doubleTapTimeoutMs: Long): VideoPrimaryClick {
+    return if (previousClickAt > 0L && clickAt - previousClickAt <= doubleTapTimeoutMs) {
+        VideoPrimaryClick.DoubleClick
+    } else {
+        VideoPrimaryClick.SingleClick
+    }
+}
+
+internal enum class VideoPrimaryClick { SingleClick, DoubleClick }
 
 /**
  * The desktop's picture-in-picture: a small always-on-top window of its own with the video ([open]), while the main
@@ -175,17 +202,78 @@ actual fun Modifier.playerScreenInput(input: PlayerInput): Modifier {
         }
 }
 
+/**
+ * On the video area (under overlays): left click clears focus, double-click toggles fullscreen, click-drag moves
+ * the window past touch-slop, right-click toggles play/pause (room-synced via [PlayerInput.togglePause]).
+ * Overlay controls sit above this layer, so their clicks never reach it.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 actual fun Modifier.videoGestures(input: PlayerInput): Modifier {
     val latest = rememberUpdatedState(input)
     val focusManager = LocalFocusManager.current
-    return pointerInput(Unit) {
-        detectTapGestures(
-            // Clicking the video leaves the chat box, so the keyboard shortcuts work again. mpv ignores this button.
-            onTap = { focusManager.clearFocus() },
-            onDoubleTap = { DesktopPlayerInput.toggleFullscreen() },
-        )
-    }
+    return this
+        // Same path as the playlist's context menu: PointerEvent.button is reliable for secondary clicks.
+        .onPointerEvent(PointerEventType.Press) { event ->
+            if (event.button == PointerButton.Secondary) latest.value.togglePause()
+        }
+        .pointerInput(Unit) {
+            var lastPrimaryClick = 0L
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                // Right-click is handled above; don't treat it as a primary click or window drag.
+                if (currentEvent.button == PointerButton.Secondary) {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.changes.none { it.pressed }) break
+                    }
+                    return@awaitEachGesture
+                }
+                down.consume()
+                val startLocal = down.position
+                var lastScreen = DesktopPlayerInput.screenPointerForWindowDrag()
+                var lastLocal = startLocal
+                var dragged = false
+                while (true) {
+                    val event = awaitPointerEvent()
+                    event.changes.forEach { it.consume() }
+                    val change = event.changes.firstOrNull() ?: continue
+                    if (!dragged && (change.position - startLocal).getDistance() > viewConfiguration.touchSlop) {
+                        dragged = true
+                    }
+                    if (dragged) {
+                        val nowScreen = DesktopPlayerInput.screenPointerForWindowDrag()
+                        if (nowScreen != null && lastScreen != null) {
+                            val dx = nowScreen.x - lastScreen.x
+                            val dy = nowScreen.y - lastScreen.y
+                            if (dx != 0 || dy != 0) DesktopPlayerInput.moveWindow(dx, dy)
+                            lastScreen = nowScreen
+                        } else {
+                            val dx = (change.position.x - lastLocal.x).roundToInt()
+                            val dy = (change.position.y - lastLocal.y).roundToInt()
+                            if (dx != 0 || dy != 0) DesktopPlayerInput.moveWindow(dx, dy)
+                            lastLocal = change.position
+                        }
+                    }
+                    if (event.changes.none { it.pressed }) break
+                }
+                if (dragged) {
+                    lastPrimaryClick = 0L
+                    return@awaitEachGesture
+                }
+                // Left click leaves the chat box so keyboard shortcuts work again; double-click is fullscreen.
+                when (videoPrimaryClickAction(lastPrimaryClick, down.uptimeMillis, viewConfiguration.doubleTapTimeoutMillis)) {
+                    VideoPrimaryClick.DoubleClick -> {
+                        lastPrimaryClick = 0L
+                        DesktopPlayerInput.toggleFullscreen()
+                    }
+                    VideoPrimaryClick.SingleClick -> {
+                        lastPrimaryClick = down.uptimeMillis
+                        focusManager.clearFocus()
+                    }
+                }
+            }
+        }
 }
 
 /** Volume change per scroll-wheel notch, in percentage points. mpv's wheel step is 2. */

@@ -53,7 +53,8 @@ expect fun Modifier.playerScreenInput(input: PlayerInput): Modifier
 
 /**
  * On the video area. Android: tap toggles the controls, double tap seeks back/forward or pauses by screen
- * thirds. Desktop: click pauses, double-click toggles full screen.
+ * thirds. Desktop: left click clears focus, double-click toggles full screen, click-drag moves the window,
+ * right-click toggles play/pause; overlay controls sit above this layer.
  */
 @Composable
 expect fun Modifier.videoGestures(input: PlayerInput): Modifier
