@@ -78,7 +78,7 @@ function change(next: Sessions) {
 }
 
 /**
- * Prefer HTTPS on each load: validate at the probe URL; on a plain-HTTP SSL failure, adopt HTTP for this page
+ * Prefer HTTPS on each load (2.9.2): validate at the probe URL; on a plain-HTTP SSL failure, adopt HTTP for this page
  * session only (sources keep requestBase) without rewriting the saved entry.
  */
 void (async () => {
