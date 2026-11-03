@@ -1,6 +1,7 @@
 package com.yarmiplaytv.media.jellyfin
 
 import com.yarmiplaytv.media.MatchKind
+import com.yarmiplaytv.media.MediaSourceException
 import com.yarmiplaytv.media.PlaybackReport
 import com.yarmiplaytv.media.ReportState
 import com.yarmiplaytv.media.ResolveResult
@@ -13,11 +14,22 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.BufferedInputStream
+import java.io.OutputStream
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import javax.net.ssl.SSLException
 
 class JellyfinSourceTest {
     private lateinit var server: MockWebServer
@@ -60,6 +72,8 @@ class JellyfinSourceTest {
                         {"Id":"s3","ItemId":"ep1","Type":"Outro","StartTicks":13500000000,"EndTicks":14400000000}]}"""
                     "/Sessions/Playing", "/Sessions/Playing/Progress", "/Sessions/Playing/Stopped", "/Users/u1/PlayedItems/ep1" ->
                         return MockResponse().setResponseCode(204)
+                    "/Users/Me" -> """{"Id":"u1","Name":"yarmi"}"""
+                    "/UserViews" -> """{"Items":[{"Id":"lib1","Name":"Movies","Type":"UserView","CollectionType":"movies","IsFolder":true}],"TotalRecordCount":1}"""
                     else -> return MockResponse().setResponseCode(404)
                 }
                 return MockResponse().setHeader("Content-Type", "application/json").setBody(body)
@@ -221,5 +235,173 @@ class JellyfinSourceTest {
         val played = sent.filter { it.requestUrl!!.encodedPath.contains("PlayedItems") }
         assertEquals(listOf("/UserPlayedItems/ep1", "/Users/u1/PlayedItems/ep1"), played.map { it.requestUrl!!.encodedPath })
         assertEquals("u1", played[0].requestUrl!!.queryParameter("userId"))
+    }
+
+    @Test
+    fun plainHttpUrlKeepsHostAndPort() {
+        assertEquals(
+            "http://yarmiplay.duckdns.org:8999",
+            JellyfinClient.plainHttpUrl("https://yarmiplay.duckdns.org:8999"),
+        )
+        assertEquals(
+            "http://yarmiplay.duckdns.org:8999",
+            JellyfinClient.plainHttpUrl("https://yarmiplay.duckdns.org:8999/"),
+        )
+        assertNull(JellyfinClient.plainHttpUrl("http://yarmiplay.duckdns.org:8999"))
+    }
+
+    @Test
+    fun isPlainHttpSslFailureRecognizesOpensslWording() {
+        val ssl = SSLException("Unsupported or unrecognized SSL message")
+        assertTrue(
+            JellyfinClient.isPlainHttpSslFailure(
+                MediaSourceException("Cannot reach yarmiplay.duckdns.org:8999 (${ssl.message})", cause = ssl),
+            ),
+        )
+        assertTrue(JellyfinClient.isPlainHttpSslFailure(SSLException("error:0A00010B:SSL routines::wrong version number")))
+        assertFalse(JellyfinClient.isPlainHttpSslFailure(MediaSourceException("Cannot reach host:8096 (timed out)")))
+    }
+
+    @Test
+    fun loginOverHttpsToAPlainHttpPortFallsBackToHttp() {
+        // A Noire-style port: TLS ClientHello gets a plain-HTTP reply (OpenSSL "Unsupported or unrecognized SSL
+        // message"); the same port answers Jellyfin over cleartext HTTP.
+        plainHttpPeer { http, https ->
+            val session = client.login(https, "yarmi", "pw")
+            assertEquals(http, session.serverUrl)
+        }
+    }
+
+    @Test
+    fun resolveReachableUrlKeepsHttpsWhenTheServerReallySpeaksTls() = runBlocking {
+        // A plain-HTTP mock cannot prove TLS success; only that non-SSL failures do not flip the scheme.
+        val err = runCatching { client.resolveReachableUrl("https://127.0.0.1:1") }.exceptionOrNull()
+        assertTrue(err is MediaSourceException)
+        assertFalse(JellyfinClient.isPlainHttpSslFailure(err!!))
+        assertTrue("expected reach error: ${err.message}", err.message!!.contains("Cannot reach"))
+    }
+
+    @Test
+    fun bothSchemesFailedNamesHttpsAndHttpReasons() {
+        val ex = JellyfinClient.bothSchemesFailed(
+            "https://yarmiplay.duckdns.org:8999",
+            MediaSourceException("Cannot reach yarmiplay.duckdns.org:8999 (Unsupported or unrecognized SSL message)"),
+            "http://yarmiplay.duckdns.org:8999",
+            MediaSourceException("Cannot reach yarmiplay.duckdns.org:8999 (Connection refused)"),
+        )
+        assertTrue("msg=${ex.message}", ex.message!!.contains("HTTPS"))
+        assertTrue("msg=${ex.message}", ex.message!!.contains("HTTP"))
+        assertTrue("msg=${ex.message}", ex.message!!.contains("Unsupported or unrecognized SSL message"))
+        assertTrue("msg=${ex.message}", ex.message!!.contains("Connection refused"))
+    }
+
+    @Test
+    fun librariesOnHttpsPlainHttpPortRelocateAndNotify() {
+        plainHttpPeer { http, https ->
+            val httpsSession = JellyfinSession(https, "Benny", "srv", "u1", "yarmi", "tok")
+            var relocated: JellyfinSession? = null
+            val source = JellyfinSource(client, httpsSession) { previous, moved ->
+                assertEquals(httpsSession.serverUrl, previous.serverUrl)
+                relocated = moved
+            }
+            val libs = source.libraries()
+            assertEquals(listOf("Movies"), libs.map { it.name })
+            assertEquals(http, source.session.serverUrl)
+            assertEquals(http, relocated!!.serverUrl)
+            assertEquals(httpsSession.accessToken, relocated!!.accessToken)
+            assertNotEquals(JellyfinSource.keyOf(httpsSession), JellyfinSource.keyOf(relocated!!))
+        }
+    }
+
+    /**
+     * Opens a loopback port that answers TLS with a plain-HTTP reply (so JSSE raises
+     * "Unsupported or unrecognized SSL message") and answers cleartext HTTP with a tiny Jellyfin API.
+     */
+    private fun plainHttpPeer(block: suspend (http: String, https: String) -> Unit) = runBlocking {
+        val listen = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
+        val alive = AtomicBoolean(true)
+        val pool: ExecutorService = Executors.newCachedThreadPool()
+        pool.execute {
+            while (alive.get()) {
+                val socket = try {
+                    listen.accept()
+                } catch (_: Exception) {
+                    break
+                }
+                pool.execute { handlePlainHttpPeer(socket) }
+            }
+        }
+        val http = "http://127.0.0.1:${listen.localPort}"
+        val https = "https://127.0.0.1:${listen.localPort}"
+        try {
+            block(http, https)
+        } finally {
+            alive.set(false)
+            runCatching { listen.close() }
+            pool.shutdownNow()
+            pool.awaitTermination(2, TimeUnit.SECONDS)
+        }
+    }
+
+    private fun handlePlainHttpPeer(socket: Socket) {
+        try {
+            socket.soTimeout = 5_000
+            val input = BufferedInputStream(socket.getInputStream())
+            input.mark(1)
+            val first = input.read()
+            if (first < 0) {
+                socket.close()
+                return
+            }
+            // TLS records start with 0x16 (Handshake). Reply as plain HTTP so the client gets the OpenSSL wording.
+            if (first == 0x16) {
+                socket.getOutputStream().write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".toByteArray())
+                socket.close()
+                return
+            }
+            input.reset()
+            val requestLine = readHttpRequest(input)
+            val path = requestLine.split(' ').getOrNull(1)?.substringBefore('?') ?: "/"
+            val body = when (path) {
+                "/System/Info/Public" -> """{"ServerName":"Benny","Version":"10.11.6","Id":"srv"}"""
+                "/Users/AuthenticateByName" ->
+                    """{"User":{"Id":"u1","Name":"yarmi"},"AccessToken":"tok","ServerId":"srv"}"""
+                "/Users/Me" -> """{"Id":"u1","Name":"yarmi"}"""
+                "/UserViews" ->
+                    """{"Items":[{"Id":"lib1","Name":"Movies","Type":"UserView","CollectionType":"movies","IsFolder":true}],"TotalRecordCount":1}"""
+                else -> null
+            }
+            writeHttpResponse(socket.getOutputStream(), body)
+        } catch (_: Exception) {
+            // Peer closed or timed out.
+        } finally {
+            runCatching { socket.close() }
+        }
+    }
+
+    private fun readHttpRequest(input: BufferedInputStream): String {
+        val buf = ByteArray(8192)
+        val out = StringBuilder()
+        while (true) {
+            val n = input.read(buf)
+            if (n <= 0) break
+            out.append(String(buf, 0, n, Charsets.ISO_8859_1))
+            if (out.contains("\r\n\r\n")) break
+        }
+        return out.toString().substringBefore("\r\n")
+    }
+
+    private fun writeHttpResponse(out: OutputStream, body: String?) {
+        if (body == null) {
+            out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+        } else {
+            val bytes = body.toByteArray(Charsets.UTF_8)
+            out.write(
+                ("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n")
+                    .toByteArray(),
+            )
+            out.write(bytes)
+        }
+        out.flush()
     }
 }

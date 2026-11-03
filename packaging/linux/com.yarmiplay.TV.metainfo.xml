@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.9.1" date="2026-11-03">
+      <description>
+        <p>When a saved Jellyfin server uses https:// on a port that only speaks plain HTTP (for example NoireServerTV HTTP 8999 vs HTTPS 9090), retry over http:// on the same host and port and update that saved entry so libraries load again.</p>
+      </description>
+    </release>
     <release version="2.9.0" date="2026-11-02">
       <description>
         <p>Voice: Syncplay-connection mux (0x1E framing / binary /yarmiplay/ws) with legacy /yarmiplay/voice and 9000 fallback; shows "voice disabled on this server" when the host turns voice off; receiving-audio diagnostic. Always prefer a local media-folder match over Jellyfin/Plex. Desktop: playlist panel polish, auto-copy hwdec, capped readback, Low-end performance option.</p>

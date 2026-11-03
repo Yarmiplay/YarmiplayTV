@@ -23,11 +23,19 @@ import java.util.concurrent.ConcurrentHashMap
 
 class JellyfinSource(
     private val client: JellyfinClient,
-    val session: JellyfinSession,
+    session: JellyfinSession,
     private val clock: () -> Long = System::currentTimeMillis,
+    /**
+     * When a call to an HTTPS [JellyfinSession.serverUrl] fails because the port speaks plain HTTP, and the same
+     * host works over `http://`, the updated session (caller should [com.yarmiplaytv.AppContainer.replaceJellyfin]).
+     */
+    private val onPlainHttp: ((previous: JellyfinSession, moved: JellyfinSession) -> Unit)? = null,
 ) : MediaSource {
 
-    override val key: String = keyOf(session)
+    @Volatile var session: JellyfinSession = session
+        private set
+
+    override val key: String get() = keyOf(session)
     override val kind: String get() = KIND
     override val displayName: String get() = session.serverName
 
@@ -49,17 +57,39 @@ class JellyfinSource(
         if (cached != null && now - cached.first < 60_000) {
             return cached.second
         }
-        val views: ItemsResult = try {
-            client.get(base, token, "UserViews") { addQueryParameter("userId", session.userId) }
-        } catch (e: MediaSourceException) {
-            if (e.httpCode != 404) throw e
-            client.get(base, token, "Users/${session.userId}/Views") { }
-        }
+        val views = fetchViews()
         val result = views.items
             .filter { it.collectionType == null || it.collectionType in VIDEO_COLLECTIONS }
             .map { it.toMediaItem(forceType = MediaItemType.LIBRARY) }
         cachedLibraries = now to result
         return result
+    }
+
+    private suspend fun fetchViews(): ItemsResult {
+        try {
+            return try {
+                client.get(base, token, "UserViews") { addQueryParameter("userId", session.userId) }
+            } catch (e: MediaSourceException) {
+                if (e.httpCode != 404) throw e
+                client.get(base, token, "Users/${session.userId}/Views") { }
+            }
+        } catch (e: MediaSourceException) {
+            val moved = client.sessionOnPlainHttp(session, e) ?: throw e
+            val previous = session
+            session = moved
+            onPlainHttp?.invoke(previous, moved)
+            return try {
+                client.get(moved.serverUrl, moved.accessToken, "UserViews") {
+                    addQueryParameter("userId", moved.userId)
+                }
+            } catch (httpErr: MediaSourceException) {
+                if (httpErr.httpCode == 404) {
+                    client.get(moved.serverUrl, moved.accessToken, "Users/${moved.userId}/Views") { }
+                } else {
+                    throw JellyfinClient.bothSchemesFailed(previous.serverUrl, e, moved.serverUrl, httpErr)
+                }
+            }
+        }
     }
 
     override suspend fun children(parent: MediaItem): List<MediaItem> {

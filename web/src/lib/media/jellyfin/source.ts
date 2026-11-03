@@ -19,7 +19,7 @@ import {
   type ResolveResult,
 } from "../mediaSource";
 import { sortedSegments, type SkipKind, type SkipSegment } from "../skipSegment";
-import type { JellyfinClient, JellyfinSession } from "./client";
+import { bothSchemesFailed, type JellyfinClient, type JellyfinSession } from "./client";
 import {
   isTextSubtitleCodec,
   trickplayWidth,
@@ -84,12 +84,16 @@ const toIntOrNull = (s: string | undefined): number | null => (s !== undefined &
  * skip markers, and finding a shared playlist's file by name.
  */
 export class JellyfinSource implements MediaSource {
-  readonly key: string;
   readonly kind = JELLYFIN_KIND;
   private readonly index: FilenameIndex;
   /** The media source (version) each item was last resolved to, so reports name the one being played. */
   private readonly mediaSourceIds = new Map<string, string>();
   private readonly subsByItem = new Map<string, ExternalSubtitle[]>();
+  /**
+   * When a call to an HTTPS session URL fails because the port speaks plain HTTP, and the same host works over
+   * `http:`, the updated session (caller should replaceJellyfin).
+   */
+  private readonly onPlainHttp: ((previous: JellyfinSession, moved: JellyfinSession) => void) | null;
 
   private rememberStreams(itemId: string, source: MediaSourceInfo | undefined) {
     const subs: ExternalSubtitle[] = [];
@@ -141,11 +145,19 @@ export class JellyfinSource implements MediaSource {
 
   constructor(
     private readonly client: JellyfinClient,
-    readonly session: JellyfinSession,
+    session: JellyfinSession,
     clock: () => number = Date.now,
+    onPlainHttp: ((previous: JellyfinSession, moved: JellyfinSession) => void) | null = null,
   ) {
-    this.key = jellyfinKeyOf(session);
+    this.session = session;
+    this.onPlainHttp = onPlainHttp;
     this.index = new FilenameIndex(clock, MIN_REFRESH_MS);
+  }
+
+  session: JellyfinSession;
+
+  get key(): string {
+    return jellyfinKeyOf(this.session);
   }
 
   get displayName(): string {
@@ -175,18 +187,43 @@ export class JellyfinSource implements MediaSource {
     if (this.librariesCache && now - this.librariesCache.timestamp < 60_000) {
       return this.librariesCache.items;
     }
-    let views: ItemsResult;
-    try {
-      views = await this.get("UserViews", [["userId", this.session.userId]]);
-    } catch (e) {
-      if (!(e instanceof MediaSourceError) || e.httpCode !== 404) throw e;
-      views = await this.get(`Users/${this.session.userId}/Views`);
-    }
+    const views = await this.fetchViews();
     const items = (views.Items ?? [])
       .filter((v) => v.CollectionType == null || VIDEO_COLLECTIONS.has(v.CollectionType))
       .map((v) => this.toMediaItem(v, "LIBRARY"));
     this.librariesCache = { timestamp: now, items };
     return items;
+  }
+
+  private async fetchViews(): Promise<ItemsResult> {
+    try {
+      try {
+        return await this.get("UserViews", [["userId", this.session.userId]]);
+      } catch (e) {
+        if (!(e instanceof MediaSourceError) || e.httpCode !== 404) throw e;
+        return await this.get(`Users/${this.session.userId}/Views`);
+      }
+    } catch (e) {
+      const previous = this.session;
+      const moved = await this.client.sessionOnPlainHttp(previous, e);
+      if (!moved) throw e;
+      this.session = moved;
+      this.onPlainHttp?.(previous, moved);
+      try {
+        return await this.client.get<ItemsResult>(moved.serverUrl, moved.accessToken, "UserViews", [
+          ["userId", moved.userId],
+        ]);
+      } catch (httpErr) {
+        if (httpErr instanceof MediaSourceError && httpErr.httpCode === 404) {
+          return await this.client.get<ItemsResult>(
+            moved.serverUrl,
+            moved.accessToken,
+            `Users/${moved.userId}/Views`,
+          );
+        }
+        throw bothSchemesFailed(previous.serverUrl, e, moved.serverUrl, httpErr);
+      }
+    }
   }
 
   async children(parent: MediaItem): Promise<MediaItem[]> {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fakeServer, type Answer, type Recorded } from "../fakeServer.testutil";
 import { clientInfo } from "../http";
 import { MediaSourceError } from "../mediaSource";
-import { JellyfinClient, jellyfinSession } from "./client";
+import { JellyfinClient, isPlainHttpSslFailure, jellyfinSession, plainHttpUrl } from "./client";
 import { JellyfinSource, jellyfinKeyOf, jellyfinLegacyKeyOf, jellyfinMigrateStoredKey } from "./source";
 
 // Ported from JellyfinSourceTest.kt (MockWebServer becomes a fake fetch; discovery over UDP has no browser version).
@@ -82,6 +82,10 @@ function setup(opts: { pageProtocol?: string } = {}) {
       case "/Sessions/Playing/Stopped":
       case "/Users/u1/PlayedItems/ep1":
         return { status: 204 };
+      case "/Users/Me":
+        return `{"Id":"u1","Name":"yarmi"}`;
+      case "/UserViews":
+        return `{"Items":[{"Id":"lib1","Name":"Movies","Type":"UserView","CollectionType":"movies","IsFolder":true}],"TotalRecordCount":1}`;
       default:
         return { status: 404 };
     }
@@ -89,6 +93,19 @@ function setup(opts: { pageProtocol?: string } = {}) {
   const client = new JellyfinClient(info, { fetch: server.fetch, pageProtocol: opts.pageProtocol ?? "http:" });
   const session = jellyfinSession({ serverUrl: BASE, serverName: "Benny", serverId: "srv", userId: "u1", userName: "yarmi", accessToken: "tok" });
   return { server, client, session, source: new JellyfinSource(client, session) };
+}
+
+/** Fake fetch: HTTPS fails with the OpenSSL wording NoireServerTV users hit on :8999; HTTP is answered by [route]. */
+function httpsPlainHttpFetch(route: (req: Recorded) => Answer) {
+  const http = fakeServer(route);
+  const fetch: typeof http.fetch = async (input, init) => {
+    const url = new URL(input);
+    if (url.protocol === "https:") {
+      throw new TypeError("Unsupported or unrecognized SSL message");
+    }
+    return http.fetch(input, init);
+  };
+  return { fetch, requests: http.requests };
 }
 
 describe("Jellyfin", () => {
@@ -249,5 +266,71 @@ describe("Jellyfin", () => {
     expect(jellyfinKeyOf(lan)).not.toBe(jellyfinKeyOf(remote));
     expect(jellyfinLegacyKeyOf(lan)).toBe("jellyfin:srv");
     expect(jellyfinMigrateStoredKey("jellyfin:srv/series-1|1", [lan])).toBe("jellyfin:http://192.168.1.20:8096/series-1|1");
+  });
+
+  it("plainHttpUrl keeps host and port", () => {
+    expect(plainHttpUrl("https://yarmiplay.duckdns.org:8999")).toBe("http://yarmiplay.duckdns.org:8999");
+    expect(plainHttpUrl("https://yarmiplay.duckdns.org:8999/")).toBe("http://yarmiplay.duckdns.org:8999");
+    expect(plainHttpUrl("http://yarmiplay.duckdns.org:8999")).toBeNull();
+  });
+
+  it("isPlainHttpSslFailure recognizes OpenSSL wording", () => {
+    const ssl = new TypeError("Unsupported or unrecognized SSL message");
+    expect(
+      isPlainHttpSslFailure(new MediaSourceError(`Cannot reach yarmiplay.duckdns.org:8999 (${ssl.message})`, null, { cause: ssl })),
+    ).toBe(true);
+    expect(isPlainHttpSslFailure(new Error("error:0A00010B:SSL routines::wrong_version_number"))).toBe(true);
+    expect(isPlainHttpSslFailure(new MediaSourceError("Cannot reach host:8096 (timed out)"))).toBe(false);
+  });
+
+  it("login over https to a plain-http port falls back to http", async () => {
+    const { fetch, requests } = httpsPlainHttpFetch((req) => {
+      switch (req.url.pathname) {
+        case "/System/Info/Public":
+          return `{"ServerName":"Benny","Version":"10.11.6","Id":"srv"}`;
+        case "/Users/AuthenticateByName":
+          return `{"User":{"Id":"u1","Name":"yarmi"},"AccessToken":"tok","ServerId":"srv"}`;
+        default:
+          return { status: 404 };
+      }
+    });
+    const client = new JellyfinClient(info, { fetch, pageProtocol: "http:" });
+    const session = await client.login("https://yarmiplay.duckdns.org:8999", "yarmi", "pw");
+    expect(session.serverUrl).toBe("http://yarmiplay.duckdns.org:8999");
+    expect(requests.every((r) => r.url.protocol === "http:")).toBe(true);
+  });
+
+  it("libraries on an https plain-http port relocate and notify", async () => {
+    const { fetch } = httpsPlainHttpFetch((req) => {
+      switch (req.url.pathname) {
+        case "/Users/Me":
+          return `{"Id":"u1","Name":"yarmi"}`;
+        case "/UserViews":
+          return `{"Items":[{"Id":"lib1","Name":"Movies","Type":"UserView","CollectionType":"movies","IsFolder":true}],"TotalRecordCount":1}`;
+        default:
+          return { status: 404 };
+      }
+    });
+    const client = new JellyfinClient(info, { fetch, pageProtocol: "http:" });
+    const httpsSession = jellyfinSession({
+      serverUrl: "https://yarmiplay.duckdns.org:8999",
+      serverName: "Benny",
+      serverId: "srv",
+      userId: "u1",
+      userName: "yarmi",
+      accessToken: "tok",
+    });
+    let relocated: { previous: string; moved: string } | null = null;
+    const source = new JellyfinSource(client, httpsSession, Date.now, (previous, moved) => {
+      relocated = { previous: previous.serverUrl, moved: moved.serverUrl };
+    });
+    const libs = await source.libraries();
+    expect(libs.map((l) => l.name)).toEqual(["Movies"]);
+    expect(source.session.serverUrl).toBe("http://yarmiplay.duckdns.org:8999");
+    expect(relocated).toEqual({
+      previous: "https://yarmiplay.duckdns.org:8999",
+      moved: "http://yarmiplay.duckdns.org:8999",
+    });
+    expect(jellyfinKeyOf(source.session)).toBe("jellyfin:http://yarmiplay.duckdns.org:8999");
   });
 });

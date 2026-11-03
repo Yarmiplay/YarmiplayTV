@@ -146,7 +146,7 @@ class AppContainer(
     /** Server-list saves run in the order the changes were made, so an older list never overwrites a newer one. */
     private val saveLock = Mutex()
     private val _servers = MutableStateFlow<List<MediaSource>>(
-        sorted(initial.jellyfinServers.map { JellyfinSource(jellyfinClient, it) } + initial.plexServers.map { PlexSource(plexClient, it) }),
+        sorted(initial.jellyfinServers.map { jellyfinSource(it) } + initial.plexServers.map { PlexSource(plexClient, it) }),
     )
     /** Every connected media server: the Jellyfin ones first, each kind in the order it was added. */
     val servers: StateFlow<List<MediaSource>> = _servers.asStateFlow()
@@ -350,18 +350,29 @@ class AppContainer(
 
     private suspend fun checkJellyfin(source: JellyfinSource) {
         val session = source.session
-        val valid = runCatching { jellyfinClient.validate(session) }.getOrNull()
+        val result = runCatching { jellyfinClient.validate(session) }
+        val valid = result.getOrNull()
+        val failure = result.exceptionOrNull()
         when {
+            failure != null && JellyfinClient.isPlainHttpSslFailure(failure) -> {
+                val moved = jellyfinClient.sessionOnPlainHttp(session, failure)
+                if (moved != null) {
+                    Logger.i(TAG, "Jellyfin at ${session.serverUrl} speaks HTTP; saved as ${moved.serverUrl}")
+                    replaceJellyfin(session, moved)
+                } else {
+                    Logger.w(TAG, "Jellyfin HTTPS handshake looked like plain HTTP but HTTP also failed: ${failure.message}")
+                }
+            }
             valid == false && session.isShared -> {
                 Logger.w(TAG, "${source.displayName} is no longer shared by its Syncplay host")
-                if (!session.noLongerShared) put(JellyfinSource(jellyfinClient, session.copy(noLongerShared = true)))
+                if (!session.noLongerShared) put(jellyfinSource(session.copy(noLongerShared = true)))
             }
             valid == false -> {
                 Logger.w(TAG, "Stored Jellyfin session for ${source.displayName} was revoked")
                 removeServer(source.key)
             }
-            valid == true && session.noLongerShared -> put(JellyfinSource(jellyfinClient, session.copy(noLongerShared = false)))
-            valid == null && session.isShared -> movedJellyfin(session)?.let { put(JellyfinSource(jellyfinClient, it)) }
+            valid == true && session.noLongerShared -> put(jellyfinSource(session.copy(noLongerShared = false)))
+            valid == null && session.isShared -> movedJellyfin(session)?.let { put(jellyfinSource(it)) }
             else -> runCatching { source.refreshIndex() }
         }
     }
@@ -396,11 +407,11 @@ class AppContainer(
     }
 
     /** Adds a Jellyfin server, or replaces the saved sign-in for the same address. */
-    fun addJellyfin(session: JellyfinSession) = put(JellyfinSource(jellyfinClient, session))
+    fun addJellyfin(session: JellyfinSession) = put(jellyfinSource(session))
 
     /**
      * Updates a saved Jellyfin entry when its address (and thus [MediaSource.key]) changed,
-     * e.g. a host-shared server moved to another of the host's addresses.
+     * e.g. a host-shared server moved to another of the host's addresses, or HTTPS→HTTP fallback.
      */
     fun replaceJellyfin(previous: JellyfinSession, session: JellyfinSession) {
         if (previous.serverUrl.trim().trimEnd('/') == session.serverUrl.trim().trimEnd('/')) {
@@ -409,13 +420,19 @@ class AppContainer(
         }
         rememberLanAddress(session)
         val oldKey = JellyfinSource.keyOf(previous)
-        val newSource = JellyfinSource(jellyfinClient, session)
+        val newSource = jellyfinSource(session)
         val updated = _servers.updateAndGet { list ->
             sorted(list.filter { it.key != oldKey && it.key != newSource.key } + newSource)
         }
         save(updated)
         scope.launch { runCatching { newSource.refreshIndex() } }
     }
+
+    private fun jellyfinSource(session: JellyfinSession) = JellyfinSource(
+        jellyfinClient,
+        session,
+        onPlainHttp = { previous, moved -> replaceJellyfin(previous, moved) },
+    )
 
     /** Adds a Plex server, or replaces the saved sign-in for the same server. */
     fun addPlex(session: PlexSession) = put(PlexSource(plexClient, session))

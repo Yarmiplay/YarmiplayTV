@@ -54,7 +54,15 @@ export const sessions = new Store<Sessions>(loadSessions(storage));
 }
 
 function build(s: Sessions): MediaSource[] {
-  return [...s.jellyfin.map((j) => new JellyfinSource(jellyfinClient, j)), ...s.plex.map((p) => new PlexSource(plexClient, p))];
+  return [
+    ...s.jellyfin.map(
+      (j) =>
+        new JellyfinSource(jellyfinClient, j, Date.now, (previous, moved) => {
+          replaceJellyfin(previous, moved);
+        }),
+    ),
+    ...s.plex.map((p) => new PlexSource(plexClient, p)),
+  ];
 }
 
 /** One source per signed-in server, rebuilt when the sessions change. */
@@ -65,6 +73,19 @@ function change(next: Sessions) {
   saveSessions(storage, next);
   sessions.set(next);
 }
+
+/** HTTPS saved as duckdns:8999 while Noire/Jellyfin only speaks HTTP there → rewrite that entry to http://. */
+void (async () => {
+  for (const session of sessions.value.jellyfin) {
+    if (!/^https:/i.test(session.serverUrl)) continue;
+    try {
+      await jellyfinClient.validate(session);
+    } catch (e) {
+      const moved = await jellyfinClient.sessionOnPlainHttp(session, e);
+      if (moved) replaceJellyfin(session, moved);
+    }
+  }
+})();
 
 export function addJellyfin(session: JellyfinSession) {
   const key = jellyfinKeyOf(session);
