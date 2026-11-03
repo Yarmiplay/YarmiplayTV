@@ -18,6 +18,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 
 /** Identifies this app to Jellyfin (shown in the server's dashboard / Quick Connect prompt). */
 data class ClientInfo(
@@ -105,6 +106,39 @@ class JellyfinClient(
      */
     suspend fun resolveServerUrl(input: String): String = LanHosts.byCertificateName(normalizeServerUrl(input))
 
+    /**
+     * [resolveServerUrl], then if that is HTTPS and the server answers with a plain-HTTP TLS handshake error
+     * (e.g. "Unsupported or unrecognized SSL message"), the same host and port over `http://`.
+     */
+    suspend fun resolveReachableUrl(input: String): String {
+        val httpsOrHttp = resolveServerUrl(input)
+        if (!httpsOrHttp.startsWith("https://", ignoreCase = true)) return httpsOrHttp
+        return try {
+            publicInfo(httpsOrHttp)
+            httpsOrHttp
+        } catch (httpsErr: MediaSourceException) {
+            if (!isPlainHttpSslFailure(httpsErr)) throw httpsErr
+            val http = plainHttpUrl(httpsOrHttp) ?: throw httpsErr
+            try {
+                publicInfo(http)
+                http
+            } catch (httpErr: MediaSourceException) {
+                throw bothSchemesFailed(httpsOrHttp, httpsErr, http, httpErr)
+            }
+        }
+    }
+
+    /**
+     * When [error] shows [session]'s HTTPS URL is plain HTTP on that port, a copy of the session on `http://`
+     * that still validates; otherwise null.
+     */
+    suspend fun sessionOnPlainHttp(session: JellyfinSession, error: Throwable): JellyfinSession? {
+        if (!isPlainHttpSslFailure(error)) return null
+        val http = plainHttpUrl(session.serverUrl) ?: return null
+        val moved = session.copy(serverUrl = http, lanAddress = LanHosts.hintFor(http).orEmpty())
+        return moved.takeIf { runCatching { validate(it) }.getOrNull() == true }
+    }
+
     suspend fun publicInfo(serverUrl: String): PublicSystemInfo =
         get(serverUrl, null, "System/Info/Public") { }
 
@@ -116,7 +150,7 @@ class JellyfinClient(
      * (Settings → Quick Connect). Cancel the collecting coroutine to abort.
      */
     fun quickConnect(serverUrl: String, pollIntervalMs: Long = 2500): Flow<QuickConnectState> = flow {
-        val base = resolveServerUrl(serverUrl)
+        val base = resolveReachableUrl(serverUrl)
         val info = publicInfo(base)
         val initiated: QuickConnectResult = try {
             post(base, null, "QuickConnect/Initiate", null) { }
@@ -136,7 +170,7 @@ class JellyfinClient(
     }
 
     suspend fun login(serverUrl: String, username: String, password: String): JellyfinSession {
-        val base = resolveServerUrl(serverUrl)
+        val base = resolveReachableUrl(serverUrl)
         val info = publicInfo(base)
         val auth: AuthenticationResult = try {
             post(base, null, "Users/AuthenticateByName",
@@ -145,6 +179,51 @@ class JellyfinClient(
             if (e.httpCode == 401) throw MediaSourceException("Wrong username or password", 401) else throw e
         }
         return sessionFrom(base, info, auth)
+    }
+
+    companion object {
+        /**
+         * True when the failure means we spoke TLS to a port that only speaks plain HTTP
+         * (OpenSSL "Unsupported or unrecognized SSL message", WRONG_VERSION_NUMBER, …).
+         */
+        fun isPlainHttpSslFailure(error: Throwable): Boolean {
+            var e: Throwable? = error
+            while (e != null) {
+                val msg = e.message.orEmpty().lowercase()
+                if ("unsupported or unrecognized ssl message" in msg ||
+                    "wrong_version_number" in msg ||
+                    "plaintext http request was sent to https port" in msg ||
+                    "received fatal alert: protocol_version" in msg && e is SSLException
+                ) {
+                    return true
+                }
+                // JVM/OkHttp wrapping: SSLException whose message names a cleartext peer.
+                if (e is SSLException && ("unrecognized ssl" in msg || "plaintext" in msg || "wrong version" in msg)) {
+                    return true
+                }
+                e = e.cause
+            }
+            return false
+        }
+
+        /** Same host and port as [httpsUrl] but `http://`, or null when [httpsUrl] is not HTTPS. */
+        fun plainHttpUrl(httpsUrl: String): String? {
+            val url = httpsUrl.toHttpUrlOrNull() ?: return null
+            if (!url.isHttps) return null
+            return url.newBuilder().scheme("http").build().toString().trimEnd('/')
+        }
+
+        fun bothSchemesFailed(httpsUrl: String, httpsErr: Throwable, httpUrl: String, httpErr: Throwable): MediaSourceException {
+            val httpsWhy = httpsErr.message?.substringAfter("(", "")?.trimEnd(')')?.ifBlank { null }
+                ?: httpsErr.message ?: "HTTPS failed"
+            val httpWhy = httpErr.message?.substringAfter("(", "")?.trimEnd(')')?.ifBlank { null }
+                ?: httpErr.message ?: "HTTP failed"
+            val host = httpsUrl.toHttpUrlOrNull()?.let { "${it.host}:${it.port}" } ?: httpsUrl
+            return MediaSourceException(
+                "Cannot reach $host over HTTPS ($httpsWhy) or HTTP ($httpWhy)",
+                cause = httpsErr,
+            )
+        }
     }
 
     /** Checks a stored session is still valid. */

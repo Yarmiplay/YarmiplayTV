@@ -108,9 +108,48 @@ export class JellyfinClient {
    * Starts Quick Connect, hands the code to [opts.onCode] and polls until a user approves it in another Jellyfin
    * client (Settings → Quick Connect). Abort [opts.signal] to cancel.
    */
+  /**
+   * [normalizeServerUrl], then if that is HTTPS and the peer answers with a plain-HTTP TLS handshake error
+   * (e.g. "Unsupported or unrecognized SSL message"), the same host and port over `http://`.
+   */
+  async resolveReachableUrl(input: string): Promise<string> {
+    const httpsOrHttp = this.normalizeServerUrl(input);
+    if (!/^https:/i.test(httpsOrHttp)) return httpsOrHttp;
+    try {
+      await this.publicInfo(httpsOrHttp);
+      return httpsOrHttp;
+    } catch (httpsErr) {
+      if (!isPlainHttpSslFailure(httpsErr)) throw httpsErr;
+      const http = plainHttpUrl(httpsOrHttp);
+      if (!http) throw httpsErr;
+      try {
+        await this.publicInfo(http);
+        return http;
+      } catch (httpErr) {
+        throw bothSchemesFailed(httpsOrHttp, httpsErr, http, httpErr);
+      }
+    }
+  }
+
+  /**
+   * When [error] shows [session]'s HTTPS URL is plain HTTP on that port, a copy on `http://` that still
+   * validates; otherwise null.
+   */
+  async sessionOnPlainHttp(session: JellyfinSession, error: unknown): Promise<JellyfinSession | null> {
+    if (!isPlainHttpSslFailure(error)) return null;
+    const http = plainHttpUrl(session.serverUrl);
+    if (!http) return null;
+    const moved = jellyfinSession({ ...session, serverUrl: http });
+    try {
+      return (await this.validate(moved)) ? moved : null;
+    } catch {
+      return null;
+    }
+  }
+
   async quickConnect(serverUrl: string, opts: QuickConnectOptions): Promise<JellyfinSession> {
     const { signal } = opts;
-    const base = this.normalizeServerUrl(serverUrl);
+    const base = await this.resolveReachableUrl(serverUrl);
     const info = await this.publicInfo(base);
     let initiated: QuickConnectResult;
     try {
@@ -134,7 +173,7 @@ export class JellyfinClient {
   }
 
   async login(serverUrl: string, username: string, password: string): Promise<JellyfinSession> {
-    const base = this.normalizeServerUrl(serverUrl);
+    const base = await this.resolveReachableUrl(serverUrl);
     const info = await this.publicInfo(base);
     const body: AuthenticateByNameBody = { Username: username, Pw: password };
     let auth: AuthenticationResult;
@@ -211,4 +250,55 @@ function sessionFrom(base: string, info: PublicSystemInfo, auth: AuthenticationR
     userName: user.Name ?? "",
     accessToken: token,
   });
+}
+
+const PLAIN_HTTP_SSL = [
+  "unsupported or unrecognized ssl message",
+  "wrong_version_number",
+  "err_ssl_protocol_error",
+  "plaintext http request was sent to https port",
+];
+
+/** True when TLS failed because the peer spoke plain HTTP (OpenSSL / Chromium wording). */
+export function isPlainHttpSslFailure(error: unknown): boolean {
+  const texts: string[] = [];
+  let e: unknown = error;
+  const seen = new Set<unknown>();
+  while (e && !seen.has(e)) {
+    seen.add(e);
+    if (e instanceof Error) texts.push(e.message);
+    else if (typeof e === "string") texts.push(e);
+    e = e && typeof e === "object" && "cause" in e ? (e as { cause: unknown }).cause : undefined;
+  }
+  const joined = texts.join("\n").toLowerCase();
+  return PLAIN_HTTP_SSL.some((s) => joined.includes(s));
+}
+
+/** Same host and port as [httpsUrl] but `http:`, or null when not HTTPS. */
+export function plainHttpUrl(httpsUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(httpsUrl);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:") return null;
+  url.protocol = "http:";
+  return url.href.replace(/\/+$/, "");
+}
+
+export function bothSchemesFailed(httpsUrl: string, httpsErr: unknown, _httpUrl: string, httpErr: unknown): MediaSourceError {
+  const host = (() => {
+    try {
+      const u = new URL(httpsUrl);
+      return `${u.hostname}:${u.port || "443"}`;
+    } catch {
+      return httpsUrl;
+    }
+  })();
+  const why = (err: unknown) => {
+    const m = err instanceof Error ? err.message : String(err);
+    return m.match(/\((.+)\)\s*$/)?.[1] ?? m;
+  };
+  return new MediaSourceError(`Cannot reach ${host} over HTTPS (${why(httpsErr)}) or HTTP (${why(httpErr)})`);
 }
