@@ -25,11 +25,6 @@ class JellyfinSource(
     private val client: JellyfinClient,
     session: JellyfinSession,
     private val clock: () -> Long = System::currentTimeMillis,
-    /**
-     * When a call to an HTTPS [JellyfinSession.serverUrl] fails because the port speaks plain HTTP, and the same
-     * host works over `http://`, the updated session (caller should [com.yarmiplaytv.AppContainer.replaceJellyfin]).
-     */
-    private val onPlainHttp: ((previous: JellyfinSession, moved: JellyfinSession) -> Unit)? = null,
 ) : MediaSource {
 
     @Volatile var session: JellyfinSession = session
@@ -39,10 +34,31 @@ class JellyfinSource(
     override val kind: String get() = KIND
     override val displayName: String get() = session.serverName
 
-    private val base get() = session.serverUrl
+    /**
+     * Request base for this process/source instance. Starts at the preferred HTTPS probe; may switch to plain
+     * HTTP after a TLS handshake error for the rest of this instance only — [session.serverUrl] is never rewritten.
+     */
+    @Volatile private var requestBase: String = JellyfinClient.preferredProbeUrl(session)
+
+    private val base get() = requestBase
     private val token get() = session.accessToken
 
     @Volatile private var cachedLibraries: Pair<Long, List<MediaItem>>? = null
+
+    /** Prefer HTTPS again (e.g. on reconnect); next call will fall back to HTTP only if TLS still fails. */
+    fun resetToPreferredProbe() {
+        requestBase = JellyfinClient.preferredProbeUrl(session)
+    }
+
+    /**
+     * After a plain-HTTP SSL failure against the preferred probe, switch this instance to HTTP if it validates.
+     * Does not persist. Returns false when HTTP also fails.
+     */
+    suspend fun adoptPlainHttpFallback(error: Throwable): Boolean {
+        val http = client.reachablePlainHttp(session, error) ?: return false
+        requestBase = http
+        return true
+    }
 
     private suspend fun items(query: HttpUrl.Builder.() -> Unit): List<BaseItemDto> =
         client.get<ItemsResult>(base, token, "Items") {
@@ -74,19 +90,15 @@ class JellyfinSource(
                 client.get(base, token, "Users/${session.userId}/Views") { }
             }
         } catch (e: MediaSourceException) {
-            val moved = client.sessionOnPlainHttp(session, e) ?: throw e
-            val previous = session
-            session = moved
-            onPlainHttp?.invoke(previous, moved)
+            val probe = JellyfinClient.preferredProbeUrl(session)
+            if (!adoptPlainHttpFallback(e)) throw e
             return try {
-                client.get(moved.serverUrl, moved.accessToken, "UserViews") {
-                    addQueryParameter("userId", moved.userId)
-                }
+                client.get(requestBase, token, "UserViews") { addQueryParameter("userId", session.userId) }
             } catch (httpErr: MediaSourceException) {
                 if (httpErr.httpCode == 404) {
-                    client.get(moved.serverUrl, moved.accessToken, "Users/${moved.userId}/Views") { }
+                    client.get(requestBase, token, "Users/${session.userId}/Views") { }
                 } else {
-                    throw JellyfinClient.bothSchemesFailed(previous.serverUrl, e, moved.serverUrl, httpErr)
+                    throw JellyfinClient.bothSchemesFailed(probe, e, requestBase, httpErr)
                 }
             }
         }
@@ -542,7 +554,8 @@ class JellyfinSource(
 
         /**
          * Rewrites a preferred-server / MAL key that used `jellyfin:<ServerId>` to `jellyfin:<url>`
-         * for [servers]. Leaves the key unchanged when it doesn't match a legacy id.
+         * for [servers], and `jellyfin:http://…` to `jellyfin:https://…` when 2.9.2 restored HTTPS.
+         * Leaves the key unchanged when it doesn't match.
          */
         fun migrateStoredKey(key: String, servers: List<JellyfinSession>): String {
             if (key.isEmpty() || !key.startsWith("$KIND:")) return key
@@ -552,6 +565,15 @@ class JellyfinSource(
                 if (legacy == modern) continue
                 if (key == legacy || key.startsWith("$legacy/") || key.startsWith("$legacy|")) {
                     return modern + key.removePrefix(legacy)
+                }
+            }
+            for (session in servers) {
+                val modern = keyOf(session)
+                val http = JellyfinClient.plainHttpUrl(session.serverUrl) ?: continue
+                val oldKey = "$KIND:$http"
+                if (oldKey == modern) continue
+                if (key == oldKey || key.startsWith("$oldKey/") || key.startsWith("$oldKey|")) {
+                    return modern + key.removePrefix(oldKey)
                 }
             }
             return key

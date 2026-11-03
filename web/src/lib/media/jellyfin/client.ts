@@ -30,12 +30,17 @@ export interface JellyfinSession {
   candidateUrls: string[];
   /** The host stopped sharing it: its guest account answers 401. */
   noLongerShared: boolean;
+  /**
+   * Try `https:` on this host/port before [serverUrl] when [serverUrl] is plain `http:` (ambiguous after 2.9.1
+   * rewrote some saved HTTPS entries to HTTP).
+   */
+  preferHttps: boolean;
 }
 
 /** A [JellyfinSession] with the defaults for its sharing fields. */
 export const jellyfinSession = (
   s: Pick<JellyfinSession, "serverUrl" | "serverName" | "serverId" | "userId" | "userName" | "accessToken"> & Partial<JellyfinSession>,
-): JellyfinSession => ({ sharedBy: "", candidateUrls: [], noLongerShared: false, ...s });
+): JellyfinSession => ({ sharedBy: "", candidateUrls: [], noLongerShared: false, preferHttps: false, ...s });
 
 export const isShared = (s: JellyfinSession): boolean => s.sharedBy !== "";
 
@@ -105,51 +110,64 @@ export class JellyfinClient {
   }
 
   /**
-   * Starts Quick Connect, hands the code to [opts.onCode] and polls until a user approves it in another Jellyfin
-   * client (Settings → Quick Connect). Abort [opts.signal] to cancel.
+   * A URL that answers right now: HTTPS first when [input] (or [preferHttps]) calls for it, then plain HTTP on
+   * the same host/port only after a plain-HTTP TLS handshake error. Callers that sign in should persist
+   * [preferredServerUrl], not this.
    */
-  /**
-   * [normalizeServerUrl], then if that is HTTPS and the peer answers with a plain-HTTP TLS handshake error
-   * (e.g. "Unsupported or unrecognized SSL message"), the same host and port over `http://`.
-   */
-  async resolveReachableUrl(input: string): Promise<string> {
-    const httpsOrHttp = this.normalizeServerUrl(input);
-    if (!/^https:/i.test(httpsOrHttp)) return httpsOrHttp;
+  async resolveReachableUrl(input: string, preferHttps = false): Promise<string> {
+    const normalized = this.normalizeServerUrl(input);
+    const httpsFirst = /^https:/i.test(normalized) ? normalized : preferHttps ? httpsUrl(normalized) : null;
+    if (!httpsFirst) return normalized;
     try {
-      await this.publicInfo(httpsOrHttp);
-      return httpsOrHttp;
+      await this.publicInfo(httpsFirst);
+      return httpsFirst;
     } catch (httpsErr) {
       if (!isPlainHttpSslFailure(httpsErr)) throw httpsErr;
-      const http = plainHttpUrl(httpsOrHttp);
+      const http = plainHttpUrl(httpsFirst);
       if (!http) throw httpsErr;
       try {
         await this.publicInfo(http);
         return http;
       } catch (httpErr) {
-        throw bothSchemesFailed(httpsOrHttp, httpsErr, http, httpErr);
+        throw bothSchemesFailed(httpsFirst, httpsErr, http, httpErr);
       }
     }
   }
 
+  /** The URL to keep on a signed-in session (user's preferred scheme). */
+  preferredServerUrl(input: string): string {
+    return this.normalizeServerUrl(input);
+  }
+
   /**
-   * When [error] shows [session]'s HTTPS URL is plain HTTP on that port, a copy on `http://` that still
-   * validates; otherwise null.
+   * When [error] means the probe URL speaks plain HTTP, the same host over `http:` if it still validates.
+   * Session-only — does not change what should be saved.
    */
-  async sessionOnPlainHttp(session: JellyfinSession, error: unknown): Promise<JellyfinSession | null> {
+  async reachablePlainHttp(session: JellyfinSession, error: unknown): Promise<string | null> {
     if (!isPlainHttpSslFailure(error)) return null;
-    const http = plainHttpUrl(session.serverUrl);
+    const probe = preferredProbeUrl(session);
+    const http =
+      plainHttpUrl(probe) ??
+      plainHttpUrl(session.serverUrl) ??
+      (/^http:/i.test(session.serverUrl) ? session.serverUrl.replace(/\/+$/, "") : null);
     if (!http) return null;
-    const moved = jellyfinSession({ ...session, serverUrl: http });
     try {
-      return (await this.validate(moved)) ? moved : null;
+      return (await this.validateAt(http, session.accessToken)) ? http : null;
     } catch {
       return null;
     }
   }
 
+  /** @deprecated Use [reachablePlainHttp]. */
+  async sessionOnPlainHttp(session: JellyfinSession, error: unknown): Promise<JellyfinSession | null> {
+    const http = await this.reachablePlainHttp(session, error);
+    return http ? jellyfinSession({ ...session, serverUrl: http }) : null;
+  }
+
   async quickConnect(serverUrl: string, opts: QuickConnectOptions): Promise<JellyfinSession> {
     const { signal } = opts;
-    const base = await this.resolveReachableUrl(serverUrl);
+    const preferred = this.preferredServerUrl(serverUrl);
+    const base = await this.resolveReachableUrl(preferred);
     const info = await this.publicInfo(base);
     let initiated: QuickConnectResult;
     try {
@@ -169,11 +187,12 @@ export class JellyfinClient {
     }
     const body: QuickConnectAuthBody = { Secret: secret };
     const auth: AuthenticationResult = await this.post(base, null, "Users/AuthenticateWithQuickConnect", JSON.stringify(body), [], signal);
-    return sessionFrom(base, info, auth);
+    return sessionFrom(preferred, info, auth);
   }
 
   async login(serverUrl: string, username: string, password: string): Promise<JellyfinSession> {
-    const base = await this.resolveReachableUrl(serverUrl);
+    const preferred = this.preferredServerUrl(serverUrl);
+    const base = await this.resolveReachableUrl(preferred);
     const info = await this.publicInfo(base);
     const body: AuthenticateByNameBody = { Username: username, Pw: password };
     let auth: AuthenticationResult;
@@ -183,13 +202,17 @@ export class JellyfinClient {
       if (e instanceof MediaSourceError && e.httpCode === 401) throw new MediaSourceError("Wrong username or password", 401);
       throw e;
     }
-    return sessionFrom(base, info, auth);
+    return sessionFrom(preferred, info, auth);
   }
 
-  /** Checks a stored session is still valid; throws when the server can't be reached (keep the session then). */
+  /** Checks a stored session is still valid at its preferred probe URL. */
   async validate(session: JellyfinSession): Promise<boolean> {
+    return this.validateAt(preferredProbeUrl(session), session.accessToken);
+  }
+
+  async validateAt(serverUrl: string, accessToken: string): Promise<boolean> {
     try {
-      await this.getRaw(session.serverUrl, session.accessToken, "Users/Me");
+      await this.getRaw(serverUrl, accessToken, "Users/Me");
       return true;
     } catch (e) {
       if (e instanceof MediaSourceError && (e.httpCode === 401 || e.httpCode === 403)) return false;
@@ -198,7 +221,10 @@ export class JellyfinClient {
   }
 
   async logout(session: JellyfinSession): Promise<void> {
-    await this.postRaw(session.serverUrl, session.accessToken, "Sessions/Logout", null).catch(() => {});
+    const url = preferredProbeUrl(session);
+    await this.postRaw(url, session.accessToken, "Sessions/Logout", null).catch(() => {});
+    const http = plainHttpUrl(url);
+    if (http && http !== url) await this.postRaw(http, session.accessToken, "Sessions/Logout", null).catch(() => {});
   }
 
   // --- HTTP plumbing ------------------------------------------------------------------
@@ -285,6 +311,37 @@ export function plainHttpUrl(httpsUrl: string): string | null {
   if (url.protocol !== "https:") return null;
   url.protocol = "http:";
   return url.href.replace(/\/+$/, "");
+}
+
+/** Same host and port as [httpUrl] but `https:`, or null when not HTTP. */
+export function httpsUrl(httpUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(httpUrl);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:") return null;
+  url.protocol = "https:";
+  return url.href.replace(/\/+$/, "");
+}
+
+/** First URL to probe for [session]: HTTPS when the saved URL is HTTPS or [preferHttps]. */
+export function preferredProbeUrl(session: Pick<JellyfinSession, "serverUrl" | "preferHttps">): string {
+  const url = session.serverUrl.trim().replace(/\/+$/, "");
+  if (/^https:/i.test(url)) return url;
+  if (session.preferHttps) return httpsUrl(url) ?? url;
+  return url;
+}
+
+/**
+ * 2.9.1 may have rewritten a saved `https:` entry to `http:`. That is ambiguous with intentional plain-HTTP
+ * servers, so set [preferHttps] (keep the stored URL) so connects try HTTPS first.
+ */
+export function migratePreferHttps(session: JellyfinSession): JellyfinSession {
+  const url = session.serverUrl.trim().replace(/\/+$/, "");
+  if (!/^http:/i.test(url)) return session;
+  return session.preferHttps ? session : jellyfinSession({ ...session, preferHttps: true });
 }
 
 export function bothSchemesFailed(httpsUrl: string, httpsErr: unknown, _httpUrl: string, httpErr: unknown): MediaSourceError {

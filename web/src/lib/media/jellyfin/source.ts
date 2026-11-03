@@ -19,7 +19,13 @@ import {
   type ResolveResult,
 } from "../mediaSource";
 import { sortedSegments, type SkipKind, type SkipSegment } from "../skipSegment";
-import { bothSchemesFailed, type JellyfinClient, type JellyfinSession } from "./client";
+import {
+  bothSchemesFailed,
+  plainHttpUrl,
+  preferredProbeUrl,
+  type JellyfinClient,
+  type JellyfinSession,
+} from "./client";
 import {
   isTextSubtitleCodec,
   trickplayWidth,
@@ -65,6 +71,16 @@ export const jellyfinMigrateStoredKey = (
       return modern + key.slice(legacy.length);
     }
   }
+  for (const session of servers) {
+    const modern = jellyfinKeyOf(session);
+    const http = plainHttpUrl(session.serverUrl);
+    if (!http) continue;
+    const oldKey = `${JELLYFIN_KIND}:${http}`;
+    if (oldKey === modern) continue;
+    if (key === oldKey || key.startsWith(`${oldKey}/`) || key.startsWith(`${oldKey}|`)) {
+      return modern + key.slice(oldKey.length);
+    }
+  }
   return key;
 };
 
@@ -89,11 +105,8 @@ export class JellyfinSource implements MediaSource {
   /** The media source (version) each item was last resolved to, so reports name the one being played. */
   private readonly mediaSourceIds = new Map<string, string>();
   private readonly subsByItem = new Map<string, ExternalSubtitle[]>();
-  /**
-   * When a call to an HTTPS session URL fails because the port speaks plain HTTP, and the same host works over
-   * `http:`, the updated session (caller should replaceJellyfin).
-   */
-  private readonly onPlainHttp: ((previous: JellyfinSession, moved: JellyfinSession) => void) | null;
+  /** Request base for this page load; may be http after a session-only SSL fallback. */
+  private requestBase: string;
 
   private rememberStreams(itemId: string, source: MediaSourceInfo | undefined) {
     const subs: ExternalSubtitle[] = [];
@@ -147,10 +160,9 @@ export class JellyfinSource implements MediaSource {
     private readonly client: JellyfinClient,
     session: JellyfinSession,
     clock: () => number = Date.now,
-    onPlainHttp: ((previous: JellyfinSession, moved: JellyfinSession) => void) | null = null,
   ) {
     this.session = session;
-    this.onPlainHttp = onPlainHttp;
+    this.requestBase = preferredProbeUrl(session);
     this.index = new FilenameIndex(clock, MIN_REFRESH_MS);
   }
 
@@ -165,11 +177,24 @@ export class JellyfinSource implements MediaSource {
   }
 
   private get base() {
-    return this.session.serverUrl;
+    return this.requestBase;
   }
 
   private get token() {
     return this.session.accessToken;
+  }
+
+  /** Prefer HTTPS again (e.g. on reconnect). */
+  resetToPreferredProbe() {
+    this.requestBase = preferredProbeUrl(this.session);
+  }
+
+  /** Session-only HTTP fallback after a plain-HTTP SSL failure. Does not persist. */
+  async adoptPlainHttpFallback(error: unknown): Promise<boolean> {
+    const http = await this.client.reachablePlainHttp(this.session, error);
+    if (!http) return false;
+    this.requestBase = http;
+    return true;
   }
 
   private get<T>(path: string, query: Query = []): Promise<T> {
@@ -204,24 +229,21 @@ export class JellyfinSource implements MediaSource {
         return await this.get(`Users/${this.session.userId}/Views`);
       }
     } catch (e) {
-      const previous = this.session;
-      const moved = await this.client.sessionOnPlainHttp(previous, e);
-      if (!moved) throw e;
-      this.session = moved;
-      this.onPlainHttp?.(previous, moved);
+      const probe = preferredProbeUrl(this.session);
+      if (!(await this.adoptPlainHttpFallback(e))) throw e;
       try {
-        return await this.client.get<ItemsResult>(moved.serverUrl, moved.accessToken, "UserViews", [
-          ["userId", moved.userId],
+        return await this.client.get<ItemsResult>(this.requestBase, this.token, "UserViews", [
+          ["userId", this.session.userId],
         ]);
       } catch (httpErr) {
         if (httpErr instanceof MediaSourceError && httpErr.httpCode === 404) {
           return await this.client.get<ItemsResult>(
-            moved.serverUrl,
-            moved.accessToken,
-            `Users/${moved.userId}/Views`,
+            this.requestBase,
+            this.token,
+            `Users/${this.session.userId}/Views`,
           );
         }
-        throw bothSchemesFailed(previous.serverUrl, e, moved.serverUrl, httpErr);
+        throw bothSchemesFailed(probe, e, this.requestBase, httpErr);
       }
     }
   }

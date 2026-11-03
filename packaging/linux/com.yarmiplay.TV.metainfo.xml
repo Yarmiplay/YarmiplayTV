@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.9.2" date="2026-11-03">
+      <description>
+        <p>Prefer HTTPS for Jellyfin: keep saved https:// URLs, fall back to http:// only for the live session after a plain-HTTP SSL handshake error, and retry HTTPS on each reconnect (migrates 2.9.1 http rewrites via a preferHttps flag).</p>
+      </description>
+    </release>
     <release version="2.9.1" date="2026-11-03">
       <description>
         <p>When a saved Jellyfin server uses https:// on a port that only speaks plain HTTP (for example NoireServerTV HTTP 8999 vs HTTPS 9090), retry over http:// on the same host and port and update that saved entry so libraries load again.</p>

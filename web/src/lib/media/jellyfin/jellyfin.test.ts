@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 import { fakeServer, type Answer, type Recorded } from "../fakeServer.testutil";
 import { clientInfo } from "../http";
 import { MediaSourceError } from "../mediaSource";
-import { JellyfinClient, isPlainHttpSslFailure, jellyfinSession, plainHttpUrl } from "./client";
+import {
+  JellyfinClient,
+  isPlainHttpSslFailure,
+  jellyfinSession,
+  migratePreferHttps,
+  plainHttpUrl,
+  httpsUrl,
+} from "./client";
 import { JellyfinSource, jellyfinKeyOf, jellyfinLegacyKeyOf, jellyfinMigrateStoredKey } from "./source";
 
 // Ported from JellyfinSourceTest.kt (MockWebServer becomes a fake fetch; discovery over UDP has no browser version).
@@ -272,6 +279,8 @@ describe("Jellyfin", () => {
     expect(plainHttpUrl("https://yarmiplay.duckdns.org:8999")).toBe("http://yarmiplay.duckdns.org:8999");
     expect(plainHttpUrl("https://yarmiplay.duckdns.org:8999/")).toBe("http://yarmiplay.duckdns.org:8999");
     expect(plainHttpUrl("http://yarmiplay.duckdns.org:8999")).toBeNull();
+    expect(httpsUrl("http://yarmiplay.duckdns.org:8999")).toBe("https://yarmiplay.duckdns.org:8999");
+    expect(httpsUrl("https://yarmiplay.duckdns.org:8999")).toBeNull();
   });
 
   it("isPlainHttpSslFailure recognizes OpenSSL wording", () => {
@@ -283,7 +292,22 @@ describe("Jellyfin", () => {
     expect(isPlainHttpSslFailure(new MediaSourceError("Cannot reach host:8096 (timed out)"))).toBe(false);
   });
 
-  it("login over https to a plain-http port falls back to http", async () => {
+  it("migratePreferHttps sets the flag without rewriting the URL", () => {
+    const rewritten = jellyfinSession({
+      serverUrl: "http://yarmiplay.duckdns.org:8999",
+      serverName: "Benny",
+      serverId: "srv",
+      userId: "u1",
+      userName: "yarmi",
+      accessToken: "tok",
+    });
+    const migrated = migratePreferHttps(rewritten);
+    expect(migrated.serverUrl).toBe("http://yarmiplay.duckdns.org:8999");
+    expect(migrated.preferHttps).toBe(true);
+    expect(migratePreferHttps(migrated)).toEqual(migrated);
+  });
+
+  it("login over https to a plain-http port keeps https saved", async () => {
     const { fetch, requests } = httpsPlainHttpFetch((req) => {
       switch (req.url.pathname) {
         case "/System/Info/Public":
@@ -296,11 +320,11 @@ describe("Jellyfin", () => {
     });
     const client = new JellyfinClient(info, { fetch, pageProtocol: "http:" });
     const session = await client.login("https://yarmiplay.duckdns.org:8999", "yarmi", "pw");
-    expect(session.serverUrl).toBe("http://yarmiplay.duckdns.org:8999");
+    expect(session.serverUrl).toBe("https://yarmiplay.duckdns.org:8999");
     expect(requests.every((r) => r.url.protocol === "http:")).toBe(true);
   });
 
-  it("libraries on an https plain-http port relocate and notify", async () => {
+  it("libraries on an https plain-http port uses http without persisting", async () => {
     const { fetch } = httpsPlainHttpFetch((req) => {
       switch (req.url.pathname) {
         case "/Users/Me":
@@ -320,17 +344,10 @@ describe("Jellyfin", () => {
       userName: "yarmi",
       accessToken: "tok",
     });
-    let relocated: { previous: string; moved: string } | null = null;
-    const source = new JellyfinSource(client, httpsSession, Date.now, (previous, moved) => {
-      relocated = { previous: previous.serverUrl, moved: moved.serverUrl };
-    });
+    const source = new JellyfinSource(client, httpsSession);
     const libs = await source.libraries();
     expect(libs.map((l) => l.name)).toEqual(["Movies"]);
-    expect(source.session.serverUrl).toBe("http://yarmiplay.duckdns.org:8999");
-    expect(relocated).toEqual({
-      previous: "https://yarmiplay.duckdns.org:8999",
-      moved: "http://yarmiplay.duckdns.org:8999",
-    });
-    expect(jellyfinKeyOf(source.session)).toBe("jellyfin:http://yarmiplay.duckdns.org:8999");
+    expect(source.session.serverUrl).toBe("https://yarmiplay.duckdns.org:8999");
+    expect(jellyfinKeyOf(source.session)).toBe("jellyfin:https://yarmiplay.duckdns.org:8999");
   });
 });

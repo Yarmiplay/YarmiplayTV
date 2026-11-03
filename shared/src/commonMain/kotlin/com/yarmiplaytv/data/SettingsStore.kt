@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.yarmiplaytv.DevicePlatform
+import com.yarmiplaytv.media.jellyfin.JellyfinClient
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
 import com.yarmiplaytv.media.jellyfin.JellyfinSource
 import com.yarmiplaytv.media.mal.MalAccount
@@ -466,7 +467,8 @@ class SettingsStore(
 
     private fun read(p: Preferences): AppSettings {
         val defaults = AppSettings(playback = PlaybackPrefs(pictureInPicture = !isTv, stayConnectedMinimized = !isTv))
-        val jellyfinServers = p[Keys.jfServers]?.let { decode(it, jellyfinList) } ?: listOfNotNull(legacyJellyfin(p))
+        val jellyfinServers = (p[Keys.jfServers]?.let { decode(it, jellyfinList) } ?: listOfNotNull(legacyJellyfin(p)))
+            .map { JellyfinClient.migratePreferHttps(it) }
         val plexServers = p[Keys.pxServers]?.let { decode(it, plexList) } ?: listOfNotNull(legacyPlex(p))
         val preferredRaw = when (val saved = p[Keys.preferredServer] ?: "") {
             JellyfinSource.KIND -> jellyfinServers.firstOrNull()?.let(JellyfinSource::keyOf) ?: ""
@@ -568,12 +570,15 @@ class SettingsStore(
     }
 
     /**
-     * Writes remapped Jellyfin preferred / MAL keys (ServerId → URL) back to disk once after upgrading to 2.8.7+.
+     * Writes remapped Jellyfin preferred / MAL keys (ServerId → URL) back to disk once after upgrading to 2.8.7+,
+     * and sets preferHttps on `http://` entries 2.9.1 may have rewritten from `https://`.
      * Safe to call every launch; no-ops when nothing needs rewriting.
      */
     suspend fun migrateJellyfinKeysIfNeeded() = dataStore.edit { prefs ->
-        val jellyfin = prefs[Keys.jfServers]?.let { decode(it, jellyfinList) } ?: listOfNotNull(legacyJellyfin(prefs))
-        if (jellyfin.isEmpty()) return@edit
+        val loaded = prefs[Keys.jfServers]?.let { decode(it, jellyfinList) } ?: listOfNotNull(legacyJellyfin(prefs))
+        if (loaded.isEmpty()) return@edit
+        val jellyfin = loaded.map { JellyfinClient.migratePreferHttps(it) }
+        if (jellyfin != loaded) prefs[Keys.jfServers] = json.encodeToString(jellyfinList, jellyfin)
         val preferred = prefs[Keys.preferredServer]
         if (preferred != null) {
             val migrated = JellyfinSource.migrateStoredKey(preferred, jellyfin)

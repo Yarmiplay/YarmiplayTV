@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val appVersion = "2.9.1"
+val appVersion = "2.9.2"
 // 2.9.1 Build re-run after ManagedRoomUiTest operator-password flake
 
 /** Play needs an ever-increasing versionCode: major * 10000 + minor * 100 + patch. */
