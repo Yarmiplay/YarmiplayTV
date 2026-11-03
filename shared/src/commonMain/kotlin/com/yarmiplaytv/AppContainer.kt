@@ -257,7 +257,7 @@ class AppContainer(
     init {
         scope.launch { WhatsNew.onLaunch(settingsStore, appVersion) }
         // 2.8.7+: rewrite preferred / MAL keys still stored as jellyfin:<ServerId> to jellyfin:<url>.
-        // 2.9.2+: preferHttps on http:// entries 2.9.1 may have rewritten from https://.
+        // 2.9.2+: preferHttps on http:// entries that 2.9.1 may have rewritten from https://.
         scope.launch { settingsStore.migrateJellyfinKeysIfNeeded() }
         scope.launch {
             settings.collect { s ->
