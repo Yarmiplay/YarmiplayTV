@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.9.5" date="2026-11-04">
+      <description>
+        <p>Chat and playlist names with characters like · and … no longer turn into garbled text (Syncplay lines are read as UTF-8). Desktop: the playlist panel's Save playlist and Load playlist buttons get their own row with single-line labels instead of being squeezed one letter per line.</p>
+      </description>
+    </release>
     <release version="2.9.4" date="2026-11-03">
       <description>
         <p>Android TV: a playlist file that wasn't found has a Search again button, focused for the remote, also on the empty player; reopening the player looks again for it.</p>

@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.EOFException
 import java.io.IOException
@@ -224,17 +225,24 @@ class SocketTransport(
                 off += n
             }
         }
+    }
+}
 
-        /** Read through the next LF; return the trimmed line without the newline. */
-        fun readJsonLine(inp: InputStream, first: Int): String? {
-            val buf = StringBuilder()
-            var c = first
-            while (true) {
-                if (c == 0x0A) break
-                if (c != 0x0D) buf.append(c.toChar())
-                c = readByteOrNull(inp) ?: return if (buf.isEmpty()) null else buf.toString().trim()
-            }
-            return buf.toString().trim()
+/**
+ * Read through the next LF, starting with the already-read byte [first]; return the trimmed line without the newline,
+ * or null at end of stream with nothing read. Bytes are collected first and decoded once as UTF-8: a character outside
+ * ASCII spans several bytes, so decoding byte by byte turns "·" into "Â·".
+ */
+internal fun readJsonLine(inp: InputStream, first: Int): String? {
+    val buf = ByteArrayOutputStream()
+    var c = first
+    while (c != 0x0A) {
+        if (c != 0x0D) buf.write(c)
+        c = inp.read()
+        if (c < 0) {
+            if (buf.size() == 0) return null
+            break
         }
     }
+    return String(buf.toByteArray(), Charsets.UTF_8).trim()
 }
