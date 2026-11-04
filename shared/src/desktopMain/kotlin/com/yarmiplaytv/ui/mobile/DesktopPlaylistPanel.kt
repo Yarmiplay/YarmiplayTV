@@ -11,6 +11,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -85,6 +86,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
@@ -142,6 +144,8 @@ import kotlinx.coroutines.withContext
 private val ROW_MIN = 56.dp
 private val THUMB_W = 80.dp
 private val THUMB_H = 45.dp
+/** Below this width two "Save playlist"/"Load playlist" labels don't fit side by side, so the buttons show icons only. */
+private val SAVED_ACTIONS_ICON_ONLY_BELOW = 248.dp
 
 internal enum class PlaylistSourceKind { LOCAL, JELLYFIN, PLEX, URL, UNKNOWN }
 
@@ -177,7 +181,7 @@ internal fun playlistSourceHint(kind: PlaylistSourceKind): String = when (kind) 
     PlaylistSourceKind.UNKNOWN -> ""
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
     val room by container.sync.room.collectAsState()
@@ -312,55 +316,30 @@ internal fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
         ) {
-            ToolButton(Icons.Filled.Add, "Add videos") { addPaths(DesktopDialogs.pickVideos()) }
-            ToolButton(Icons.Filled.CreateNewFolder, "Add the videos in a folder") {
-                DesktopDialogs.pickFolder("Add the videos in a folder")?.let { addPaths(listOf(it)) }
-            }
-            ToolButton(Icons.Filled.Link, "Add URLs") { addingUrls = !addingUrls }
-            ToolButton(Icons.AutoMirrored.Filled.PlaylistAdd, "Add current", enabled = canAddCurrent) { addCurrent() }
-            Spacer(Modifier.width(4.dp))
-            Box {
-                var open by remember { mutableStateOf(false) }
-                ToolButton(Icons.Filled.Shuffle, "Shuffle", enabled = playlist.size > 1) { open = true }
-                DropdownMenu(open, { open = false }) {
-                    DropdownMenuItem({ Text("Shuffle what's left") }, { open = false; shared.shuffle(entire = false) })
-                    DropdownMenuItem({ Text("Shuffle everything") }, { open = false; shared.shuffle(entire = true) })
+            // Tools wrap onto a second line on a narrow panel instead of squeezing what follows them.
+            FlowRow(Modifier.weight(1f)) {
+                ToolButton(Icons.Filled.Add, "Add videos") { addPaths(DesktopDialogs.pickVideos()) }
+                ToolButton(Icons.Filled.CreateNewFolder, "Add the videos in a folder") {
+                    DesktopDialogs.pickFolder("Add the videos in a folder")?.let { addPaths(listOf(it)) }
+                }
+                ToolButton(Icons.Filled.Link, "Add URLs") { addingUrls = !addingUrls }
+                ToolButton(Icons.AutoMirrored.Filled.PlaylistAdd, "Add current", enabled = canAddCurrent) { addCurrent() }
+                Box {
+                    var open by remember { mutableStateOf(false) }
+                    ToolButton(Icons.Filled.Shuffle, "Shuffle", enabled = playlist.size > 1) { open = true }
+                    DropdownMenu(open, { open = false }) {
+                        DropdownMenuItem({ Text("Shuffle what's left") }, { open = false; shared.shuffle(entire = false) })
+                        DropdownMenuItem({ Text("Shuffle everything") }, { open = false; shared.shuffle(entire = true) })
+                    }
+                }
+                ToolButton(Icons.Filled.SortByAlpha, "Sort A to Z", enabled = playlist.size > 1) { shared.sortAlphabetically() }
+                ToolButton(Icons.AutoMirrored.Filled.Undo, "Undo (Ctrl+Z)", enabled = canUndo) { shared.undo() }
+                if (selected.isNotEmpty()) {
+                    ToolButton(Icons.Filled.Remove, "Remove selected (${selected.size})") { removeSelected() }
                 }
             }
-            ToolButton(Icons.Filled.SortByAlpha, "Sort A to Z", enabled = playlist.size > 1) { shared.sortAlphabetically() }
-            ToolButton(Icons.AutoMirrored.Filled.Undo, "Undo (Ctrl+Z)", enabled = canUndo) { shared.undo() }
-            if (selected.isNotEmpty()) {
-                ToolButton(Icons.Filled.Remove, "Remove selected (${selected.size})") { removeSelected() }
-            }
-            OutlinedButton(
-                onClick = {
-                    saveName = defaultSavedPlaylistName(playlist)
-                    saving = !saving
-                    if (saving) showingSaved = false
-                },
-                enabled = playlist.isNotEmpty(),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                modifier = Modifier.testTag("playlist_Save playlist"),
-            ) {
-                Icon(Icons.Filled.Bookmarks, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Save playlist", style = MaterialTheme.typography.labelLarge)
-            }
-            OutlinedButton(
-                onClick = {
-                    showingSaved = !showingSaved
-                    if (showingSaved) saving = false
-                },
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                modifier = Modifier.testTag("playlist_Load playlist"),
-            ) {
-                Icon(Icons.Filled.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Load playlist", style = MaterialTheme.typography.labelLarge)
-            }
-            Spacer(Modifier.weight(1f))
             if (playlist.isNotEmpty()) {
                 TooltipArea(tooltip = { Tooltip("Empty playlist") }) {
                     IconButton({ confirmEmpty = true }, Modifier.testTag("playlist_empty")) {
@@ -392,6 +371,26 @@ internal fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
                                 .onFailure { container.sync.postLocal("Couldn't read the playlist: ${it.message}", isError = true) }
                         }
                     })
+                }
+            }
+        }
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp)) {
+            val iconOnly = maxWidth < SAVED_ACTIONS_ICON_ONLY_BELOW
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                PlaylistActionButton(
+                    Icons.Filled.Bookmarks,
+                    "Save playlist",
+                    iconOnly,
+                    enabled = playlist.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    saveName = defaultSavedPlaylistName(playlist)
+                    saving = !saving
+                    if (saving) showingSaved = false
+                }
+                PlaylistActionButton(Icons.Filled.Folder, "Load playlist", iconOnly, modifier = Modifier.weight(1f)) {
+                    showingSaved = !showingSaved
+                    if (showingSaved) saving = false
                 }
             }
         }
@@ -703,6 +702,40 @@ private fun rememberPlaylistRowMeta(
             value = PlaylistRowMeta(source = PlaylistSourceKind.UNKNOWN, durationSeconds = peer)
         }
     }.value
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PlaylistActionButton(
+    icon: ImageVector,
+    label: String,
+    iconOnly: Boolean,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    TooltipArea(tooltip = { Tooltip(label) }, modifier = modifier) {
+        OutlinedButton(
+            onClick = onClick,
+            enabled = enabled,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth().testTag("playlist_$label"),
+        ) {
+            if (iconOnly) {
+                Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp))
+            } else {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
 }
 
 @Composable
