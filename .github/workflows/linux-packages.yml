@@ -12,6 +12,7 @@ on:
       - scripts/aur-package.sh
       - scripts/snap-smoke-test.sh
       - scripts/flatpak_gradle_sources.py
+      - scripts/retry.sh
       - settings.gradle.kts
       - .github/workflows/linux-packages.yml
   push:
@@ -22,6 +23,7 @@ on:
       - scripts/aur-package.sh
       - scripts/snap-smoke-test.sh
       - scripts/flatpak_gradle_sources.py
+      - scripts/retry.sh
       - settings.gradle.kts
       - .github/workflows/linux-packages.yml
 
@@ -149,7 +151,10 @@ jobs:
     timeout-minutes: 120
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
-      options: --privileged
+      # /var/lib/flatpak on a volume rather than the image's overlay filesystem: once Flathub has newer runtimes than
+      # the image, updating them renames directories of the image's layer, which overlayfs refuses with "Invalid
+      # cross-device link".
+      options: --privileged --volume /var/lib/flatpak
     steps:
       - uses: actions/checkout@v7
         with:
@@ -160,6 +165,12 @@ jobs:
           name: gradle-sources
           path: packaging/flatpak
 
+      # Hashed before the next step writes this commit into the manifest, so every commit with the same sources
+      # shares the downloads and module builds.
+      - name: Cache key
+        id: cache-key
+        run: echo "key=flatpak-builder-v2-${{ hashFiles('packaging/flatpak/com.yarmiplay.TV.yml', 'packaging/flatpak/gradle-sources.json') }}" >> "$GITHUB_OUTPUT"
+
       # flatpak-builder clones the checkout (the manifest's git source), which the container user doesn't own;
       # it builds this commit instead of main.
       - run: |
@@ -167,16 +178,39 @@ jobs:
           sed -i -E "s#^( +)branch: main\$#\1commit: $(git rev-parse HEAD)#" packaging/flatpak/com.yarmiplay.TV.yml
           grep -q "^ *commit: [0-9a-f]\{40\}$" packaging/flatpak/com.yarmiplay.TV.yml
 
+      - uses: actions/cache/restore@v6
+        id: cache
+        with:
+          path: .flatpak-builder
+          key: ${{ steps.cache-key.outputs.key }}
+          restore-keys: flatpak-builder-v2-
+
+      # flatpak-builder doesn't retry downloads, and ffmpeg.org drops connections from CI runners now and then.
+      # What's fetched here (into the state directory) the build doesn't download again.
+      - name: Runtimes and sources
+        run: |
+          scripts/retry.sh flatpak-builder --install-deps-from=flathub --install-deps-only --disable-rofiles-fuse \
+            --state-dir .flatpak-builder build-dir packaging/flatpak/com.yarmiplay.TV.yml
+          scripts/retry.sh flatpak-builder --download-only --disable-rofiles-fuse \
+            --state-dir .flatpak-builder build-dir packaging/flatpak/com.yarmiplay.TV.yml
+
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: packaging/flatpak/com.yarmiplay.TV.yml
           bundle: yarmiplaytv.flatpak
-          cache-key: flatpak-builder-${{ hashFiles('packaging/flatpak/com.yarmiplay.TV.yml') }}
+          # Cached by the steps around this one: the action's own cache only takes an exact key.
+          cache: false
           # As Flathub's builder does; its linter checks for the mirrored screenshots.
           mirror-screenshots-url: https://dl.flathub.org/media
 
+      - uses: actions/cache/save@v6
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: .flatpak-builder
+          key: ${{ steps.cache-key.outputs.key }}
+
       - name: Flathub's linter
         run: |
-          flatpak install -y --noninteractive flathub org.flatpak.Builder
+          scripts/retry.sh flatpak install -y --noninteractive flathub org.flatpak.Builder
           flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest packaging/flatpak/com.yarmiplay.TV.yml || true
           flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
