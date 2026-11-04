@@ -45,7 +45,7 @@ class TransportUtf8Test {
         client.connect()
         val peer = accepted.get(3, TimeUnit.SECONDS)
         try {
-            val first = """{"Chat":{"username":"bob","message":"Saved playlist \"Ep 1 · 2\" (3 entries)…"}}"""
+            val first = """{"Chat":{"username":"Noire","message":"watch <n> · queue <n…> · queue all · more for the next page"}}"""
             val second = """{"Set":{"playlistChange":{"files":["Tensei Kizoku · 30 …mkv"]}}}"""
             peer.getOutputStream().apply {
                 write((first + "\r\n" + second + "\n").toByteArray(Charsets.UTF_8))
