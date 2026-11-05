@@ -34,7 +34,7 @@ class DesktopVoiceEngine : VoiceEngine {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var clip: Clip? = null
     private val session = AtomicReference<VoiceMediaSession?>(null)
-    private val discordEngine = DiscordVoiceEngine(scope) { kind, vol -> playSound(kind, vol) }
+    private val discordEngine = DiscordVoiceEngine(scope)
     @Volatile private var activeDiscord = false
     private var captureThread: Thread? = null
     private var captureLine: TargetDataLine? = null
@@ -64,12 +64,19 @@ class DesktopVoiceEngine : VoiceEngine {
         disconnect()
         if (params.isDiscordLobby) {
             val ok = discordEngine.connect(params)
-            if (ok) activeDiscord = true
-            return ok
+            if (!ok) return false
+            activeDiscord = true
+        } else {
+            activeDiscord = false
         }
-        activeDiscord = false
         val media = VoiceMediaSession(scope)
-        if (!media.connect(params)) return false
+        if (!media.connect(params)) {
+            if (activeDiscord) {
+                discordEngine.disconnect()
+                activeDiscord = false
+            }
+            return false
+        }
         // Default on; VoiceController reapplies the saved preference immediately after connect.
         media.setNoiseSuppression(true)
         session.set(media)
@@ -100,7 +107,6 @@ class DesktopVoiceEngine : VoiceEngine {
     override fun setTransmitting(on: Boolean) {
         if (activeDiscord) {
             discordEngine.setTransmitting(on)
-            return
         }
         val media = session.get()
         media?.setTransmitting(on)
@@ -110,7 +116,6 @@ class DesktopVoiceEngine : VoiceEngine {
     override fun setSelfMuted(muted: Boolean) {
         if (activeDiscord) {
             discordEngine.setSelfMuted(muted)
-            return
         }
         val media = session.get()
         media?.setSelfMuted(muted)
@@ -118,15 +123,23 @@ class DesktopVoiceEngine : VoiceEngine {
         if (muted) syncCapture(media)
     }
 
-    override fun captureLevel(): Float =
-        if (activeDiscord) discordEngine.captureLevel() else (session.get()?.captureLevel ?: 0f)
+    override fun captureLevel(): Float {
+        val s = session.get()
+        if (s != null) {
+            val level = s.captureLevel
+            if (level > 0f) return level
+        }
+        return if (activeDiscord) discordEngine.captureLevel() else 0f
+    }
 
-    override fun audibleParticipantIds(): Set<String> =
-        if (activeDiscord) discordEngine.audibleParticipantIds()
-        else (session.get()?.audibleSenderIds()?.mapTo(linkedSetOf()) { senderParticipantId(it) } ?: emptySet())
+    override fun audibleParticipantIds(): Set<String> {
+        val mediaSenders = session.get()?.audibleSenderIds()?.mapTo(linkedSetOf()) { senderParticipantId(it) } ?: emptySet()
+        val discordSenders = if (activeDiscord) discordEngine.audibleParticipantIds() else emptySet()
+        return mediaSenders + discordSenders
+    }
 
     override fun capturingSpeech(): Boolean =
-        if (activeDiscord) discordEngine.capturingSpeech() else (session.get()?.capturingSpeech() == true)
+        session.get()?.capturingSpeech() == true || (activeDiscord && discordEngine.capturingSpeech())
 
     private fun syncCapture(media: VoiceMediaSession?) {
         if (media == null || session.get() !== media) {
