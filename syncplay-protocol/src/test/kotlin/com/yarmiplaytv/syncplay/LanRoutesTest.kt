@@ -159,6 +159,7 @@ class LanRoutesTest {
         eventually("connected") { c.state.value.route != null }
         assertEquals("myname.duckdns.org", transport("192.168.1.20").tlsName)
         assertEquals(ConnectionRoute("192.168.1.20", "myname.duckdns.org", atHome = false), c.state.value.route)
+        eventually("the server named event") { events.any { it is SyncplayEvent.ServerNamed } }
         assertEquals(SyncplayEvent.ServerNamed("192.168.1.20", "myname.duckdns.org"), events.filterIsInstance<SyncplayEvent.ServerNamed>().single())
     }
 
