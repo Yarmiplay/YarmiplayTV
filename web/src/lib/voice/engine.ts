@@ -4,6 +4,10 @@ import { decodeKeyBase64, open, parseTokenHex, seal, YV1 } from "./yv1";
 export type VoiceJoinedSeat = {
   host: string;
   port: number;
+  provider?: string;
+  appId?: string;
+  lobbyId?: string;
+  lobbySecret?: string;
   /** Use wss when the Syncplay session is already on TLS. */
   secure: boolean;
   token: string;

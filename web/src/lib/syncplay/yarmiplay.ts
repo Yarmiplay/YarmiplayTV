@@ -94,6 +94,8 @@ export interface VoiceDescriptor {
   version: number;
   enabled: boolean;
   message: string | null;
+  provider?: string;
+  appId?: string;
   codec: string;
   clockRate: number;
   channels: number;
@@ -112,6 +114,9 @@ export interface VoiceDescriptor {
   maxParticipants: number;
   fingerprint: string;
 }
+
+export const isDiscordLobby = (v: VoiceDescriptor | null | undefined): boolean =>
+  v?.provider?.toLowerCase() === "discord-lobby";
 
 export const usesSyncplayMux = (v: VoiceDescriptor | null | undefined): boolean =>
   !!v && (v.mux?.toLowerCase() === "syncplay" || v.transport.toLowerCase() === "yv1-syncplay");

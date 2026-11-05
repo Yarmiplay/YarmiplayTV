@@ -135,6 +135,10 @@ export type SyncplayEvent =
       participantId: string;
       username: string;
       room: string;
+      provider?: string;
+      appId?: string;
+      lobbyId?: string;
+      lobbySecret?: string;
       token: string;
       key: string;
       wsPath: string;
@@ -941,6 +945,10 @@ export class SyncplayClient {
           participantId,
           username: str(j, "username") ?? "",
           room: str(j, "room") ?? "",
+          provider: str(j, "provider") ?? this._state.yarmiplay.voice?.provider ?? "discord-lobby",
+          appId: str(j, "appId") ?? this._state.yarmiplay.voice?.appId ?? "1210325027023753307",
+          lobbyId: str(j, "lobbyId") ?? "",
+          lobbySecret: str(j, "lobbySecret") ?? "",
           token,
           key,
           wsPath: str(j, "wsPath") ?? this._state.yarmiplay.voice?.wsPath ?? "/yarmiplay/voice",
@@ -1449,6 +1457,8 @@ export function parseVoiceDescriptor(element: unknown): VoiceDescriptor | null {
     version,
     enabled: true,
     message: message ?? null,
+    provider: str(element, "provider") ?? "discord-lobby",
+    appId: str(element, "appId") ?? "1210325027023753307",
     codec: str(element, "codec") ?? "opus",
     clockRate: typeof element.clockRate === "number" ? element.clockRate : 48_000,
     channels: typeof element.channels === "number" ? element.channels : 1,

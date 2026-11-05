@@ -6,6 +6,7 @@ import com.yarmiplaytv.voice.VoiceAudioDevice
 import com.yarmiplaytv.voice.VoiceCaptureKind
 import com.yarmiplaytv.voice.VoiceEngine
 import com.yarmiplaytv.voice.VoiceMediaSession
+import com.yarmiplaytv.voice.DiscordVoiceEngine
 import com.yarmiplaytv.voice.VoiceSound
 import com.yarmiplaytv.voice.participantSenderId
 import com.yarmiplaytv.voice.senderParticipantId
@@ -33,6 +34,8 @@ class DesktopVoiceEngine : VoiceEngine {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var clip: Clip? = null
     private val session = AtomicReference<VoiceMediaSession?>(null)
+    private val discordEngine = DiscordVoiceEngine(scope) { kind, vol -> playSound(kind, vol) }
+    @Volatile private var activeDiscord = false
     private var captureThread: Thread? = null
     private var captureLine: TargetDataLine? = null
     private var playbackLine: SourceDataLine? = null
@@ -59,6 +62,12 @@ class DesktopVoiceEngine : VoiceEngine {
 
     override suspend fun connect(params: VoiceMediaParams): Boolean {
         disconnect()
+        if (params.isDiscordLobby) {
+            val ok = discordEngine.connect(params)
+            if (ok) activeDiscord = true
+            return ok
+        }
+        activeDiscord = false
         val media = VoiceMediaSession(scope)
         if (!media.connect(params)) return false
         // Default on; VoiceController reapplies the saved preference immediately after connect.
@@ -73,6 +82,10 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     override fun disconnect() {
+        if (activeDiscord) {
+            discordEngine.disconnect()
+            activeDiscord = false
+        }
         watchJob?.cancel()
         watchJob = null
         playbackJob?.cancel()
@@ -85,24 +98,35 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     override fun setTransmitting(on: Boolean) {
+        if (activeDiscord) {
+            discordEngine.setTransmitting(on)
+            return
+        }
         val media = session.get()
         media?.setTransmitting(on)
         syncCapture(media)
     }
 
     override fun setSelfMuted(muted: Boolean) {
+        if (activeDiscord) {
+            discordEngine.setSelfMuted(muted)
+            return
+        }
         val media = session.get()
         media?.setSelfMuted(muted)
         // Mute stops capture here; unmute waits for [setTransmitting] so the UI isn't blocked twice.
         if (muted) syncCapture(media)
     }
 
-    override fun captureLevel(): Float = session.get()?.captureLevel ?: 0f
+    override fun captureLevel(): Float =
+        if (activeDiscord) discordEngine.captureLevel() else (session.get()?.captureLevel ?: 0f)
 
     override fun audibleParticipantIds(): Set<String> =
-        session.get()?.audibleSenderIds()?.mapTo(linkedSetOf()) { senderParticipantId(it) } ?: emptySet()
+        if (activeDiscord) discordEngine.audibleParticipantIds()
+        else (session.get()?.audibleSenderIds()?.mapTo(linkedSetOf()) { senderParticipantId(it) } ?: emptySet())
 
-    override fun capturingSpeech(): Boolean = session.get()?.capturingSpeech() == true
+    override fun capturingSpeech(): Boolean =
+        if (activeDiscord) discordEngine.capturingSpeech() else (session.get()?.capturingSpeech() == true)
 
     private fun syncCapture(media: VoiceMediaSession?) {
         if (media == null || session.get() !== media) {
@@ -128,23 +152,28 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     override fun setInputGain(gain: Float) {
+        if (activeDiscord) discordEngine.setInputGain(gain)
         session.get()?.setInputGain(gain)
     }
 
     override fun setOutputGain(gain: Float) {
+        if (activeDiscord) discordEngine.setOutputGain(gain)
         session.get()?.setOutputGain(gain)
     }
 
     override fun setNoiseSuppression(on: Boolean) {
+        if (activeDiscord) discordEngine.setNoiseSuppression(on)
         session.get()?.setNoiseSuppression(on)
     }
 
     override fun setPeerMuted(participantId: String, muted: Boolean) {
+        if (activeDiscord) discordEngine.setPeerMuted(participantId, muted)
         val id = participantSenderId(participantId) ?: return
         session.get()?.setPeerMuted(id, muted)
     }
 
     override fun setPeerVolume(participantId: String, volume: Float) {
+        if (activeDiscord) discordEngine.setPeerVolume(participantId, volume)
         val id = participantSenderId(participantId) ?: return
         session.get()?.setPeerVolume(id, volume)
     }

@@ -111,6 +111,10 @@ data class VoiceDescriptor(
     val enabled: Boolean = true,
     /** Exact server copy when [enabled] is false (e.g. `voice disabled on this server`). */
     val message: String? = null,
+    /** Voice provider: "discord-lobby" (Discord Application Lobbies) or legacy "yv1". */
+    val provider: String = "discord-lobby",
+    /** Discord Application ID (default PuddingBot: 1210325027023753307). */
+    val appId: String = "1210325027023753307",
     val codec: String = "opus",
     val clockRate: Int = 48_000,
     val channels: Int = 1,
@@ -135,6 +139,9 @@ data class VoiceDescriptor(
     /** Lower-case hex SHA-256 of the voice TLS certificate (DER). Empty until the server sends it. */
     val fingerprint: String = "",
 ) {
+    val isDiscordLobby: Boolean
+        get() = provider.equals("discord-lobby", ignoreCase = true)
+
     /** Prefer Syncplay-connection mux (TCP `0x1E` frames / binary `/yarmiplay/ws`). */
     val usesSyncplayMux: Boolean
         get() = mux.equals("syncplay", ignoreCase = true) ||
@@ -168,6 +175,10 @@ data class VoiceMediaParams(
     val host: String,
     val token: String,
     val key: String,
+    val provider: String = "discord-lobby",
+    val appId: String = "1210325027023753307",
+    val lobbyId: String = "",
+    val lobbySecret: String = "",
     val udpPort: Int = 9000,
     val tcpPort: Int = 9000,
     val fingerprint: String = "",
@@ -200,7 +211,10 @@ data class VoiceMediaParams(
      * binary `/yarmiplay/ws`) instead of opening a second socket.
      */
     val syncplayMux: SyncplayVoiceMux? = null,
-)
+) {
+    val isDiscordLobby: Boolean
+        get() = provider.equals("discord-lobby", ignoreCase = true)
+}
 
 /** Why the server closed our voice seat. */
 enum class VoiceClosedReason {

@@ -46,6 +46,8 @@ class AndroidVoiceEngine(
     private var preferredOutputId: String? = null
     private var player: MediaPlayer? = null
     private val session = AtomicReference<VoiceMediaSession?>(null)
+    private val discordEngine = DiscordVoiceEngine(scope) { kind, vol -> playSound(kind, vol) }
+    @Volatile private var activeDiscord = false
     private var captureJob: Job? = null
     private var playbackJob: Job? = null
     private var audioRecord: AudioRecord? = null
@@ -105,6 +107,12 @@ class AndroidVoiceEngine(
 
     override suspend fun connect(params: VoiceMediaParams): Boolean {
         disconnectMedia()
+        if (params.isDiscordLobby) {
+            val ok = discordEngine.connect(params)
+            if (ok) activeDiscord = true
+            return ok
+        }
+        activeDiscord = false
         val media = VoiceMediaSession(scope) { _, pcm -> writePlayback(pcm) }
         if (!media.connect(params)) return false
         media.setNoiseSuppression(noiseSuppression)
@@ -121,6 +129,10 @@ class AndroidVoiceEngine(
     }
 
     private fun disconnectMedia() {
+        if (activeDiscord) {
+            discordEngine.disconnect()
+            activeDiscord = false
+        }
         playbackJob?.cancel()
         playbackJob = null
         session.getAndSet(null)?.disconnect()
@@ -133,6 +145,10 @@ class AndroidVoiceEngine(
     }
 
     override fun setTransmitting(on: Boolean) {
+        if (activeDiscord) {
+            discordEngine.setTransmitting(on)
+            return
+        }
         val media = session.get()
         media?.setTransmitting(on)
         syncCapture(media)
@@ -147,18 +163,25 @@ class AndroidVoiceEngine(
     }
 
     override fun setSelfMuted(muted: Boolean) {
+        if (activeDiscord) {
+            discordEngine.setSelfMuted(muted)
+            return
+        }
         val media = session.get()
         media?.setSelfMuted(muted)
         // Mute stops capture here; unmute waits for [setTransmitting] so the UI isn't blocked twice.
         if (muted) syncCapture(media)
     }
 
-    override fun captureLevel(): Float = session.get()?.captureLevel ?: 0f
+    override fun captureLevel(): Float =
+        if (activeDiscord) discordEngine.captureLevel() else (session.get()?.captureLevel ?: 0f)
 
     override fun audibleParticipantIds(): Set<String> =
-        session.get()?.audibleSenderIds()?.mapTo(linkedSetOf()) { senderParticipantId(it) } ?: emptySet()
+        if (activeDiscord) discordEngine.audibleParticipantIds()
+        else (session.get()?.audibleSenderIds()?.mapTo(linkedSetOf()) { senderParticipantId(it) } ?: emptySet())
 
-    override fun capturingSpeech(): Boolean = session.get()?.capturingSpeech() == true
+    override fun capturingSpeech(): Boolean =
+        if (activeDiscord) discordEngine.capturingSpeech() else (session.get()?.capturingSpeech() == true)
 
     /** Hold [AudioRecord] only while we are transmitting; release it when muted / mic off. */
     private fun syncCapture(media: VoiceMediaSession?) {
@@ -184,25 +207,30 @@ class AndroidVoiceEngine(
     }
 
     override fun setInputGain(gain: Float) {
+        if (activeDiscord) discordEngine.setInputGain(gain)
         session.get()?.setInputGain(gain)
     }
 
     override fun setOutputGain(gain: Float) {
+        if (activeDiscord) discordEngine.setOutputGain(gain)
         session.get()?.setOutputGain(gain)
     }
 
     override fun setNoiseSuppression(on: Boolean) {
+        if (activeDiscord) discordEngine.setNoiseSuppression(on)
         noiseSuppression = on
         session.get()?.setNoiseSuppression(on)
         applyPlatformEffects(audioRecord)
     }
 
     override fun setPeerMuted(participantId: String, muted: Boolean) {
+        if (activeDiscord) discordEngine.setPeerMuted(participantId, muted)
         val id = participantSenderId(participantId) ?: return
         session.get()?.setPeerMuted(id, muted)
     }
 
     override fun setPeerVolume(participantId: String, volume: Float) {
+        if (activeDiscord) discordEngine.setPeerVolume(participantId, volume)
         val id = participantSenderId(participantId) ?: return
         session.get()?.setPeerVolume(id, volume)
     }

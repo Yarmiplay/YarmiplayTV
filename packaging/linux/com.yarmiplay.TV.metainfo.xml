@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.9.6" date="2026-11-05">
+      <description>
+        <p>Discord Application Lobby voice chat integration: rooms connect to private Discord voice sessions with Krisp noise reduction, provisional guest access, and direct signaling.</p>
+      </description>
+    </release>
     <release version="2.9.5" date="2026-11-04">
       <description>
         <p>Chat and playlist names with characters like · and … no longer turn into garbled text (Syncplay lines are read as UTF-8). Desktop: the playlist panel's Save playlist and Load playlist buttons get their own row with single-line labels instead of being squeezed one letter per line.</p>

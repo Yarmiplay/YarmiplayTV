@@ -76,6 +76,12 @@ sealed interface SyncplayEvent {
         val username: String,
         val room: String,
         val version: Int,
+        /** Voice provider: "discord-lobby" (Discord Application Lobbies) or legacy "yv1". */
+        val provider: String = "discord-lobby",
+        /** Discord Application ID (default PuddingBot: 1210325027023753307). */
+        val appId: String = "1210325027023753307",
+        val lobbyId: String = "",
+        val lobbySecret: String = "",
         /** 16 lower-case hex characters (big-endian u64 seat token). */
         val token: String,
         /** Standard base64 of the 32-byte AES-256-GCM key for this seat. */
@@ -97,6 +103,9 @@ sealed interface SyncplayEvent {
         val port: Int? = null,
         val transport: String = "yv1",
     ) : SyncplayEvent {
+        val isDiscordLobby: Boolean
+            get() = provider.equals("discord-lobby", ignoreCase = true)
+
         val usesSyncplayMux: Boolean
             get() = mux.equals("syncplay", ignoreCase = true) ||
                 transport.equals("yv1-syncplay", ignoreCase = true)

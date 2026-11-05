@@ -77,6 +77,19 @@ class VoiceProtocolTest {
     }
 
     @Test
+    fun `descriptor parse discord lobby`() {
+        val voice = SyncplayClient.parseVoiceDescriptor(
+            json.parseToJsonElement(
+                """{"version":1,"enabled":true,"provider":"discord-lobby","appId":"1210325027023753307","codec":"opus","clockRate":48000,"channels":1,"ptime":20,"maxBitrate":32000,"fec":true,"dtx":true,"transport":"yv1","mux":"syncplay","port":8999,"maxParticipants":8}""",
+            ),
+        )!!
+        assertEquals(1, voice.version)
+        assertEquals("discord-lobby", voice.provider)
+        assertEquals("1210325027023753307", voice.appId)
+        assertTrue(voice.isDiscordLobby)
+    }
+
+    @Test
     fun `voice descriptor absent when voice capability off`() {
         assertNull(SyncplayClient.parseVoiceDescriptor(null))
     }

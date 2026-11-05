@@ -942,12 +942,20 @@ class SyncplayClient(
             val id = j.str("participantId")?.takeIf { it.isNotEmpty() } ?: return@let
             val token = j.str("token")?.takeIf { it.length == 16 } ?: return@let
             val key = j.str("key")?.takeIf { it.isNotEmpty() } ?: return@let
+            val provider = j.str("provider") ?: state.value.yarmiplay.voice?.provider ?: "discord-lobby"
+            val appId = j.str("appId") ?: state.value.yarmiplay.voice?.appId ?: "1210325027023753307"
+            val lobbyId = j.str("lobbyId").orEmpty()
+            val lobbySecret = j.str("lobbySecret").orEmpty()
             emit(
                 SyncplayEvent.VoiceJoined(
                     participantId = id,
                     username = j.str("username").orEmpty(),
                     room = j.str("room").orEmpty(),
                     version = (j["version"] as? JsonPrimitive)?.intOrNull ?: 1,
+                    provider = provider,
+                    appId = appId,
+                    lobbyId = lobbyId,
+                    lobbySecret = lobbySecret,
                     token = token,
                     key = key,
                     udpPort = (j["udpPort"] as? JsonPrimitive)?.intOrNull ?: 9000,
@@ -1472,10 +1480,14 @@ class SyncplayClient(
                 )
             }
             val version = (o["version"] as? JsonPrimitive)?.intOrNull ?: return null
+            val provider = o.str("provider") ?: "discord-lobby"
+            val appId = o.str("appId") ?: "1210325027023753307"
             return VoiceDescriptor(
                 version = version,
                 enabled = true,
                 message = message,
+                provider = provider,
+                appId = appId,
                 codec = o.str("codec") ?: "opus",
                 clockRate = (o["clockRate"] as? JsonPrimitive)?.intOrNull ?: 48_000,
                 channels = (o["channels"] as? JsonPrimitive)?.intOrNull ?: 1,
