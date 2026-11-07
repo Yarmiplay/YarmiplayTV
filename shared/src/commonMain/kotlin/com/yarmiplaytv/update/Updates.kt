@@ -113,8 +113,21 @@ class Updates(
     /** Closes the app, for [restartToInstall]. */
     var exitApp: () -> Unit = {}
 
+    /**
+     * Called once [showFailed] or [showProblem] has the text the notice will show.
+     * The desktop app uses this to drop the helper's failure file only after that, so a crash
+     * before the notice is stored still leaves the note for the next launch.
+     */
+    var onFailureNoted: () -> Unit = {}
+
     private val _state = MutableStateFlow<UpdateState?>(null)
     val state: StateFlow<UpdateState?> = _state.asStateFlow()
+    private val _problem = MutableStateFlow<String?>(null)
+    /**
+     * A failure that has no package to offer yet (the download page didn't answer, or the helper's note
+     * survived but the page can't be read now). Null when [state] carries the failure instead.
+     */
+    val problem: StateFlow<String?> = _problem.asStateFlow()
     private var download: Job? = null
 
     private val _storeUpdate = MutableStateFlow<StoreUpdates?>(null)
@@ -147,12 +160,24 @@ class Updates(
         val platform = platform ?: return
         // Already showing one, maybe downloading it: leave it be.
         if (_state.value != null) return
-        val update = checker.check(platform, currentVersion) ?: return
-        val failedVersion = failedInstallVersion(failedInstall)
-        if (failedVersion != null && update.version == failedVersion) {
-            showFailed(update, installFailedMessage(failedInstall))
-            return
+        val failed = parseUpdateFailure(failedInstall)
+        val update = checker.fetch(platform, currentVersion).getOrNull()
+        if (failed != null) {
+            val message = installFailedMessage(failedInstall)
+            val sameVersion = failed.version == null || update == null || update.version == failed.version
+            if (update != null && (failed.version == null || update.version == failed.version)) {
+                showFailed(update, message)
+                return
+            }
+            // The page didn't answer, or this note isn't tied to a newer package: still say what failed.
+            if (update == null && sameVersion) {
+                showProblem(message)
+                return
+            }
+            // A newer package replaces this note, so the next launch doesn't keep the old one.
+            onFailureNoted()
         }
+        if (update == null) return
         if (update.version == settingsStore.current().dismissedUpdate) return
         Logger.i(TAG, "Version ${update.version} is available")
         show(update)
@@ -196,18 +221,35 @@ class Updates(
                 }
                 UpdateCheck.Found(update)
             },
-            onFailure = { UpdateCheck.Failed("Couldn't reach the download page: ${it.message ?: "no connection"}") },
+            onFailure = { error ->
+                UpdateCheck.Failed(
+                    error.message?.takeIf { it.isNotBlank() } ?: explainUpdateFailure("check", null, null),
+                )
+            },
         )
     }
 
     /** Shows [update] as available, e.g. from tests. */
     fun show(update: Update) {
+        _problem.value = null
         _state.value = UpdateState.Available(update)
     }
 
     /** Shows that [update] couldn't be installed; [message] is the whole sentence the notice shows. */
     fun showFailed(update: Update, message: String) {
-        _state.value = UpdateState.Failed(update, message)
+        _problem.value = null
+        _state.value = UpdateState.Failed(update, redactUpdateText(message).ifBlank { INSTALL_FAILED })
+        onFailureNoted()
+    }
+
+    /** A failure with no package yet. [dismissProblem] hides it. */
+    fun showProblem(message: String) {
+        _problem.value = redactUpdateText(message).ifBlank { explainUpdateFailure("check", null, null) }
+        onFailureNoted()
+    }
+
+    fun dismissProblem() {
+        _problem.value = null
     }
 
     /** Downloads the update, then restarts into the installer if [thenRestart] or installs when the app closes. */
@@ -223,8 +265,10 @@ class Updates(
                     if (thenRestart) restartToInstall()
                 }
                 .onFailure {
-                    Logger.w(TAG, "Couldn't download version ${update.version}: ${it.message}")
-                    _state.value = UpdateState.Failed(update, downloadFailed(it))
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    val message = downloadFailed(it)
+                    Logger.w(TAG, "Couldn't download version ${update.version}: $message")
+                    _state.value = UpdateState.Failed(update, message)
                 }
         }
     }
@@ -247,8 +291,15 @@ class Updates(
                     }
                 }
                 .onFailure {
-                    Logger.w(TAG, "Couldn't install version ${update.version}: ${it.message}")
-                    _state.value = UpdateState.Failed(update, INSTALL_FAILED)
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    val message = when (it) {
+                        is UpdateFailedException -> it.message ?: explainUpdateFailure(it.stage, it.exitCode, it.detail)
+                        else -> it.message?.takeIf { text -> text.isNotBlank() }?.let { text ->
+                            explainUpdateFailure("install", null, text)
+                        } ?: INSTALL_FAILED
+                    }
+                    Logger.w(TAG, "Couldn't install version ${update.version}: $message")
+                    _state.value = UpdateState.Failed(update, message)
                 }
         }
     }
@@ -276,35 +327,28 @@ class Updates(
         private const val TAG = "Updates"
         const val INSTALL_FAILED = "The installer didn't finish. Try again, or get it from the download page."
 
-        fun downloadFailed(error: Throwable) = "Couldn't download it: ${error.message ?: "the download failed"}"
+        fun downloadFailed(error: Throwable): String = when (error) {
+            is UpdateFailedException -> error.message ?: explainUpdateFailure(error.stage, error.exitCode, error.detail)
+            else -> explainUpdateFailure("download", null, error.message?.takeIf { it.isNotBlank() })
+        }
 
         /**
-         * Version from [FAILED_INSTALL]-style payloads: `2.8.9` or `2.8.9|exit=1|Access denied`.
-         * Null when [raw] is blank.
+         * Version from a failure note: `2.8.9`, `2.8.9|exit=1|Access denied`, or
+         * `2.8.9|stage=replace|exit=5|Access denied`. Null when [raw] is blank.
          */
-        fun failedInstallVersion(raw: String?): String? =
-            raw?.substringBefore('|')?.trim()?.takeIf { it.isNotEmpty() }
+        fun failedInstallVersion(raw: String?): String? = parseUpdateFailure(raw)?.version
 
-        /** User-facing sentence for a failed self-update, including exit code / detail when present. */
+        /**
+         * Sentence for a failed self-update. A note that is only a version (older helpers) stays the generic
+         * installer line, because that note didn't say which step failed. Anything else names the step and
+         * the reported cause.
+         */
         fun installFailedMessage(raw: String?): String {
+            val parsed = parseUpdateFailure(raw) ?: return INSTALL_FAILED
             val text = raw?.trim().orEmpty()
-            if (text.isEmpty()) return INSTALL_FAILED
-            val parts = text.split('|', limit = 3)
-            if (parts.size == 1) return INSTALL_FAILED
-            var exit: Int? = null
-            var detail: String? = null
-            if (parts.size >= 2) {
-                val second = parts[1].trim()
-                exit = second.removePrefix("exit=").trim().toIntOrNull() ?: second.toIntOrNull()
-                if (parts.size >= 3) detail = parts[2].trim().ifEmpty { null }
-                else if (exit == null && second.isNotEmpty() && !second.startsWith("exit=")) detail = second
-            }
-            val bits = buildList {
-                exit?.let { add("exit code $it") }
-                detail?.takeIf { it.isNotBlank() }?.let { add(it) }
-            }
-            if (bits.isEmpty()) return INSTALL_FAILED
-            return "The installer didn't finish (${bits.joinToString(": ")}). Try again, or get it from the download page."
+            val bareVersion = '|' !in text && '\n' !in text && !text.startsWith("version=")
+            if (bareVersion && parsed.detail == null && parsed.exitCode == null) return INSTALL_FAILED
+            return explainUpdateFailure(parsed.stage, parsed.exitCode, parsed.detail)
         }
     }
 }

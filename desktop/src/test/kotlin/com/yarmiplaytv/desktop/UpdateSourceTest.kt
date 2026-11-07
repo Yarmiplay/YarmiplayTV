@@ -86,9 +86,13 @@ class UpdateSourceTest {
         assertTrue("only the app's folders are swapped", script.contains("foreach (\$n in 'app','runtime')"))
         assertTrue("put back on failure", script.contains("Move-Item -LiteralPath (\$d + '.old') -Destination \$d"))
         assertTrue(script.contains("\$env:YARMIPLAYTV_UPDATE_FAILED = \$sig"))
-        assertTrue(script.contains("'1.9.0' + '|exit='"))
-        assertTrue(script.endsWith("-ArgumentList '--room \"it''s mine\"'"))
-        assertFalse(PortableUpdater.script(File("x.zip"), launcher, emptyList(), "1.9.0", listOf(1), relaunch = false).contains("Start-Process"))
+        assertTrue(script.contains("'1.9.0' + '|stage='"))
+        assertTrue(script.contains("-ArgumentList '--room \"it''s mine\"'"))
+        assertTrue("copy success is not merely starting a process", script.indexOf("Copy-Item") < script.indexOf("\$ok = \$true"))
+        assertTrue(script.contains("update-failure.txt"))
+        val noRelaunch = PortableUpdater.script(File("x.zip"), launcher, emptyList(), "1.9.0", listOf(1), relaunch = false)
+        assertFalse(noRelaunch.contains("Start-Process"))
+        assertTrue("a failure is still written when the app is not started again", noRelaunch.contains("update-failure.txt"))
     }
 
     @Test
@@ -101,11 +105,15 @@ class UpdateSourceTest {
         assertEquals("while kill -0 42 2>/dev/null; do sleep 0.5; done", lines[0])
         assertTrue(script.contains("hdiutil attach -nobrowse -readonly -noautoopen -mountpoint \"\$mnt\" '/tmp/YarmiplayTV-1.9.0.dmg'"))
         val app = "'/Applications/Yarmiplay'\\''s TV.app'"
-        assertTrue(script.contains("/bin/sh '/tmp/swap.sh' \"\$src\" $app && ok=1"))
+        assertTrue(script.contains("/bin/sh '/tmp/swap.sh' \"\$src\" $app 2>&1"))
+        assertTrue(script.contains("ok=1"))
+        assertTrue("success is the swap, not mounting the image", script.indexOf("hdiutil attach") < script.indexOf("ok=1"))
         assertTrue("asks for an administrator when it can't write", script.contains("with administrator privileges"))
         assertTrue(script.contains("hdiutil detach \"\$mnt\""))
         assertTrue(script.contains("open -n $app --args '--file' 'a b.mkv'"))
-        assertTrue(script.contains("YARMIPLAYTV_UPDATE_FAILED='1.9.0' nohup '/Applications/Yarmiplay'\\''s TV.app/Contents/MacOS/YarmiplayTV' '--file' 'a b.mkv' >/dev/null 2>&1 &"))
+        assertTrue(script.contains("YARMIPLAYTV_UPDATE_FAILED=\"\$ver|stage=\$stage|exit=\$code|\$detail_one\" nohup '/Applications/Yarmiplay'\\''s TV.app/Contents/MacOS/YarmiplayTV' '--file' 'a b.mkv' >/dev/null 2>&1 &"))
+        assertTrue(script.contains("update-failure.txt"))
+        assertTrue(script.contains("the disk image has no application"))
         assertTrue(script.indexOf("hdiutil attach") < script.indexOf("hdiutil detach"))
         assertTrue(script.indexOf("hdiutil detach") < script.indexOf("open -n"))
 
@@ -119,13 +127,17 @@ class UpdateSourceTest {
         val deb = File("/tmp/yarmiplaytv_1.9.0_amd64.deb")
         val launcher = File("/opt/yarmiplaytv/bin/YarmiplayTV")
         val withPkexec = DebUpdater.script(deb, launcher, listOf("x y"), "1.9.0", 7, relaunch = true, pkexec = true)
-        assertTrue(withPkexec.contains("pkexec apt-get install -y '/tmp/yarmiplaytv_1.9.0_amd64.deb' && ok=1"))
-        assertTrue(withPkexec.contains("export YARMIPLAYTV_UPDATE_FAILED='1.9.0'"))
+        assertTrue(withPkexec.contains("pkexec apt-get install -y '/tmp/yarmiplaytv_1.9.0_amd64.deb'"))
+        assertTrue("apt has to exit 0 before the install counts", withPkexec.indexOf("pkexec apt-get") < withPkexec.indexOf("ok=1"))
+        assertTrue(withPkexec.contains("export YARMIPLAYTV_UPDATE_FAILED=\"\$ver|stage=\$stage|exit=\$code|\$detail_one\""))
+        assertTrue(withPkexec.contains("tail -c 400"))
+        assertTrue(withPkexec.contains("update-failure.txt"))
         assertTrue(withPkexec.contains("nohup '/opt/yarmiplaytv/bin/YarmiplayTV' 'x y' >/dev/null 2>&1 &"))
         val without = DebUpdater.script(deb, launcher, emptyList(), "1.9.0", 7, relaunch = true, pkexec = false)
         assertTrue(without.contains("xdg-open '/tmp/yarmiplaytv_1.9.0_amd64.deb'"))
-        assertFalse("not started again", without.contains("nohup"))
-        assertFalse(without.contains("rm -f"))
+        assertTrue(without.indexOf("exit 0") < without.indexOf("nohup"))
+        assertTrue(without.contains("xdg-open exited with code"))
+        assertFalse("the package stays for the software installer", without.contains("rm -f '/tmp/yarmiplaytv_1.9.0_amd64.deb'"))
     }
 
     @Test
@@ -141,7 +153,10 @@ class UpdateSourceTest {
         val updater = WindowsUpdater(launcher, listOf("keep"))
         val script = updater.exeScript(File("C:/Temp/YarmiplayTV-2.7.4-setup.exe"), listOf(1, 2), relaunch = true)
         val dir = launcher.parentFile.path
-        assertTrue(script.contains("-ArgumentList ${listOf("--silent", "--dir", dir).joinToString(",") { psQuoted(it) }}"))
+        val setupArgs = windowsCommandLine(listOf("--silent", "--dir", dir))
+        assertTrue(script.contains("\$psi.Arguments = ${psQuoted(setupArgs)}"))
+        assertTrue("the path with a space stays inside one command line", setupArgs.contains("\"$dir\""))
+        assertTrue(script.indexOf("Process]::Start") < script.indexOf("\$ok = \$code -in 0, 3010"))
         assertFalse("the updater starts the new copy itself", script.contains("--relaunch"))
         assertFalse(script.contains("/quiet"))
         assertTrue(script.contains("Wait-Process -Id 1,2"))
@@ -222,12 +237,67 @@ class UpdateSourceTest {
 
             val damaged = File(tmp.root, "damaged.zip")
             val error = runCatching { downloadVerified(Update("1.9.0", "", url, "0".repeat(64)), damaged, progress = {}) }.exceptionOrNull()
-            assertEquals("the download is damaged (checksum mismatch)", error?.message)
+            assertTrue(error?.message.orEmpty().contains("Couldn't verify the download"))
+            assertTrue(error?.message.orEmpty().contains("checksum mismatch"))
             assertFalse(damaged.exists())
             assertFalse(File(damaged.path + ".part").exists())
 
             val unlisted = runCatching { downloadVerified(Update("1.9.0", "", url, null), File(tmp.root, "x"), progress = {}) }.exceptionOrNull()
-            assertEquals("the download page lists no checksum", unlisted?.message)
+            assertTrue(unlisted?.message.orEmpty().contains("Couldn't verify the download"))
+            assertTrue(unlisted?.message.orEmpty().contains("no checksum"))
+
+            server.enqueue(MockResponse().setResponseCode(404))
+            val missing = runCatching { downloadVerified(Update("1.9.0", "", url, sha), File(tmp.root, "missing.msi"), progress = {}) }.exceptionOrNull()
+            assertTrue(missing?.message.orEmpty().contains("Couldn't download the update"))
+            assertTrue(missing?.message.orEmpty().contains("HTTP 404"))
+            assertFalse(missing?.message.orEmpty().contains("token"))
         }
+    }
+
+    @Test
+    fun `a windows install folder with spaces stays one argument`() {
+        val launcher = File("C:/Users/Dor Farhi/AppData/Local/YarmiplayTV/YarmiplayTV.exe")
+        val script = WindowsUpdater(launcher, listOf("--room", "movie night")).exeScript(
+            File("C:/Users/Dor Farhi/AppData/Local/Temp/YarmiplayTV-2.9.8-setup.exe"),
+            listOf(4),
+            relaunch = true,
+        )
+        val dir = launcher.parentFile.path
+        val command = windowsCommandLine(listOf("--silent", "--dir", dir))
+        assertTrue(command.contains("\"$dir\""))
+        assertTrue(script.contains(psQuoted(command)))
+        assertFalse(script.contains("-ArgumentList '--silent'"))
+        assertTrue(script.contains("update-failure.txt"))
+        assertTrue(script.contains("GetFolderPath('LocalApplicationData')"))
+        assertTrue(script.indexOf("[System.Diagnostics.Process]::Start") < script.indexOf("\$ok = \$code -in 0, 3010"))
+        val msi = WindowsUpdater(launcher, emptyList()).msiScript(File("C:/Users/Dor Farhi/AppData/Local/Temp/YarmiplayTV.msi"), listOf(4), relaunch = false)
+        assertTrue(msi.contains(psQuoted("C:/Users/Dor Farhi/AppData/Local/Temp/YarmiplayTV.msi")) || msi.contains(psQuoted(File("C:/Users/Dor Farhi/AppData/Local/Temp/YarmiplayTV.msi").path)))
+        assertTrue(msi.contains("/le"))
+        assertFalse(msi.contains("Start-Process -FilePath"))
+        assertTrue(msi.contains("update-failure.txt"))
+    }
+
+    @Test
+    fun `mac and portable paths with spaces stay quoted`() {
+        val mac = File("/Users/Dor Farhi/Applications/YarmiplayTV.app/Contents/MacOS/YarmiplayTV")
+        val script = MacUpdater.script(
+            File("/tmp/YarmiplayTV-2.9.8.dmg"), mac, File("/tmp/swap.sh"), emptyList(), "2.9.8", pid = 9, relaunch = true,
+        )
+        assertTrue(script.contains("'/Users/Dor Farhi/Applications/YarmiplayTV.app'"))
+        assertTrue(script.contains("'/Users/Dor Farhi/Applications/YarmiplayTV.app/Contents/MacOS/YarmiplayTV'"))
+        assertTrue(script.contains("\"\$HOME/Library/Application Support/YarmiplayTV/update-failure.txt\""))
+        val portable = PortableUpdater.script(
+            File("C:/Temp/YarmiplayTV-2.9.8-portable.zip"),
+            File("C:/Users/Dor Farhi/YarmiplayTV/YarmiplayTV.exe"),
+            emptyList(),
+            "2.9.8",
+            listOf(3),
+            relaunch = true,
+        )
+        val dir = File("C:/Users/Dor Farhi/YarmiplayTV/YarmiplayTV.exe").absoluteFile.parent
+        assertTrue(portable.contains(psQuoted(dir)))
+        assertTrue("the spaced folder is one quoted path", psQuoted(dir).contains("Dor Farhi"))
+        assertTrue(portable.contains("LiteralPath"))
+        assertTrue(portable.contains("the archive has no YarmiplayTV.exe"))
     }
 }

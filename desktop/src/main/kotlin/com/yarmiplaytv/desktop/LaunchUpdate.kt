@@ -3,6 +3,7 @@ package com.yarmiplaytv.desktop
 import com.yarmiplaytv.data.AppSettings
 import com.yarmiplaytv.update.Update
 import com.yarmiplaytv.update.UpdateInstaller
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +52,9 @@ internal sealed interface LaunchUpdate {
 
     /** Skipped, or the download failed ([error]): open the app, with the notice. */
     data class Postponed(val update: Update, val error: Throwable? = null) : LaunchUpdate
+
+    /** The download page couldn't be read, so there is no package yet. Open the app and say why. */
+    data class CheckFailed(val error: Throwable) : LaunchUpdate
 }
 
 /** Shows the download before the window opens. Called from any thread; [show]'s skip may be called from any. */
@@ -75,7 +79,13 @@ internal suspend fun updateBeforeLaunch(
     if (!settings.checkForUpdates || !settings.installUpdatesOnLaunch || installer == null || failedInstall != null) {
         return LaunchUpdate.None
     }
-    val update = check() ?: return LaunchUpdate.None
+    val update = try {
+        check()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        return LaunchUpdate.CheckFailed(e)
+    } ?: return LaunchUpdate.None
     // Not a child of the caller: Skip opens the app right away, even while a read is still blocked.
     val download = CoroutineScope(Dispatchers.IO + SupervisorJob()).async { installer.download(update, ui::progress) }
     val skipped = CompletableDeferred<Unit>()
@@ -90,7 +100,10 @@ internal suspend fun updateBeforeLaunch(
     ui.close()
     return finished.fold(
         onSuccess = { if (it) LaunchUpdate.Install(update) else LaunchUpdate.Postponed(update) },
-        onFailure = { LaunchUpdate.Postponed(update, it) },
+        onFailure = { error ->
+            if (error is CancellationException) throw error
+            LaunchUpdate.Postponed(update, error)
+        },
     )
 }
 

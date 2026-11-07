@@ -61,7 +61,9 @@ import com.yarmiplaytv.ui.mobile.appPalette
 import com.yarmiplaytv.ui.mobile.PlayerVolume
 import com.yarmiplaytv.ui.mobile.appLogoPainter
 import com.yarmiplaytv.update.UpdateChecker
+import com.yarmiplaytv.update.UpdateFailedException
 import com.yarmiplaytv.update.Updates
+import com.yarmiplaytv.update.explainUpdateFailure
 import java.awt.Desktop
 import java.awt.Dimension
 import java.io.File
@@ -82,17 +84,26 @@ internal fun runApp(args: List<String>) {
     System.setProperty("apple.awt.application.appearance", macAppearance(runBlocking { store.current() }.theme))
     val updateSource = updateSource(args = args)
     val installer = (updateSource as? UpdateSource.DownloadPage)?.installer
-    val failedInstall = System.getenv(FAILED_INSTALL)?.ifEmpty { null }
+    val failedInstall = loadPendingUpdateFailure(System.getenv(FAILED_INSTALL)?.ifEmpty { null })
     // Before the container, so libmpv isn't loaded yet and the installer can replace it.
     val launchUpdate = runBlocking {
         updateBeforeLaunch(store.current(), installer, failedInstall, LaunchUpdateWindow()) {
             val platform = (updateSource as UpdateSource.DownloadPage).platform
-            UpdateChecker(http = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).build()).check(platform, APP_VERSION)
+            UpdateChecker(http = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).build())
+                .fetch(platform, APP_VERSION)
+                .getOrThrow()
         }
     }
+    var helperFailure: Throwable? = null
     if (launchUpdate is LaunchUpdate.Install) {
-        installer?.installAfterExit(relaunch = true)
-        exitProcess(0)
+        val started = runCatching { installer?.installAfterExit(relaunch = true) }
+        if (started.isSuccess) exitProcess(0)
+        helperFailure = started.exceptionOrNull()
+        // The app is still here, so the notice can say why. Also leave the note if we never reach that notice.
+        val error = helperFailure
+        if (error != null) {
+            runCatching { writeUpdateFailure(failureFromHelperStart(launchUpdate.update.version, error)) }
+        }
     }
     var container: AppContainer? = null
     var failure: Throwable? = null
@@ -136,17 +147,33 @@ internal fun runApp(args: List<String>) {
             is UpdateSource.Store -> app.updates.store = updateSource.store
         }
         val postponed = launchUpdate as? LaunchUpdate.Postponed
+        val checkFailed = launchUpdate as? LaunchUpdate.CheckFailed
+        val helperError = helperFailure
+        app.updates.onFailureNoted = { clearPendingUpdateFailure() }
         when {
-            postponed == null -> app.updates.checkOnLaunch(failedInstall)
-            postponed.error != null -> app.updates.showFailed(postponed.update, Updates.downloadFailed(postponed.error))
-            else -> app.updates.show(postponed.update)
+            helperError != null && launchUpdate is LaunchUpdate.Install -> {
+                val failed = helperError as? UpdateFailedException
+                val message = failed?.message
+                    ?: explainUpdateFailure("launch", null, helperError.message)
+                app.updates.showFailed(launchUpdate.update, message)
+            }
+            postponed == null && checkFailed == null -> app.updates.checkOnLaunch(failedInstall)
+            postponed?.error != null -> app.updates.showFailed(postponed.update, Updates.downloadFailed(postponed.error))
+            postponed != null -> app.updates.show(postponed.update)
+            checkFailed != null -> app.updates.showProblem(
+                checkFailed.error.message?.takeIf { it.isNotBlank() } ?: explainUpdateFailure("check", null, null),
+            )
         }
     }
 
     application(exitProcessOnExit = false) {
         MainWindow(app, boundsFile)
     }
-    app.updates.onExit()
+    val exitError = runCatching { app.updates.onExit() }.exceptionOrNull()
+    if (exitError != null) {
+        val update = app.updates.state.value?.update
+        if (update != null) runCatching { writeUpdateFailure(failureFromHelperStart(update.version, exitError)) }
+    }
     app.relay?.close()
     player.close()
     exitProcess(0)

@@ -1,8 +1,10 @@
 package com.yarmiplaytv.desktop
 
 import com.yarmiplaytv.update.Update
+import com.yarmiplaytv.update.UpdateFailedException
 import com.yarmiplaytv.update.UpdateInstaller
 import java.io.File
+import java.io.IOException
 import java.util.Base64
 
 /**
@@ -28,30 +30,96 @@ internal fun windowsCommandLine(args: List<String>): String = args.joinToString(
     }
 }
 
-/** Runs [script] in a hidden PowerShell that outlives this process. */
+/**
+ * Runs [script] in a hidden PowerShell that outlives this process.
+ * A started PowerShell is not a finished update. If PowerShell itself cannot start, this throws.
+ */
 internal fun runDetachedPowerShell(script: String) {
     val encoded = Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_16LE))
-    ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", encoded)
-        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-        .redirectError(ProcessBuilder.Redirect.DISCARD)
-        .start()
+    try {
+        ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", encoded)
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start()
+    } catch (e: IOException) {
+        throw UpdateFailedException("launch", e.message?.takeIf { it.isNotBlank() } ?: "couldn't start PowerShell")
+    }
 }
 
 /**
- * PowerShell that starts [launcher] with [args], with [FAILED_INSTALL] cleared when `$ok` is true.
- * When the install failed, callers should set `$code` (int) and optional `$detail` (string) first so the
- * relaunched app can show the real reason; older scripts that only flip `$ok` still work (exit=-1).
+ * `$fail` under LocalApplicationData, which [updateFailureFile] reads on the next launch.
+ * The path is built in PowerShell so a profile like `Dor Farhi` stays one path.
+ */
+internal fun psFailureFile(): String = buildString {
+    append("\$base = [Environment]::GetFolderPath('LocalApplicationData'); ")
+    append("if (-not \$base) { \$base = Join-Path \$env:USERPROFILE 'AppData\\Local' }; ")
+    append("\$fail = Join-Path \$base 'YarmiplayTV\\update-failure.txt'; ")
+}
+
+/**
+ * Writes `$fail` when `$ok` is false, from `$stage`, `$code` and `$detail`, and deletes it when the install worked.
+ * Callers must set those variables from the installer's own result, not from the fact that a process was created.
+ */
+internal fun psWriteOutcome(version: String): String = buildString {
+    append(psFailureFile())
+    append("if (\$ok) { ")
+    append("Remove-Item -LiteralPath \$fail -Force -ErrorAction SilentlyContinue ")
+    append("} else { ")
+    append("if (-not \$stage) { \$stage = 'install' }; ")
+    append("if (\$null -eq \$code) { \$code = -1 }; ")
+    append("\$clean = (([string]\$detail) -replace '[\\r\\n|]+',' ').Trim(); ")
+    append("\$parent = Split-Path -Parent \$fail; ")
+    append("if (-not (Test-Path -LiteralPath \$parent)) { New-Item -ItemType Directory -Force -Path \$parent | Out-Null }; ")
+    append("Set-Content -LiteralPath \$fail -Encoding utf8 -Value @(")
+    append("('version=' + ${psQuoted(version)}), ")
+    append("('stage=' + \$stage), ")
+    append("('exit=' + \$code), ")
+    append("('detail=' + \$clean)); ")
+    append("}; ")
+}
+
+/**
+ * Saves the outcome, then starts [launcher]. `$ok` must already reflect the installer exit, not Start-Process.
+ * If the app itself cannot be started after a successful install, that is recorded as a restart failure.
  */
 internal fun psRelaunch(launcher: File, args: List<String>, version: String): String = buildString {
+    append(psWriteOutcome(version))
     append("if (\$ok) { \$env:$FAILED_INSTALL = \$null } else { ")
     append("if (\$null -eq \$code) { \$code = -1 }; ")
-    append("if (\$null -eq \$detail) { \$detail = '' }; ")
-    append("\$sig = ${psQuoted(version)} + '|exit=' + \$code; ")
-    append("if (\$detail) { \$sig = \$sig + '|' + ([string]\$detail -replace '[\\r\\n]+',' ').Trim() }; ")
-    append("\$env:$FAILED_INSTALL = \$sig")
-    append(" }; ")
+    append("if (-not \$stage) { \$stage = 'install' }; ")
+    append("\$clean = (([string]\$detail) -replace '[\\r\\n|]+',' ').Trim(); ")
+    append("\$sig = ${psQuoted(version)} + '|stage=' + \$stage + '|exit=' + \$code; ")
+    append("if (\$clean) { \$sig = \$sig + '|' + \$clean }; ")
+    append("\$env:$FAILED_INSTALL = \$sig; ")
+    append("}; ")
+    append("try { ")
     append("Start-Process -FilePath ${psQuoted(launcher.path)}")
     if (args.isNotEmpty()) append(" -ArgumentList ${psQuoted(windowsCommandLine(args))}")
+    append(" } catch { ")
+    append("if (\$ok) { \$ok = \$false; \$stage = 'restart'; \$code = -3; \$detail = \$_.Exception.Message; ")
+    append(psWriteOutcome(version))
+    append("} }; ")
+}
+
+/**
+ * Starts [file] with [argumentsExpr] (a PowerShell expression for one command line) and waits.
+ * One command line, not a PowerShell argument array: Windows PowerShell 5.1 joins an array with spaces
+ * and drops quotes, which splits an install folder such as `C:\Users\Dor Farhi\...`.
+ * `$ok` is not set here. The caller sets it from `$code`.
+ */
+internal fun psStartWait(file: String, argumentsExpr: String): String = buildString {
+    append("\$p = \$null; \$stage = 'launch'; \$code = -1; \$detail = ''; \$ok = \$false; ")
+    append("try { ")
+    append("\$psi = New-Object System.Diagnostics.ProcessStartInfo; ")
+    append("\$psi.FileName = ${psQuoted(file)}; ")
+    append("\$psi.Arguments = $argumentsExpr; ")
+    append("\$psi.UseShellExecute = \$true; ")
+    append("\$p = [System.Diagnostics.Process]::Start(\$psi); ")
+    append("if (\$null -eq \$p) { \$code = -2; \$detail = 'the installer returned no process' } ")
+    append("else { \$p.WaitForExit(); ")
+    append("if (\$null -eq \$p.ExitCode) { \$code = -2; \$detail = 'the installer returned no exit code' } ")
+    append("else { \$code = \$p.ExitCode } } ")
+    append("} catch { \$detail = \$_.Exception.Message; \$code = -3 }; ")
 }
 
 /** Waits for known PIDs, then any remaining YarmiplayTV process, then a short settle for file locks. */
@@ -91,7 +159,7 @@ internal class WindowsUpdater(
     }
 
     override fun installAfterExit(relaunch: Boolean) {
-        val pkg = packageFile ?: return
+        val pkg = packageFile ?: throw UpdateFailedException("launch", "the downloaded installer is missing")
         runDetachedPowerShell(
             if (exeSetup) exeScript(pkg, appProcessIds(launcher), relaunch)
             else msiScript(pkg, appProcessIds(launcher), relaunch),
@@ -104,47 +172,41 @@ internal class WindowsUpdater(
      * after the installer exits, so the new copy is what starts.
      */
     internal fun exeScript(exe: File, pids: List<Long>, relaunch: Boolean): String = buildString {
-        val setupArgs = listOf("--silent", "--dir", launcher.parentFile?.path.orEmpty())
+        val setupArgs = windowsCommandLine(listOf("--silent", "--dir", launcher.parentFile?.path.orEmpty()))
         val status = updateStatusFile().path
         append(psWaitForAppExit(pids))
         append("Unblock-File -LiteralPath ${psQuoted(exe.path)} -ErrorAction SilentlyContinue; ")
         append("Remove-Item -LiteralPath ${psQuoted(status)} -Force -ErrorAction SilentlyContinue; ")
-        append("\$p = \$null; \$code = -1; \$detail = ''; ")
-        append("try { ")
-        append("\$p = Start-Process -FilePath ${psQuoted(exe.path)} -Wait -PassThru")
-        append(" -ArgumentList ${setupArgs.joinToString(",") { psQuoted(it) }}")
-        append(" } catch { \$detail = \$_.Exception.Message; \$code = -3 }; ")
-        append("if (\$null -ne \$p) { if (\$null -eq \$p.ExitCode) { \$code = -2 } else { \$code = \$p.ExitCode } }; ")
+        append(psStartWait(exe.path, psQuoted(setupArgs)))
+        append("if (\$code -in -2, -3) { \$stage = 'launch' } else { \$stage = 'install' }; ")
+        // 3010: installed, Windows wants a restart for something else. Anything else is not success.
         append("\$ok = \$code -in 0, 3010; ")
         append("if (-not \$ok -and (Test-Path -LiteralPath ${psQuoted(status)})) { ")
-        append("\$detail = ((Get-Content -LiteralPath ${psQuoted(status)} -Raw -ErrorAction SilentlyContinue) + '').Trim() ")
+        append("\$fromSetup = ((Get-Content -LiteralPath ${psQuoted(status)} -Raw -ErrorAction SilentlyContinue) + '').Trim(); ")
+        append("if (\$fromSetup) { \$detail = \$fromSetup } ")
         append("}; ")
-        append("if (-not \$ok -and -not \$detail) { ")
-        append("if (\$code -eq -2) { \$detail = 'Windows blocked or elevated the installer (no exit code)' } ")
-        append("elseif (\$code -eq -3) { } ")
-        append("elseif (\$code -eq -1) { \$detail = 'the installer did not start' } ")
-        append("else { \$detail = \"installer exit code \$code\" } ")
-        append("}; ")
+        append("if (-not \$ok -and -not \$detail) { \$detail = \"exit code \$code\" }; ")
         append("Remove-Item -LiteralPath ${psQuoted(exe.path)} -ErrorAction SilentlyContinue; ")
-        if (relaunch) append(psRelaunch(launcher, args, version.orEmpty()))
+        append(if (relaunch) psRelaunch(launcher, args, version.orEmpty()) else psWriteOutcome(version.orEmpty()))
     }
 
     internal fun msiScript(msi: File, pids: List<Long>, relaunch: Boolean): String = buildString {
         // The launcher runs the app in a child process and holds YarmiplayTV.exe open until it exits too.
-        val status = updateStatusFile().path
         append(psWaitForAppExit(pids))
         append("Unblock-File -LiteralPath ${psQuoted(msi.path)} -ErrorAction SilentlyContinue; ")
-        append("Remove-Item -LiteralPath ${psQuoted(status)} -Force -ErrorAction SilentlyContinue; ")
-        append("\$p = \$null; \$code = -1; \$detail = ''; ")
-        append("try { ")
-        append("\$p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList ('/i \"' + ${psQuoted(msi.path)} + '\" /passive /norestart') ")
-        append("} catch { \$detail = \$_.Exception.Message; \$code = -3 }; ")
-        append("if (\$null -ne \$p) { if (\$null -eq \$p.ExitCode) { \$code = -2 } else { \$code = \$p.ExitCode } }; ")
-        // 3010: installed, Windows wants a restart for something else.
+        append("\$log = Join-Path \$env:TEMP 'YarmiplayTV-msiexec.log'; ")
+        append("Remove-Item -LiteralPath \$log -Force -ErrorAction SilentlyContinue; ")
+        val arguments = "('/i \"' + ${psQuoted(msi.path)} + '\" /passive /norestart /le \"' + \$log + '\"')"
+        append(psStartWait("msiexec.exe", arguments))
+        append("if (\$code -in -2, -3) { \$stage = 'launch' } else { \$stage = 'install' }; ")
         append("\$ok = \$code -in 0, 3010; ")
-        append("if (-not \$ok -and -not \$detail) { \$detail = \"msiexec exit code \$code\" }; ")
+        append("if (-not \$ok -and -not \$detail -and (Test-Path -LiteralPath \$log)) { ")
+        append("\$line = @(Get-Content -LiteralPath \$log -ErrorAction SilentlyContinue | Where-Object { \$_.Trim() }) | Select-Object -Last 1; ")
+        append("if (\$line) { \$detail = ([string]\$line).Trim() } ")
+        append("}; ")
+        append("if (-not \$ok -and -not \$detail) { \$detail = \"exit code \$code\" }; ")
         append("Remove-Item -LiteralPath ${psQuoted(msi.path)} -ErrorAction SilentlyContinue; ")
-        if (relaunch) append(psRelaunch(launcher, args, version.orEmpty()))
+        append(if (relaunch) psRelaunch(launcher, args, version.orEmpty()) else psWriteOutcome(version.orEmpty()))
     }
 
     /** @deprecated Use [msiScript] / [exeScript]. Kept for existing tests. */

@@ -148,6 +148,9 @@ its platform's package has a higher version than the one running (so only bumpin
 update; builds of the same version don't). **Settings > Updates > Check for updates** does the same on
 request, also for a version whose notice was dismissed. Every download's SHA-256 is checked against
 `version.json` before anything is installed, and an installer that fails isn't tried again on that start.
+The notice names the step that failed (checking, downloading, verifying, unpacking, starting the installer,
+installing, replacing files, or starting the app again) and the error that step reported. If the installer
+closes YarmiplayTV first, that same notice is there the next time it opens. The details can be copied.
 
 | Installed from | Installing |
 |---|---|

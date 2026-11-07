@@ -370,6 +370,9 @@ your copy was installed:
   small window you can skip.
 - **Windows portable zip, macOS and the Linux `.deb`:** download the new version and replace this one, then
   restart (Linux asks for your password).
+- If an update doesn't finish, the home screen says which step failed and the error from that step (a copy
+  button copies the details). When the installer closes the app first, the same message is there the next time
+  it opens.
 - **Microsoft Store:** opens the Store page, where **Update** is.
 - **Flatpak, Snap and the AUR:** shows the command that updates it, to copy, and opens your software center.
 

@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.9.8" date="2026-11-07">
+      <description>
+        <p>Desktop updates name the step that failed and the error that step reported, including after the app closes. The details can be copied. Windows installer arguments stay one argument when the install folder has spaces.</p>
+      </description>
+    </release>
     <release version="2.9.7" date="2026-11-06">
       <description>
         <p>Discord lobby voice and audio: the room media session stays connected together with Discord lobby capture and playback, so mute, transmit, and who is speaking stay in sync.</p>
