@@ -182,7 +182,7 @@ Tap or move the mouse to show the controls: play and pause, back and forward (do
 of the video on a phone), the previous and next playlist entry, the seek bar and the volume. The buttons at the
 bottom open the shared playlist, the room, the chat, audio tracks, subtitles and MyAnimeList (on a TV, the
 **Menus** button opens them). Dragging along the
-seek bar, or holding the mouse over it, shows the time there and a picture of that moment. The picture is a frame
+seek bar, or holding the mouse over it, shows the time there and a picture of that moment. When the file has chapters, each one is marked on the bar, and that same hint names the chapter. A file without chapters has no marks. The picture is a frame
 from the video, including one Jellyfin or Plex stored for the seek bar, or the keyframe at that time when the
 server has none. A poster is never used.
 

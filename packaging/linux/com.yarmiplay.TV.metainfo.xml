@@ -88,7 +88,7 @@
   <releases>
     <release version="2.9.8" date="2026-11-07">
       <description>
-        <p>Desktop updates name the step that failed and the error that step reported, including after the app closes. The details can be copied. Windows installer arguments stay one argument when the install folder has spaces.</p>
+        <p>Desktop updates name the step that failed and the error that step reported, including after the app closes. The details can be copied. Windows installer arguments stay one argument when the install folder has spaces. The seek bar marks each chapter in the file, and hovering or dragging it shows that chapter's name.</p>
       </description>
     </release>
     <release version="2.9.7" date="2026-11-06">

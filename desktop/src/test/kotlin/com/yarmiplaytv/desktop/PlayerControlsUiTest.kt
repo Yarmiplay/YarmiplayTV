@@ -38,6 +38,7 @@ import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.local.SeekFrames
+import com.yarmiplaytv.player.Chapter
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.RoomState
@@ -270,6 +271,56 @@ class PlayerControlsUiTest {
         onNodeWithTag("seek_slider").performMouseInput { release() }
         settle()
         assertEquals(450.0, player.seeks.last(), 1.0)
+    }
+
+    @Test
+    fun `hovering or dragging the seek bar names the chapter, and a file with none has no marks`() = runComposeUiTest {
+        player.state.value = player.state.value.copy(
+            paused = true,
+            chapters = listOf(
+                Chapter("Cold open", 0.0),
+                Chapter(null, 120.0),
+                Chapter("Part A", 300.0),
+                Chapter("After the file", 9_999.0),
+                Chapter("Not a time", Double.NaN),
+            ),
+        )
+        showPlayer()
+        onNodeWithTag("chapter_marks").assertExists()
+        onNodeWithTag("seek_slider").performMouseInput { moveTo(Offset(width * 0.1f, centerY)) }
+        settle()
+        onNodeWithTag("seek_chapter").assertTextEquals("Cold open")
+        bubbleText("1:00").assertExists()
+
+        onNodeWithTag("seek_slider").performMouseInput { moveTo(Offset(width * 0.3f, centerY)) }
+        settle()
+        onNodeWithTag("seek_chapter").assertTextEquals("Chapter 2")
+
+        onNodeWithTag("seek_slider").performMouseInput {
+            moveTo(Offset(width * 0.5f, centerY))
+            press()
+            moveTo(Offset(width * 0.7f, centerY))
+        }
+        settle()
+        onNodeWithTag("seek_chapter").assertTextEquals("Part A")
+        bubbleText("7:00").assertExists()
+        onNodeWithTag("seek_slider").performMouseInput { release() }
+        settle()
+        assertEquals(420.0, player.seeks.last(), 1.0)
+
+        player.state.value = player.state.value.copy(url = "file:///other.mkv", chapters = listOf(Chapter("Second file", 0.0)))
+        settle()
+        onNodeWithTag("seek_slider").performMouseInput { moveTo(Offset(width * 0.2f, centerY)) }
+        settle()
+        onNodeWithTag("seek_chapter").assertTextEquals("Second file")
+
+        player.state.value = player.state.value.copy(chapters = emptyList())
+        settle()
+        onNodeWithTag("seek_chapter").assertDoesNotExist()
+        onNodeWithTag("chapter_marks").assertDoesNotExist()
+        onNodeWithTag("seek_slider").performMouseInput { click(Offset(width * 0.25f, centerY)) }
+        settle()
+        assertEquals(150.0, player.seeks.last(), 1.0)
     }
 
     @Test
