@@ -1,13 +1,22 @@
 package com.yarmiplaytv.desktop
 
 import com.yarmiplaytv.update.Update
+import com.yarmiplaytv.update.UpdateFailedException
+import com.yarmiplaytv.update.UpdateFailure
+import com.yarmiplaytv.update.formatUpdateFailure
+import com.yarmiplaytv.update.mergeUpdateFailures
+import com.yarmiplaytv.update.parseUpdateFailure
+import com.yarmiplaytv.update.parseUpdateFailureFile
+import com.yarmiplaytv.update.redactUpdateText
 import com.yarmiplaytv.update.reportByteProgress
 import com.yarmiplaytv.update.updateDownloadRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
@@ -22,39 +31,110 @@ internal data class FailedInstallSignal(
     val version: String,
     val exitCode: Int? = null,
     val detail: String? = null,
+    val stage: String = "install",
 )
 
-/** Parses [raw] from [FAILED_INSTALL]; null when blank. */
+/** Parses [raw] from [FAILED_INSTALL] or a failure file; null when blank. */
 internal fun parseFailedInstall(raw: String?): FailedInstallSignal? {
-    val text = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-    val parts = text.split('|', limit = 3)
-    val version = parts[0].trim().ifEmpty { return null }
-    var exit: Int? = null
-    var detail: String? = null
-    if (parts.size >= 2) {
-        val second = parts[1].trim()
-        exit = second.removePrefix("exit=").trim().toIntOrNull()
-            ?: second.toIntOrNull()
-        if (parts.size >= 3) detail = parts[2].trim().ifEmpty { null }
-        else if (exit == null && second.isNotEmpty() && !second.startsWith("exit=")) detail = second
-    }
-    return FailedInstallSignal(version, exit, detail)
+    val failure = parseUpdateFailure(raw) ?: return null
+    val version = failure.version ?: return null
+    return FailedInstallSignal(version, failure.exitCode, failure.detail, failure.stage)
 }
 
 /** Builds the [FAILED_INSTALL] value a relaunching updater writes. */
-internal fun formatFailedInstall(version: String, exitCode: Int? = null, detail: String? = null): String {
-    if (exitCode == null && detail.isNullOrBlank()) return version
-    val cleaned = detail?.replace(Regex("[\\r\\n]+"), " ")?.trim().orEmpty()
-    return buildString {
-        append(version)
-        append("|exit=")
-        append(exitCode ?: -1)
-        if (cleaned.isNotEmpty()) {
-            append('|')
-            append(cleaned)
+internal fun formatFailedInstall(version: String, exitCode: Int? = null, detail: String? = null, stage: String = "install"): String {
+    if (exitCode == null && detail.isNullOrBlank() && stage == "install") return version
+    return formatUpdateFailure(UpdateFailure(version, stage, exitCode, detail))
+}
+
+/**
+ * Where a helper writes the failure the next launch reads, even if it could not start the app again.
+ * Windows: `%LOCALAPPDATA%\YarmiplayTV\update-failure.txt`. macOS and Linux match the app's config folder.
+ */
+internal fun updateFailureFile(
+    osName: String = System.getProperty("os.name").orEmpty(),
+    env: (String) -> String? = System::getenv,
+    home: String = System.getProperty("user.home").orEmpty(),
+): File {
+    val os = osName.lowercase()
+    return when {
+        os.startsWith("windows") -> {
+            val local = env("LOCALAPPDATA")?.takeIf { it.isNotBlank() }
+                ?: File(home, "AppData${File.separator}Local").path
+            File(local, "YarmiplayTV${File.separator}update-failure.txt")
+        }
+        os.startsWith("mac") || os.startsWith("darwin") ->
+            File(home, "Library/Application Support/YarmiplayTV/update-failure.txt")
+        else -> {
+            val base = env("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() } ?: File(home, ".config").path
+            File(base, "yarmiplaytv${File.separator}update-failure.txt")
         }
     }
 }
+
+internal fun formatFailureFile(failure: UpdateFailure): String = buildString {
+    append("version=").append(failure.version.orEmpty()).append('\n')
+    append("stage=").append(failure.stage.ifBlank { "install" }).append('\n')
+    append("exit=").append(failure.exitCode?.toString().orEmpty()).append('\n')
+    append("detail=").append(failure.detail?.let(::redactUpdateText).orEmpty()).append('\n')
+}
+
+/** The note to leave when the helper process itself cannot be started. The detail is whatever the system reported. */
+internal fun failureFromHelperStart(version: String, error: Throwable): UpdateFailure {
+    val failed = error as? UpdateFailedException
+    return UpdateFailure(
+        version = version,
+        stage = failed?.stage ?: "launch",
+        exitCode = failed?.exitCode,
+        detail = (failed?.detail ?: error.message)?.let(::redactUpdateText)?.takeIf { it.isNotEmpty() },
+    )
+}
+
+internal fun writeUpdateFailure(failure: UpdateFailure, file: File = updateFailureFile()) {
+    file.parentFile?.mkdirs()
+    file.writeText(formatFailureFile(failure))
+}
+
+internal fun readUpdateFailureFile(file: File = updateFailureFile()): UpdateFailure? =
+    if (file.isFile) parseUpdateFailureFile(file.readText()) else null
+
+/**
+ * The note to show on this start: the helper's file, the relaunch environment, and on Windows the setup's
+ * own status line when that is the only text we have. Does not delete anything; [clearPendingUpdateFailure] does,
+ * once the notice has taken the text.
+ */
+internal fun loadPendingUpdateFailure(env: String?, failureFile: File = updateFailureFile(), statusFile: File = updateStatusFile()): String? {
+    val fromEnv = parseUpdateFailure(env)
+    val fromFile = runCatching { readUpdateFailureFile(failureFile) }.getOrNull()
+    val status = runCatching {
+        if (statusFile.isFile) statusFile.readText().trim().ifEmpty { null } else null
+    }.getOrNull()
+    return mergeUpdateFailures(fromFile, fromEnv, status)?.let(::formatUpdateFailure)?.ifBlank { null }
+}
+
+internal fun clearPendingUpdateFailure(failureFile: File = updateFailureFile()) {
+    runCatching { failureFile.delete() }
+    if (System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)) {
+        runCatching { writeUpdateStatus(null) }
+    }
+}
+
+/** Shell lines that write or remove `$failfile` from `$ok`, `$ver`, `$stage`, `$code` and `$detail`. */
+internal fun shRecordFailure(): String = """
+    detail_one=${'$'}(printf '%s' "${'$'}detail" | awk 'NR==1{printf "%s", ${'$'}0; next} {printf " %s", ${'$'}0}')
+    detail_one=${'$'}(printf '%s' "${'$'}detail_one" | tr '|' '/')
+    if [ "${'$'}ok" = 1 ]; then
+      rm -f "${'$'}failfile"
+    else
+      mkdir -p "${'$'}(dirname "${'$'}failfile")"
+      {
+        printf 'version=%s\n' "${'$'}ver"
+        printf 'stage=%s\n' "${'$'}stage"
+        printf 'exit=%s\n' "${'$'}code"
+        printf 'detail=%s\n' "${'$'}detail_one"
+      } > "${'$'}failfile"
+    fi
+""".trimIndent() + "\n"
 
 /**
  * Where the silent Windows setup writes its last error for the updater to pick up after a non-zero exit.
@@ -89,12 +169,15 @@ internal suspend fun downloadVerified(
     progress: (Float?) -> Unit,
     http: OkHttpClient = updateHttp,
 ): File = withContext(Dispatchers.IO) {
-    val expected = update.sha256 ?: error("the download page lists no checksum")
+    val name = update.downloadUrl.substringBefore('?').substringAfterLast('/').ifBlank { "the file" }
+    val expected = update.sha256 ?: throw UpdateFailedException("validate", "the download page lists no checksum for $name")
     val partial = File(target.path + ".part")
     try {
         http.newCall(updateDownloadRequest(update.downloadUrl)).execute().use { response ->
-            if (!response.isSuccessful) error("HTTP ${response.code}")
-            val body = response.body!!
+            if (!response.isSuccessful) {
+                throw UpdateFailedException("download", "the server answered HTTP ${response.code} for $name")
+            }
+            val body = response.body ?: throw UpdateFailedException("download", "the server sent an empty response for $name")
             val total = body.contentLength()
             val digest = MessageDigest.getInstance("SHA-256")
             var done = 0L
@@ -114,14 +197,21 @@ internal suspend fun downloadVerified(
                 }
             }
             val actual = digest.digest().joinToString("") { "%02x".format(it) }
-            if (!actual.equals(expected, ignoreCase = true)) error("the download is damaged (checksum mismatch)")
+            if (!actual.equals(expected, ignoreCase = true)) {
+                throw UpdateFailedException("validate", "checksum mismatch (expected $expected, got $actual)")
+            }
         }
         target.delete()
-        if (!partial.renameTo(target)) error("couldn't save the update")
+        if (!partial.renameTo(target)) {
+            throw UpdateFailedException("unpack", "couldn't move the download into place (${partial.path} -> ${target.path})")
+        }
         target
     } catch (e: Throwable) {
         partial.delete()
-        throw e
+        when (e) {
+            is CancellationException, is UpdateFailedException -> throw e
+            else -> throw UpdateFailedException("download", e.message?.let(::redactUpdateText)?.takeIf { it.isNotEmpty() })
+        }
     }
 }
 
@@ -154,14 +244,21 @@ internal fun appProcessIds(launcher: File?): List<Long> {
     return (listOf(current.pid()) + related).distinct()
 }
 
-/** Runs [script] with /bin/sh in the background, so it outlives this process. */
+/**
+ * Runs [script] with /bin/sh in the background, so it outlives this process.
+ * Starting the shell is not a finished update: if the shell cannot be started, this throws.
+ */
 internal fun runDetachedShell(script: String, name: String) {
     val file = File(System.getProperty("java.io.tmpdir"), name).apply {
         writeText(script)
         setExecutable(true, true)
     }
-    ProcessBuilder("nohup", "/bin/sh", file.path)
-        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-        .redirectError(ProcessBuilder.Redirect.DISCARD)
-        .start()
+    try {
+        ProcessBuilder("nohup", "/bin/sh", file.path)
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start()
+    } catch (e: IOException) {
+        throw UpdateFailedException("launch", e.message?.let(::redactUpdateText)?.takeIf { it.isNotEmpty() } ?: "couldn't start the update helper")
+    }
 }

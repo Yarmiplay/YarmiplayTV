@@ -1,6 +1,7 @@
 package com.yarmiplaytv.desktop
 
 import com.yarmiplaytv.update.Update
+import com.yarmiplaytv.update.UpdateFailedException
 import com.yarmiplaytv.update.UpdateInstaller
 import java.io.File
 
@@ -22,7 +23,7 @@ internal class PortableUpdater(
     }
 
     override fun installAfterExit(relaunch: Boolean) {
-        val zip = zip ?: return
+        val zip = zip ?: throw UpdateFailedException("launch", "the downloaded archive is missing")
         runDetachedPowerShell(script(zip, launcher, args, version.orEmpty(), appProcessIds(launcher), relaunch))
     }
 
@@ -37,12 +38,13 @@ internal class PortableUpdater(
             return buildString {
                 append(psWaitForAppExit(pids))
                 append("Unblock-File -LiteralPath ${psQuoted(zip.path)} -ErrorAction SilentlyContinue; ")
-                append("\$ok = \$false; \$code = -1; \$detail = ''; \$dir = $dir; \$tmp = Join-Path \$env:TEMP ('YarmiplayTV-update-' + [guid]::NewGuid()); ")
+                append("\$ok = \$false; \$code = -1; \$detail = ''; \$stage = 'unpack'; \$dir = $dir; \$tmp = Join-Path \$env:TEMP ('YarmiplayTV-update-' + [guid]::NewGuid()); ")
                 append("try { ")
                 append("Expand-Archive -LiteralPath ${psQuoted(zip.path)} -DestinationPath \$tmp -Force -ErrorAction Stop; ")
                 // The zip holds the app in a YarmiplayTV folder.
                 append("\$src = if (Test-Path -LiteralPath (Join-Path \$tmp $exe)) { \$tmp } else { (Get-ChildItem -LiteralPath \$tmp -Directory | Select-Object -First 1).FullName }; ")
-                append("if (-not \$src -or -not (Test-Path -LiteralPath (Join-Path \$src $exe))) { throw 'not the app' }; ")
+                append("if (-not \$src -or -not (Test-Path -LiteralPath (Join-Path \$src $exe))) { throw 'the archive has no YarmiplayTV.exe' }; ")
+                append("\$stage = 'replace'; ")
                 append("foreach (\$n in $replaced) { \$d = Join-Path \$dir \$n; if (Test-Path -LiteralPath \$d) { Move-Item -LiteralPath \$d -Destination (\$d + '.old') -Force -ErrorAction Stop } }; ")
                 append("try { ")
                 append("Get-ChildItem -LiteralPath \$src -Force | Where-Object { \$_.Name -ne 'data' } | Copy-Item -Destination \$dir -Recurse -Force -ErrorAction Stop; ")
@@ -55,7 +57,7 @@ internal class PortableUpdater(
                 append("} catch { \$detail = \$_.Exception.Message; \$code = 1 }; ")
                 append("Remove-Item -LiteralPath \$tmp -Recurse -Force -ErrorAction SilentlyContinue; ")
                 append("Remove-Item -LiteralPath ${psQuoted(zip.path)} -ErrorAction SilentlyContinue; ")
-                if (relaunch) append(psRelaunch(launcher, args, version))
+                append(if (relaunch) psRelaunch(launcher, args, version) else psWriteOutcome(version))
             }
         }
     }

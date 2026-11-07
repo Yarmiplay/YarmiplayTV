@@ -48,7 +48,7 @@ import kotlin.math.abs
 import kotlin.system.exitProcess
 
 /**
- * `--benchmark <file> [--seconds N] [--fullscreen] [--render auto|gl|sw] [--hwdec X] [--resize] [--seek] [--overlays] [--focus-changes] [--compose-fullscreen] [--out report.txt]`
+ * `--benchmark <file> [--seconds N] [--fullscreen] [--render auto|gl|sw] [--hwdec X] [--ao X] [--resize] [--seek] [--overlays] [--focus-changes] [--compose-fullscreen] [--out report.txt]`
  *
  * Plays the file and checks the targets: no dropped or delayed frames, every rendered frame drawn, A/V sync
  * within 20 ms. Exits with 0 when they're met, 1 otherwise.
@@ -59,6 +59,8 @@ internal class BenchmarkOptions(args: List<String>) {
     val fullscreen = "--fullscreen" in args
     val render: String = value(args, "--render") ?: "auto"
     val hwdec: String = value(args, "--hwdec") ?: "auto"
+    /** mpv audio output. Null leaves mpv's own choice. `null` skips a device, which a container without one never opens. */
+    val ao: String? = value(args, "--ao")
     val resize = "--resize" in args
     val seek = "--seek" in args
     val overlays = "--overlays" in args
@@ -97,7 +99,14 @@ private fun switchFocus(window: java.awt.Window, away: Boolean) {
 }
 
 internal fun runBenchmark(options: BenchmarkOptions) {
-    val core = MpvCore(mapOf("hwdec" to options.hwdec, "keep-open" to "no"), logLevel = "warn")
+    val core = MpvCore(
+        buildMap {
+            put("hwdec", options.hwdec)
+            put("keep-open", "no")
+            options.ao?.let { put("ao", it) }
+        },
+        logLevel = "warn",
+    )
     val loaded = CompletableDeferred<Unit>()
     val ended = CompletableDeferred<Unit>()
     core.startEvents { event ->

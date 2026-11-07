@@ -96,6 +96,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -132,7 +133,10 @@ import com.yarmiplaytv.ui.mobile.RelayDownloadBar
 import com.yarmiplaytv.ui.mobile.SkipChip
 import com.yarmiplaytv.playback.PlaybackAction
 import com.yarmiplaytv.playback.playbackAction
+import com.yarmiplaytv.ui.mobile.ChapterMarks
 import com.yarmiplaytv.ui.mobile.SkipMarks
+import com.yarmiplaytv.ui.mobile.chapterBoundaries
+import com.yarmiplaytv.ui.mobile.chapterTitleAt
 import com.yarmiplaytv.ui.mobile.LocalTvPlaybackControls
 import com.yarmiplaytv.ui.mobile.pictureInPictureLabel
 import com.yarmiplaytv.ui.mobile.rememberPictureInPicture
@@ -447,8 +451,19 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 LaunchedEffect(seekFlash) { delay(1800); flashVisible.value = false }
                 if (overlay == Overlay.Hidden && flashVisible.value && state.duration > 0) {
                     Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 64.dp, vertical = 40.dp)) {
-                        ProgressBar(player.currentPosition(), state.duration, state.cacheSeconds, segments = skipSegments)
-                        Text("${formatClock(player.currentPosition())} / ${formatClock(state.duration)}", color = OnVideo.Text, modifier = Modifier.padding(top = 8.dp).onVideoLabel())
+                        ProgressBar(player.currentPosition(), state.duration, state.cacheSeconds, segments = skipSegments, chapters = state.chapters)
+                        val seekChapter = chapterTitleAt(chapterBoundaries(state.chapters, state.duration), player.currentPosition())
+                        Text(
+                            buildString {
+                                append(formatClock(player.currentPosition()))
+                                if (seekChapter != null) append("  ").append(seekChapter)
+                                append(" / ").append(formatClock(state.duration))
+                            },
+                            color = OnVideo.Text,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 8.dp).onVideoLabel(),
+                        )
                     }
                 }
 
@@ -698,13 +713,21 @@ private fun StatusCard(title: String, detail: String) {
 }
 
 @Composable
-internal fun ProgressBar(position: Double, duration: Double, cacheSeconds: Double, modifier: Modifier = Modifier, segments: List<SkipSegment> = emptyList()) {
+internal fun ProgressBar(
+    position: Double,
+    duration: Double,
+    cacheSeconds: Double,
+    modifier: Modifier = Modifier,
+    segments: List<SkipSegment> = emptyList(),
+    chapters: List<com.yarmiplaytv.player.Chapter> = emptyList(),
+) {
     val fraction = if (duration > 0) (position / duration).coerceIn(0.0, 1.0).toFloat() else 0f
     val cached = if (duration > 0) ((position + cacheSeconds) / duration).coerceIn(0.0, 1.0).toFloat() else 0f
     Box(modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.2f))) {
         Box(Modifier.fillMaxWidth(cached).fillMaxHeight().background(Color.White.copy(alpha = 0.25f)))
         Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(AppColors.Accent))
         SkipMarks(segments, duration, Modifier.matchParentSize())
+        ChapterMarks(chapters, duration, Modifier.matchParentSize())
     }
 }
 
@@ -750,10 +773,23 @@ private fun ControlsBar(
         }
         Spacer(Modifier.height(12.dp))
         val segments by container.skips.segments.collectAsStateWithLifecycle()
-        ProgressBar(position, state.duration, state.cacheSeconds, segments = segments)
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        val chapter = chapterTitleAt(chapterBoundaries(state.chapters, state.duration), position)
+        ProgressBar(position, state.duration, state.cacheSeconds, segments = segments, chapters = state.chapters)
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(formatClock(position), color = OnVideo.Text, modifier = Modifier.onVideoLabel())
-            Spacer(Modifier.weight(1f))
+            if (chapter != null) {
+                Text(
+                    chapter,
+                    color = OnVideo.Text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).padding(horizontal = 16.dp).onVideoLabel().testTag("seek_chapter"),
+                )
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
             playbackInfo(state).takeIf { it.isNotEmpty() }?.let { Text(it, color = OnVideo.Text, modifier = Modifier.onVideoLabel()) }
             Spacer(Modifier.width(24.dp))
             Text(formatClock(state.duration), color = OnVideo.Text, modifier = Modifier.onVideoLabel())

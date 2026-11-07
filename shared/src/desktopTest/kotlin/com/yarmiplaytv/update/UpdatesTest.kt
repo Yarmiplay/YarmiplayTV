@@ -199,6 +199,61 @@ class UpdatesTest {
         val message = (updates.state.value as UpdateState.Failed).message
         assertTrue(message.contains("exit code 5"))
         assertTrue(message.contains("Access denied"))
+        assertTrue(message.contains("The installer didn't finish"))
+    }
+
+    @Test
+    fun `a stored failure names the step and still shows when the page is down`() {
+        server.enqueue(MockResponse().setBody(manifest()))
+        val updates = updates(FakeInstaller())
+        updates.checkOnLaunch(failedInstall = "1.2.0|stage=replace|exit=5|Access is denied")
+        awaitTrue { updates.state.value is UpdateState.Failed }
+        val message = (updates.state.value as UpdateState.Failed).message
+        assertTrue(message.contains("Couldn't replace the app's files"))
+        assertTrue(message.contains("exit code 5"))
+        assertTrue(message.contains("Access is denied"))
+
+        server.enqueue(MockResponse().setResponseCode(503))
+        val offline = updates()
+        offline.checkOnLaunch(failedInstall = "1.2.0|stage=replace|exit=5|Access is denied")
+        awaitTrue { offline.problem.value?.contains("Access is denied") == true }
+        assertTrue(offline.problem.value!!.contains("Couldn't replace the app's files"))
+    }
+
+    @Test
+    fun `starting the installer is not success when the helper cannot start`() {
+        var exited = false
+        val updates = updates(object : UpdateInstaller {
+            override suspend fun download(update: Update, progress: (Float?) -> Unit) = Unit
+            override fun installAfterExit(relaunch: Boolean) {
+                throw UpdateFailedException("launch", "powershell.exe: The system cannot find the file specified")
+            }
+        }).apply { exitApp = { exited = true } }
+        updates.show(Update("1.2.0", "https://tv.yarmiplay.com/", "https://tv.yarmiplay.com/YarmiplayTV.msi", null))
+        updates.download(thenRestart = true)
+        awaitTrue { updates.state.value is UpdateState.Failed }
+        val message = (updates.state.value as UpdateState.Failed).message
+        assertTrue(message.contains("Couldn't start the installer"))
+        assertTrue(message.contains("cannot find the file specified"))
+        assertFalse(exited)
+    }
+
+    @Test
+    fun `check for updates names an http failure and drops secrets`() {
+        server.enqueue(MockResponse().setResponseCode(503))
+        val updates = updates()
+        val result = runBlocking { updates.checkNow() } as UpdateCheck.Failed
+        assertTrue(result.message.contains("Couldn't check for updates"))
+        assertTrue(result.message.contains("HTTP 503"))
+        val leaked = Updates.downloadFailed(
+            java.io.IOException("https://files.example/YarmiplayTV.msi?token=supersecret&sig=abcdef Bearer deadbeef password=hunter2"),
+        )
+        assertFalse(leaked.contains("supersecret"))
+        assertFalse(leaked.contains("abcdef"))
+        assertFalse(leaked.contains("deadbeef"))
+        assertFalse(leaked.contains("hunter2"))
+        assertTrue(leaked.contains("Couldn't download the update"))
+        assertTrue(leaked.contains("https://files.example/YarmiplayTV.msi"))
     }
 
     @Test
@@ -209,7 +264,9 @@ class UpdatesTest {
         awaitTrue { updates.state.value != null }
         updates.download(thenRestart = true)
         awaitTrue { updates.state.value is UpdateState.Failed }
-        assertEquals("Couldn't download it: checksum mismatch", (updates.state.value as UpdateState.Failed).message)
+        val message = (updates.state.value as UpdateState.Failed).message
+        assertTrue(message.contains("Couldn't download the update"))
+        assertTrue(message.contains("checksum mismatch"))
     }
 
     @Test

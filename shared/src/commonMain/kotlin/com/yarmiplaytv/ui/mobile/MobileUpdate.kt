@@ -1,6 +1,7 @@
 package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -60,12 +61,17 @@ import kotlinx.coroutines.launch
 @Composable
 fun UpdateBanner(container: AppContainer, modifier: Modifier = Modifier) {
     val state by container.updates.state.collectAsStateWithLifecycle()
+    val problem by container.updates.problem.collectAsStateWithLifecycle()
     val inStore by container.updates.storeUpdate.collectAsStateWithLifecycle()
     inStore?.let { store ->
         StoreUpdateBanner(container, store, modifier)
         return
     }
-    val s = state ?: return
+    val s = state
+    if (s == null) {
+        problem?.let { UpdateProblemBanner(it, container.updates::dismissProblem, modifier) }
+        return
+    }
     Card(
         modifier.testTag("update_banner"),
         colors = CardDefaults.cardColors(containerColor = AppColors.Surface, contentColor = AppColors.OnSurface),
@@ -76,10 +82,46 @@ fun UpdateBanner(container: AppContainer, modifier: Modifier = Modifier) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.SystemUpdate, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(28.dp))
                 Spacer(Modifier.width(14.dp))
-                Text("YarmiplayTV ${s.update.version} is available", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (s is UpdateState.Failed) "Couldn't update to YarmiplayTV ${s.update.version}"
+                    else "YarmiplayTV ${s.update.version} is available",
+                    style = MaterialTheme.typography.titleMedium,
+                )
             }
             UpdateProgress(container, s, dismiss = true)
         }
+        }
+    }
+}
+
+/** A failure that happened before a package was known, or after the app was closed. The text can be selected or copied. */
+@Composable
+private fun UpdateProblemBanner(message: String, onDismiss: () -> Unit, modifier: Modifier) {
+    val clipboard = LocalClipboardManager.current
+    Card(
+        modifier.testTag("update_problem"),
+        colors = CardDefaults.cardColors(containerColor = AppColors.Surface, contentColor = AppColors.OnSurface),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        SurfaceInk {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.SystemUpdate, contentDescription = null, tint = AppColors.Error, modifier = Modifier.size(28.dp))
+                    Spacer(Modifier.width(14.dp))
+                    Text("Update didn't finish", style = MaterialTheme.typography.titleMedium)
+                }
+                SelectionContainer {
+                    Text(message, style = MaterialTheme.typography.bodySmall, color = AppColors.Error, modifier = Modifier.testTag("update_state"))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton({ clipboard.setText(AnnotatedString(message)) }, Modifier.testTag("update_error_copy")) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Copy details")
+                    }
+                    TextButton(onDismiss) { Text("Not now") }
+                }
+            }
         }
     }
 }
@@ -122,7 +164,16 @@ private fun UpdateProgress(container: AppContainer, s: UpdateState, dismiss: Boo
 @Composable
 private fun UpdateProgressContent(updates: Updates, s: UpdateState, dismiss: Boolean, canInstall: Boolean) {
     val uriHandler = LocalUriHandler.current
-    Text(updateStateLine(updates, s), style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim, modifier = Modifier.testTag("update_state"))
+    val clipboard = LocalClipboardManager.current
+    val failed = s as? UpdateState.Failed
+    SelectionContainer {
+        Text(
+            updateStateLine(updates, s),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (failed != null) AppColors.Error else AppColors.TextDim,
+            modifier = Modifier.testTag("update_state"),
+        )
+    }
     UpdateProgressBar(s)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         when {
@@ -131,6 +182,16 @@ private fun UpdateProgressContent(updates: Updates, s: UpdateState, dismiss: Boo
             (s is UpdateState.Available || s is UpdateState.Failed) && canInstall ->
                 Button({ updates.download(thenRestart = true) }, Modifier.testTag("update_install")) { Text(if (s is UpdateState.Failed) "Try again" else "Install") }
             else -> Button({ uriHandler.openUri(s.update.pageUrl) }) { Text("Download page") }
+        }
+        if (failed != null) {
+            TextButton(
+                { clipboard.setText(AnnotatedString(failed.message)) },
+                Modifier.testTag("update_error_copy"),
+            ) {
+                Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Copy details")
+            }
         }
         if (s !is UpdateState.Installing && (dismiss || s is UpdateState.Downloading)) {
             TextButton({ updates.dismiss(remember = s !is UpdateState.Downloading) }) { Text(if (s is UpdateState.Downloading) "Cancel" else "Not now") }
@@ -164,6 +225,8 @@ internal fun UpdatesSettings(container: AppContainer, nav: Navigator) {
     val updates = container.updates
     val settings by container.settings.collectAsStateWithLifecycle()
     val state by updates.state.collectAsStateWithLifecycle()
+    val problem by updates.problem.collectAsStateWithLifecycle()
+    val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val check = remember(updates) { UpdateCheckModel(updates, scope) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -182,8 +245,17 @@ internal fun UpdatesSettings(container: AppContainer, nav: Navigator) {
             is UpdateCheck.Found -> if (s == null) CheckLine("YarmiplayTV ${result.update.version} is available.")
         }
         if (s != null) {
-            Text("YarmiplayTV ${s.update.version} is available", style = MaterialTheme.typography.bodyLarge, color = AppColors.Accent)
+            Text(
+                if (s is UpdateState.Failed) "Couldn't update to YarmiplayTV ${s.update.version}"
+                else "YarmiplayTV ${s.update.version} is available",
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (s is UpdateState.Failed) AppColors.Error else AppColors.Accent,
+            )
             UpdateProgress(container, s, dismiss = false)
+        } else if (problem != null) {
+            val message = problem!!
+            CheckLine(message, error = true)
+            TextButton({ clipboard.setText(AnnotatedString(message)) }, Modifier.testTag("update_error_copy")) { Text("Copy details") }
         } else if (check.result == null && updates.store != null) {
             StoreUpdate(updates.store!!, available = null)
         }

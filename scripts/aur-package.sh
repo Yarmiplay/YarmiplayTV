@@ -42,8 +42,10 @@ export LC_ALL=en_US.UTF-8
 yarmiplaytv --version | tee /tmp/version.txt
 grep -q "YarmiplayTV $version, libmpv [0-9]" /tmp/version.txt
 grep -q '^java-options=-Dyarmiplaytv.store=aur$' /opt/yarmiplaytv/lib/app/YarmiplayTV.cfg
+# No audio server here. mpv's pipewire output waits for one until this timeout, so use the null output.
+# The check below is that frames were drawn.
 timeout -k 10 180 xvfb-run -a -s "-screen 0 1920x1080x24" yarmiplaytv --benchmark /src/app/src/androidTest/assets/yarmiplaytv-sync-clip.mp4 \
-  --seconds 10 --out /tmp/benchmark.txt || true
+  --ao null --seconds 10 --out /tmp/benchmark.txt || true
 cat /tmp/benchmark.txt
 grep -Eq "rendered [1-9]" /tmp/benchmark.txt
 

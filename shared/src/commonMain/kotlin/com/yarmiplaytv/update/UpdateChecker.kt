@@ -1,7 +1,9 @@
 package com.yarmiplaytv.update
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -60,11 +62,31 @@ class UpdateChecker(
 
     /** Like [check], but tells "up to date" (success with null) from "couldn't ask" (failure). */
     suspend fun fetch(platform: String, current: String): Result<Update?> = withContext(Dispatchers.IO) {
-        runCatching {
-            http.newCall(Request.Builder().url(manifestUrl).build()).execute().use { response ->
-                if (!response.isSuccessful) error("the download page answered HTTP ${response.code}")
-                parse(response.body!!.string(), platform, current, manifestUrl)
+        try {
+            val update = http.newCall(Request.Builder().url(manifestUrl).build()).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw UpdateFailedException("check", "the download page answered HTTP ${response.code}")
+                }
+                val body = response.body?.string()
+                    ?: throw UpdateFailedException("check", "the download page sent an empty response")
+                parse(body, platform, current, manifestUrl)
             }
+            Result.success(update)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: UpdateFailedException) {
+            Result.failure(e)
+        } catch (e: SerializationException) {
+            val extra = e.message?.let(::redactUpdateText)?.takeIf { it.isNotEmpty() }
+            Result.failure(
+                UpdateFailedException(
+                    "check",
+                    if (extra == null) "version.json could not be read" else "version.json could not be read: $extra",
+                ),
+            )
+        } catch (e: Exception) {
+            val detail = e.message?.let(::redactUpdateText)?.takeIf { it.isNotEmpty() }
+            Result.failure(UpdateFailedException("check", detail))
         }
     }
 

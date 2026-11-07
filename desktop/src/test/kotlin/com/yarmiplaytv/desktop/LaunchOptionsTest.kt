@@ -39,6 +39,14 @@ class LaunchOptionsTest {
     }
 
     @Test
+    fun benchmarkCanForceANullAudioOutput() {
+        val options = BenchmarkOptions(listOf("--benchmark", "clip.mp4", "--ao", "null", "--seconds", "10"))
+        assertEquals("null", options.ao)
+        assertEquals(10, options.seconds)
+        assertNull(BenchmarkOptions(listOf("--benchmark", "clip.mp4")).ao)
+    }
+
+    @Test
     fun hostForms() {
         assertEquals("example.org" to null, LaunchOptions.parse(listOf("--host", "example.org")).let { it.host to it.port })
         assertEquals("::1" to 8999, LaunchOptions.parse(listOf("--host", "[::1]:8999")).let { it.host to it.port })

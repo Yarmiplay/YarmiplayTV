@@ -26,7 +26,9 @@ fi
 
 command -v xvfb-run > /dev/null || { sudo apt-get update -q && sudo apt-get install -y -q xvfb; }
 cp app/src/androidTest/assets/yarmiplaytv-sync-clip.mp4 "$HOME/clip.mp4"
+# No audio server here. mpv's pipewire output waits for one until this timeout, so use the null output.
+# The check below is that frames were drawn.
 timeout -k 10 180 xvfb-run -a -s "-screen 0 1920x1080x24" /snap/bin/yarmiplaytv --benchmark "$HOME/clip.mp4" \
-  --seconds 10 --out "$HOME/snap-benchmark.txt" || true
+  --ao null --seconds 10 --out "$HOME/snap-benchmark.txt" || true
 cat "$HOME/snap-benchmark.txt"
 grep -Eq "rendered [1-9]" "$HOME/snap-benchmark.txt"

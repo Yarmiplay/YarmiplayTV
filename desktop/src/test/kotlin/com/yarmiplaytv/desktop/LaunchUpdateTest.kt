@@ -2,6 +2,7 @@ package com.yarmiplaytv.desktop
 
 import com.yarmiplaytv.data.AppSettings
 import com.yarmiplaytv.update.Update
+import com.yarmiplaytv.update.UpdateFailedException
 import com.yarmiplaytv.update.UpdateInstaller
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
@@ -94,6 +95,21 @@ class LaunchUpdateTest {
         val ui = FakeUi(skipRightAway = true)
         assertEquals(LaunchUpdate.Postponed(update), decide(installer = FakeInstaller { awaitCancellation() }, ui = ui))
         assertTrue(ui.closed)
+    }
+
+    @Test
+    fun aFailedCheckOpensTheAppWithTheError() {
+        val result = runBlocking {
+            withTimeout(10_000) {
+                updateBeforeLaunch(automatic, FakeInstaller(), null, FakeUi()) {
+                    throw UpdateFailedException("check", "the download page answered HTTP 503")
+                }
+            }
+        }
+        assertTrue(result is LaunchUpdate.CheckFailed)
+        val message = (result as LaunchUpdate.CheckFailed).error.message.orEmpty()
+        assertTrue(message.contains("Couldn't check for updates"))
+        assertTrue(message.contains("HTTP 503"))
     }
 
     @Test

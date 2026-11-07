@@ -62,7 +62,7 @@ Jellyfin and Plex servers are added under **Media servers** (Quick Connect, a pa
 play in its player; your own Jellyfin has to be reachable over HTTPS. When the room's host shares their Jellyfin
 through YarmiplayServerTV, it's added by itself, through the server, as in the app. The room's entries are looked up on them in the
 app's order, then fetched from another viewer through the server's file relay, which asks the host to approve the
-browser as a device the first time. Openings and endings are skipped as in the app (the file's chapters, the media
+browser as a device the first time. The seek bar marks the file's chapters, and the time under the pointer names the chapter, the same as in the app. Openings and endings are skipped as in the app (the file's chapters, the media
 server's markers, AniSkip, or listening), and MyAnimeList stays up to date as you watch: sign in from Settings >
 MyAnimeList, through the room's server. Not in the browser: finding servers on your network, Play next episode from
 your MyAnimeList list, and the hardware-decoding switch.
@@ -182,7 +182,7 @@ Tap or move the mouse to show the controls: play and pause, back and forward (do
 of the video on a phone), the previous and next playlist entry, the seek bar and the volume. The buttons at the
 bottom open the shared playlist, the room, the chat, audio tracks, subtitles and MyAnimeList (on a TV, the
 **Menus** button opens them). Dragging along the
-seek bar, or holding the mouse over it, shows the time there and a picture of that moment. The picture is a frame
+seek bar, or holding the mouse over it, shows the time there and a picture of that moment. When the file has chapters, each one is marked on the bar on a computer, a phone, a tablet and a TV. Holding the mouse over the bar, or dragging it, names that chapter; on a TV the name sits with the time while the controls are open, including after a skip along the bar. A file without chapters has no marks. The picture is a frame
 from the video, including one Jellyfin or Plex stored for the seek bar, or the keyframe at that time when the
 server has none. A poster is never used.
 
@@ -370,6 +370,9 @@ your copy was installed:
   small window you can skip.
 - **Windows portable zip, macOS and the Linux `.deb`:** download the new version and replace this one, then
   restart (Linux asks for your password).
+- If an update doesn't finish, the home screen says which step failed and the error from that step (a copy
+  button copies the details). When the installer closes the app first, the same message is there the next time
+  it opens.
 - **Microsoft Store:** opens the Store page, where **Update** is.
 - **Flatpak, Snap and the AUR:** shows the command that updates it, to copy, and opens your software center.
 

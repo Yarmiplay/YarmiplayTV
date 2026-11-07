@@ -47,6 +47,16 @@ let devices = 0;
 const READ_AHEAD = 512 * 1024;
 
 /**
+ * Length of the file in seconds. Stream lengths win when any stream reports one. Otherwise the container length is
+ * used: WebM often leaves the streams at 0 and stores the length only on the format.
+ */
+export function playbackDuration(streamDurations: readonly number[], formatDuration: number | null): number {
+  const fromStreams = streamDurations.reduce((max, d) => (Number.isFinite(d) && d > max ? d : max), 0);
+  if (fromStreams > 0) return fromStreams;
+  return formatDuration !== null && Number.isFinite(formatDuration) && formatDuration > 0 ? formatDuration : 0;
+}
+
+/**
  * One file opened with FFmpeg's demuxers: its streams, chapters and attached fonts, then its packets in file order.
  * FFmpeg reads the file through a block device whose reads this class answers from a [ByteSource].
  */
@@ -79,7 +89,16 @@ export class Demuxer {
     const streams: StreamInfo[] = [];
     for (const s of raw) streams.push(await describe(libav, s));
     const chapters = await readChapters(libav, fmtCtx);
-    const duration = Math.max(0, ...raw.map((s) => (Number.isFinite(s.duration) ? s.duration : 0)));
+    // WebM often leaves AVStream.duration unset and stores the length only on the container. A length of 0 makes the
+    // player treat the first moment as the end and pause.
+    const formatDuration =
+      typeof libav.AVFormatContext_duration === "function"
+        ? seconds(await libav.AVFormatContext_duration(fmtCtx), await libav.AVFormatContext_durationhi(fmtCtx), 1, 1_000_000)
+        : null;
+    const duration = playbackDuration(
+      raw.map((s) => s.duration),
+      formatDuration,
+    );
     const startTime =
       seconds(await libav.AVFormatContext_start_time(fmtCtx), await libav.AVFormatContext_start_timehi(fmtCtx), 1, 1_000_000) ?? 0;
     const pkt = await libav.av_packet_alloc();

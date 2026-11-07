@@ -45,7 +45,8 @@ import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -102,11 +103,12 @@ class SettingsUiTest {
     @After
     fun tearDown() {
         System.clearProperty("yarmiplaytv.updateManifest")
-        site.stop(0)
-        app.scope.cancel()
-        storeScope.cancel()
-        Dispatchers.resetMain()
-        main.close()
+        if (::site.isInitialized) site.stop(0)
+        // Join before resetMain: an update check still on Main races and fails on macOS CI.
+        if (::app.isInitialized) runBlocking { app.scope.coroutineContext.job.cancelAndJoin() }
+        if (::storeScope.isInitialized) runBlocking { storeScope.coroutineContext.job.cancelAndJoin() }
+        runCatching { Dispatchers.resetMain() }
+        if (::main.isInitialized) main.close()
     }
 
     private fun ComposeUiTest.show(width: Int, height: Int) {

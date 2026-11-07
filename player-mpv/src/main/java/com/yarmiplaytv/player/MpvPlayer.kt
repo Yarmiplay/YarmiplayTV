@@ -48,6 +48,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     override val tracks: StateFlow<List<Track>> = _tracks.asStateFlow()
     private val _events = MutableSharedFlow<PlayerEvent>(extraBufferCapacity = 64)
     override val events: SharedFlow<PlayerEvent> = _events.asSharedFlow()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile private var cachedPosition = 0.0
     @Volatile private var cachedPositionAt = 0L
@@ -364,6 +365,21 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         cachedPositionAt = SystemClock.elapsedRealtime()
     }
 
+    /**
+     * mpv can report a property on the UI thread while Compose is in the middle of a frame. Writing the state then
+     * asks for another layout inside that one. Posting the write lets the frame finish first. A report from mpv's
+     * own thread is applied immediately; Compose picks that up on the next frame.
+     */
+    private fun publishState(transform: (PlaybackState) -> PlaybackState) {
+        val write = Runnable { _state.update(transform) }
+        if (Looper.myLooper() == Looper.getMainLooper()) mainHandler.post(write) else write.run()
+    }
+
+    private fun publishTracks(list: List<Track>) {
+        val write = Runnable { _tracks.value = list }
+        if (Looper.myLooper() == Looper.getMainLooper()) mainHandler.post(write) else write.run()
+    }
+
     // --- mpv callbacks -------------------------------------------------------------
 
     override fun eventProperty(property: String) {
@@ -373,21 +389,21 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
     override fun eventProperty(property: String, value: Long) {
         when (property) {
-            "width" -> _state.update { it.copy(videoWidth = value.toInt()) }
-            "height" -> _state.update { it.copy(videoHeight = value.toInt()) }
+            "width" -> publishState { it.copy(videoWidth = value.toInt()) }
+            "height" -> publishState { it.copy(videoHeight = value.toInt()) }
         }
     }
 
     override fun eventProperty(property: String, value: Double) {
         when (property) {
             "time-pos" -> onTimePos(value)
-            "duration" -> _state.update { it.copy(duration = value) }
-            "video-params/aspect" -> _state.update { it.copy(displayAspect = value) }
+            "duration" -> publishState { it.copy(duration = value) }
+            "video-params/aspect" -> publishState { it.copy(displayAspect = value) }
             "speed" -> {
                 cachedSpeed = value
-                _state.update { it.copy(speed = value) }
+                publishState { it.copy(speed = value) }
             }
-            "demuxer-cache-duration" -> _state.update { it.copy(cacheSeconds = value) }
+            "demuxer-cache-duration" -> publishState { it.copy(cacheSeconds = value) }
         }
     }
 
@@ -414,7 +430,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         }
         cachedPosition = value
         cachedPositionAt = now
-        _state.update { it.copy(position = value) }
+        publishState { it.copy(position = value) }
     }
 
     override fun eventProperty(property: String, value: Boolean) {
@@ -422,24 +438,24 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             "pause" -> {
                 if (value != cachedPaused) snapshotPosition()
                 cachedPaused = value
-                _state.update { it.copy(paused = value) }
+                publishState { it.copy(paused = value) }
             }
             "paused-for-cache" -> {
                 snapshotPosition()
-                _state.update { it.copy(buffering = value) }
+                publishState { it.copy(buffering = value) }
             }
             "seeking" -> {
                 if (!value) cachedPositionAt = SystemClock.elapsedRealtime()
-                _state.update { it.copy(seeking = value) }
+                publishState { it.copy(seeking = value) }
             }
-            "eof-reached" -> _state.update { it.copy(eofReached = value) }
+            "eof-reached" -> publishState { it.copy(eofReached = value) }
         }
     }
 
     override fun eventProperty(property: String, value: String) {
         when (property) {
-            "video-codec" -> _state.update { it.copy(videoCodec = value) }
-            "hwdec-current" -> _state.update { it.copy(hwdec = value) }
+            "video-codec" -> publishState { it.copy(videoCodec = value) }
+            "hwdec-current" -> publishState { it.copy(hwdec = value) }
         }
     }
 
@@ -455,12 +471,12 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
                 cachedPositionAt = now
                 lastSeekTarget = position
                 lastSeekAt = now
-                _state.update { it.copy(fileLoaded = true, duration = duration, position = position, eofReached = false) }
+                publishState { it.copy(fileLoaded = true, duration = duration, position = position, eofReached = false) }
                 loadTracks()
                 currentUrl?.let { _events.tryEmit(PlayerEvent.FileLoaded(it, duration)) }
             }
             MpvEvent.MPV_EVENT_END_FILE -> {
-                _state.update { it.copy(fileLoaded = false) }
+                publishState { it.copy(fileLoaded = false) }
                 val failedToOpen = openingLatest && filesStarted == latestLoad
                 openingLatest = false
                 // Ended before loading and not replaced or stopped since: opening failed. mpv often only
@@ -472,7 +488,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
                 // The position was frozen while seeking; extrapolate from now, not from when the seek was issued.
                 if (_state.value.seeking) cachedPositionAt = SystemClock.elapsedRealtime()
-                _state.update { it.copy(seeking = false) }
+                publishState { it.copy(seeking = false) }
             }
         }
     }
@@ -495,7 +511,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         val chapters = (0 until count).mapNotNull { i ->
             Chapter(mpv.getPropertyString("chapter-list/$i/title"), mpv.getPropertyDouble("chapter-list/$i/time") ?: return@mapNotNull null)
         }
-        _state.update { it.copy(chapters = chapters) }
+        publishState { it.copy(chapters = chapters) }
     }
 
     private fun loadTracks() {
@@ -518,10 +534,11 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
                 isExternal = mpv.getPropertyBoolean("track-list/$i/external") ?: false,
             )
         }
-        _tracks.value = list
+        publishTracks(list)
     }
 
     fun destroy() {
+        mainHandler.removeCallbacksAndMessages(null)
         mpv.removeObserver(this)
         mpv.removeLogObserver(this)
         mpv.destroy()

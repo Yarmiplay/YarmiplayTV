@@ -1,6 +1,7 @@
 package com.yarmiplaytv.desktop
 
 import com.yarmiplaytv.update.Update
+import com.yarmiplaytv.update.UpdateFailedException
 import com.yarmiplaytv.update.UpdateInstaller
 import java.io.File
 
@@ -24,7 +25,7 @@ internal class MacUpdater(
     }
 
     override fun installAfterExit(relaunch: Boolean) {
-        val dmg = dmg ?: return
+        val dmg = dmg ?: throw UpdateFailedException("launch", "the downloaded disk image is missing")
         val tmp = System.getProperty("java.io.tmpdir")
         val swap = File(tmp, "yarmiplaytv-swap.sh")
         swap.writeText(swapScript())
@@ -56,29 +57,59 @@ internal class MacUpdater(
                 "quoted form of ${asString(bundle)} with administrator privileges"
             val run = shellQuoted(launcher.invariantSeparatorsPath)
             val quotedArgs = args.joinToString("") { " " + shellQuoted(it) }
+            val openArgs = if (args.isEmpty()) "" else " --args$quotedArgs"
             return buildString {
                 appendLine("while kill -0 $pid 2>/dev/null; do sleep 0.5; done")
                 appendLine("ok=0")
+                appendLine("stage=unpack")
+                appendLine("code=0")
+                appendLine("detail=")
+                appendLine("ver=${shellQuoted(version)}")
+                appendLine("failfile=\"\$HOME/Library/Application Support/YarmiplayTV/update-failure.txt\"")
                 appendLine("mnt=\$(mktemp -d \"\${TMPDIR:-/tmp}/YarmiplayTV-update.XXXXXX\")")
-                appendLine("if hdiutil attach -nobrowse -readonly -noautoopen -mountpoint \"\$mnt\" ${shellQuoted(dmg.invariantSeparatorsPath)}; then")
+                appendLine("attach_log=\$(hdiutil attach -nobrowse -readonly -noautoopen -mountpoint \"\$mnt\" ${shellQuoted(dmg.invariantSeparatorsPath)} 2>&1)")
+                appendLine("attach_code=\$?")
+                appendLine("if [ \"\$attach_code\" -ne 0 ]; then")
+                appendLine("  code=\$attach_code")
+                appendLine("  detail=\$attach_log")
+                appendLine("else")
                 appendLine("  src=\$(find \"\$mnt\" -maxdepth 1 -name '*.app' | head -n 1)")
-                appendLine("  if [ -n \"\$src\" ]; then")
-                appendLine("    if [ -w \"\$(dirname $app)\" ] && [ -w $app ]; then")
-                appendLine("      $swapCommand && ok=1")
-                appendLine("    else")
-                appendLine("      YARMIPLAYTV_SRC=\"\$src\" osascript -e ${shellQuoted(appleScript)} && ok=1")
-                appendLine("    fi")
+                appendLine("  if [ -z \"\$src\" ]; then")
+                appendLine("    code=1")
+                appendLine("    detail='the disk image has no application'")
+                appendLine("  elif [ -w \"\$(dirname $app)\" ] && [ -w $app ]; then")
+                appendLine("    stage=replace")
+                appendLine("    swap_log=\$($swapCommand 2>&1)")
+                appendLine("    swap_code=\$?")
+                appendLine("    if [ \"\$swap_code\" -eq 0 ]; then ok=1; else code=\$swap_code; detail=\$swap_log; fi")
+                appendLine("  else")
+                appendLine("    stage=replace")
+                appendLine("    admin_log=\$(YARMIPLAYTV_SRC=\"\$src\" osascript -e ${shellQuoted(appleScript)} 2>&1)")
+                appendLine("    admin_code=\$?")
+                appendLine("    if [ \"\$admin_code\" -eq 0 ]; then ok=1; else code=\$admin_code; detail=\$admin_log; fi")
                 appendLine("  fi")
                 appendLine("  hdiutil detach \"\$mnt\" -quiet || hdiutil detach \"\$mnt\" -force -quiet")
                 appendLine("fi")
                 appendLine("rmdir \"\$mnt\" 2>/dev/null")
                 appendLine("rm -f ${shellQuoted(dmg.invariantSeparatorsPath)} ${shellQuoted(swapPath)}")
+                append(shRecordFailure())
+                appendLine()
                 if (relaunch) {
-                    appendLine("if [ \$ok = 1 ]; then")
-                    appendLine("  open -n $app${if (args.isEmpty()) "" else " --args$quotedArgs"}")
+                    appendLine("if [ \"\$ok\" = 1 ]; then")
+                    appendLine("  unset $FAILED_INSTALL")
+                    appendLine("  open_log=\$(open -n $app$openArgs 2>&1)")
+                    appendLine("  open_code=\$?")
+                    appendLine("  if [ \"\$open_code\" -ne 0 ]; then")
+                    appendLine("    code=\$open_code")
+                    appendLine("    stage=restart")
+                    appendLine("    detail=\$open_log")
+                    appendLine("    ok=0")
+                    append(shRecordFailure().prependIndent("    "))
+                    appendLine("    $FAILED_INSTALL=\"\$ver|stage=\$stage|exit=\$code|\$detail_one\" nohup $run$quotedArgs >/dev/null 2>&1 &")
+                    appendLine("  fi")
                     appendLine("else")
                     // open doesn't pass the environment on, so the notice needs the launcher itself.
-                    appendLine("  $FAILED_INSTALL=${shellQuoted(version)} nohup $run$quotedArgs >/dev/null 2>&1 &")
+                    appendLine("  $FAILED_INSTALL=\"\$ver|stage=\$stage|exit=\$code|\$detail_one\" nohup $run$quotedArgs >/dev/null 2>&1 &")
                     appendLine("fi")
                 }
             }

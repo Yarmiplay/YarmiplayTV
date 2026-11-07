@@ -22,10 +22,12 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -80,7 +82,9 @@ import kotlinx.coroutines.withContext
 /**
  * Android TV's seek bar: the track, with the clocks and what's playing under it in dim text. Click, tap or drag to
  * seek; the bar shows where it will go until the button or finger is let go. While dragging, or with the mouse on
- * it, the time there shows above it, with the frame from [frames] for a video on this device.
+ * it, the time there shows above it, with the frame from [frames] for a video on this device and the name of the
+ * chapter that starts there, when the file has one. Chapter ticks stay on the bar for a remote or a finger that
+ * is not hovering. Openings and endings stay the amber spans underneath the ticks.
  */
 @Composable
 internal fun TvSeekBar(
@@ -100,6 +104,8 @@ internal fun TvSeekBar(
     val duration = state.duration
     val shown = dragging?.toDouble() ?: position
     val pointing = (dragging ?: hovering)?.toDouble()?.takeIf { duration > 0 }
+    val chapters = chapterBoundaries(state.chapters, duration)
+    val chapter = pointing?.let { chapterTitleAt(chapters, it) }
     val previewWidth = with(LocalDensity.current) { PREVIEW_WIDTH.roundToPx() }.coerceAtMost(MAX_PREVIEW_PIXELS)
     val frame = rememberSeekFrame(frames, state.url, duration, pointing, previewWidth)
     val labelColor = if (onVideo) OnVideo.Text else AppColors.TextDim
@@ -119,8 +125,11 @@ internal fun TvSeekBar(
                 onHover = { hovering = it; if (it != null) onInteract() },
                 onVideo = onVideo,
                 modifier = Modifier.fillMaxWidth().testTag("seek_slider"),
-            ) { SkipMarks(segments, duration, Modifier.matchParentSize()) }
-            pointing?.let { at -> SeekBubble(formatClock(at), frame, (at / duration).toFloat(), width) }
+            ) {
+                SkipMarks(segments, duration, Modifier.matchParentSize())
+                ChapterMarks(state.chapters, duration, Modifier.matchParentSize())
+            }
+            pointing?.let { at -> SeekBubble(formatClock(at), chapter, frame, (at / duration).toFloat(), width) }
         }
         Row(Modifier.fillMaxWidth()) {
             Text(formatClock(shown), color = labelColor, style = MaterialTheme.typography.bodyMedium, modifier = labelModifier)
@@ -135,11 +144,12 @@ internal fun TvSeekBar(
 }
 
 /**
- * Where the seek bar points: the time, and above it the [frame] there when there is one. Sits above the track at
- * [fraction] of its [trackWidth] pixels, kept inside the track's ends, and takes no room of its own.
+ * Where the seek bar points: the time, the chapter name when [chapter] is one, and above those the [frame] there
+ * when there is one. Sits above the track at [fraction] of its [trackWidth] pixels, kept inside the track's ends,
+ * and takes no room of its own.
  */
 @Composable
-private fun SeekBubble(time: String, frame: ImageBitmap?, fraction: Float, trackWidth: Int) {
+private fun SeekBubble(time: String, chapter: String?, frame: ImageBitmap?, fraction: Float, trackWidth: Int) {
     val lift = with(LocalDensity.current) { (KNOB / 2 + 8.dp).roundToPx() }
     Column(
         Modifier
@@ -159,6 +169,22 @@ private fun SeekBubble(time: String, frame: ImageBitmap?, fraction: Float, track
                 contentDescription = null,
                 contentScale = ContentScale.FillWidth,
                 modifier = Modifier.width(PREVIEW_WIDTH).testTag("seek_frame").clip(RoundedCornerShape(6.dp)).border(1.dp, Color.White.copy(alpha = 0.6f), RoundedCornerShape(6.dp)),
+            )
+            Spacer(Modifier.height(4.dp))
+        }
+        chapter?.let {
+            Text(
+                it,
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .widthIn(max = 320.dp)
+                    .testTag("seek_chapter")
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color.Black.copy(alpha = 0.75f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
             )
             Spacer(Modifier.height(4.dp))
         }

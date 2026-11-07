@@ -43,6 +43,7 @@ import com.yarmiplaytv.ui.mobile.appPalette
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.Executors
 import javax.imageio.ImageIO
 import kotlinx.coroutines.CoroutineScope
@@ -135,21 +136,21 @@ class HomeUiTest {
 
     @Test
     fun `the home screen in the light, noire and monochrome themes`() = runDesktopComposeUiTest(1280, 800) {
-        runBlocking { app.settingsStore.saveTheme("light") }
+        saveTheme("light")
         waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "light" }
         show(1280, 800)
         screenshot("home_light")
         assertTrue("cut off: ${cutOff()}", cutOff().isEmpty())
-        runBlocking { app.settingsStore.saveTheme("noire") }
+        saveTheme("noire")
         waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "noire" }
         waitForIdle()
         screenshot("home_noire")
-        runBlocking { app.settingsStore.saveTheme("monochrome") }
+        saveTheme("monochrome")
         waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "monochrome" }
         waitForIdle()
         screenshot("home_monochrome")
         // The player takes the light theme; what's written on the video stays white on see-through black.
-        runBlocking { app.settingsStore.saveTheme("light") }
+        saveTheme("light")
         waitUntil(timeoutMillis = 5_000) { app.settings.value.theme == "light" }
         onNodeWithText("Player").performClick()
         waitForIdle()
@@ -216,6 +217,26 @@ class HomeUiTest {
         val top3 = onNodeWithText("Episode 3").fetchSemanticsNode().boundsInRoot.top
         assertEquals("Episode 1 and 2 should be on the first row", top1, top2, 1.0f)
         assertTrue("Episode 3 should wrap to a new row below row 1", top3 > top1 + 100f)
+    }
+
+    /**
+     * Windows sometimes refuses the rename DataStore uses to replace its file, and reports that as this store
+     * being open twice. The next attempt succeeds once the previous handle is gone.
+     */
+    private fun saveTheme(key: String) {
+        runBlocking {
+            var last: IOException? = null
+            repeat(5) { attempt ->
+                try {
+                    app.settingsStore.saveTheme(key)
+                    return@runBlocking
+                } catch (e: IOException) {
+                    last = e
+                    if (attempt < 4) Thread.sleep(50L * (attempt + 1))
+                }
+            }
+            throw last!!
+        }
     }
 
     private fun ComposeUiTest.screenshot(name: String) {
