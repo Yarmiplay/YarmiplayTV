@@ -642,7 +642,9 @@ export class MediaPlayer implements PlayerAdapter {
     }
 
     const atEnd = this.eof && this.frames.length === 0 && (this.output?.buffered ?? 0) < 0.05;
-    if (atEnd && !this.state.paused && !this.state.ended && now - this.origin >= this.state.duration - 0.25) {
+    // A missing length is 0. `now >= 0 - 0.25` would then pause at the first tick, before the clock moves.
+    const reachedEnd = this.state.duration > 0 && now - this.origin >= this.state.duration - 0.25;
+    if (atEnd && !this.state.paused && !this.state.ended && reachedEnd) {
       this.wallBase = this.origin + this.state.duration;
       this.update({ ended: true });
       this.setPaused(true);
