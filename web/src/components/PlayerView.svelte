@@ -8,6 +8,7 @@
   import type { FeedMessage, PlaylistStatus } from "../lib/sync/room";
   import { followsOperators, type RoomState } from "../lib/syncplay/client";
   import * as ManagedRooms from "../lib/syncplay/managedRooms";
+  import { chapterBoundaries, chapterTitleAt } from "../lib/player/chapterMarks";
   import { formatTime } from "../lib/syncplay/models";
   import { mal, skip } from "../app/watching";
   import { isQuestion, noticeShowMillis, type MalNotice } from "../lib/mal/service";
@@ -210,6 +211,12 @@
     poke();
   }
 
+  /** The chapter that has started by [time], when this file has one. */
+  function chapterName(time: number): string | null {
+    if (!s || !(s.duration > 0)) return null;
+    return chapterTitleAt(chapterBoundaries(s.chapters, s.duration), time);
+  }
+
   /** A quick seek, and a short note of where it landed (1.8.9). */
   function seekBy(delta: number) {
     if (!player || !s?.loaded) return;
@@ -217,7 +224,8 @@
     player.seek(to);
     const fileName = session?.nowPlaying.value?.fileName ?? s?.name;
     if (fileName && to > 0) saveSeekPosition(fileName, to);
-    seekNote = `${delta > 0 ? "+" : "−"}${Math.abs(delta)} s · ${formatTime(to)}`;
+    const chapter = chapterName(to);
+    seekNote = `${delta > 0 ? "+" : "−"}${Math.abs(delta)} s · ${formatTime(to)}${chapter ? ` · ${chapter}` : ""}`;
     clearTimeout(noteTimer);
     noteTimer = setTimeout(() => (seekNote = null), 1200);
     poke();
@@ -657,18 +665,21 @@
             {#each segments as seg (seg.kind + seg.start)}
               <span class="part" style="left: {(seg.start / (s.duration || 1)) * 100}%; width: {((seg.end - seg.start) / (s.duration || 1)) * 100}%" title={seg.kind === "opening" ? "Opening" : "Ending"}></span>
             {/each}
-            {#each s.chapters as c, i (i)}
-              <span class="mark" style="left: {(c.start / (s.duration || 1)) * 100}%" title={c.title}></span>
+            {#each chapterBoundaries(s.chapters, s.duration) as mark (`${mark.time}:${mark.label}`)}
+              <span class="mark" style="left: {(mark.time / s.duration) * 100}%" title={mark.label}></span>
             {/each}
             {#if hover || dragging !== null}
+              {@const at = dragging ?? hover!.time}
+              {@const chapter = chapterName(at)}
               <span class="hover-time" style="left: {hover?.x ?? 0}px">
                 <canvas bind:this={preview} class="preview" class:shown={previewShown}></canvas>
-                {formatTime(dragging ?? hover!.time)}
+                {#if chapter}<span class="hover-chapter">{chapter}</span>{/if}
+                {formatTime(at)}
               </span>
             {/if}
           </div>
           <div class="row">
-            <span class="mono time">{formatTime(dragging ?? s.position)} / {formatTime(s.duration)}</span>
+            <span class="mono time">{formatTime(dragging ?? s.position)} / {formatTime(s.duration)}{#if chapterName(dragging ?? s.position)}<span class="playing-chapter">{chapterName(dragging ?? s.position)}</span>{/if}</span>
             <button class="tool" onclick={() => player?.setVolume(s?.volume ?? 1, !s?.muted)} aria-label={s.muted ? "Unmute (M)" : "Mute (M)"} title={s.muted ? "Unmute (M)" : "Mute (M)"}>
               <Icon name={s.muted || s.volume === 0 ? "volume_off" : "volume_up"} size={22} />
             </button>
@@ -1077,10 +1088,22 @@
   }
   .mark {
     position: absolute;
-    top: 6px;
+    top: 5px;
     width: 2px;
-    height: 10px;
-    background: rgb(255 255 255 / 0.7);
+    height: 12px;
+    background: #fff;
+    box-shadow: 0 0 0 1px #101418;
+    pointer-events: none;
+  }
+  .hover-chapter,
+  .playing-chapter {
+    max-width: 28ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .playing-chapter {
+    margin-left: 8px;
   }
   .preview {
     display: none;

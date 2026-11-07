@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { FileSource, HttpSource, type ByteSource } from "../lib/player/bytes";
   import { MediaPlayer, type PlayerState } from "../lib/player/mediaPlayer";
+  import { chapterBoundaries, chapterTitleAt } from "../lib/player/chapterMarks";
   import { formatTime } from "../lib/syncplay/models";
 
   /**
@@ -118,21 +119,28 @@
   {#if s?.loaded}
     <section class="controls">
       <button class="button" onclick={() => player!.setPaused(!s!.paused)}>{s.paused ? "Play" : "Pause"}</button>
-      <span class="mono time">{formatTime(dragging ?? s.position)} / {formatTime(s.duration)}</span>
-      <input
-        class="seek"
-        type="range"
-        min="0"
-        max={s.duration || 1}
-        step="0.1"
-        value={dragging ?? s.position}
-        oninput={(e) => (dragging = Number((e.target as HTMLInputElement).value))}
-        onchange={(e) => {
-          player!.seek(Number((e.target as HTMLInputElement).value));
-          dragging = null;
-        }}
-        aria-label="Position"
-      />
+      <span class="mono time">{formatTime(dragging ?? s.position)} / {formatTime(s.duration)}{#if chapterTitleAt(chapterBoundaries(s.chapters, s.duration), dragging ?? s.position)}<span class="playing-chapter">{chapterTitleAt(chapterBoundaries(s.chapters, s.duration), dragging ?? s.position)}</span>{/if}</span>
+      <div class="seek-line">
+        <input
+          class="seek"
+          type="range"
+          min="0"
+          max={s.duration || 1}
+          step="0.1"
+          value={dragging ?? s.position}
+          oninput={(e) => (dragging = Number((e.target as HTMLInputElement).value))}
+          onchange={(e) => {
+            player!.seek(Number((e.target as HTMLInputElement).value));
+            dragging = null;
+          }}
+          aria-label="Position"
+        />
+        <div class="seek-ticks" aria-hidden="true">
+          {#each chapterBoundaries(s.chapters, s.duration) as mark (`${mark.time}:${mark.label}`)}
+            <span style="left: {(mark.time / s.duration) * 100}%" title={mark.label}></span>
+          {/each}
+        </div>
+      </div>
       <label>
         Speed
         <select value={String(s.speed)} onchange={(e) => player!.setSpeed(Number((e.target as HTMLSelectElement).value))}>
@@ -261,9 +269,34 @@
     gap: 10px;
     align-items: center;
   }
-  .seek {
+  .seek-line {
+    position: relative;
     flex: 1 1 240px;
+    display: grid;
+    align-items: center;
+  }
+  .seek {
+    width: 100%;
     accent-color: var(--accent);
+  }
+  .seek-ticks {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    top: 50%;
+    height: 0;
+    pointer-events: none;
+  }
+  .seek-ticks span {
+    position: absolute;
+    width: 2px;
+    height: 10px;
+    top: -5px;
+    background: #fff;
+    box-shadow: 0 0 0 1px #101418;
+  }
+  .playing-chapter {
+    margin-left: 8px;
   }
   .time {
     min-width: 13ch;
