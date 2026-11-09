@@ -10,9 +10,8 @@ import kotlin.math.PI
  *
  * Frame size matches Xiph RNNoise (480 samples @ 48 kHz = 10 ms). Speech is estimated with a
  * spectral floor tracker and Wiener-like gains; frames below the VAD threshold are zeroed so
- * room noise is not encoded/sent. On Android the engine also enables the platform WebRTC
- * [android.media.audiofx.NoiseSuppressor], [AcousticEchoCanceler] and [AutomaticGainControl]
- * on the capture session when available.
+ * room noise is not encoded/sent. This stage is the legacy Syncplay relay suppressor only.
+ * Discord lobby voice must leave it disabled so it never stacks on WebRTC, platform NS, or DeepFilterNet.
  *
  * Attribution: 480-sample framing follows RNNoise (BSD-3, https://gitlab.xiph.org/xiph/rnnoise).
  * This spectral VAD/NS is an original implementation sized for the Opus 20 ms pipeline.

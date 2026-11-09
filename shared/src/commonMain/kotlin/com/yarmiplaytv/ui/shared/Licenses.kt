@@ -42,6 +42,11 @@ val openSourceComponents = listOf(
         "https://github.com/Rikorose/DeepFilterNet",
     ),
     OpenSourceComponent(
+        "AndroidDeepFilterNet (Kaleyra libDF JNI + bundled mobile model)",
+        "Apache 2.0",
+        "https://github.com/KaleyraVideo/AndroidDeepFilterNet",
+    ),
+    OpenSourceComponent(
         "ONNX Runtime (Desktop DeepFilterNet3 inference)",
         "MIT",
         "https://onnxruntime.ai",

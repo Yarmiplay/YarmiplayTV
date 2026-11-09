@@ -22,8 +22,8 @@ val deepFilterModel: Configuration by configurations.creating {
 }
 
 dependencies {
-    implementation(project(":syncplay-protocol"))
-    implementation(libs.kotlinx.coroutines.core)
+    api(project(":syncplay-protocol"))
+    api(libs.kotlinx.coroutines.core)
     implementation(libs.concentus)
     implementation(libs.okhttp)
     compileOnly(libs.webrtc.java)

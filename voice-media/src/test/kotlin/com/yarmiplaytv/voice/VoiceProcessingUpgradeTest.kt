@@ -55,13 +55,43 @@ class VoiceProcessingUpgradeTest {
                                         )
 
                                         // Mutual exclusion: when DeepFilterNet is active, WebRTC NS, platform NS, and spectral NS are ALL false.
-                                        if (aiNs && dfnAvailable) {
+                                        if (discordLobby && aiNs && dfnAvailable) {
                                             assertEquals(NsBackend.DEEPFILTERNET, chain.ns)
                                             assertTrue(chain.deepFilterNetEnabled)
                                             assertFalse("WebRTC NS must be disabled when DeepFilterNet is on", chain.webrtcNsEnabled)
                                             assertFalse("Platform NS must be disabled when DeepFilterNet is on", chain.platformNsEnabled)
                                             assertFalse("Spectral NS must be disabled when DeepFilterNet is on", chain.spectralNsEnabled)
                                             assertNull(chain.fallbackNotice)
+                                        }
+
+                                        // Syncplay relay does not pick up lobby-only stages (DFN, desktop WebRTC APM).
+                                        if (!discordLobby) {
+                                            assertFalse(chain.deepFilterNetEnabled)
+                                            assertFalse(chain.webrtcAecEnabled)
+                                            assertFalse(chain.webrtcAgcEnabled)
+                                            assertFalse(chain.webrtcNsEnabled)
+                                            assertNull(chain.fallbackNotice)
+                                            if (platform == VoiceChainPlatform.DESKTOP) {
+                                                assertEquals(AecBackend.NONE, chain.aec)
+                                                assertEquals(AgcBackend.NONE, chain.agc)
+                                                if (ns) {
+                                                    assertEquals(NsBackend.SPECTRAL, chain.ns)
+                                                    assertTrue(chain.dropGatedSilence)
+                                                } else {
+                                                    assertEquals(NsBackend.NONE, chain.ns)
+                                                    assertFalse(chain.dropGatedSilence)
+                                                }
+                                            } else if (ns && hwAvailable) {
+                                                assertEquals(NsBackend.PLATFORM, chain.ns)
+                                                assertEquals(AecBackend.PLATFORM, chain.aec)
+                                                assertEquals(AgcBackend.PLATFORM, chain.agc)
+                                                assertFalse(chain.spectralNsEnabled)
+                                                assertFalse(chain.dropGatedSilence)
+                                            } else {
+                                                assertEquals(NsBackend.NONE, chain.ns)
+                                                assertEquals(AecBackend.NONE, chain.aec)
+                                                assertEquals(AgcBackend.NONE, chain.agc)
+                                            }
                                         }
 
                                         // Graceful fallback when DeepFilterNet is requested on lobby voice but unavailable.
@@ -212,15 +242,48 @@ class VoiceProcessingUpgradeTest {
         try {
             assertTrue("DeepFilterNet3 should load from ONNX tar.gz", dfn.isAvailable)
             assertFalse(dfn.isDegraded)
-            val speech = VoicePcm.sine(hz = 440.0, frames = 20, amplitude = 0.35)
-            for (f in 0 until 20) {
+            val speech = voicedHarmonic(frames = 50)
+            var inRms = 0.0
+            var outRms = 0.0
+            for (f in 0 until 50) {
                 val frame = speech.copyOfRange(f * 960, (f + 1) * 960)
                 val out = dfn.processFrame20ms(frame, channels = 1)
                 assertEquals(960, out.size)
+                if (f >= 36) {
+                    inRms += VoicePcm.rms(frame)
+                    outRms += VoicePcm.rms(out)
+                }
             }
-            println("DFN3_EMA_MS=${"%.2f".format(dfn.emaFrameTimeMs)} LAST_MS=${"%.2f".format(dfn.lastFrameTimeMs)} LSNR=${dfn.lastLocalSnrDb}")
+            println("DFN3_EMA_MS=${"%.2f".format(dfn.emaFrameTimeMs)} LAST_MS=${"%.2f".format(dfn.lastFrameTimeMs)} LSNR=${dfn.lastLocalSnrDb} IN=$inRms OUT=$outRms")
             assertTrue("DeepFilterNet3 should stay available without fallback (reason=$fallbackReason)", dfn.isAvailable)
             assertTrue("DeepFilterNet3 EMA frame time (${dfn.emaFrameTimeMs} ms) must be < 20 ms real-time budget", dfn.emaFrameTimeMs < 20.0)
+            assertTrue("voiced local SNR should read as speech, got ${dfn.lastLocalSnrDb}", dfn.lastLocalSnrDb > 15f)
+            assertTrue(
+                "DeepFilterNet3 should keep voiced energy (in=$inRms out=$outRms lsnr=${dfn.lastLocalSnrDb})",
+                outRms > inRms * 0.45,
+            )
+
+            val noise = ShortArray(960 * 30)
+            var seed = 0x12345678
+            for (i in noise.indices) {
+                seed = seed * 1664525 + 1013904223
+                noise[i] = ((((seed ushr 16) and 0xFFFF) - 32768) * 0.08).toInt().toShort()
+            }
+            var noiseIn = 0.0
+            var noiseOut = 0.0
+            for (f in 0 until 30) {
+                val frame = noise.copyOfRange(f * 960, (f + 1) * 960)
+                val out = dfn.processFrame20ms(frame, channels = 1)
+                if (f >= 18) {
+                    noiseIn += VoicePcm.rms(frame)
+                    noiseOut += VoicePcm.rms(out)
+                }
+            }
+            println("DFN3_NOISE IN=$noiseIn OUT=$noiseOut LSNR=${dfn.lastLocalSnrDb}")
+            assertTrue(
+                "DeepFilterNet3 should attenuate noise (in=$noiseIn out=$noiseOut)",
+                noiseOut < noiseIn * 0.55,
+            )
         } finally {
             dfn.close()
         }
@@ -343,5 +406,25 @@ class VoiceProcessingUpgradeTest {
         )
         assertEquals(32_000, VoiceMediaSession.opusBitrate(legacyRelay32, 128_000))
         assertEquals(1, VoiceMediaSession.opusChannels(legacyRelay32, preferredStereo = true))
+    }
+
+    /** Harmonic stack with slow amplitude modulation — closer to voiced speech than a pure tone. */
+    private fun voicedHarmonic(frames: Int): ShortArray {
+        val n = frames * 960
+        val out = ShortArray(n)
+        val weights = doubleArrayOf(1.0, 0.5, 0.25, 0.12)
+        for (i in 0 until n) {
+            val t = i / 48_000.0
+            val am = 0.5 + 0.5 * kotlin.math.sin(2.0 * Math.PI * 4.0 * t)
+            var y = 0.0
+            for (h in weights.indices) {
+                y += weights[h] * kotlin.math.sin(2.0 * Math.PI * 140.0 * (h + 1) * t)
+            }
+            y = y / 1.87 * 0.3 * am
+            out[i] = (y * 32767.0).toInt()
+                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                .toShort()
+        }
+        return out
     }
 }

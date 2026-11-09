@@ -20,8 +20,11 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import androidx.core.content.ContextCompat
-import com.kaleyra.noise_filter.utils.DispatcherProvider
+import com.kaleyra.noise_filter.DefaultDeepFilterModelLoader
+import com.kaleyra.noise_filter.dispatcher.DispatcherProvider
 import com.rikorose.deepfilternet.NativeDeepFilterNet
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import com.yarmiplaytv.R
 import com.yarmiplaytv.syncplay.VoiceMediaParams
 import java.nio.ByteBuffer
@@ -165,7 +168,7 @@ class AndroidVoiceEngine(
             return false
         }
         synchronized(chainLock) {
-            if (aiNoiseSuppressionPref) {
+            if (activeDiscord && aiNoiseSuppressionPref) {
                 ensureDeepFilterNetLocked()
             }
         }
@@ -328,7 +331,7 @@ class AndroidVoiceEngine(
     override fun setAiNoiseSuppression(on: Boolean) {
         aiNoiseSuppressionPref = on
         discordEngine.setAiNoiseSuppression(on)
-        if (on) {
+        if (on && activeDiscord) {
             synchronized(chainLock) {
                 if (deepFilterNet == null) dfnLoadFailedReason = null
                 if (session.get() != null) {
@@ -349,7 +352,12 @@ class AndroidVoiceEngine(
     override fun setPreferredStereo(stereo: Boolean) {
         preferredStereoMode = stereo
         discordEngine.setPreferredStereo(stereo)
-        session.get()?.setPreferredStereo(stereo)
+        val media = session.get()
+        val before = media?.activeChannels
+        media?.setPreferredStereo(stereo)
+        if (media != null && before != null && media.activeChannels != before) {
+            startPlayback(media.frameSamples, media.activeChannels)
+        }
     }
 
     private fun ensureDeepFilterNetLocked(): DeepFilterNetProcessor? {
@@ -373,7 +381,9 @@ class AndroidVoiceEngine(
 
     private fun rebuildProcessingChain(logChain: Boolean): VoiceProcessingChain {
         val chain = synchronized(chainLock) {
-            if (aiNoiseSuppressionPref && session.get() != null && deepFilterNet == null && dfnLoadFailedReason == null) {
+            if (aiNoiseSuppressionPref && activeDiscord && session.get() != null &&
+                deepFilterNet == null && dfnLoadFailedReason == null
+            ) {
                 ensureDeepFilterNetLocked()
             }
             val dfn = deepFilterNet
@@ -987,21 +997,37 @@ internal class AndroidNativeDeepFilterBackend private constructor(
     }
 
     companion object {
-        private val synchronousDispatchers = object : DispatcherProvider {
-            override val default: CoroutineDispatcher get() = Dispatchers.Unconfined
-            override val io: CoroutineDispatcher get() = Dispatchers.Unconfined
+        private val inlineDispatchers = object : DispatcherProvider {
             override val main: CoroutineDispatcher get() = Dispatchers.Unconfined
-            override val unconfined: CoroutineDispatcher get() = Dispatchers.Unconfined
+            override val mainImmediate: CoroutineDispatcher get() = Dispatchers.Unconfined
+            override val io: CoroutineDispatcher get() = Dispatchers.Unconfined
+            override val default: CoroutineDispatcher get() = Dispatchers.Unconfined
         }
 
         fun open(context: Context): AndroidNativeDeepFilterBackend? {
             return runCatching {
+                val atten = DeepFilterNetProcessor.DEFAULT_ATTENUATION_LIMIT_DB
                 val dfn = NativeDeepFilterNet(
                     context.applicationContext,
-                    DeepFilterNetProcessor.DEFAULT_ATTENUATION_LIMIT_DB,
-                    synchronousDispatchers,
+                    atten,
+                    inlineDispatchers,
+                    DefaultDeepFilterModelLoader(inlineDispatchers),
                 )
-                if (!dfn.setAttenuationLimit(DeepFilterNetProcessor.DEFAULT_ATTENUATION_LIMIT_DB)) {
+                if (!dfn.setAttenuationLimit(atten)) {
+                    val loaded = CountDownLatch(1)
+                    dfn.onModelLoaded { loaded.countDown() }
+                    loaded.await(5, TimeUnit.SECONDS)
+                    if (!dfn.setAttenuationLimit(atten)) {
+                        runCatching { dfn.release() }
+                        return null
+                    }
+                }
+                val expectedBytes = DeepFilterNetProcessor.HOP_SAMPLES * 2L
+                if (dfn.frameLength != expectedBytes) {
+                    android.util.Log.w(
+                        "AndroidVoice",
+                        "DeepFilterNet3 frame is ${dfn.frameLength} bytes, expected $expectedBytes",
+                    )
                     runCatching { dfn.release() }
                     return null
                 }

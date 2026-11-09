@@ -236,9 +236,16 @@ class DeepFilterNetProcessor(
         const val MIN_NB_ERB_FREQS = 2
         const val NB_DF = 96
         const val DF_ORDER = 5
-        const val CONV_LOOKAHEAD = 2
+        /** Bundled mobile DeepFilterNet3 is the low-latency export (`conv_lookahead = 0`). */
+        const val CONV_LOOKAHEAD = 0
         const val DEFAULT_ATTENUATION_LIMIT_DB = 50f
-        const val DEFAULT_POST_FILTER_BETA = 0.02f
+        /** Official runtime leaves the optional post-filter off unless explicitly enabled. */
+        const val DEFAULT_POST_FILTER_BETA = 0f
+        /**
+         * Stateless ONNX calls reset the GRU. A short feature window gives the last frame recurrent
+         * context without a second noise stage. 16 hops is 160 ms and still far under the 10 ms budget.
+         */
+        const val FEATURE_CONTEXT_FRAMES = 16
         const val DEFAULT_MAX_FRAME_BUDGET_MS = 18.0
         const val DEFAULT_MAX_OVER_BUDGET_STREAK = 5
         const val MODEL_RESOURCE_NAME = "deepfilternet3_onnx.tar.gz"
@@ -268,11 +275,17 @@ class OnnxDeepFilterBackend private constructor(
     private val encSession: OrtSession,
     private val erbDecSession: OrtSession,
     private val dfDecSession: OrtSession,
+    private val dfOrder: Int,
+    private val convLookahead: Int,
+    private val dfLookahead: Int,
     attenuationLimitDb: Float,
     postFilterBeta: Float,
 ) : DeepFilterBackend {
     override val name: String = "deepfilternet3-onnx"
 
+    private val lookahead = maxOf(convLookahead, dfLookahead)
+    private val xLen = maxOf(dfOrder, lookahead)
+    private val yLen = dfOrder + convLookahead
     private val fft = RealFft960()
     private val erbBands: IntArray = computeErbBands(
         sr = DeepFilterNetProcessor.SAMPLE_RATE,
@@ -304,17 +317,17 @@ class OnnxDeepFilterBackend private constructor(
         0.001f + i * ((0.0001f - 0.001f) / (DeepFilterNetProcessor.NB_DF - 1).toFloat())
     }
 
-    // Temporal context window S for ONNX conv/GRU receptive field (causal + lookahead).
-    private val contextFrames = 3
+    // Feature window passed to the stateless ONNX sessions (GRU state is not exposed).
+    private val contextFrames = DeepFilterNetProcessor.FEATURE_CONTEXT_FRAMES
     private val featErbWindow = FloatArray(contextFrames * DeepFilterNetProcessor.NB_ERB)
     private val featSpecWindow = FloatArray(2 * contextFrames * DeepFilterNetProcessor.NB_DF)
 
-    // Rolling spectrum buffers (DF_ORDER + CONV_LOOKAHEAD = 7 frames) matching tract.rs.
-    private val specHistoryLen = DeepFilterNetProcessor.DF_ORDER + DeepFilterNetProcessor.CONV_LOOKAHEAD
-    private val rollingSpecXRe = Array(specHistoryLen) { FloatArray(DeepFilterNetProcessor.FREQ_SIZE) }
-    private val rollingSpecXIm = Array(specHistoryLen) { FloatArray(DeepFilterNetProcessor.FREQ_SIZE) }
-    private val rollingSpecYRe = Array(specHistoryLen) { FloatArray(DeepFilterNetProcessor.FREQ_SIZE) }
-    private val rollingSpecYIm = Array(specHistoryLen) { FloatArray(DeepFilterNetProcessor.FREQ_SIZE) }
+    // Rolling spectra sized like libDF tract.rs: Y holds df_order + conv_lookahead,
+    // X holds max(df_order, lookahead). Gains land on Y[df_order - 1]; DF uses the oldest df_order of X.
+    private val rollingSpecXRe = Array(xLen) { FloatArray(DeepFilterNetProcessor.FREQ_SIZE) }
+    private val rollingSpecXIm = Array(xLen) { FloatArray(DeepFilterNetProcessor.FREQ_SIZE) }
+    private val rollingSpecYRe = Array(yLen) { FloatArray(DeepFilterNetProcessor.FREQ_SIZE) }
+    private val rollingSpecYIm = Array(yLen) { FloatArray(DeepFilterNetProcessor.FREQ_SIZE) }
 
     private val hopInFloat = FloatArray(DeepFilterNetProcessor.HOP_SAMPLES)
     private val hopOutFloat = FloatArray(DeepFilterNetProcessor.HOP_SAMPLES)
@@ -375,10 +388,10 @@ class OnnxDeepFilterBackend private constructor(
 
         // Frame analysis (STFT).
         frameAnalysis(hopInFloat, specRe, specIm)
-        System.arraycopy(specRe, 0, rollingSpecXRe[specHistoryLen - 1], 0, DeepFilterNetProcessor.FREQ_SIZE)
-        System.arraycopy(specIm, 0, rollingSpecXIm[specHistoryLen - 1], 0, DeepFilterNetProcessor.FREQ_SIZE)
-        System.arraycopy(specRe, 0, rollingSpecYRe[specHistoryLen - 1], 0, DeepFilterNetProcessor.FREQ_SIZE)
-        System.arraycopy(specIm, 0, rollingSpecYIm[specHistoryLen - 1], 0, DeepFilterNetProcessor.FREQ_SIZE)
+        System.arraycopy(specRe, 0, rollingSpecXRe[xLen - 1], 0, DeepFilterNetProcessor.FREQ_SIZE)
+        System.arraycopy(specIm, 0, rollingSpecXIm[xLen - 1], 0, DeepFilterNetProcessor.FREQ_SIZE)
+        System.arraycopy(specRe, 0, rollingSpecYRe[yLen - 1], 0, DeepFilterNetProcessor.FREQ_SIZE)
+        System.arraycopy(specIm, 0, rollingSpecYIm[yLen - 1], 0, DeepFilterNetProcessor.FREQ_SIZE)
 
         if (attenLimLinear == 1f) {
             return 35f
@@ -438,7 +451,7 @@ class OnnxDeepFilterBackend private constructor(
                         }
                     }
 
-                    val targetFrameIdx = DeepFilterNetProcessor.DF_ORDER - 1
+                    val targetFrameIdx = dfOrder - 1
                     val yRe = rollingSpecYRe[targetFrameIdx]
                     val yIm = rollingSpecYIm[targetFrameIdx]
 
@@ -484,7 +497,7 @@ class OnnxDeepFilterBackend private constructor(
                                 var sumRe = 0f
                                 var sumIm = 0f
                                 val cf = coefsFrame[f]
-                                for (n in 0 until DeepFilterNetProcessor.DF_ORDER) {
+                                for (n in 0 until dfOrder) {
                                     val sr = rollingSpecXRe[n][f]
                                     val si = rollingSpecXIm[n][f]
                                     val cr = cf[n * 2]
@@ -498,7 +511,7 @@ class OnnxDeepFilterBackend private constructor(
                         }
                     }
 
-                    val noisyIdx = specHistoryLen - DeepFilterNetProcessor.CONV_LOOKAHEAD - 1
+                    val noisyIdx = (xLen - lookahead - 1).coerceAtLeast(0)
                     val noisyRe = rollingSpecXRe[noisyIdx]
                     val noisyIm = rollingSpecXIm[noisyIdx]
 
@@ -727,6 +740,8 @@ class OnnxDeepFilterBackend private constructor(
             val encBytes = entries["enc.onnx"] ?: return null
             val erbBytes = entries["erb_dec.onnx"] ?: return null
             val dfBytes = entries["df_dec.onnx"] ?: return null
+            val config = DfnModelConfig.parse(entries["config.ini"]?.decodeToString()) ?: return null
+            if (!config.matchesBundledRuntime()) return null
 
             val env = OrtEnvironment.getEnvironment()
             val opts = OrtSession.SessionOptions().apply {
@@ -743,8 +758,68 @@ class OnnxDeepFilterBackend private constructor(
                 encSession = enc,
                 erbDecSession = erb,
                 dfDecSession = df,
+                dfOrder = config.dfOrder,
+                convLookahead = config.convLookahead,
+                dfLookahead = config.dfLookahead,
                 attenuationLimitDb = attenuationLimitDb,
                 postFilterBeta = postFilterBeta,
+            )
+        }
+    }
+}
+
+/**
+ * `[df]` / `[deepfilternet]` keys from the model tar's `config.ini`.
+ * The desktop FFT and feature layout are fixed to the bundled 48 kHz / 960 / 480 model.
+ */
+internal data class DfnModelConfig(
+    val sampleRate: Int,
+    val fftSize: Int,
+    val hopSize: Int,
+    val nbErb: Int,
+    val nbDf: Int,
+    val dfOrder: Int,
+    val convLookahead: Int,
+    val dfLookahead: Int,
+) {
+    fun matchesBundledRuntime(): Boolean =
+        sampleRate == DeepFilterNetProcessor.SAMPLE_RATE &&
+            fftSize == DeepFilterNetProcessor.FFT_SIZE &&
+            hopSize == DeepFilterNetProcessor.HOP_SAMPLES &&
+            nbErb == DeepFilterNetProcessor.NB_ERB &&
+            nbDf == DeepFilterNetProcessor.NB_DF &&
+            dfOrder > 0 &&
+            convLookahead >= 0 &&
+            dfLookahead >= 0
+
+    companion object {
+        fun parse(ini: String?): DfnModelConfig? {
+            if (ini.isNullOrBlank()) return null
+            val values = HashMap<String, String>()
+            var section = ""
+            for (raw in ini.lineSequence()) {
+                val line = raw.substringBefore('#').substringBefore(';').trim()
+                if (line.isEmpty()) continue
+                if (line.startsWith("[") && line.endsWith("]")) {
+                    section = line.substring(1, line.length - 1).trim()
+                    continue
+                }
+                val eq = line.indexOf('=')
+                if (eq <= 0) continue
+                val key = line.substring(0, eq).trim()
+                val value = line.substring(eq + 1).trim()
+                values["$section.$key"] = value
+            }
+            fun num(key: String): Int? = values[key]?.substringBefore(',')?.trim()?.toIntOrNull()
+            return DfnModelConfig(
+                sampleRate = num("df.sr") ?: return null,
+                fftSize = num("df.fft_size") ?: return null,
+                hopSize = num("df.hop_size") ?: return null,
+                nbErb = num("df.nb_erb") ?: return null,
+                nbDf = num("df.nb_df") ?: return null,
+                dfOrder = num("df.df_order") ?: num("deepfilternet.df_order") ?: return null,
+                convLookahead = num("deepfilternet.conv_lookahead") ?: return null,
+                dfLookahead = num("df.df_lookahead") ?: num("deepfilternet.df_lookahead") ?: return null,
             )
         }
     }

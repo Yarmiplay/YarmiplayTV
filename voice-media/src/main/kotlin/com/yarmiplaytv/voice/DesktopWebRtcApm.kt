@@ -12,8 +12,9 @@ import dev.onvoid.webrtc.media.audio.AudioProcessingStreamConfig
  * and processes 20 ms capture frames ([processCaptureFrame20ms]) in two 10 ms (480-sample/ch) chunks
  * at 48 kHz.
  *
- * HARD RULE: When AI noise suppression (DeepFilterNet) is active, [noiseSuppression] MUST be passed
- * as `false` so WebRTC NS and DeepFilterNet never stack.
+ * HARD RULE: one AEC (AEC3), one AGC (AGC2 adaptive digital; AGC1 stays off), and at most one noise
+ * suppressor. AGC2's built-in limiter is the only limiter in this stage. When AI noise suppression
+ * (DeepFilterNet) is active, [noiseSuppression] MUST be passed as `false`.
  */
 class DesktopWebRtcApm(
     echoCancellation: Boolean = true,
@@ -108,15 +109,22 @@ class DesktopWebRtcApm(
             cfg.echoCanceller.enabled = aec
             cfg.echoCanceller.enforceHighPassFiltering = true
 
-            cfg.gainController.enabled = agc
-            cfg.gainController.mode = AudioProcessingConfig.GainController.Mode.AdaptiveDigital
-            cfg.gainController.targetLevelDbfs = 3
-            cfg.gainController.compressionGainDb = 9
-            cfg.gainController.enableLimiter = true
+            // AGC1 (legacy) stays off. Enabling it together with AGC2 runs two gain stages and
+            // two limiters. AGC2 adaptive digital is the single AGC; its limiter is the only one.
+            cfg.gainController.enabled = false
+            cfg.gainController.enableLimiter = false
             cfg.gainController.analogGainController.enabled = false
 
             cfg.gainControllerDigital.enabled = agc
+            cfg.gainControllerDigital.fixedDigital.gainDb = 0f
             cfg.gainControllerDigital.adaptiveDigital.enabled = agc
+            if (agc) {
+                cfg.gainControllerDigital.adaptiveDigital.headroomDb = 5f
+                cfg.gainControllerDigital.adaptiveDigital.maxGainDb = 30f
+                cfg.gainControllerDigital.adaptiveDigital.initialGainDb = 8f
+                cfg.gainControllerDigital.adaptiveDigital.maxGainChangeDbPerSecond = 3f
+                cfg.gainControllerDigital.adaptiveDigital.maxOutputNoiseLevelDbfs = -50f
+            }
 
             cfg.noiseSuppression.enabled = ns
             cfg.noiseSuppression.level = AudioProcessingConfig.NoiseSuppression.Level.HIGH

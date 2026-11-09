@@ -143,7 +143,41 @@ data class VoiceProcessingChain(
             val useWebrtcPlatform = platform == VoiceChainPlatform.DESKTOP
             val useAndroidPlatform = platform == VoiceChainPlatform.ANDROID || platform == VoiceChainPlatform.ANDROID_TV
 
-            val webrtcAec = discordLobby && useWebrtcPlatform && echoCancellation && webrtcApmAvailable
+            // Syncplay relay is unchanged aside from not stacking the spectral gate on platform NS:
+            // desktop keeps the spectral suppressor (and its hard gate); Android keeps platform
+            // NS/AEC/AGC, all still tied to the single noise-suppression setting. DeepFilterNet,
+            // desktop WebRTC APM, stereo, and the independent AEC/AGC toggles are lobby-only.
+            if (!discordLobby) {
+                val spectral = useWebrtcPlatform && noiseSuppression
+                val platformOn = useAndroidPlatform && noiseSuppression
+                val platformNs = platformOn && platformNsAvailable
+                val platformAec = platformOn && platformAecAvailable
+                val platformAgc = platformOn && platformAgcAvailable
+                val relayNs = when {
+                    spectral -> NsBackend.SPECTRAL
+                    platformNs -> NsBackend.PLATFORM
+                    else -> NsBackend.NONE
+                }
+                return VoiceProcessingChain(
+                    platform = platform,
+                    discordLobby = false,
+                    aec = if (platformAec) AecBackend.PLATFORM else AecBackend.NONE,
+                    agc = if (platformAgc) AgcBackend.PLATFORM else AgcBackend.NONE,
+                    ns = relayNs,
+                    webrtcAecEnabled = false,
+                    platformAecEnabled = platformAec,
+                    webrtcAgcEnabled = false,
+                    platformAgcEnabled = platformAgc,
+                    webrtcNsEnabled = false,
+                    platformNsEnabled = platformNs,
+                    deepFilterNetEnabled = false,
+                    spectralNsEnabled = spectral,
+                    dropGatedSilence = spectral,
+                    fallbackNotice = null,
+                )
+            }
+
+            val webrtcAec = useWebrtcPlatform && echoCancellation && webrtcApmAvailable
             val platformAec = useAndroidPlatform && echoCancellation && platformAecAvailable
             val aecBackend = when {
                 webrtcAec -> AecBackend.WEBRTC
@@ -151,7 +185,7 @@ data class VoiceProcessingChain(
                 else -> AecBackend.NONE
             }
 
-            val webrtcAgc = discordLobby && useWebrtcPlatform && autoGainControl && webrtcApmAvailable
+            val webrtcAgc = useWebrtcPlatform && autoGainControl && webrtcApmAvailable
             val platformAgc = useAndroidPlatform && autoGainControl && platformAgcAvailable
             val agcBackend = when {
                 webrtcAgc -> AgcBackend.WEBRTC
@@ -162,9 +196,9 @@ data class VoiceProcessingChain(
             val useDeepFilter = aiNoiseSuppression && deepFilterNetAvailable
             val aiFallbackTriggered = aiNoiseSuppression && !deepFilterNetAvailable
 
-            val webrtcNs = discordLobby && !useDeepFilter && useWebrtcPlatform && noiseSuppression && webrtcApmAvailable
+            val webrtcNs = !useDeepFilter && useWebrtcPlatform && noiseSuppression && webrtcApmAvailable
             val platformNs = !useDeepFilter && useAndroidPlatform && noiseSuppression && platformNsAvailable
-            val spectralNs = !discordLobby && !useDeepFilter && useWebrtcPlatform && noiseSuppression
+            val spectralNs = false
 
             val nsBackend = when {
                 useDeepFilter -> NsBackend.DEEPFILTERNET

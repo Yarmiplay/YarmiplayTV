@@ -16,8 +16,10 @@ class OpusCodec(
 ) {
     val frameSamples: Int = sampleRate / 50 // 20 ms (960 samples per channel at 48 kHz)
     val effectiveChannels: Int = channels.coerceIn(1, 2)
-    val effectiveBitrate: Int = bitrate.coerceIn(MIN_BITRATE, MAX_BITRATE)
+    var effectiveBitrate: Int = bitrate.coerceIn(MIN_BITRATE, MAX_BITRATE)
+        private set
 
+    private val codecLock = Any()
     private val encoder = OpusEncoder(sampleRate, effectiveChannels, OpusApplication.OPUS_APPLICATION_VOIP).also {
         it.bitrate = effectiveBitrate
         it.useInbandFEC = fec
@@ -50,10 +52,21 @@ class OpusCodec(
             else -> return null
         }
         return try {
-            val n = encoder.encode(inputPcm, inputOffset, frameSamples, encBuf, 0, encBuf.size)
-            if (n <= 0) null else encBuf.copyOf(n)
+            synchronized(codecLock) {
+                val n = encoder.encode(inputPcm, inputOffset, frameSamples, encBuf, 0, encBuf.size)
+                if (n <= 0) null else encBuf.copyOf(n)
+            }
         } catch (_: OpusException) {
             null
+        }
+    }
+
+    /** Live encoder bitrate. Channel count stays fixed for the life of this codec. */
+    fun setBitrate(bitrate: Int) {
+        val next = bitrate.coerceIn(MIN_BITRATE, MAX_BITRATE)
+        synchronized(codecLock) {
+            effectiveBitrate = next
+            encoder.bitrate = next
         }
     }
 

@@ -41,6 +41,7 @@ class VoiceMediaSession(
     private var outputGain = 1f
     private var preferredBitrate = DISCORD_BITRATE
     private var preferredStereo = false
+    private var connectedSeat: VoiceMediaParams? = null
     private val peerMuted = ConcurrentHashMap<Long, Boolean>()
     private val peerVolume = ConcurrentHashMap<Long, Float>()
     private val lock = Mutex()
@@ -133,12 +134,33 @@ class VoiceMediaSession(
 
     fun setPreferredBitrate(bitrateBps: Int) {
         preferredBitrate = bitrateBps.coerceIn(MIN_VOICE_BITRATE, MAX_VOICE_BITRATE)
+        applyEncoderPreferences()
     }
 
     fun getPreferredBitrate(): Int = preferredBitrate
 
     fun setPreferredStereo(stereo: Boolean) {
         preferredStereo = stereo
+        applyEncoderPreferences()
+    }
+
+    /**
+     * Applies the lobby bitrate immediately. A channel-count change replaces the codec; the
+     * Syncplay relay stays inside its existing cap and channel count.
+     */
+    private fun applyEncoderPreferences() {
+        val seat = connectedSeat ?: return
+        val current = codec ?: return
+        val bitrate = opusBitrate(seat, preferredBitrate)
+        val channels = opusChannels(seat, preferredStereo, bitrate)
+        if (current.effectiveChannels == channels) {
+            current.setBitrate(bitrate)
+            return
+        }
+        codec = OpusCodec(bitrate, fec = seat.fec, dtx = false, opusClock(seat), channels)
+        preOpusMono.clear()
+        preOpusStereo.clear()
+        synchronized(mixBuf) { mixBuf.fill(0) }
     }
 
     fun isPreferredStereo(): Boolean = preferredStereo
@@ -165,6 +187,7 @@ class VoiceMediaSession(
         // capture sends continuous 20 ms frames so the far end is not asked to conceal holes.
         val opus = OpusCodec(bitrate, fec = seat.fec, dtx = false, clock, channels)
         codec = opus
+        connectedSeat = seat
         inbound = boundedInbound()
         val frames = inbound
         val onAudio: (Long, ByteArray, Int, Int) -> Unit =
@@ -177,7 +200,7 @@ class VoiceMediaSession(
             if (mux.start()) {
                 muxTransport = mux
                 decodeJob = scope.launch { ingestLoop(frames) }
-                playbackJob = scope.launch { playbackLoop(opus) }
+                playbackJob = scope.launch { playbackLoop() }
                 return true
             }
             mux.close()
@@ -206,7 +229,7 @@ class VoiceMediaSession(
             if (ws.start()) {
                 wsTransport = ws
                 decodeJob = scope.launch { ingestLoop(frames) }
-                playbackJob = scope.launch { playbackLoop(opus) }
+                playbackJob = scope.launch { playbackLoop() }
                 return true
             }
             ws.close()
@@ -248,7 +271,7 @@ class VoiceMediaSession(
         }
         transport = t
         decodeJob = scope.launch { ingestLoop(frames) }
-        playbackJob = scope.launch { playbackLoop(opus) }
+        playbackJob = scope.launch { playbackLoop() }
         return true
     }
 
@@ -265,6 +288,7 @@ class VoiceMediaSession(
         muxTransport?.close()
         muxTransport = null
         codec = null
+        connectedSeat = null
         transmitting.set(false)
         wantTransmit.set(false)
         deaf.set(false)
@@ -463,10 +487,11 @@ class VoiceMediaSession(
         }
     }
 
-    private suspend fun playbackLoop(opus: OpusCodec) {
+    private suspend fun playbackLoop() {
         // Pace at 20 ms so AudioTrack / desktop lines see a steady stream (not packet bursts).
-        val mixSamples = opus.frameSamples * opus.effectiveChannels
         while (scope.isActive) {
+            val opus = codec ?: break
+            val mixSamples = opus.frameSamples * opus.effectiveChannels
             val start = System.nanoTime()
             val senders = jitter.primedSenders()
             if (senders.isEmpty()) {

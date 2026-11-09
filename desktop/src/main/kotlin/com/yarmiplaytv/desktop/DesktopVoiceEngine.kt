@@ -120,9 +120,15 @@ class DesktopVoiceEngine : VoiceEngine {
             return false
         }
         synchronized(chainLock) {
-            webRtcApm = DesktopWebRtcApm()
-            if (aiNoiseSuppressionPref) {
-                ensureDeepFilterNetLocked()
+            if (activeDiscord) {
+                webRtcApm = DesktopWebRtcApm(
+                    echoCancellation = echoCancellationPref,
+                    autoGainControl = autoGainControlPref,
+                    noiseSuppression = noiseSuppressionPref && !aiNoiseSuppressionPref,
+                )
+                if (aiNoiseSuppressionPref) {
+                    ensureDeepFilterNetLocked()
+                }
             }
         }
         if (activeDiscord && discordEngine.audioConfig().selfDeaf) media.setSelfDeaf(true)
@@ -274,7 +280,7 @@ class DesktopVoiceEngine : VoiceEngine {
     override fun setAiNoiseSuppression(on: Boolean) {
         aiNoiseSuppressionPref = on
         discordEngine.setAiNoiseSuppression(on)
-        if (on) {
+        if (on && activeDiscord) {
             synchronized(chainLock) {
                 // Clear previous failure so re-toggling retries initialization once.
                 if (deepFilterNet == null) dfnLoadFailedReason = null
@@ -296,7 +302,14 @@ class DesktopVoiceEngine : VoiceEngine {
     override fun setPreferredStereo(stereo: Boolean) {
         preferredStereoMode = stereo
         discordEngine.setPreferredStereo(stereo)
-        session.get()?.setPreferredStereo(stereo)
+        val media = session.get()
+        val before = media?.activeChannels
+        media?.setPreferredStereo(stereo)
+        if (media != null && before != null && media.activeChannels != before) {
+            openPlayback()
+            stopCapture()
+            syncCapture(media)
+        }
     }
 
     private fun ensureDeepFilterNetLocked(): DeepFilterNetProcessor? {
@@ -319,7 +332,9 @@ class DesktopVoiceEngine : VoiceEngine {
 
     private fun rebuildProcessingChain(logChain: Boolean): VoiceProcessingChain {
         synchronized(chainLock) {
-            if (aiNoiseSuppressionPref && session.get() != null && deepFilterNet == null && dfnLoadFailedReason == null) {
+            if (aiNoiseSuppressionPref && activeDiscord && session.get() != null &&
+                deepFilterNet == null && dfnLoadFailedReason == null
+            ) {
                 ensureDeepFilterNetLocked()
             }
             val dfn = deepFilterNet
