@@ -35,7 +35,7 @@ sealed interface Screen {
 }
 
 class Navigator(private val stack: SnapshotStateList<Screen>, private val onRemoved: (Screen) -> Unit = {}) {
-    val current: Screen get() = stack.last()
+    val current: Screen get() = stack.lastOrNull() ?: Screen.Home
 
     /** Playable item whose action sheet (play in room / play here / add to playlist) is open. */
     var actionItem by mutableStateOf<MediaItem?>(null)
