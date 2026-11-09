@@ -1,41 +1,49 @@
 package com.yarmiplaytv.ui.mobile
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.Audiotrack
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Surface
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -45,39 +53,44 @@ import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.DeviceKind
+import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.SurfaceInk
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableDoubleStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.yarmiplaytv.media.FileNames
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private data class Tab(val screen: Screen, val label: String, val icon: ImageVector)
@@ -346,6 +359,7 @@ private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
         contentColor = AppColors.OnSurface,
         modifier = Modifier
             .fillMaxWidth()
+            .pointerHoverIcon(PointerIcon.Hand)
             .clickable(onClick = onOpenPlayer)
             .testTag("mini_player"),
     ) {
@@ -361,7 +375,7 @@ private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Box(
                     modifier = Modifier
@@ -399,13 +413,14 @@ private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
                     IconButton(
                         onClick = { container.playlist.skip(false) },
                         enabled = container.playlist.skipTarget(room, forward = false) != null,
+                        modifier = Modifier.pointerHoverIcon(PointerIcon.Hand),
                     ) {
                         Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous track", tint = AppColors.Text)
                     }
                 }
                 IconButton(
                     onClick = { container.player.setPaused(!state.paused) },
-                    modifier = Modifier.testTag("mini_play_pause"),
+                    modifier = Modifier.pointerHoverIcon(PointerIcon.Hand).testTag("mini_play_pause"),
                 ) {
                     Icon(
                         if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
@@ -417,6 +432,7 @@ private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
                     IconButton(
                         onClick = { container.playlist.skip(true) },
                         enabled = container.playlist.skipTarget(room, forward = true) != null,
+                        modifier = Modifier.pointerHoverIcon(PointerIcon.Hand),
                     ) {
                         Icon(Icons.Filled.SkipNext, contentDescription = "Next track", tint = AppColors.Text)
                     }
@@ -430,16 +446,131 @@ private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
 /** Desktop: the app's name, then the sections as a list like the Settings categories. */
 @Composable
 private fun Sidebar(container: AppContainer, selected: Tab, onTab: (Tab) -> Unit) {
-    Column(Modifier.width(SIDEBAR_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState()).padding(12.dp).testTag("sidebar")) {
-        Row(Modifier.padding(top = 4.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            AppMark(32.dp)
-            Spacer(Modifier.width(10.dp))
-            Text("YarmiplayTV", style = MaterialTheme.typography.titleLarge)
+    Surface(
+        color = AppColors.Surface,
+        contentColor = AppColors.OnSurface,
+        modifier = Modifier.width(SIDEBAR_WIDTH).fillMaxHeight(),
+    ) {
+        SurfaceInk {
+            Column(Modifier.fillMaxSize().testTag("sidebar")) {
+                // The nav scrolls on a short window; Exit stays on screen so it isn't pushed away.
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp, vertical = 16.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        DesktopAppMark(40.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            "YarmiplayTV",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = AppColors.Text,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                    Spacer(Modifier.height(18.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        tabs.forEach { tab ->
+                            DesktopSideNavItem(
+                                label = tab.label,
+                                icon = tab.icon,
+                                selected = tab == selected,
+                                onClick = { onTab(tab) },
+                                modifier = Modifier.testTag("tab_${tab.label}"),
+                            )
+                        }
+                    }
+                }
+                Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 14.dp)) {
+                    HorizontalDivider(color = AppColors.SurfaceHigh)
+                    Spacer(Modifier.height(8.dp))
+                    DesktopSideNavItem(
+                        label = "Exit",
+                        icon = Icons.AutoMirrored.Filled.Logout,
+                        selected = false,
+                        onClick = { container.exitApp() },
+                        modifier = Modifier.testTag("sidebar_exit"),
+                    )
+                }
+            }
         }
-        tabs.forEach { tab -> SideNavItem(tab.label, tab.icon, tab == selected, { onTab(tab) }, Modifier.testTag("tab_${tab.label}")) }
-        Spacer(Modifier.weight(1f))
-        SideNavItem("Exit", Icons.AutoMirrored.Filled.Logout, false, { container.exitApp() }, Modifier.testTag("sidebar_exit"))
     }
 }
 
-private val SIDEBAR_WIDTH = 220.dp
+@Composable
+private fun DesktopSideNavItem(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val focused by interactionSource.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(10.dp)
+    val bg = when {
+        selected -> AppColors.SurfaceHigh
+        hovered || focused -> AppColors.SurfaceHigh.copy(alpha = 0.55f)
+        else -> Color.Transparent
+    }
+    val border = when {
+        focused -> BorderStroke(1.5.dp, AppColors.Accent)
+        selected -> BorderStroke(1.dp, AppColors.Accent.copy(alpha = 0.28f))
+        else -> null
+    }
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 44.dp)
+            .then(if (border != null) Modifier.border(border, shape) else Modifier)
+            .clip(shape)
+            .background(bg, shape)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = onClick,
+            )
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .width(3.dp)
+                .height(18.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(if (selected) AppColors.Accent else Color.Transparent),
+        )
+        Spacer(Modifier.width(9.dp))
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = when {
+                selected -> AppColors.Accent
+                hovered || focused -> AppColors.Text
+                else -> AppColors.TextDim
+            },
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (selected || hovered || focused) AppColors.Text else AppColors.TextDim,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+private val SIDEBAR_WIDTH = 248.dp

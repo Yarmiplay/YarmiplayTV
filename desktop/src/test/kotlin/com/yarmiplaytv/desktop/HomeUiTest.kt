@@ -12,16 +12,19 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.hasAnyAncestor
-import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.performMouseInput
-import androidx.compose.ui.test.runDesktopComposeUiTest
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performMouseInput
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.test.runDesktopComposeUiTest
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
@@ -115,23 +118,89 @@ class HomeUiTest {
         waitForIdle()
     }
 
-    /** The texts on the home screen that are cut off (ellipsized or clipped). */
+    /** Texts that are cut off, or wrapped one character at a time, anywhere on the home window (page and side list). */
     private fun ComposeUiTest.cutOff(): List<String> =
-        onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Text) and hasAnyAncestor(hasTestTag("home")), useUnmergedTree = true)
+        onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Text), useUnmergedTree = true)
             .fetchSemanticsNodes().mapNotNull { node ->
                 val layouts = mutableListOf<TextLayoutResult>()
                 node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(layouts)
                 val cut = layouts.any { layout ->
-                    layout.multiParagraph.didExceedMaxLines || (0 until layout.lineCount).any { layout.isLineEllipsized(it) }
+                    layout.multiParagraph.didExceedMaxLines ||
+                        (0 until layout.lineCount).any { layout.isLineEllipsized(it) } ||
+                        (0 until layout.lineCount - 1).any { line ->
+                            layout.getLineEnd(line, visibleEnd = true) - layout.getLineStart(line) <= 1
+                        }
                 }
                 node.config[SemanticsProperties.Text].joinToString().takeIf { cut }
             }
+
+    private fun ComposeUiTest.assertOneLine(text: String) {
+        val nodes = onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes()
+        assertTrue("missing \"$text\"", nodes.isNotEmpty())
+        nodes.forEach { node ->
+            val layouts = mutableListOf<TextLayoutResult>()
+            node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(layouts)
+            layouts.forEach { layout ->
+                assertEquals("\"$text\" should stay on one line", 1, layout.lineCount)
+            }
+        }
+    }
+
+    /** Labels that must stay on one line from the smallest window up to a maximized one. */
+    private fun ComposeUiTest.assertHomeLabels() {
+        listOf(
+            "YarmiplayTV", "Home", "Player", "Search", "Room", "Settings", "Exit",
+            "Join a Syncplay room", "Connect Jellyfin", "Connect Plex", "Files on this device",
+        ).forEach { assertOneLine(it) }
+        listOf(
+            "Browse your media server",
+            "Browse your Plex server",
+            "Open a video or add media folders",
+            "Rejoin Saturday anime night on syncplay.example-friends-server.net",
+        ).forEach { text ->
+            assertTrue("missing \"$text\"", onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        }
+        assertTrue("cut off: ${cutOff()}", cutOff().isEmpty())
+    }
+
+    /** On a wide window the page stays in a centered column instead of stretching to the edges. */
+    private fun ComposeUiTest.assertReadableWidth(windowWidth: Int) {
+        val content = onNodeWithTag("desktop_home_content").fetchSemanticsNode().boundsInRoot
+        assertTrue("content is ${content.width}px, wider than 1520", content.width <= 1520f + 1f)
+        if (windowWidth >= 1800) {
+            assertTrue("content runs to the window edge (${content.right} of $windowWidth)", content.right < windowWidth - 40f)
+            assertTrue("content overlaps the side list", content.left > 280f)
+        }
+    }
 
     @Test
     fun `the cards show all their text in a large window`() = runDesktopComposeUiTest(1280, 800) {
         show(1280, 800)
         screenshot("home_wide")
-        assertTrue("cut off: ${cutOff()}", cutOff().isEmpty())
+        assertHomeLabels()
+    }
+
+    @Test
+    fun `a 900 by 600 window keeps labels on one line`() = runDesktopComposeUiTest(900, 600) {
+        show(900, 600)
+        screenshot("home_900x600")
+        assertHomeLabels()
+    }
+
+    @Test
+    fun `a maximized 1440p window keeps a readable content width`() = runDesktopComposeUiTest(1920, 1080) {
+        show(1920, 1080)
+        screenshot("home_1440p")
+        assertHomeLabels()
+        assertReadableWidth(1920)
+    }
+
+    @Test
+    fun `a 4k window keeps a readable content width`() = runDesktopComposeUiTest(2560, 1440) {
+        show(2560, 1440)
+        screenshot("home_4k")
+        assertHomeLabels()
+        assertReadableWidth(2560)
     }
 
     @Test
@@ -161,7 +230,10 @@ class HomeUiTest {
     fun `the cards show all their text in the smallest window`() = runDesktopComposeUiTest(WindowBounds.MIN_WIDTH.toInt(), WindowBounds.MIN_HEIGHT.toInt()) {
         show(WindowBounds.MIN_WIDTH.toInt(), WindowBounds.MIN_HEIGHT.toInt())
         screenshot("home_narrow")
-        assertTrue("cut off: ${cutOff()}", cutOff().isEmpty())
+        assertHomeLabels()
+        onNodeWithText("MyAnimeList").performScrollTo().assertIsDisplayed()
+        onNodeWithText("Open a video or add media folders").performScrollTo().assertIsDisplayed()
+        screenshot("home_narrow_scrolled")
     }
 
     @Test
@@ -178,6 +250,38 @@ class HomeUiTest {
         val corner = image.getRGB(card.left.toInt() + 1, card.top.toInt() + 1)
         val page = image.getRGB(card.left.toInt() - 4, card.top.toInt() + 1)
         assertEquals("corner outside the rounding", page, corner)
+    }
+
+    @Test
+    fun `action cards show a pointer hover and a keyboard focus ring`() = runDesktopComposeUiTest(1280, 800) {
+        show(1280, 800)
+        onNodeWithTag("card_room").performMouseInput { moveTo(Offset(width * 0.5f, height * 0.5f)) }
+        waitForIdle()
+        screenshot("home_card_hover")
+        onNodeWithTag("card_room").requestFocus()
+        onNodeWithTag("card_room").assertIsFocused()
+        waitForIdle()
+        screenshot("home_card_focus")
+        assertTrue("cut off: ${cutOff()}", cutOff().isEmpty())
+    }
+
+    @Test
+    fun `every home card still opens its screen`() = runDesktopComposeUiTest(1280, 800) {
+        show(1280, 800)
+        onNodeWithTag("card_room").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("connect").fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag("tab_Home").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("home").fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag("card_local").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("local_list").fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag("tab_Home").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("card_jellyfin").fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag("card_jellyfin").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("jellyfin_url").fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag("tab_Home").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("card_plex").fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag("card_plex").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("plex_link").fetchSemanticsNodes().isNotEmpty() }
     }
 
     @Test
