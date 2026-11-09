@@ -20,7 +20,8 @@ import kotlin.math.sqrt
  * Shared encode/decode + `yv1` transport. Platforms feed PCM via [offerCapturePcm] and mix
  * remote PCM from [pollMixedPcm] (or [onRemotePcm] if set).
  *
- * Capture path: optional [VoiceNoiseSuppressor] (RNNoise-framed spectral NS + VAD) before Opus.
+ * Capture path: optional [VoiceNoiseSuppressor] (RNNoise-framed spectral NS + VAD) before Opus
+ * on the legacy relayed path; on Discord lobby voice, platform/WebRTC/DeepFilterNet handles NS.
  * Receive path: per-sender [VoiceJitterBuffer] (~40–80 ms) with FEC/PLC, paced at 20 ms.
  */
 class VoiceMediaSession(
@@ -38,6 +39,8 @@ class VoiceMediaSession(
     private var speechThreshold = LEGACY_SPEECH_RMS
     private var inputGain = 1f
     private var outputGain = 1f
+    private var preferredBitrate = DISCORD_BITRATE
+    private var preferredStereo = false
     private val peerMuted = ConcurrentHashMap<Long, Boolean>()
     private val peerVolume = ConcurrentHashMap<Long, Float>()
     private val lock = Mutex()
@@ -49,7 +52,7 @@ class VoiceMediaSession(
     private var playbackJob: Job? = null
     /** Bounded so a stalled ingest path cannot retain unbounded Opus copies. */
     private var inbound = boundedInbound()
-    private val mixBuf = ShortArray(960)
+    private val mixBuf = ShortArray(VoicePcm.frameSamples * VoicePcm.STEREO_CHANNELS)
     private val receivedFrames = AtomicBoolean(false)
     private val lastRms = AtomicReference(0.0)
     private val captureRms = AtomicReference(0.0)
@@ -60,9 +63,12 @@ class VoiceMediaSession(
     private val audibleSenders = AtomicReference<Set<Long>>(emptySet())
     private val jitter = VoiceJitterBuffer()
     private val noise = VoiceNoiseSuppressor()
-    private val preOpus = VoicePcm.FrameAccumulator()
+    private val preOpusMono = VoicePcm.FrameAccumulator(VoicePcm.frameSamples)
+    private val preOpusStereo = VoicePcm.FrameAccumulator(VoicePcm.frameSamples * VoicePcm.STEREO_CHANNELS)
 
     val frameSamples: Int get() = codec?.frameSamples ?: 960
+    val activeChannels: Int get() = codec?.effectiveChannels ?: 1
+    val activeBitrate: Int get() = codec?.effectiveBitrate ?: preferredBitrate
     val running: Boolean get() = transport != null || wsTransport != null || muxTransport != null
     val usingTcp: Boolean get() = transport?.usingTcp == true
     /** True when media is on Syncplay mux or the Syncplay-port `/yarmiplay/voice` WebSocket. */
@@ -125,12 +131,25 @@ class VoiceMediaSession(
 
     fun isNoiseSuppressionEnabled(): Boolean = noise.isEnabled()
 
+    fun setPreferredBitrate(bitrateBps: Int) {
+        preferredBitrate = bitrateBps.coerceIn(MIN_VOICE_BITRATE, MAX_VOICE_BITRATE)
+    }
+
+    fun getPreferredBitrate(): Int = preferredBitrate
+
+    fun setPreferredStereo(stereo: Boolean) {
+        preferredStereo = stereo
+    }
+
+    fun isPreferredStereo(): Boolean = preferredStereo
+
     suspend fun connect(seat: VoiceMediaParams): Boolean {
         disconnect()
         receivedFrames.set(false)
         lastRms.set(0.0)
         jitter.clear()
-        preOpus.clear()
+        preOpusMono.clear()
+        preOpusStereo.clear()
         noise.reset()
         val token = Yv1Packet.parseTokenHex(seat.token) ?: return false
         val key = Yv1Packet.decodeKeyBase64(seat.key) ?: return false
@@ -139,9 +158,9 @@ class VoiceMediaSession(
         discordCapture = discord
         noise.setHardGate(!discord)
         speechThreshold = if (discord) DISCORD_VAD_RMS else LEGACY_SPEECH_RMS
-        val bitrate = opusBitrate(seat)
+        val bitrate = opusBitrate(seat, preferredBitrate)
         val clock = opusClock(seat)
-        val channels = opusChannels(seat)
+        val channels = opusChannels(seat, preferredStereo, bitrate)
         // DTX stays off. Silence gating on the relayed path is the noise suppressor; Discord
         // capture sends continuous 20 ms frames so the far end is not asked to conceal holes.
         val opus = OpusCodec(bitrate, fec = seat.fec, dtx = false, clock, channels)
@@ -259,8 +278,10 @@ class VoiceMediaSession(
         peerMuted.clear()
         peerVolume.clear()
         jitter.clear()
-        preOpus.clear()
+        preOpusMono.clear()
+        preOpusStereo.clear()
         noise.reset()
+        synchronized(mixBuf) { mixBuf.fill(0) }
     }
 
     fun setTransmitting(on: Boolean) {
@@ -313,7 +334,8 @@ class VoiceMediaSession(
     /** Runs on the capture thread so it does not race the accumulator. */
     private fun consumeCaptureFlush() {
         if (!dropTail.getAndSet(false)) return
-        preOpus.clear()
+        preOpusMono.clear()
+        preOpusStereo.clear()
         noise.flushPending()
         captureRms.set(0.0)
         pickupRms.set(0.0)
@@ -341,10 +363,10 @@ class VoiceMediaSession(
         peerVolume.getOrDefault(senderId, 1f) * outputGain
 
     /**
-     * Feed capture PCM (any length, ideally already 48 kHz mono). Applies noise suppression / VAD,
-     * accumulates exact 20 ms Opus frames, encodes and sends when transmitting.
+     * Feed capture PCM (any length, ideally already 48 kHz). Applies noise suppression / VAD when
+     * enabled, accumulates exact 20 ms Opus frames, encodes and sends when transmitting.
      */
-    suspend fun offerCapturePcm(pcm: ShortArray): Boolean {
+    suspend fun offerCapturePcm(pcm: ShortArray, pcmChannels: Int = 1): Boolean {
         val opus = codec ?: return false
         if (transport == null && wsTransport == null && muxTransport == null) return false
         if (pcm.isEmpty()) return true
@@ -354,6 +376,7 @@ class VoiceMediaSession(
             pickupRms.set(0.0)
             return true
         }
+        val inChannels = pcmChannels.coerceIn(1, 2)
         // Discord applies the SDK input volume before the single noise stage, and never above
         // unity (the platform passes the capped amplitude). The relayed path still gains after NS.
         val source = if (discordCapture) applyInputGain(pcm) else pcm
@@ -361,12 +384,27 @@ class VoiceMediaSession(
             val pre = VoicePcm.rms(source)
             pickupRms.set(pickupRms.get() * 0.55 + pre * 0.45)
         }
-        val cleaned = noise.process(source)
+        val cleaned: ShortArray
+        val cleanedChannels: Int
+        if (inChannels == 2 && !noise.isEnabled()) {
+            if (opus.effectiveChannels == 2) {
+                cleaned = source
+                cleanedChannels = 2
+            } else {
+                cleaned = VoicePcm.stereoToMono(source)
+                cleanedChannels = 1
+            }
+        } else {
+            val monoSource = if (inChannels == 2) VoicePcm.stereoToMono(source) else source
+            cleaned = noise.process(monoSource)
+            cleanedChannels = 1
+        }
         val rms = VoicePcm.rms(cleaned)
         val prev = captureRms.get()
         captureRms.set(prev * 0.55 + rms * 0.45)
         if (!discordCapture) pickupRms.set(captureRms.get())
-        for (frame in preOpus.push(cleaned)) {
+        val accumulator = if (cleanedChannels == 2) preOpusStereo else preOpusMono
+        for (frame in accumulator.push(cleaned)) {
             if (!transmitting.get() || selfMuted.get() || deaf.get() || dropTail.get()) {
                 consumeCaptureFlush()
                 return true
@@ -384,17 +422,31 @@ class VoiceMediaSession(
     }
 
     fun pollMixedPcm(out: ShortArray): Int {
-        val n = minOf(out.size, mixBuf.size)
+        val ch = activeChannels
+        val samplesPerChannel = frameSamples
+        val mixSamples = samplesPerChannel * ch
         if (deaf.get()) {
+            val n = minOf(out.size, mixSamples)
             out.fill(0, 0, n)
             synchronized(mixBuf) { mixBuf.fill(0) }
             return n
         }
         synchronized(mixBuf) {
+            if (ch == 2 && out.size == samplesPerChannel) {
+                // Caller requested a mono 20 ms frame while decoder is running stereo: downmix L+R.
+                for (i in 0 until samplesPerChannel) {
+                    val l = mixBuf[i * 2].toInt()
+                    val r = mixBuf[i * 2 + 1].toInt()
+                    out[i] = ((l + r) / 2).toShort()
+                }
+                mixBuf.fill(0, 0, mixSamples)
+                return samplesPerChannel
+            }
+            val n = minOf(out.size, mixSamples)
             System.arraycopy(mixBuf, 0, out, 0, n)
-            mixBuf.fill(0)
+            mixBuf.fill(0, 0, mixSamples)
+            return n
         }
-        return n
     }
 
     private fun applyInputGain(pcm: ShortArray): ShortArray {
@@ -413,6 +465,7 @@ class VoiceMediaSession(
 
     private suspend fun playbackLoop(opus: OpusCodec) {
         // Pace at 20 ms so AudioTrack / desktop lines see a steady stream (not packet bursts).
+        val mixSamples = opus.frameSamples * opus.effectiveChannels
         while (scope.isActive) {
             val start = System.nanoTime()
             val senders = jitter.primedSenders()
@@ -478,7 +531,7 @@ class VoiceMediaSession(
                 if (onRemotePcm == null) {
                     lock.withLock {
                         synchronized(mixBuf) {
-                            val n = minOf(mixBuf.size, scaled.size)
+                            val n = minOf(mixSamples, minOf(mixBuf.size, scaled.size))
                             for (i in 0 until n) {
                                 val sum = mixBuf[i].toInt() + scaled[i].toInt()
                                 mixBuf[i] = sum.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
@@ -507,16 +560,67 @@ class VoiceMediaSession(
         const val DISCORD_BITRATE = 64_000
         const val DISCORD_CLOCK = 48_000
         const val DISCORD_CHANNELS = 1
+        const val DISCORD_STEREO_CHANNELS = 2
+        const val MIN_VOICE_BITRATE = 24_000
+        const val MAX_VOICE_BITRATE = 128_000
+        const val LEGACY_MAX_BITRATE = 64_000
+        const val SERVER_DEFAULT_MAX_BITRATE = 32_000
+        const val STEREO_MIN_BITRATE = 32_000
 
-        /** Bitrate the encoder will use. Discord lobby voice is 64 kbps; the relay keeps the seat cap. */
+        /** Bitrate the encoder will use. Discord lobby voice defaults to 64 kbps; the relay keeps the seat cap. */
         fun opusBitrate(seat: VoiceMediaParams): Int =
-            if (seat.isDiscordLobby) DISCORD_BITRATE else seat.maxBitrate.coerceIn(24_000, 64_000)
+            opusBitrate(seat, DISCORD_BITRATE)
+
+        /**
+         * Negotiate encoder bitrate against the server/relay seat parameters:
+         * - On the legacy Syncplay relay (`!seat.isDiscordLobby`), cap to `minOf(preferredBitrate, seat.maxBitrate)`
+         *   clamped to `24_000..64_000` so older relays and the Syncplay-port relay are never exceeded.
+         * - On the Discord lobby path (`seat.isDiscordLobby`), allow `24_000..128_000` (matching server
+         *   `BITRATE_MAX = 128_000` and `MAX_PACKET = 1200`). If the server explicitly advertises a non-default
+         *   cap (`seat.maxBitrate != 32_000`), honor `minOf(requested, seat.maxBitrate).coerceIn(24_000, 128_000)`.
+         */
+        fun opusBitrate(seat: VoiceMediaParams, preferredBitrate: Int): Int {
+            val requested = preferredBitrate.coerceIn(MIN_VOICE_BITRATE, MAX_VOICE_BITRATE)
+            return if (seat.isDiscordLobby) {
+                val serverCap = if (seat.maxBitrate > 0 && seat.maxBitrate != SERVER_DEFAULT_MAX_BITRATE) {
+                    seat.maxBitrate.coerceIn(MIN_VOICE_BITRATE, MAX_VOICE_BITRATE)
+                } else {
+                    MAX_VOICE_BITRATE
+                }
+                minOf(requested, serverCap).coerceIn(MIN_VOICE_BITRATE, MAX_VOICE_BITRATE)
+            } else {
+                val cap = if (seat.maxBitrate > 0) seat.maxBitrate else LEGACY_MAX_BITRATE
+                minOf(requested, cap).coerceIn(MIN_VOICE_BITRATE, LEGACY_MAX_BITRATE)
+            }
+        }
 
         fun opusClock(seat: VoiceMediaParams): Int =
             if (seat.isDiscordLobby) DISCORD_CLOCK else seat.clockRate
 
         fun opusChannels(seat: VoiceMediaParams): Int =
-            if (seat.isDiscordLobby) DISCORD_CHANNELS else seat.channels.coerceAtLeast(1)
+            opusChannels(seat, preferredStereo = false)
+
+        /**
+         * Negotiate encoder/decoder channel count (1 = mono, 2 = stereo):
+         * - Legacy Syncplay relay (`!seat.isDiscordLobby`) keeps `seat.channels.coerceAtLeast(1)` (mono) so older
+         *   relays and clients are untouched.
+         * - Discord lobby (`seat.isDiscordLobby`) uses stereo (`2`) when [preferredStereo] is enabled and the
+         *   negotiated bitrate is at least 32 kbps; otherwise falls back to mono (`1`).
+         */
+        fun opusChannels(
+            seat: VoiceMediaParams,
+            preferredStereo: Boolean,
+            negotiatedBitrate: Int = opusBitrate(seat, DISCORD_BITRATE),
+        ): Int {
+            if (!seat.isDiscordLobby) {
+                return seat.channels.coerceAtLeast(1)
+            }
+            return if (preferredStereo && negotiatedBitrate >= STEREO_MIN_BITRATE) {
+                DISCORD_STEREO_CHANNELS
+            } else {
+                DISCORD_CHANNELS
+            }
+        }
 
         /** Cap inbound Opus frames (~1.28 s at 20 ms) — drop oldest if ingest stalls. */
         private const val INBOUND_CAP = 64

@@ -255,10 +255,35 @@ data class AppSettings(
      */
     val voiceAutoJoin: Boolean = true,
     /**
-     * Capture noise suppression (default on): RNNoise-framed spectral NS + VAD on all clients,
-     * plus Android WebRTC NoiseSuppressor/AEC/AGC and browser getUserMedia noiseSuppression.
+     * Capture noise suppression (default on): WebRTC/platform NS on lobby voice (or spectral NS on
+     * legacy relay). Mutually exclusive with [voiceAiNoiseSuppression] when AI NS is active.
      */
     val voiceNoiseSuppression: Boolean = true,
+    /**
+     * Capture echo cancellation (default on): WebRTC AEC3 with playback reference on desktop,
+     * Android platform AcousticEchoCanceler on Android/TV.
+     */
+    val voiceEchoCancellation: Boolean = true,
+    /**
+     * Capture automatic gain control (default on): WebRTC digital adaptive AGC on desktop,
+     * Android platform AutomaticGainControl on Android/TV.
+     */
+    val voiceAgc: Boolean = true,
+    /**
+     * Client-side AI noise suppression via DeepFilterNet3 (default off). When on, replaces
+     * WebRTC/platform noise suppression (mutually exclusive); AEC and AGC stay governed by their own toggles.
+     */
+    val voiceAiNoiseSuppression: Boolean = false,
+    /**
+     * Preferred Opus bitrate for lobby voice in bps (32_000..128_000, default 64_000).
+     * Clamps/negotiates against the server relay cap on connect.
+     */
+    val voiceBitrate: Int = 64_000,
+    /**
+     * Optional stereo voice mode for the lobby voice path (default off = mono).
+     * Falls back cleanly to mono on the legacy relay or with older clients.
+     */
+    val voiceStereo: Boolean = false,
     /**
      * When on (default), mute the mic when playback starts or resumes.
      * Independent of [voiceAutoUnmuteWhenPaused].
@@ -400,6 +425,11 @@ class SettingsStore(
         val voiceChat = booleanPreferencesKey("voice_chat")
         val voiceAutoJoin = booleanPreferencesKey("voice_auto_join")
         val voiceNoiseSuppression = booleanPreferencesKey("voice_noise_suppression")
+        val voiceEchoCancellation = booleanPreferencesKey("voice_echo_cancellation")
+        val voiceAgc = booleanPreferencesKey("voice_agc")
+        val voiceAiNoiseSuppression = booleanPreferencesKey("voice_ai_noise_suppression")
+        val voiceBitrate = intPreferencesKey("voice_bitrate")
+        val voiceStereo = booleanPreferencesKey("voice_stereo")
         val voiceAutoMuteWhenPlaying = booleanPreferencesKey("voice_auto_mute_when_playing")
         val voiceAutoUnmuteWhenPaused = booleanPreferencesKey("voice_auto_unmute_when_paused")
         val voiceTalkMode = stringPreferencesKey("voice_talk_mode")
@@ -560,6 +590,11 @@ class SettingsStore(
             voiceChat = p[Keys.voiceChat] ?: true,
             voiceAutoJoin = p[Keys.voiceAutoJoin] ?: true,
             voiceNoiseSuppression = p[Keys.voiceNoiseSuppression] ?: true,
+            voiceEchoCancellation = p[Keys.voiceEchoCancellation] ?: true,
+            voiceAgc = p[Keys.voiceAgc] ?: true,
+            voiceAiNoiseSuppression = p[Keys.voiceAiNoiseSuppression] ?: false,
+            voiceBitrate = (p[Keys.voiceBitrate] ?: 64_000).coerceIn(24_000, 128_000),
+            voiceStereo = p[Keys.voiceStereo] ?: false,
             voiceAutoMuteWhenPlaying = p[Keys.voiceAutoMuteWhenPlaying] ?: true,
             voiceAutoUnmuteWhenPaused = p[Keys.voiceAutoUnmuteWhenPaused] ?: true,
             voiceTalkMode = p[Keys.voiceTalkMode]?.let { runCatching { VoiceTalkMode.valueOf(it) }.getOrNull() } ?: VoiceTalkMode.OPEN_MIC,
@@ -821,6 +856,18 @@ class SettingsStore(
     suspend fun saveVoiceAutoJoin(on: Boolean) = dataStore.edit { it[Keys.voiceAutoJoin] = on }
 
     suspend fun saveVoiceNoiseSuppression(on: Boolean) = dataStore.edit { it[Keys.voiceNoiseSuppression] = on }
+
+    suspend fun saveVoiceEchoCancellation(on: Boolean) = dataStore.edit { it[Keys.voiceEchoCancellation] = on }
+
+    suspend fun saveVoiceAgc(on: Boolean) = dataStore.edit { it[Keys.voiceAgc] = on }
+
+    suspend fun saveVoiceAiNoiseSuppression(on: Boolean) = dataStore.edit { it[Keys.voiceAiNoiseSuppression] = on }
+
+    suspend fun saveVoiceBitrate(bitrateBps: Int) = dataStore.edit {
+        it[Keys.voiceBitrate] = bitrateBps.coerceIn(24_000, 128_000)
+    }
+
+    suspend fun saveVoiceStereo(on: Boolean) = dataStore.edit { it[Keys.voiceStereo] = on }
 
     suspend fun saveVoiceAutoMuteWhenPlaying(on: Boolean) = dataStore.edit { it[Keys.voiceAutoMuteWhenPlaying] = on }
 

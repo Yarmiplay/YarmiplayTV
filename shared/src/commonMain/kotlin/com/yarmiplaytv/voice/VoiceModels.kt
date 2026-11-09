@@ -68,6 +68,8 @@ data class VoiceUiState(
     val descriptor: VoiceDescriptor? = null,
     /** Short status for the room UI (e.g. "Listening only — no mic"). */
     val statusLine: String? = null,
+    /** In-app notice when AI noise suppression (DeepFilterNet3) fell back to standard NS. */
+    val aiFallbackNotice: String? = null,
     /** One-time TV tip naming the mic button / remote key. */
     val showMicHint: Boolean = false,
     /** Last remote key label that toggled the mic (e.g. "mic button"), when known. */

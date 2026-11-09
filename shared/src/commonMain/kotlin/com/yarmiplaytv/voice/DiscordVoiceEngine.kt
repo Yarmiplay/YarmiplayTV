@@ -12,10 +12,9 @@ import java.util.concurrent.atomic.AtomicReference
  * Discord Application Lobby voice for app id [DEFAULT_DISCORD_APP_ID].
  *
  * The native Discord Social SDK is not linked, so this engine does not open a `discordpp::Call`.
- * It records the SDK audio calls — devices, volumes, mute, deafen, voice-activity mode, and the
- * WebRTC noise suppression / echo cancellation / AGC toggles — and the platform engines apply
- * that config to the capture and playback path opened for the lobby. See [DiscordSdkAudio] for
- * what the SDK supports and what this build cannot do (Krisp, SDK device ids, the SDK encoder).
+ * It records the SDK audio calls — devices, volumes, mute, deafen, voice-activity mode, bitrate,
+ * stereo, and the WebRTC / DeepFilterNet noise suppression, echo cancellation, and AGC toggles —
+ * and the platform engines apply that config to the capture and playback path opened for the lobby.
  *
  * Speaking callbacks ([onUserSpeaking], [onLocalSpeaking]) stay for tests and for a future SDK
  * bridge. Production speaking and the mic ring come from the capture path, which uses the same
@@ -64,7 +63,7 @@ class DiscordVoiceEngine(
         val kept = config
         disconnect()
         currentParams = params
-        // Devices, volumes, and processing survive a reconnect. Call flags do not.
+        // Devices, volumes, bitrate/stereo, and processing survive a reconnect. Call flags do not.
         synchronized(configLock) {
             config = kept.copy(selfMute = false, selfDeaf = false, pttActive = false)
         }
@@ -144,10 +143,32 @@ class DiscordVoiceEngine(
         update { it.copy(noiseSuppression = on) }
     }
 
+    override fun setEchoCancellation(on: Boolean) {
+        update { it.copy(echoCancellation = on) }
+    }
+
+    override fun setAutoGainControl(on: Boolean) {
+        update { it.copy(automaticGainControl = on) }
+    }
+
+    override fun setAiNoiseSuppression(on: Boolean) {
+        update { it.copy(aiNoiseSuppression = on) }
+    }
+
+    override fun setPreferredBitrate(bitrateBps: Int) {
+        val clamped = bitrateBps.coerceIn(DiscordSdkAudio.MIN_BITRATE, DiscordSdkAudio.MAX_BITRATE)
+        update { it.copy(bitrate = clamped) }
+    }
+
+    override fun setPreferredStereo(stereo: Boolean) {
+        update { it.copy(channels = if (stereo) DiscordSdkAudio.STEREO_CHANNELS else DiscordSdkAudio.CHANNELS) }
+    }
+
     /**
-     * [Client::SetNoiseCancellation]. Krisp is not in this build, so the request is recorded and
+     * [Client::SetNoiseCancellation]. Proprietary Krisp is not in this build, so the request is recorded and
      * the effective flag stays off. WebRTC noise suppression is left as the user set it — turning
      * Krisp on in the SDK would disable it, but disabling it here would leave no noise reduction.
+     * Use [setAiNoiseSuppression] for DeepFilterNet3 AI noise suppression.
      */
     fun setNoiseCancellation(on: Boolean) {
         update { it.copy(noiseCancellationRequested = on, noiseCancellation = false) }

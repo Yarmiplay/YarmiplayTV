@@ -50,10 +50,47 @@ interface VoiceEngine {
     fun setOutputGain(gain: Float)
 
     /**
-     * Capture-side noise suppression (RNNoise-framed spectral NS + VAD, plus platform WebRTC
-     * effects where available). Default on; applies live while connected.
+     * Capture-side standard noise suppression (WebRTC NS on desktop, platform NoiseSuppressor on
+     * Android, spectral NS on legacy relay). Mutually exclusive with [setAiNoiseSuppression] when
+     * DeepFilterNet3 is active. Default on; applies live while connected.
      */
     fun setNoiseSuppression(on: Boolean) = Unit
+
+    /**
+     * Capture-side echo cancellation (WebRTC AEC3 with playback reference on desktop, platform
+     * AcousticEchoCanceler on Android). Default on; applies live while connected.
+     */
+    fun setEchoCancellation(on: Boolean) = Unit
+
+    /**
+     * Capture-side automatic gain control (WebRTC digital adaptive AGC on desktop, platform
+     * AutomaticGainControl on Android). Default on; applies live while connected.
+     */
+    fun setAutoGainControl(on: Boolean) = Unit
+
+    /**
+     * Client-side AI noise suppression via DeepFilterNet3. When on, replaces the WebRTC/platform
+     * noise suppressor (mutually exclusive); AEC and AGC remain governed by their own toggles.
+     */
+    fun setAiNoiseSuppression(on: Boolean) = Unit
+
+    /**
+     * Preferred Opus encoder bitrate in bps (e.g. 32_000..128_000, default 64_000) for lobby voice.
+     * Negotiates/clamps against the server relay cap on connect.
+     */
+    fun setPreferredBitrate(bitrateBps: Int) = Unit
+
+    /**
+     * Optional stereo voice mode for the lobby voice path. Falls back to mono on the legacy relay
+     * or if the negotiated bitrate is too low.
+     */
+    fun setPreferredStereo(stereo: Boolean) = Unit
+
+    /**
+     * Non-null when AI noise suppression (DeepFilterNet3) fell back to standard NS because the
+     * native library/model failed to load or the device could not sustain real-time 20 ms frames.
+     */
+    fun statusNotice(): String? = null
 
     /** Local mute of one remote participant (by server participant id, e.g. `c17`). */
     fun setPeerMuted(participantId: String, muted: Boolean)

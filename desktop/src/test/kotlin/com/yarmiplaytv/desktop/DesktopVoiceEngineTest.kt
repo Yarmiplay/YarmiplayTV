@@ -2,7 +2,10 @@ package com.yarmiplaytv.desktop
 
 import com.yarmiplaytv.syncplay.SyncplayVoiceMux
 import com.yarmiplaytv.syncplay.VoiceMediaParams
+import com.yarmiplaytv.voice.AecBackend
+import com.yarmiplaytv.voice.AgcBackend
 import com.yarmiplaytv.voice.DiscordAudioMode
+import com.yarmiplaytv.voice.NsBackend
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -61,6 +64,38 @@ class DesktopVoiceEngineTest {
         engine.setSelfDeaf(false)
         engine.setSelfMuted(true)
         assertFalse(engine.capturingSpeech())
+
+        // Verify v3.0.0 desktop processing chain toggles and single-stage mutual exclusion.
+        val defaultChain = engine.activeProcessingChain()
+        assertEquals(AecBackend.WEBRTC, defaultChain.aec)
+        assertEquals(AgcBackend.WEBRTC, defaultChain.agc)
+        assertEquals(NsBackend.WEBRTC, defaultChain.ns)
+        assertEquals("voice chain: AEC=webrtc AGC=webrtc NS=webrtc", defaultChain.logLine())
+
+        // Enabling AI noise suppression switches NS to DeepFilterNet3 and disables WebRTC NS.
+        engine.setAiNoiseSuppression(true)
+        val aiChain = engine.activeProcessingChain()
+        assertEquals(AecBackend.WEBRTC, aiChain.aec)
+        assertEquals(AgcBackend.WEBRTC, aiChain.agc)
+        assertEquals(NsBackend.DEEPFILTERNET, aiChain.ns)
+        assertFalse(aiChain.webrtcNsEnabled)
+        assertTrue(aiChain.deepFilterNetEnabled)
+        assertEquals("voice chain: AEC=webrtc AGC=webrtc NS=deepfilternet", aiChain.logLine())
+
+        // AEC and AGC stay governed by their own toggles while DeepFilterNet is on.
+        engine.setEchoCancellation(false)
+        engine.setAutoGainControl(false)
+        val dfnOnlyChain = engine.activeProcessingChain()
+        assertEquals(AecBackend.NONE, dfnOnlyChain.aec)
+        assertEquals(AgcBackend.NONE, dfnOnlyChain.agc)
+        assertEquals(NsBackend.DEEPFILTERNET, dfnOnlyChain.ns)
+        assertEquals("voice chain: AEC=none AGC=none NS=deepfilternet", dfnOnlyChain.logLine())
+
+        // Higher quality options: bitrate up to 128 kbps and stereo.
+        engine.setPreferredBitrate(128_000)
+        engine.setPreferredStereo(true)
+        assertEquals(128_000, engine.discordAudioConfig().bitrate)
+        assertEquals(2, engine.discordAudioConfig().channels)
 
         engine.disconnect()
     }

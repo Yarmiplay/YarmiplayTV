@@ -4,10 +4,11 @@ import kotlin.math.PI
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-/** Target PCM for Opus VoIP: 48 kHz mono 16-bit little-endian. */
+/** Target PCM for Opus VoIP: 48 kHz mono/stereo 16-bit little-endian. */
 object VoicePcm {
     const val SAMPLE_RATE = 48_000
     const val CHANNELS = 1
+    const val STEREO_CHANNELS = 2
     const val FRAME_MS = 20
     val frameSamples: Int get() = SAMPLE_RATE / (1000 / FRAME_MS) // 960
 
@@ -38,7 +39,32 @@ object VoicePcm {
         return out
     }
 
-    /** Accumulates mono PCM until at least [frameSamples] are available; returns whole frames. */
+    /** Upmix mono PCM16 samples into interleaved stereo (L=mono, R=mono). */
+    fun monoToStereo(mono: ShortArray, offset: Int = 0, length: Int = mono.size - offset): ShortArray {
+        if (length <= 0) return ShortArray(0)
+        val out = ShortArray(length * 2)
+        for (i in 0 until length) {
+            val s = mono[offset + i]
+            out[i * 2] = s
+            out[i * 2 + 1] = s
+        }
+        return out
+    }
+
+    /** Downmix interleaved stereo PCM16 samples into mono ((L + R) / 2). */
+    fun stereoToMono(stereo: ShortArray, offset: Int = 0, frames: Int = (stereo.size - offset) / 2): ShortArray {
+        if (frames <= 0) return ShortArray(0)
+        val out = ShortArray(frames)
+        for (i in 0 until frames) {
+            val idx = offset + i * 2
+            val l = stereo[idx].toInt()
+            val r = stereo[minOf(idx + 1, stereo.lastIndex)].toInt()
+            out[i] = ((l + r) / 2).toShort()
+        }
+        return out
+    }
+
+    /** Accumulates PCM until at least [frameSamples] shorts are available; returns whole frames. */
     class FrameAccumulator(private val frameSamples: Int = VoicePcm.frameSamples) {
         private var buf = ShortArray(frameSamples * 2)
         private var filled = 0

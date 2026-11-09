@@ -32,9 +32,19 @@ val openSourceComponents = listOf(
         "https://gitlab.xiph.org/xiph/rnnoise",
     ),
     OpenSourceComponent(
-        "WebRTC Audio Processing (Android NoiseSuppressor / AEC / AGC; browser getUserMedia noiseSuppression)",
-        "BSD 3-Clause",
-        "https://webrtc.org",
+        "WebRTC Audio Processing (Desktop webrtc-java APM AEC3/NS/AGC; Android platform AEC/NS/AGC; browser getUserMedia)",
+        "BSD 3-Clause / Apache 2.0",
+        "https://github.com/devopvoid/webrtc-java",
+    ),
+    OpenSourceComponent(
+        "DeepFilterNet3 / libDF (AI noise suppression @ 48 kHz)",
+        "MIT or Apache 2.0",
+        "https://github.com/Rikorose/DeepFilterNet",
+    ),
+    OpenSourceComponent(
+        "ONNX Runtime (Desktop DeepFilterNet3 inference)",
+        "MIT",
+        "https://onnxruntime.ai",
     ),
     OpenSourceComponent("Kotlin, kotlinx.coroutines, kotlinx.serialization", "Apache 2.0", "https://kotlinlang.org"),
     OpenSourceComponent("Jetpack Compose, AndroidX", "Apache 2.0", "https://developer.android.com/jetpack"),

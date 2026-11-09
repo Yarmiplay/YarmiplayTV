@@ -30,6 +30,9 @@ jna = "5.17.0"
 lwjgl = "3.3.6"
 zxing = "3.5.3"
 concentus = "1.0.2"
+webrtcJava = "1.0.0"
+onnxruntime = "1.20.0"
+androidDeepfilternet = "0.0.8"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -67,6 +70,9 @@ libmpv = { module = "dev.jdtech.mpv:libmpv", version.ref = "libmpv" }
 junit = { module = "junit:junit", version.ref = "junit" }
 play-app-update = { module = "com.google.android.play:app-update", version.ref = "playAppUpdate" }
 concentus = { module = "io.github.jaredmdobson:concentus", version.ref = "concentus" }
+webrtc-java = { module = "dev.onvoid.webrtc:webrtc-java", version.ref = "webrtcJava" }
+onnxruntime = { module = "com.microsoft.onnxruntime:onnxruntime", version.ref = "onnxruntime" }
+android-deepfilternet = { module = "io.github.kaleyravideo:android-deepfilternet", version.ref = "androidDeepfilternet" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 lwjgl = { module = "org.lwjgl:lwjgl", version.ref = "lwjgl" }
 lwjgl-glfw = { module = "org.lwjgl:lwjgl-glfw", version.ref = "lwjgl" }
