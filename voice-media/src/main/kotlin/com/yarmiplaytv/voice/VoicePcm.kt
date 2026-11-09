@@ -12,30 +12,15 @@ object VoicePcm {
     val frameSamples: Int get() = SAMPLE_RATE / (1000 / FRAME_MS) // 960
 
     /**
-     * Linear-interpolation resampler from [inRate] Hz mono PCM16 → [outRate] Hz.
-     * Used when Android [AudioRecord.getSampleRate] differs from the Opus clock (common: 44.1 kHz
-     * or 16 kHz VOICE_COMMUNICATION hardware vs 48 kHz Opus) — encoding the wrong rate as 48 kHz
-     * produces garbled/pitch-shifted audio on every peer.
+     * Band-limited polyphase Kaiser-windowed sinc resampler from [inRate] Hz mono PCM16 → [outRate] Hz.
+     * Used when hardware capture/playback rate differs from the 48 kHz Opus clock; avoids linear or
+     * nearest interpolation so passband stays flat and stopband/aliasing is rejected by >80 dB.
      */
     fun resampleMono(input: ShortArray, inRate: Int, outRate: Int = SAMPLE_RATE): ShortArray {
         if (inRate <= 0 || outRate <= 0) return ShortArray(0)
         if (inRate == outRate) return input.copyOf()
         if (input.isEmpty()) return ShortArray(0)
-        val outLen = maxOf(1, (input.size.toLong() * outRate / inRate).toInt())
-        val out = ShortArray(outLen)
-        val step = inRate.toDouble() / outRate
-        var pos = 0.0
-        for (i in 0 until outLen) {
-            val idx = pos.toInt().coerceIn(0, input.lastIndex)
-            val frac = pos - idx
-            val a = input[idx].toInt()
-            val b = input[minOf(idx + 1, input.lastIndex)].toInt()
-            out[i] = (a + (b - a) * frac).roundToInt()
-                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-                .toShort()
-            pos += step
-        }
-        return out
+        return StreamingResampler(inRate, outRate).push(input)
     }
 
     /** Accumulates mono PCM until at least [frameSamples] are available; returns whole frames. */

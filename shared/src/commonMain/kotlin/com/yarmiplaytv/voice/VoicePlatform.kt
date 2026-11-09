@@ -104,6 +104,19 @@ interface VoiceEngine {
 
     /** True while local capture has speech energy (for reporting voiceActivity). */
     fun capturingSpeech(): Boolean = false
+
+    /**
+     * Start or stop local microphone loopback testing (processes mic through the exact send chain:
+     * processing + Opus encode + Opus decode + limiter, and plays back locally without sending to
+     * the lobby/room).
+     */
+    fun setMicTest(active: Boolean) = Unit
+
+    /** True while [setMicTest] loopback is running. */
+    fun isMicTestActive(): Boolean = false
+
+    /** 0…1 post-encode/decode level meter while [isMicTestActive] is running; 0 otherwise. */
+    fun micTestLevel(): Float = 0f
 }
 
 enum class VoiceSound { JOIN, LEAVE, MIC_ON, MIC_OFF }
