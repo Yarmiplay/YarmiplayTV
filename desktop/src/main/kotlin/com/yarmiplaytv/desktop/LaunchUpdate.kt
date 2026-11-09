@@ -406,8 +406,6 @@ internal class LaunchUpdateWindow : LaunchUpdateUi {
     }
 
     internal class LogoIcon(private val size: Int) : JComponent() {
-        private val multiRes = multiResLogo(size)
-
         init {
             preferredSize = Dimension(size, size)
             minimumSize = Dimension(size, size)
@@ -418,12 +416,18 @@ internal class LaunchUpdateWindow : LaunchUpdateUi {
         override fun paintComponent(g: Graphics) {
             val g2 = g.create() as Graphics2D
             try {
-                g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
-                g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
                 val w = if (width > 0) width else size
                 val h = if (height > 0) height else size
-                g2.drawImage(multiRes, 0, 0, w, h, null)
+                // User-space size times the DPI transform is the real pixel size. Drawing that bitmap
+                // 1:1 (nearest neighbour) stays sharp at 100%–300%; scaling the 52px base looks pixelated.
+                val scaleX = kotlin.math.abs(g2.transform.scaleX).let { if (it.isFinite() && it > 0.0) it else 1.0 }
+                val scaleY = kotlin.math.abs(g2.transform.scaleY).let { if (it.isFinite() && it > 0.0) it else 1.0 }
+                val px = maxOf((w * scaleX).roundToInt(), (h * scaleY).roundToInt(), 1).coerceAtMost(1024)
+                val image = logoImage(px)
+                g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR)
+                g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF)
+                g2.drawImage(image, 0, 0, w, h, null)
             } finally {
                 g2.dispose()
             }

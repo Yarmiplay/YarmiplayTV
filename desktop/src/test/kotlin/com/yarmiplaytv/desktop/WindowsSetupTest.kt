@@ -139,6 +139,21 @@ class WindowsSetupTest {
         assertTrue(script.contains("DisplayVersion"))
         assertTrue(script.contains("2.7.4"))
         assertTrue(script.contains("Remove-Item"))
+        val spacedExe = File("C:/Users/Dor Farhi/AppData/Local/YarmiplayTV/YarmiplayTV.exe")
+        val spacedDir = spacedExe.parentFile
+        val spaced = installScript(
+            spacedExe,
+            spacedDir,
+            "3.0.0",
+            10,
+            SetupChoices(spacedDir, true, true, true, false),
+            File("C:/Users/Dor Farhi/Desktop/YarmiplayTV.lnk"),
+            File("C:/Users/Dor Farhi/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/YarmiplayTV/YarmiplayTV.lnk"),
+        )
+        assertTrue(spaced.contains(psQuoted(spacedExe.absolutePath)))
+        assertTrue(spaced.contains(psQuoted(spacedDir.absolutePath)))
+        assertTrue(spaced.contains(psQuoted("\"${spacedExe.absolutePath}\" \"%1\"")))
+        assertTrue(spaced.contains(psQuoted("\"${spacedExe.absolutePath}\" --setup --uninstall")))
         val removal = removalScript(desktop, start)
         assertTrue(removal.contains("Uninstall\\YarmiplayTV") || removal.contains("Uninstall\\\\YarmiplayTV") || removal.contains("YarmiplayTV"))
         assertFalse(removal.contains("Set-Link"))

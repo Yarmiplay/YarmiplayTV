@@ -87,7 +87,9 @@ class UpdateSourceTest {
         assertTrue("put back on failure", script.contains("Move-Item -LiteralPath (\$d + '.old') -Destination \$d"))
         assertTrue(script.contains("\$env:YARMIPLAYTV_UPDATE_FAILED = \$sig"))
         assertTrue(script.contains("'1.9.0' + '|stage='"))
-        assertTrue(script.contains("-ArgumentList '--room \"it''s mine\"'"))
+        assertTrue(script.contains("\$psi.UseShellExecute = \$false"))
+        assertTrue(script.contains("\$psi.Arguments = '--room \"it''s mine\"'"))
+        assertFalse(script.contains("Start-Process"))
         assertTrue("copy success is not merely starting a process", script.indexOf("Copy-Item") < script.indexOf("\$ok = \$true"))
         assertTrue(script.contains("update-failure.txt"))
         val noRelaunch = PortableUpdater.script(File("x.zip"), launcher, emptyList(), "1.9.0", listOf(1), relaunch = false)
@@ -262,19 +264,41 @@ class UpdateSourceTest {
             listOf(4),
             relaunch = true,
         )
-        val dir = launcher.parentFile.path
+        val dir = parentDirOf(launcher)!!.path
         val command = windowsCommandLine(listOf("--silent", "--dir", dir))
-        assertTrue(command.contains("\"$dir\""))
+        assertEquals(listOf("--silent", "--dir", dir), splitWindowsCommandLine(command))
         assertTrue(script.contains(psQuoted(command)))
+        assertTrue(script.indexOf("\$psi.UseShellExecute = \$false") < script.indexOf("if (\$needAdmin)"))
+        assertTrue(script.contains("\$psi.UseShellExecute = \$true"))
+        assertTrue(script.contains("runas"))
+        val encoded = script.substringAfter("-EncodedCommand ").substringBefore("'")
+        val elevated = String(java.util.Base64.getDecoder().decode(encoded), Charsets.UTF_16LE)
+        assertTrue(elevated.contains("\$psi.UseShellExecute = \$false"))
+        assertTrue(elevated.contains(psQuoted(command)))
+        assertFalse(elevated.contains("ArgumentList"))
         assertFalse(script.contains("-ArgumentList '--silent'"))
         assertTrue(script.contains("update-failure.txt"))
         assertTrue(script.contains("GetFolderPath('LocalApplicationData')"))
         assertTrue(script.indexOf("[System.Diagnostics.Process]::Start") < script.indexOf("\$ok = \$code -in 0, 3010"))
-        val msi = WindowsUpdater(launcher, emptyList()).msiScript(File("C:/Users/Dor Farhi/AppData/Local/Temp/YarmiplayTV.msi"), listOf(4), relaunch = false)
-        assertTrue(msi.contains(psQuoted("C:/Users/Dor Farhi/AppData/Local/Temp/YarmiplayTV.msi")) || msi.contains(psQuoted(File("C:/Users/Dor Farhi/AppData/Local/Temp/YarmiplayTV.msi").path)))
+        val msiPath = "C:\\Users\\Dor Farhi\\AppData\\Local\\Temp\\YarmiplayTV-2.9.9.msi"
+        val msi = WindowsUpdater(launcher, emptyList()).msiScript(File(msiPath), listOf(4), relaunch = false)
+        assertTrue(msi.contains(psQuoted(msiPath)) || msi.contains(psQuoted(File(msiPath).path)))
+        assertTrue(msi.contains("\$psi.UseShellExecute = \$false"))
         assertTrue(msi.contains("/le"))
-        assertFalse(msi.contains("Start-Process -FilePath"))
+        assertFalse(msi.contains("Start-Process"))
+        assertFalse("msiexec is not elevated through a shell", msi.contains("runas"))
         assertTrue(msi.contains("update-failure.txt"))
+        val backslashDir = "C:\\Users\\Dor Farhi\\AppData\\Local\\YarmiplayTV"
+        val backslashExe = File("$backslashDir\\YarmiplayTV.exe")
+        assertEquals(backslashDir, parentDirOf(backslashExe)!!.path)
+        val backslashCommand = windowsCommandLine(listOf("--silent", "--dir", backslashDir))
+        assertEquals(listOf("--silent", "--dir", backslashDir), splitWindowsCommandLine(backslashCommand))
+        val fromBackslash = WindowsUpdater(backslashExe, emptyList()).exeScript(File("C:\\Temp\\setup.exe"), listOf(4), relaunch = false)
+        assertTrue(fromBackslash.contains(psQuoted(backslashCommand)))
+        assertEquals(
+            "C:/Users/Dor Farhi/AppData/Local/YarmiplayTV",
+            resolveWindowsInstallDir(backslashExe, home = "C:\\Users\\Dor Farhi") { null }.path.replace('\\', '/'),
+        )
     }
 
     @Test
@@ -294,9 +318,10 @@ class UpdateSourceTest {
             listOf(3),
             relaunch = true,
         )
-        val dir = File("C:/Users/Dor Farhi/YarmiplayTV/YarmiplayTV.exe").absoluteFile.parent
+        val dir = parentDirOf(File("C:/Users/Dor Farhi/YarmiplayTV/YarmiplayTV.exe"))!!.path
         assertTrue(portable.contains(psQuoted(dir)))
         assertTrue("the spaced folder is one quoted path", psQuoted(dir).contains("Dor Farhi"))
+        assertFalse(portable.contains("'C:/Users/Dor'"))
         assertTrue(portable.contains("LiteralPath"))
         assertTrue(portable.contains("the archive has no YarmiplayTV.exe"))
     }

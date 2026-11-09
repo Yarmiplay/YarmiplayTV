@@ -8,6 +8,54 @@ import java.io.IOException
 import java.util.Base64
 
 /**
+ * Splits a Windows command line the way CommandLineToArgvW does, so tests can show a path with spaces
+ * survives [windowsCommandLine]. Not used to launch anything.
+ */
+internal fun splitWindowsCommandLine(command: String): List<String> {
+    val args = mutableListOf<String>()
+    var i = 0
+    val n = command.length
+    while (i < n) {
+        while (i < n && (command[i] == ' ' || command[i] == '\t')) i++
+        if (i >= n) break
+        val arg = StringBuilder()
+        var quoted = false
+        while (i < n) {
+            if (command[i] == '\\') {
+                var slashes = 0
+                while (i < n && command[i] == '\\') {
+                    slashes++
+                    i++
+                }
+                if (i < n && command[i] == '"') {
+                    arg.append("\\".repeat(slashes / 2))
+                    if (slashes % 2 == 1) {
+                        arg.append('"')
+                        i++
+                    } else {
+                        quoted = !quoted
+                        i++
+                    }
+                } else {
+                    arg.append("\\".repeat(slashes))
+                }
+                continue
+            }
+            if (command[i] == '"') {
+                quoted = !quoted
+                i++
+                continue
+            }
+            if (!quoted && (command[i] == ' ' || command[i] == '\t')) break
+            arg.append(command[i])
+            i++
+        }
+        args += arg.toString()
+    }
+    return args
+}
+
+/**
  * [args] as one Windows command line, quoted the way the C runtime splits it again (CommandLineToArgvW):
  * backslashes only escape when they come before a quote.
  */
@@ -30,12 +78,16 @@ internal fun windowsCommandLine(args: List<String>): String = args.joinToString(
     }
 }
 
+/** UTF-16LE base64 for `powershell.exe -EncodedCommand`. The command line then holds no path. */
+internal fun psEncodedCommand(script: String): String =
+    Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_16LE))
+
 /**
  * Runs [script] in a hidden PowerShell that outlives this process.
  * A started PowerShell is not a finished update. If PowerShell itself cannot start, this throws.
  */
 internal fun runDetachedPowerShell(script: String) {
-    val encoded = Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_16LE))
+    val encoded = psEncodedCommand(script)
     try {
         ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", encoded)
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)
@@ -79,7 +131,8 @@ internal fun psWriteOutcome(version: String): String = buildString {
 }
 
 /**
- * Saves the outcome, then starts [launcher]. `$ok` must already reflect the installer exit, not Start-Process.
+ * Saves the outcome, then starts [launcher] with `UseShellExecute = $false`, so a path or argument
+ * containing spaces stays one argument. `$ok` must already reflect the installer exit.
  * If the app itself cannot be started after a successful install, that is recorded as a restart failure.
  */
 internal fun psRelaunch(launcher: File, args: List<String>, version: String): String = buildString {
@@ -93,8 +146,8 @@ internal fun psRelaunch(launcher: File, args: List<String>, version: String): St
     append("\$env:$FAILED_INSTALL = \$sig; ")
     append("}; ")
     append("try { ")
-    append("Start-Process -FilePath ${psQuoted(launcher.path)}")
-    if (args.isNotEmpty()) append(" -ArgumentList ${psQuoted(windowsCommandLine(args))}")
+    append(psNewProcess(launcher.path, if (args.isEmpty()) null else psQuoted(windowsCommandLine(args))))
+    append("\$null = [System.Diagnostics.Process]::Start(\$psi); ")
     append(" } catch { ")
     append("if (\$ok) { \$ok = \$false; \$stage = 'restart'; \$code = -3; \$detail = \$_.Exception.Message; ")
     append(psWriteOutcome(version))
@@ -102,31 +155,84 @@ internal fun psRelaunch(launcher: File, args: List<String>, version: String): St
 }
 
 /**
- * Starts [file] with [argumentsExpr] (a PowerShell expression for one command line) and waits.
- * One command line, not a PowerShell argument array: Windows PowerShell 5.1 joins an array with spaces
- * and drops quotes, which splits an install folder such as `C:\Users\Dor Farhi\...`.
+ * Starts [file] with [argumentsExpr] (a PowerShell expression for one Windows command line) and waits.
+ *
+ * Windows PowerShell 5.1 `Start-Process -ArgumentList` joins an array with spaces and drops quotes.
+ * `UseShellExecute = $true` (`ShellExecuteEx`) does the same to a quoted argument string. Either one
+ * splits `C:\Users\Dor Farhi\AppData\Local\YarmiplayTV` into `C:\Users\Dor` plus a leftover token, and the
+ * installer then tries to copy `app\.jpackage.xml` into `C:\Users\Dor`.
+ *
+ * The process is started with `UseShellExecute = $false`, so `FileName` (spaces allowed) and `Arguments`
+ * (already quoted for CommandLineToArgvW) reach `CreateProcess` unchanged. A folder that cannot be written
+ * is installed elevated: the same command line is inside an encoded PowerShell script, and the elevated
+ * `powershell.exe` argument list itself has no path, so ShellExecute has nothing to split.
  * `$ok` is not set here. The caller sets it from `$code`.
  */
 internal fun psStartWait(file: String, argumentsExpr: String, elevateIfNeededDir: String? = null): String = buildString {
     append("\$p = \$null; \$stage = 'launch'; \$code = -1; \$detail = ''; \$ok = \$false; ")
     append("try { ")
-    append("\$psi = New-Object System.Diagnostics.ProcessStartInfo; ")
-    append("\$psi.FileName = ${psQuoted(file)}; ")
-    append("\$psi.Arguments = $argumentsExpr; ")
-    append("\$psi.UseShellExecute = \$true; ")
-    if (!elevateIfNeededDir.isNullOrBlank()) {
-        val quotedDir = psQuoted(elevateIfNeededDir)
-        append("if (Test-Path -LiteralPath $quotedDir) { ")
-        append("try { \$probe = Join-Path $quotedDir ('.yptv-write-' + [guid]::NewGuid()); [IO.File]::WriteAllText(\$probe, ''); Remove-Item -LiteralPath \$probe -Force -ErrorAction SilentlyContinue } ")
-        append("catch { \$psi.Verb = 'runas' } ")
-        append("}; ")
-    }
+    append(psNewProcess(file, argumentsExpr))
+    if (!elevateIfNeededDir.isNullOrBlank()) append(psElevateIfUnwritable(elevateIfNeededDir, file, argumentsExpr))
     append("\$p = [System.Diagnostics.Process]::Start(\$psi); ")
     append("if (\$null -eq \$p) { \$code = -2; \$detail = 'the installer returned no process' } ")
     append("else { \$p.WaitForExit(); ")
     append("if (\$null -eq \$p.ExitCode) { \$code = -2; \$detail = 'the installer returned no exit code' } ")
-    append("else { \$code = \$p.ExitCode } } ")
+    append("else { \$code = \$p.ExitCode; ")
+    append("if (\$code -eq 1223 -and -not \$detail) { \$detail = 'the permission prompt was declined' } } } ")
     append("} catch { \$detail = \$_.Exception.Message; \$code = -3 }; ")
+}
+
+/**
+ * `$psi` for [file] and [argumentsExpr], without a shell. [argumentsExpr] is one command line already
+ * quoted the way CommandLineToArgvW splits it, or a PowerShell expression that produces that line.
+ */
+private fun psNewProcess(file: String, argumentsExpr: String?): String = buildString {
+    append("\$psi = New-Object System.Diagnostics.ProcessStartInfo; ")
+    append("\$psi.FileName = ${psQuoted(file)}; ")
+    if (argumentsExpr != null) append("\$psi.Arguments = $argumentsExpr; ")
+    append("\$psi.UseShellExecute = \$false; ")
+}
+
+/**
+ * When [dir] (or the nearest existing parent, if the folder is not there yet) cannot be written, replace
+ * `$psi` with an elevated PowerShell that runs the same [file] and [argumentsExpr] and waits.
+ * The elevated argument list is only `-EncodedCommand` plus base64, so a profile path with spaces is not
+ * on that command line.
+ */
+private fun psElevateIfUnwritable(dir: String, file: String, argumentsExpr: String): String {
+    val encoded = psEncodedCommand(buildString {
+        append("\$ErrorActionPreference = 'Stop'; ")
+        append(psNewProcess(file, argumentsExpr))
+        append("\$p = [System.Diagnostics.Process]::Start(\$psi); ")
+        append("if (\$null -eq \$p) { exit 2 }; ")
+        append("\$p.WaitForExit(); ")
+        append("if (\$null -eq \$p.ExitCode) { exit 2 }; ")
+        append("exit \$p.ExitCode")
+    })
+    val quotedDir = psQuoted(dir)
+    return buildString {
+        append("\$probeDir = $quotedDir; ")
+        append("while (\$probeDir -and -not (Test-Path -LiteralPath \$probeDir)) { ")
+        append("\$parent = Split-Path -Parent \$probeDir; ")
+        append("if (-not \$parent -or \$parent -eq \$probeDir) { break }; ")
+        append("\$probeDir = \$parent }; ")
+        append("\$needAdmin = \$false; ")
+        append("if (\$probeDir -and (Test-Path -LiteralPath \$probeDir)) { ")
+        append("try { ")
+        append("\$probe = Join-Path \$probeDir ('.yptv-write-' + [guid]::NewGuid().ToString('n')); ")
+        append("[IO.File]::WriteAllText(\$probe, ''); ")
+        append("Remove-Item -LiteralPath \$probe -Force -ErrorAction SilentlyContinue ")
+        append("} catch { \$needAdmin = \$true } ")
+        append("}; ")
+        append("if (\$needAdmin) { ")
+        append("\$psi = New-Object System.Diagnostics.ProcessStartInfo; ")
+        append("\$psi.FileName = 'powershell.exe'; ")
+        append("\$psi.Arguments = ${psQuoted("-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded")}; ")
+        append("\$psi.UseShellExecute = \$true; ")
+        append("\$psi.Verb = 'runas'; ")
+        append("\$psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden; ")
+        append("}; ")
+    }
 }
 
 /** Waits for known PIDs, then any remaining YarmiplayTV process, then a short settle for file locks. */
@@ -175,8 +281,8 @@ internal class WindowsUpdater(
 
     /**
      * Branded setup.exe: `--silent` still shows the progress card, `--dir` is this install's folder.
-     * Arguments are a PowerShell array so a path with spaces stays one argument. Relaunch is [psRelaunch],
-     * after the installer exits, so the new copy is what starts.
+     * `--dir` is one quoted command-line argument, including when the folder is `C:\Users\Dor Farhi\...`.
+     * Relaunch is [psRelaunch], after the installer exits, so the new copy is what starts.
      */
     internal fun exeScript(
         exe: File,

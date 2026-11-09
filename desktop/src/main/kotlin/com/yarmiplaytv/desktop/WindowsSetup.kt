@@ -479,7 +479,7 @@ private fun uninstallKeyScript(exe: String, dir: String, version: String, sizeKb
 private fun setupSourceDir(): File {
     val launcher = System.getProperty("jpackage.app-path")?.let(::cleanInstallPath)?.absoluteFile?.takeIf { it.isFile }
         ?: error("This installer has to run from the YarmiplayTV setup package")
-    return launcher.parentFile ?: error("This installer has to run from the YarmiplayTV setup package")
+    return parentDirOf(launcher) ?: error("This installer has to run from the YarmiplayTV setup package")
 }
 
 private fun runPowerShell(script: String) {

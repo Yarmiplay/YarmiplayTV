@@ -239,6 +239,10 @@ compose.desktop {
     application {
         mainClass = "com.yarmiplaytv.desktop.MainKt"
         jvmArgs += "-Dyarmiplaytv.version=$appVersion"
+        // Before AWT starts, so the update window is DPI-aware and its icon is drawn at device pixels
+        // instead of Windows bitmap-stretching a 96 DPI frame.
+        jvmArgs += "-Dsun.java2d.dpiaware=true"
+        jvmArgs += "-Dsun.java2d.uiScale.enabled=true"
         // MyAnimeList's Client ID: from ~/.gradle/gradle.properties or the CI secret, never the repository.
         val malClientId = ((findProperty("MAL_CLIENT_ID") as String?) ?: System.getenv("MAL_CLIENT_ID") ?: "").filter { it.isLetterOrDigit() }
         if (malClientId.isNotEmpty()) jvmArgs += "-Dyarmiplaytv.malClientId=$malClientId"
