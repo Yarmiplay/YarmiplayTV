@@ -357,6 +357,8 @@ private fun SyncingSettings(container: AppContainer) {
 @Composable
 private fun VoiceSettings(container: AppContainer) {
     val settings by container.settings.collectAsStateWithLifecycle()
+    val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
+    val bitratePresets = listOf(32_000, 64_000, 96_000, 128_000)
     SettingsToggle(
         "Enable voice",
         "Talk in rooms on a YarmiplayServerTV server that has voice on; off fully disables voice (no join, mic, sounds, or voice UI)",
@@ -373,10 +375,49 @@ private fun VoiceSettings(container: AppContainer) {
     ) { container.scope.launch { container.settingsStore.saveVoiceAutoJoin(it) } }
     SettingsToggle(
         "Noise suppression",
-        "One noise suppressor on the mic: the device WebRTC stage when it is available, otherwise the built-in spectral suppressor. Echo cancellation and gain control stay one stage each. Applies live",
+        if (settings.voiceAiNoiseSuppression && voiceUi.aiFallbackNotice == null) {
+            "AI noise suppression replaces the regular suppressor. Echo cancellation and gain each stay one stage. Applies live"
+        } else {
+            "One noise suppressor on the mic. Echo cancellation and gain control stay one stage each. Applies live"
+        },
         settings.voiceNoiseSuppression,
         Modifier.testTag("toggle_voice_noise_suppression"),
     ) { container.scope.launch { container.settingsStore.saveVoiceNoiseSuppression(it) } }
+    SettingsToggle(
+        "AI noise suppression",
+        voiceUi.aiFallbackNotice
+            ?: "DeepFilterNet3 neural noise suppression at 48 kHz; replaces standard WebRTC/platform noise suppression when on",
+        settings.voiceAiNoiseSuppression,
+        Modifier.testTag("toggle_voice_ai_noise_suppression"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceAiNoiseSuppression(it) } }
+    SettingsToggle(
+        "Echo cancellation",
+        "Prevent speaker playback from echoing back into your mic (WebRTC AEC3 on desktop, platform AEC on Android)",
+        settings.voiceEchoCancellation,
+        Modifier.testTag("toggle_voice_echo_cancellation"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceEchoCancellation(it) } }
+    SettingsToggle(
+        "Automatic gain control",
+        "Normalize microphone loudness automatically (WebRTC adaptive AGC on desktop, platform AGC on Android)",
+        settings.voiceAgc,
+        Modifier.testTag("toggle_voice_agc"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceAgc(it) } }
+    val kbps = settings.voiceBitrate / 1000
+    ValueSetting(
+        "Voice bitrate",
+        if (settings.voiceBitrate == 64_000) "64 kbps (Default) · negotiates with server cap" else "$kbps kbps · negotiates with server cap",
+        Modifier.testTag("voice_bitrate"),
+    ) {
+        val idx = bitratePresets.indexOf(settings.voiceBitrate)
+        val next = bitratePresets[if (idx < 0) 1 else (idx + 1) % bitratePresets.size]
+        container.scope.launch { container.settingsStore.saveVoiceBitrate(next) }
+    }
+    SettingsToggle(
+        "Stereo voice",
+        "Encode and play lobby voice in 48 kHz stereo (falls back to mono on legacy relays or older clients)",
+        settings.voiceStereo,
+        Modifier.testTag("toggle_voice_stereo"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceStereo(it) } }
     SettingsToggle(
         "Auto-mute when playing",
         "Mute your mic when playback starts or resumes",

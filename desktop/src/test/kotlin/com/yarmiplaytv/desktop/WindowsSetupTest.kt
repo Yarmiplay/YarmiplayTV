@@ -186,6 +186,58 @@ class WindowsSetupTest {
         }
     }
 
+    /**
+     * 2.9.9's updater is what starts the 3.0.0 setup.exe. It builds one CommandLineToArgvW-quoted
+     * line (`--silent --dir "C:\Users\Dor Farhi\AppData\Local\YarmiplayTV"`) and passes it with
+     * `UseShellExecute = $true`. ShellExecuteEx drops those quotes, so the process receives the
+     * path split on the space. The setup stub re-quotes each token and the installer has to join
+     * them back. A token list that stops at the profile root must not be used as the install folder.
+     */
+    @Test
+    fun `a 2_9_9 shell-execute update into a profile path with spaces installs in that folder`() {
+        val install = "C:\\Users\\Dor Farhi\\AppData\\Local\\YarmiplayTV"
+        val quoted = windowsCommandLine(listOf("--silent", "--dir", install))
+        assertEquals("--silent --dir \"$install\"", quoted)
+
+        // What 2.9.9 actually hands the process: the same line with the quotes removed.
+        val received = splitWindowsCommandLine(quoted.replace("\"", ""))
+        assertEquals(listOf("--silent", "--dir", "C:\\Users\\Dor", "Farhi\\AppData\\Local\\YarmiplayTV"), received)
+
+        // SetupStub.ChildArguments quotes every token again, then the JVM parses that line.
+        val forwarded = splitWindowsCommandLine(received.joinToString(" ") { token ->
+            if (token.none { it == ' ' || it == '\t' || it == '"' }) token else "\"$token\""
+        })
+        val argv = arrayOf("--setup", *forwarded.toTypedArray())
+        assertEquals(install, WindowsSetupArgs.installDir(argv))
+
+        val home = "C:\\Users\\Dor Farhi"
+        val localAppData = "C:\\Users\\Dor Farhi\\AppData\\Local"
+        val choices = choicesFor(
+            empty,
+            argv,
+            File(localAppData, "YarmiplayTV"),
+            unattended = true,
+            home = home,
+            env = { key -> if (key == "USERPROFILE") home else if (key == "LOCALAPPDATA") localAppData else null },
+        )
+        assertEquals(install.replace('\\', '/'), choices.directory.path.replace('\\', '/'))
+        assertTrue(isSafeWindowsInstallDir(choices.directory, home) { key ->
+            if (key == "USERPROFILE") home else if (key == "LOCALAPPDATA") localAppData else null
+        })
+
+        // If the leftover token never arrives, the truncated profile root is rejected and the
+        // default per-user folder (the same YarmiplayTV directory) is used instead.
+        val truncated = choicesFor(
+            empty,
+            arrayOf("--silent", "--dir", "C:\\Users\\Dor"),
+            File(localAppData, "YarmiplayTV"),
+            unattended = true,
+            home = home,
+            env = { key -> if (key == "USERPROFILE") home else if (key == "LOCALAPPDATA") localAppData else null },
+        )
+        assertEquals(install.replace('\\', '/'), truncated.directory.path.replace('\\', '/'))
+    }
+
     @Test
     fun `installDir reconstructs paths split at spaces and rejects user profile or colon-corrupted paths`() {
         // Pre-2.9.8 PowerShell Start-Process -ArgumentList split unquoted paths at spaces

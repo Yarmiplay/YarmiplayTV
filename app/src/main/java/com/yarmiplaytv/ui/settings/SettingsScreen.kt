@@ -191,6 +191,8 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                     modifier = Modifier.testTag("toggle_voice_chat"),
                 )
                 if (settings.voiceChat) {
+                    val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
+                    val bitratePresets = listOf(32_000, 64_000, 96_000, 128_000)
                     ToggleRow(
                         "Auto-join voice",
                         settings.voiceAutoJoin,
@@ -202,8 +204,53 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         "Noise suppression",
                         settings.voiceNoiseSuppression,
                         { container.scope.launch { container.settingsStore.saveVoiceNoiseSuppression(!settings.voiceNoiseSuppression) } },
-                        subtitle = "One noise suppressor on the mic: the device WebRTC stage when it is available, otherwise the built-in spectral suppressor. Echo cancellation and gain control stay one stage each. Applies live",
+                        subtitle = if (settings.voiceAiNoiseSuppression && voiceUi.aiFallbackNotice == null) {
+                            "AI noise suppression replaces the regular suppressor. Echo cancellation and gain each stay one stage. Applies live"
+                        } else {
+                            "One noise suppressor on the mic. Echo cancellation and gain control stay one stage each. Applies live"
+                        },
                         modifier = Modifier.testTag("toggle_voice_noise_suppression"),
+                    )
+                    ToggleRow(
+                        "AI noise suppression",
+                        settings.voiceAiNoiseSuppression,
+                        { container.scope.launch { container.settingsStore.saveVoiceAiNoiseSuppression(!settings.voiceAiNoiseSuppression) } },
+                        subtitle = voiceUi.aiFallbackNotice
+                            ?: "DeepFilterNet3 neural noise suppression at 48 kHz; replaces standard platform NS when on",
+                        modifier = Modifier.testTag("toggle_voice_ai_noise_suppression"),
+                    )
+                    ToggleRow(
+                        "Echo cancellation",
+                        settings.voiceEchoCancellation,
+                        { container.scope.launch { container.settingsStore.saveVoiceEchoCancellation(!settings.voiceEchoCancellation) } },
+                        subtitle = "Prevent TV speaker playback from echoing into your mic",
+                        modifier = Modifier.testTag("toggle_voice_echo_cancellation"),
+                    )
+                    ToggleRow(
+                        "Automatic gain control",
+                        settings.voiceAgc,
+                        { container.scope.launch { container.settingsStore.saveVoiceAgc(!settings.voiceAgc) } },
+                        subtitle = "Normalize microphone loudness automatically",
+                        modifier = Modifier.testTag("toggle_voice_agc"),
+                    )
+                    val kbps = settings.voiceBitrate / 1000
+                    ValueRow(
+                        "Voice bitrate",
+                        if (settings.voiceBitrate == 64_000) "64 kbps (Default)" else "$kbps kbps",
+                        {
+                            val idx = bitratePresets.indexOf(settings.voiceBitrate)
+                            val next = bitratePresets[if (idx < 0) 1 else (idx + 1) % bitratePresets.size]
+                            container.scope.launch { container.settingsStore.saveVoiceBitrate(next) }
+                        },
+                        Modifier.testTag("voice_bitrate"),
+                        subtitle = "Lobby Opus encoder target (32–128 kbps); negotiates with the server relay cap",
+                    )
+                    ToggleRow(
+                        "Stereo voice",
+                        settings.voiceStereo,
+                        { container.scope.launch { container.settingsStore.saveVoiceStereo(!settings.voiceStereo) } },
+                        subtitle = "Encode and play lobby voice in 48 kHz stereo (falls back to mono on legacy relays)",
+                        modifier = Modifier.testTag("toggle_voice_stereo"),
                     )
                     ToggleRow(
                         "Auto-mute when playing",

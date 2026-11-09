@@ -98,6 +98,10 @@ class VoiceController(
                 val live = ui.micControlLive() && !ui.selfMuted && !testing
                 val next = if (live) engine.captureLevel() else 0f
                 if (next != _captureLevel.value) _captureLevel.value = next
+                val notice = engine.statusNotice()
+                if (notice != ui.aiFallbackNotice) {
+                    _ui.update { it.copy(aiFallbackNotice = notice) }
+                }
                 // Speaking names track locally heard audio — clear the same poll as silence (no linger).
                 if (ui.connection == VoiceConnection.CONNECTED) {
                     val heard = engine.audibleParticipantIds()
@@ -176,6 +180,39 @@ class VoiceController(
             .map { it.voiceNoiseSuppression }
             .distinctUntilChanged()
             .onEach { engine.setNoiseSuppression(it) }
+            .launchIn(scope)
+
+        settings
+            .map { it.voiceEchoCancellation }
+            .distinctUntilChanged()
+            .onEach { engine.setEchoCancellation(it) }
+            .launchIn(scope)
+
+        settings
+            .map { it.voiceAgc }
+            .distinctUntilChanged()
+            .onEach { engine.setAutoGainControl(it) }
+            .launchIn(scope)
+
+        settings
+            .map { it.voiceAiNoiseSuppression }
+            .distinctUntilChanged()
+            .onEach {
+                engine.setAiNoiseSuppression(it)
+                _ui.update { u -> u.copy(aiFallbackNotice = engine.statusNotice()) }
+            }
+            .launchIn(scope)
+
+        settings
+            .map { it.voiceBitrate }
+            .distinctUntilChanged()
+            .onEach { engine.setPreferredBitrate(it) }
+            .launchIn(scope)
+
+        settings
+            .map { it.voiceStereo }
+            .distinctUntilChanged()
+            .onEach { engine.setPreferredStereo(it) }
             .launchIn(scope)
 
         settings
@@ -708,6 +745,13 @@ class VoiceController(
             syncplayMediaOnly = syncplayMediaOnly,
             syncplayMux = mux,
         )
+        val devices = settings.value
+        engine.setPreferredBitrate(devices.voiceBitrate)
+        engine.setPreferredStereo(devices.voiceStereo)
+        engine.setNoiseSuppression(devices.voiceNoiseSuppression)
+        engine.setEchoCancellation(devices.voiceEchoCancellation)
+        engine.setAutoGainControl(devices.voiceAgc)
+        engine.setAiNoiseSuppression(devices.voiceAiNoiseSuppression)
         val ok = engine.connect(params)
         if (!ok) {
             lastFailAtMs = System.currentTimeMillis()
@@ -723,10 +767,12 @@ class VoiceController(
         }
         talkLatched = false
         engine.setSelfMuted(selfMuted)
-        val devices = settings.value
         engine.setInputGain(devices.voiceInputGain)
         engine.setOutputGain(devices.voiceOutputGain)
         engine.setNoiseSuppression(devices.voiceNoiseSuppression)
+        engine.setEchoCancellation(devices.voiceEchoCancellation)
+        engine.setAutoGainControl(devices.voiceAgc)
+        engine.setAiNoiseSuppression(devices.voiceAiNoiseSuppression)
         engine.setInputDeviceId(devices.voiceInputDeviceId.ifEmpty { null })
         engine.setOutputDeviceId(devices.voiceOutputDeviceId.ifEmpty { null })
         val hintShown = devices.voiceTvMicHintShown
@@ -736,6 +782,7 @@ class VoiceController(
                 participantId = event.participantId,
                 talkLatched = false,
                 statusLine = statusFor(it.capture, latched = false, it.talkMode),
+                aiFallbackNotice = engine.statusNotice(),
                 remoteKeyLabel = devices.voiceTvRemoteKeyLabel.ifBlank { it.remoteKeyLabel },
             )
             maybeOfferHint(connected, hintShown)

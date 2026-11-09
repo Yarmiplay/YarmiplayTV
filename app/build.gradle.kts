@@ -143,6 +143,7 @@ dependencies {
     implementation(project(":media-source"))
     implementation(project(":player-mpv"))
     implementation(project(":shared"))
+    implementation(libs.android.deepfilternet)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

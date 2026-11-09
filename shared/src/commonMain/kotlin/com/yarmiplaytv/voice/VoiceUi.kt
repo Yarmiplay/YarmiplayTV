@@ -24,9 +24,9 @@ fun voiceBanner(ui: VoiceUiState): String? = when {
     ui.talkMode == VoiceTalkMode.PUSH_TO_TALK || ui.capture == VoiceCaptureKind.PUSH_TO_TALK ->
         ui.statusLine ?: "Hold to talk"
     ui.connection == VoiceConnection.CONNECTED && ui.peers.any { it.participantId != ui.participantId } ->
-        "Voice connected — waiting for their audio"
-    ui.connection == VoiceConnection.CONNECTED -> "Voice connected"
-    else -> ui.statusLine
+        ui.aiFallbackNotice ?: "Voice connected — waiting for their audio"
+    ui.connection == VoiceConnection.CONNECTED -> ui.aiFallbackNotice ?: "Voice connected"
+    else -> ui.aiFallbackNotice ?: ui.statusLine
 }
 
 /**

@@ -39,18 +39,30 @@ object JvmVoiceDevices {
     fun openCapture(deviceId: String?, frameSamples: Int): TargetDataLine? =
         openPcmLine(deviceId, frameSamples, target = true) as? TargetDataLine
 
+    fun openCapture(deviceId: String?, frameSamples: Int, channels: Int): TargetDataLine? =
+        openPcmLine(deviceId, frameSamples, target = true, channels = channels) as? TargetDataLine
+
     fun openPlayback(deviceId: String?, frameSamples: Int): SourceDataLine? =
         openPcmLine(deviceId, frameSamples, target = false) as? SourceDataLine
+
+    fun openPlayback(deviceId: String?, frameSamples: Int, channels: Int): SourceDataLine? =
+        openPcmLine(deviceId, frameSamples, target = false, channels = channels) as? SourceDataLine
 
     /**
      * A Java Sound line cannot be reopened after [DataLine.close]. Each buffer size therefore
      * gets a fresh line, so a rejected 40 ms buffer still falls through to 80 ms and the
      * driver default instead of failing the device.
      */
-    private fun openPcmLine(deviceId: String?, frameSamples: Int, target: Boolean): Any? {
+    private fun openPcmLine(
+        deviceId: String?,
+        frameSamples: Int,
+        target: Boolean,
+        channels: Int = 1,
+    ): Any? {
+        val ch = channels.coerceIn(1, 2)
         for (rate in preferredRates) {
-            val format = formatForRate(rate)
-            val frameBytes = frameSamplesAtRate(rate, frameSamples) * 2
+            val format = formatForRate(rate, ch)
+            val frameBytes = frameSamplesAtRate(rate, frameSamples) * 2 * ch
             val buffers = intArrayOf(
                 frameBytes * LOW_LATENCY_BUFFER_FRAMES,
                 frameBytes * FALLBACK_BUFFER_FRAMES,

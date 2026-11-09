@@ -1,3 +1,4 @@
+import org.gradle.internal.os.OperatingSystem
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
 import java.awt.BasicStroke
@@ -25,6 +26,19 @@ kotlin {
     jvmToolchain(17)
 }
 
+val os: OperatingSystem = OperatingSystem.current()
+val arch: String = System.getProperty("os.arch").lowercase()
+val isArm64: Boolean = arch == "aarch64" || arch == "arm64"
+val webrtcClassifier: String = when {
+    os.isWindows -> if (isArm64) "windows-aarch64" else "windows-x86_64"
+    os.isMacOsX -> if (isArm64) "macos-aarch64" else "macos-x86_64"
+    else -> if (isArm64) "linux-aarch64" else "linux-x86_64"
+}
+
+val deepFilterModel: Configuration by configurations.creating {
+    isTransitive = false
+}
+
 dependencies {
     implementation(project(":shared"))
     implementation(project(":voice-media"))
@@ -33,6 +47,10 @@ dependencies {
     implementation(compose.material3)
     implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.webrtc.java)
+    runtimeOnly(variantOf(libs.webrtc.java) { classifier(webrtcClassifier) })
+    implementation(libs.onnxruntime)
+    deepFilterModel(libs.android.deepfilternet)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
@@ -45,8 +63,19 @@ dependencies {
 // Join/leave/mic cues live under shared composeResources for Android; the shared module does not
 // apply the Compose Multiplatform resources plugin, so desktop never got them on the classpath.
 tasks.named<ProcessResources>("processResources") {
+    dependsOn(deepFilterModel)
     from(rootProject.file("shared/src/commonMain/composeResources/files")) {
         include("voice_*.wav")
+    }
+    from({
+        zipTree(deepFilterModel.singleFile).matching {
+            include("res/raw/deep_filter_mobile_model")
+        }
+    }) {
+        eachFile {
+            path = "deepfilternet3_onnx.tar.gz"
+        }
+        includeEmptyDirs = false
     }
 }
 

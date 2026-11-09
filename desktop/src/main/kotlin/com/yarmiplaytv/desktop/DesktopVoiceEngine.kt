@@ -1,8 +1,12 @@
 package com.yarmiplaytv.desktop
 
 import com.yarmiplaytv.syncplay.VoiceMediaParams
+import com.yarmiplaytv.voice.DeepFilterNetProcessor
+import com.yarmiplaytv.voice.DesktopWebRtcApm
 import com.yarmiplaytv.voice.JvmVoiceDevices
 import com.yarmiplaytv.voice.StreamingResampler
+import com.yarmiplaytv.voice.VoiceChainPlatform
+import com.yarmiplaytv.voice.VoiceProcessingChain
 import com.yarmiplaytv.voice.VoiceAudioDevice
 import com.yarmiplaytv.voice.VoiceCaptureKind
 import com.yarmiplaytv.voice.VoiceEngine
@@ -54,8 +58,25 @@ class DesktopVoiceEngine : VoiceEngine {
     private var frameSamples: Int = 960
     @Volatile private var inputGain: Float = 1f
     @Volatile private var outputGain: Float = 1f
-    @Volatile private var noiseSuppression: Boolean = true
+    @Volatile private var noiseSuppressionPref = true
+    @Volatile private var echoCancellationPref = true
+    @Volatile private var autoGainControlPref = true
+    @Volatile private var aiNoiseSuppressionPref = false
+    @Volatile private var preferredBitrateBps = VoiceMediaSession.DISCORD_BITRATE
+    @Volatile private var preferredStereoMode = false
+    private val chainLock = Any()
+    private var webRtcApm: DesktopWebRtcApm? = null
+    private var deepFilterNet: DeepFilterNetProcessor? = null
+    @Volatile private var dfnLoadFailedReason: String? = null
+    @Volatile private var currentChain: VoiceProcessingChain = VoiceProcessingChain.build(
+        platform = VoiceChainPlatform.DESKTOP,
+        discordLobby = true,
+    )
     override var onDeviceLost: ((input: Boolean) -> Unit)? = null
+
+    fun activeProcessingChain(): VoiceProcessingChain = currentChain
+
+    override fun statusNotice(): String? = currentChain.fallbackNotice
 
     override suspend fun detectCapture(): VoiceCaptureKind {
         return if (JvmVoiceDevices.listInputs().any { it.id.isNotEmpty() } ||
@@ -88,17 +109,22 @@ class DesktopVoiceEngine : VoiceEngine {
             }
             return false
         }
-        // Default on; VoiceController reapplies the saved preference immediately after connect.
-        // Discord lobby connect already disabled the hard silence gate inside the session.
-        // Desktop has no AGC stage yet. The session's fixed makeup is the level correction.
-        // WebRTC AGC (the 3.0.0 chain) must call setAgcStageActive(true) and not leave makeup on.
-        media.setNoiseSuppression(noiseSuppression)
-        media.setAgcStageActive(false)
+        session.set(media)
+        frameSamples = media.frameSamples
+        // Lobby path: WebRTC AGC2 is the one gain stage, so the fixed +12 dB makeup stays off.
+        // Relay path: no WebRTC AGC, spectral NS only, makeup remains.
+        val chain = rebuildProcessingChain(logChain = true)
+        media.setNoiseSuppression(chain.spectralNsEnabled)
+        media.setAgcStageActive(chain.webrtcAgcEnabled)
+        media.setPreferredBitrate(preferredBitrateBps)
+        media.setPreferredStereo(preferredStereoMode)
+        if (activeDiscord) {
+            discordEngine.setPreferredBitrate(preferredBitrateBps)
+            discordEngine.setPreferredStereo(preferredStereoMode)
+        }
         media.setInputGain(if (activeDiscord) inputGain.coerceIn(0f, 2f) else inputGain)
         media.setOutputGain(if (activeDiscord) discordEngine.outputAmplitude() else outputGain)
         if (activeDiscord && discordEngine.audioConfig().selfDeaf) media.setSelfDeaf(true)
-        session.set(media)
-        frameSamples = media.frameSamples
         openPlayback()
         // Capture only while transmitting so mute/mic-off releases the input device.
         startMixPump(media)
@@ -118,6 +144,7 @@ class DesktopVoiceEngine : VoiceEngine {
         session.getAndSet(null)?.disconnect()
         stopCapture()
         closePlaybackLine()
+        closeProcessors()
         runCatching { clip?.close() }
         clip = null
     }
@@ -182,16 +209,19 @@ class DesktopVoiceEngine : VoiceEngine {
             val existing = session.get()
             if (existing != null) {
                 existing.setMicTest(true)
+                val chain = rebuildProcessingChain(logChain = false)
+                existing.setAgcStageActive(chain.webrtcAgcEnabled)
                 syncCapture(existing)
                 return
             }
             val media = VoiceMediaSession(scope)
             media.startStandaloneMicTest()
-            media.setNoiseSuppression(noiseSuppression)
             media.setInputGain(inputGain)
             media.setOutputGain(outputGain)
             session.set(media)
             frameSamples = media.frameSamples
+            val chain = rebuildProcessingChain(logChain = false)
+            media.setAgcStageActive(chain.webrtcAgcEnabled)
             openPlayback()
             startMixPump(media)
             startDeviceWatch()
@@ -262,11 +292,165 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     override fun setNoiseSuppression(on: Boolean) {
-        noiseSuppression = on
-        if (activeDiscord) discordEngine.setNoiseSuppression(on)
-        // Desktop has no WebRTC APM. The spectral suppressor is the one noise stage, and Discord
-        // lobby capture leaves its hard gate off so pauses are attenuated instead of dropped.
-        session.get()?.setNoiseSuppression(on)
+        noiseSuppressionPref = on
+        discordEngine.setNoiseSuppression(on)
+        val chain = rebuildProcessingChain(logChain = false)
+        session.get()?.setAgcStageActive(chain.webrtcAgcEnabled)
+    }
+
+    override fun setEchoCancellation(on: Boolean) {
+        echoCancellationPref = on
+        discordEngine.setEchoCancellation(on)
+        val chain = rebuildProcessingChain(logChain = false)
+        session.get()?.setAgcStageActive(chain.webrtcAgcEnabled)
+    }
+
+    override fun setAutoGainControl(on: Boolean) {
+        autoGainControlPref = on
+        discordEngine.setAutoGainControl(on)
+        val chain = rebuildProcessingChain(logChain = false)
+        session.get()?.setAgcStageActive(chain.webrtcAgcEnabled)
+    }
+
+    override fun setAiNoiseSuppression(on: Boolean) {
+        aiNoiseSuppressionPref = on
+        discordEngine.setAiNoiseSuppression(on)
+        if (on && activeDiscord) {
+            synchronized(chainLock) {
+                if (deepFilterNet == null) dfnLoadFailedReason = null
+                if (session.get() != null) ensureDeepFilterNetLocked()
+            }
+        }
+        val chain = rebuildProcessingChain(logChain = false)
+        session.get()?.setAgcStageActive(chain.webrtcAgcEnabled)
+    }
+
+    override fun setPreferredBitrate(bitrateBps: Int) {
+        val clamped = bitrateBps.coerceIn(VoiceMediaSession.MIN_VOICE_BITRATE, VoiceMediaSession.MAX_VOICE_BITRATE)
+        preferredBitrateBps = clamped
+        discordEngine.setPreferredBitrate(clamped)
+        session.get()?.setPreferredBitrate(clamped)
+    }
+
+    override fun setPreferredStereo(stereo: Boolean) {
+        preferredStereoMode = stereo
+        discordEngine.setPreferredStereo(stereo)
+        val media = session.get() ?: return
+        val before = media.activeChannels
+        media.setPreferredStereo(stereo)
+        if (media.activeChannels != before) {
+            openPlayback()
+            playbackJob?.cancel()
+            startMixPump(media)
+            stopCapture()
+            syncCapture(media)
+        }
+    }
+
+    private fun ensureDeepFilterNetLocked(): DeepFilterNetProcessor? {
+        deepFilterNet?.let { if (it.isAvailable) return it }
+        if (dfnLoadFailedReason != null) return null
+        val processor = DeepFilterNetProcessor(
+            onFallback = { reason ->
+                dfnLoadFailedReason = reason
+                rebuildProcessingChain(logChain = true)
+            },
+        )
+        if (!processor.isAvailable) {
+            dfnLoadFailedReason = processor.failureReason ?: "DeepFilterNet3 model or runtime unavailable"
+            processor.close()
+            return null
+        }
+        deepFilterNet = processor
+        return processor
+    }
+
+    private fun ensureWebRtcApm(): DesktopWebRtcApm? {
+        webRtcApm?.let { if (it.isAvailable) return it }
+        val created = DesktopWebRtcApm(
+            echoCancellation = echoCancellationPref,
+            autoGainControl = autoGainControlPref,
+            noiseSuppression = noiseSuppressionPref && !aiNoiseSuppressionPref,
+        )
+        if (!created.isAvailable) {
+            created.close()
+            webRtcApm = null
+            return null
+        }
+        webRtcApm = created
+        return created
+    }
+
+    private fun rebuildProcessingChain(logChain: Boolean): VoiceProcessingChain {
+        synchronized(chainLock) {
+            val discord = if (session.get() != null) activeDiscord else true
+            if (discord) ensureWebRtcApm()
+            if (aiNoiseSuppressionPref && discord && session.get() != null &&
+                deepFilterNet == null && dfnLoadFailedReason == null
+            ) {
+                ensureDeepFilterNetLocked()
+            }
+            val dfn = deepFilterNet
+            val dfnAvailable = if (aiNoiseSuppressionPref) {
+                if (session.get() != null) dfn != null && dfn.isAvailable && dfnLoadFailedReason == null
+                else dfnLoadFailedReason == null
+            } else {
+                true
+            }
+            val chain = VoiceProcessingChain.build(
+                platform = VoiceChainPlatform.DESKTOP,
+                discordLobby = discord,
+                echoCancellation = echoCancellationPref,
+                autoGainControl = autoGainControlPref,
+                noiseSuppression = noiseSuppressionPref,
+                aiNoiseSuppression = aiNoiseSuppressionPref,
+                webrtcApmAvailable = webRtcApm?.isAvailable ?: !discord,
+                deepFilterNetAvailable = dfnAvailable,
+                deepFilterNetFailureReason = dfnLoadFailedReason ?: dfn?.failureReason,
+            )
+            currentChain = chain
+            webRtcApm?.configure(
+                echoCancellation = chain.webrtcAecEnabled,
+                autoGainControl = chain.webrtcAgcEnabled,
+                noiseSuppression = chain.webrtcNsEnabled,
+            )
+            session.get()?.setNoiseSuppression(chain.spectralNsEnabled)
+            if (logChain) println(chain.logLine())
+            return chain
+        }
+    }
+
+    private fun closeProcessors() {
+        synchronized(chainLock) {
+            runCatching { webRtcApm?.close() }
+            webRtcApm = null
+            runCatching { deepFilterNet?.close() }
+            deepFilterNet = null
+            dfnLoadFailedReason = null
+        }
+    }
+
+    /** One AEC, one AGC, and one noise stage. Spectral NS never runs on the lobby path. */
+    private fun processCapture(frame: ShortArray): ShortArray {
+        val chain = currentChain
+        var pcm = frame
+        val apm = webRtcApm
+        if (apm != null && apm.isAvailable &&
+            (chain.webrtcAecEnabled || chain.webrtcAgcEnabled || chain.webrtcNsEnabled)
+        ) {
+            pcm = apm.processCaptureFrame20ms(pcm, channels = 1)
+        }
+        if (chain.deepFilterNetEnabled) {
+            val dfn = deepFilterNet
+            if (dfn != null && dfn.isAvailable) pcm = dfn.processFrame20ms(pcm, channels = 1)
+        }
+        return pcm
+    }
+
+    private fun feedReverse(pcm: ShortArray, channels: Int) {
+        val apm = webRtcApm ?: return
+        if (!currentChain.webrtcAecEnabled || !apm.isAvailable || pcm.isEmpty()) return
+        apm.processReverseFrame20ms(pcm, channels)
     }
 
     override fun setPeerMuted(participantId: String, muted: Boolean) {
@@ -342,20 +526,23 @@ class DesktopVoiceEngine : VoiceEngine {
         wasapiPlaybackFailed = false
         // Default device on Windows: open WASAPI on the playback thread (same COM apartment).
         // A chosen device, or any non-Windows host, stays on Java Sound (CoreAudio / PipeWire / DirectSound).
-        preferWasapiPlayback = outputDeviceId.isNullOrEmpty() && isWindows
+        val stereo = (session.get()?.activeChannels ?: 1) > 1
+        // WASAPI shared render in this build is mono. Stereo stays on Java Sound.
+        preferWasapiPlayback = !stereo && outputDeviceId.isNullOrEmpty() && isWindows
         if (preferWasapiPlayback) return
         openJavaSoundPlayback()
     }
 
     private fun openJavaSoundPlayback() {
         var id = outputDeviceId
-        var line = JvmVoiceDevices.openPlayback(id, frameSamples)
+        val channels = (session.get()?.activeChannels ?: 1).coerceIn(1, 2)
+        var line = JvmVoiceDevices.openPlayback(id, frameSamples, channels)
         if (line == null && !id.isNullOrEmpty()) {
             outputDeviceId = null
             if (activeDiscord) discordEngine.setOutputDeviceId(null)
             onDeviceLost?.invoke(false)
             id = null
-            line = JvmVoiceDevices.openPlayback(null, frameSamples)
+            line = JvmVoiceDevices.openPlayback(null, frameSamples, channels)
         }
         if (line == null) {
             println("DesktopVoice playback open failed device=${id ?: "system default"} backend=${javaSoundBackend()}")
@@ -375,13 +562,16 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     private fun startMixPump(media: VoiceMediaSession) {
-        val out = ShortArray(media.frameSamples)
+        var out = ShortArray(media.frameSamples)
         var bytes = ByteArray(out.size * 2)
         var loggedFormat = false
         var resamplerRate = VoicePcm.SAMPLE_RATE
         var resampler: StreamingResampler? = null
         playbackJob = scope.launch(Dispatchers.IO) {
             while (isActive && session.get() === media) {
+                val channels = media.activeChannels.coerceIn(1, 2)
+                val need = media.frameSamples * channels
+                if (out.size != need) out = ShortArray(need)
                 if (preferWasapiPlayback && wasapiRender == null && !wasapiPlaybackFailed) {
                     wasapiRender = WasapiAudio.openRender()
                     if (wasapiRender == null) {
@@ -394,9 +584,14 @@ class DesktopVoiceEngine : VoiceEngine {
                     }
                 }
                 val n = media.pollMixedPcm(out)
+                if (n <= 0) {
+                    delay(3)
+                    continue
+                }
+                val inputPcm = if (n == out.size) out else out.copyOf(n)
+                feedReverse(inputPcm, channels)
                 val render = wasapiRender
-                if (n > 0 && render != null) {
-                    val inputPcm = if (n == out.size) out else out.copyOf(n)
+                if (channels == 1 && render != null) {
                     runCatching { render.writeMono48k(inputPcm) }
                     continue
                 }
@@ -411,13 +606,12 @@ class DesktopVoiceEngine : VoiceEngine {
                             StreamingResampler(VoicePcm.SAMPLE_RATE, lineRate)
                         }
                     }
-                    val inputPcm = if (n == out.size) out else out.copyOf(n)
-                    val playPcm = resampler?.push(inputPcm) ?: inputPcm
+                    val playPcm = if (channels > 1) inputPcm else (resampler?.push(inputPcm) ?: inputPcm)
                     if (playPcm.isNotEmpty()) {
                         if (!loggedFormat) {
                             loggedFormat = true
                             println(
-                                "DesktopVoice playback format=PCM16LE rate=$lineRate ch=1 " +
+                                "DesktopVoice playback format=PCM16LE rate=$lineRate ch=$channels " +
                                     "frameSamples=${playPcm.size} bytesPerFrame=${playPcm.size * 2} " +
                                     "firstRemoteRms=${media.lastRemoteRms}",
                             )
@@ -460,7 +654,7 @@ class DesktopVoiceEngine : VoiceEngine {
                                 continue
                             }
                             for (frame in accumulator.push(pcm48)) {
-                                kotlinx.coroutines.runBlocking { media.offerCapturePcm(frame) }
+                                kotlinx.coroutines.runBlocking { media.offerCapturePcm(processCapture(frame)) }
                             }
                         }
                     } catch (_: Exception) {
@@ -522,11 +716,11 @@ class DesktopVoiceEngine : VoiceEngine {
                         pcm[i] = ((hi shl 8) or lo).toShort()
                     }
                     if (resampler == null) {
-                        kotlinx.coroutines.runBlocking { media.offerCapturePcm(pcm) }
+                        kotlinx.coroutines.runBlocking { media.offerCapturePcm(processCapture(pcm)) }
                     } else {
                         val resampled = resampler.push(pcm)
                         for (frame in accumulator!!.push(resampled)) {
-                            kotlinx.coroutines.runBlocking { media.offerCapturePcm(frame) }
+                            kotlinx.coroutines.runBlocking { media.offerCapturePcm(processCapture(frame)) }
                         }
                     }
                 }

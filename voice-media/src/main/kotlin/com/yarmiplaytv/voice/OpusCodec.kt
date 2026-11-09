@@ -32,6 +32,9 @@ class OpusCodec(
     val frameSamples: Int = sampleRate / 50 // 20 ms
     val baseBitrate: Int = bitrate.coerceIn(MIN_BITRATE, MAX_BITRATE)
 
+    /** Live target. Packet-loss adaptation scales this; [setBitrate] replaces it. */
+    @Volatile private var targetBitrate: Int = baseBitrate
+
     @Volatile
     var reportedLossPercent: Int = 0
         private set
@@ -52,6 +55,20 @@ class OpusCodec(
 
     val currentBitrate: Int
         get() = synchronized(encoder) { encoder.bitrate }
+
+    /** Requested bitrate before packet-loss adaptation. */
+    val effectiveBitrate: Int get() = targetBitrate
+
+    val effectiveChannels: Int get() = channels
+
+    /** Replace the target bitrate. Channel-count changes still need a new [OpusCodec]. */
+    fun setBitrate(bitrate: Int) {
+        val next = bitrate.coerceIn(MIN_BITRATE, MAX_BITRATE)
+        targetBitrate = next
+        synchronized(encoder) {
+            encoder.bitrate = adaptBitrateForLoss(next, reportedLossPercent)
+        }
+    }
 
     val complexity: Int
         get() = synchronized(encoder) { encoder.complexity }
@@ -91,7 +108,7 @@ class OpusCodec(
                 clamped == 0 -> MIN_FEC_LOSS_PERCENT
                 else -> clamped
             }
-            encoder.bitrate = adaptBitrateForLoss(baseBitrate, clamped)
+            encoder.bitrate = adaptBitrateForLoss(targetBitrate, clamped)
         }
     }
 
@@ -151,6 +168,8 @@ class OpusCodec(
     companion object {
         const val MIN_BITRATE = 24_000
         const val MAX_BITRATE = 128_000
+        /** Opus plaintext that still fits a `yv1` packet (header + GCM tag). */
+        const val MAX_PAYLOAD_BYTES = Yv1Packet.MAX_PACKET - Yv1Packet.HEADER_LEN - Yv1Packet.TAG_LEN
         /** Baseline loss hint when FEC is enabled so SILK LBRR stays armed for sudden loss bursts. */
         const val MIN_FEC_LOSS_PERCENT = 5
         const val INITIAL_FEC_LOSS_PERCENT = 10

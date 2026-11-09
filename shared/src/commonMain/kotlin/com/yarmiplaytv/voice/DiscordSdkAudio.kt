@@ -1,48 +1,49 @@
 package com.yarmiplaytv.voice
 
 /**
- * Audio controls the Discord Social SDK actually exposes, and how this app maps its existing
- * voice settings onto them.
+ * Audio controls the Discord Social SDK exposes, and how this app maps its voice settings onto them.
  *
- * The native `discordpp` library is not linked: there is no SDK binary and no Krisp model
- * (`.kef` / `.kw` / `discord_krisp`). [DiscordVoiceEngine] records the same calls the SDK would
- * take, and Android / desktop apply them on the capture and playback path that already carries
- * the lobby. Limitations that follow from that:
+ * The native `discordpp` library is not linked: there is no SDK binary and no proprietary Krisp model
+ * (`.kef` / `.kw` / `discord_krisp`). Instead, v3.0.0 ships:
+ * - Desktop WebRTC AudioProcessing (`dev.onvoid.webrtc:webrtc-java` APM) for AEC3, AGC, and WebRTC NS
+ *   with playback reference (`processReverseStream`), matching Android's platform AEC/NS/AGC.
+ * - Optional AI noise suppression via DeepFilterNet3 (`libDF` JNI on Android/TV, ONNX Runtime on desktop)
+ *   as a mutually exclusive alternative to WebRTC/platform NS (like Discord's Krisp vs WebRTC NS).
+ * - Configurable Opus bitrate up to 128 kbps (default 64 kbps) and optional stereo mode on the lobby path,
+ *   with automatic negotiation and fallback for older clients and the Syncplay-port relay.
  *
- * - [Client::SetNoiseCancellation] (Krisp) cannot be turned on. The SDK would disable WebRTC
- *   noise suppression when Krisp enables; we refuse Krisp and leave suppression as the user set it.
+ * Other invariants:
+ * - [Client::SetNoiseCancellation] (Krisp) stays off. DeepFilterNet3 is the optional AI suppressor
+ *   and replaces WebRTC or platform noise suppression; it never stacks on top of them.
  * - [Client::SetInputVolume] is recorded as a percentage in `[0, 100]` (100 = full). The in-app
- *   mic slider goes to 200%. This build has no native SDK, so the digital capture path applies
- *   that boost; the one playback limiter keeps it from hard-clipping. The recorded SDK percent
- *   stays capped at 100, which is what `SetInputVolume` would receive.
+ *   mic slider goes to 200%. The digital capture path applies that boost and [VoiceLimiter] is
+ *   the one playback limiter. The recorded SDK percent stays capped at 100.
  * - [Client::SetOutputVolume] and [Call::SetParticipantVolume] are percentages in `[0, 200]`,
- *   100 = unity. The SDK calls this "perceptual loudness" but does not publish a curve, so the
- *   percentage is applied as linear amplitude (`percent / 100`), which matches the SDK's own
- *   raw-PCM callback example.
+ *   100 = unity, applied as linear amplitude (`percent / 100`).
  * - Device ids are the platform's (Android [AudioDeviceInfo] id, Java Sound mixer name). An empty
- *   id is the system default, which is what [Client::GetDefaultAudioDeviceId] means. There is no
- *   Discord device-id namespace without the SDK.
- * - Encode is in-process Opus at 48 kHz, mono, 20 ms, 64 kbps, FEC on, DTX off — Discord's default
- *   voice rate and this app's Opus ceiling. The SDK's own encoder, stereo, and higher bitrates
- *   are not available. Opus DTX is left off because dropping frames into PLC was the chop.
- * - [Call::SetVADThreshold] automatic mode defaults to −60 dBFS. There is no sensitivity slider;
- *   automatic stays on.
- * - Desktop has no WebRTC AEC / AGC. Android uses the platform equivalents
- *   (`NoiseSuppressor`, `AcousticEchoCanceler`, `AutomaticGainControl`) and does not also run the
- *   spectral gate. Echo cancellation and AGC stay at the SDK default (on) when the user turns
- *   noise suppression off; the SDK toggles those separately.
+ *   id is the system default. There is no Discord device-id namespace without the SDK.
+ * - Encode is in-process Opus at 48 kHz, 20 ms, FEC on, DTX off. The lobby path can use 24–128 kbps
+ *   and stereo; the Syncplay relay stays inside its existing cap and channel count.
+ * - [Call::SetVADThreshold] automatic mode defaults to −60 dBFS.
+ * - Desktop lobby capture runs WebRTC AEC3, AGC2, and either WebRTC NS or DeepFilterNet, each once.
+ *   Android uses one platform AEC, one platform AGC, and either platform NS or DeepFilterNet.
+ *   The Syncplay relay does not use WebRTC APM or DeepFilterNet.
+ * - When WebRTC or platform AGC is active, the fixed desktop makeup gain stays at unity.
  * - On a phone or tablet the Discord playback track uses the voice-call stream so the video
  *   volume slider (media stream) does not scale voice. Android TV stays on the media stream:
  *   the voice-call stream is commonly silent there. While the mic is open, Android still enters
- *   communication mode so the platform echo canceller has a reference; that can duck media and
- *   is unchanged from the existing capture path.
+ *   communication mode so the platform echo canceller has a reference.
  */
 object DiscordSdkAudio {
     const val SAMPLE_RATE = 48_000
     const val CHANNELS = 1
+    const val STEREO_CHANNELS = 2
     const val FRAME_MS = 20
-    /** Discord's default voice Opus bitrate, and this app's encoder ceiling. */
+    /** Discord's default voice Opus bitrate (64 kbps); configurable up to [MAX_BITRATE] (128 kbps). */
     const val BITRATE = 64_000
+    const val MIN_BITRATE = 24_000
+    const val MAX_BITRATE = 128_000
+    val BITRATE_OPTIONS_BPS: List<Int> = listOf(32_000, 64_000, 96_000, 128_000)
 
     const val INPUT_VOLUME_MAX = 100f
     const val OUTPUT_VOLUME_MAX = 200f
@@ -52,8 +53,11 @@ object DiscordSdkAudio {
     const val VAD_THRESHOLD_MAX_DB = 0f
     const val VAD_THRESHOLD_DEFAULT_DB = -60f
 
-    /** [Client::SetNoiseCancellation] is not shipped. */
+    /** Proprietary Discord Krisp ([Client::SetNoiseCancellation]) is not shipped; DeepFilterNet3 is used for AI NS. */
     const val KRISP_AVAILABLE = false
+
+    /** DeepFilterNet3 AI noise suppression is supported on desktop and Android/TV. */
+    const val DEEPFILTERNET_AVAILABLE = true
 
     /**
      * Rates tried before the 8 kHz fallback. 8 kHz resampled up to 48 kHz is the robotic path;
@@ -145,7 +149,8 @@ enum class DiscordAudioMode {
 
 /**
  * The voice state that would be passed to `Client` / `Call` for one lobby.
- * [noiseCancellation] is always false; see [DiscordSdkAudio.KRISP_AVAILABLE].
+ * [noiseCancellation] (Krisp) is always false; [aiNoiseSuppression] controls DeepFilterNet3,
+ * which is mutually exclusive with WebRTC/platform [noiseSuppression] when active.
  */
 data class DiscordAudioConfig(
     val inputDeviceId: String = "",
@@ -155,15 +160,17 @@ data class DiscordAudioConfig(
     val participantVolumePercent: Map<String, Float> = emptyMap(),
     val selfMute: Boolean = false,
     val selfDeaf: Boolean = false,
-    /** [Client::SetNoiseSuppression]. Default on. Mutually exclusive with Krisp, which is unavailable. */
+    /** [Client::SetNoiseSuppression]. Default on. Mutually exclusive with [aiNoiseSuppression] when AI NS is active. */
     val noiseSuppression: Boolean = true,
-    /** [Client::SetEchoCancellation]. Default on, independent of [noiseSuppression]. */
+    /** [Client::SetEchoCancellation]. Default on, independent of [noiseSuppression] and [aiNoiseSuppression]. */
     val echoCancellation: Boolean = true,
-    /** [Client::SetAutomaticGainControl]. Default on, independent of [noiseSuppression]. */
+    /** [Client::SetAutomaticGainControl]. Default on, independent of [noiseSuppression] and [aiNoiseSuppression]. */
     val automaticGainControl: Boolean = true,
-    /** Effective Krisp state. Always false in this build. */
+    /** Client-side AI noise suppression via DeepFilterNet3 (replaces WebRTC/platform NS when on). */
+    val aiNoiseSuppression: Boolean = false,
+    /** Effective proprietary Krisp state. Always false in this build. */
     val noiseCancellation: Boolean = false,
-    /** What the caller asked for. Recorded so tests can see the refusal. */
+    /** What the caller asked for on [DiscordVoiceEngine.setNoiseCancellation]. Recorded so tests can see the refusal. */
     val noiseCancellationRequested: Boolean = false,
     val audioMode: DiscordAudioMode = DiscordAudioMode.VOICE_ACTIVITY,
     val pttActive: Boolean = false,

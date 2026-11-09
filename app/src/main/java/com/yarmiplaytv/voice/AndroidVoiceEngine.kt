@@ -20,8 +20,17 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import androidx.core.content.ContextCompat
+import com.kaleyra.noise_filter.DefaultDeepFilterModelLoader
+import com.kaleyra.noise_filter.dispatcher.DispatcherProvider
+import com.rikorose.deepfilternet.NativeDeepFilterNet
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import com.yarmiplaytv.R
 import com.yarmiplaytv.syncplay.VoiceMediaParams
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,12 +38,18 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Android capture/playback + `yv1` Opus media (UDP, TLS TCP fallback).
- * Exposes built-in / wired / Bluetooth / USB routes in settings; defaults to the system device.
- * Unplug falls back to the system default without leaving voice.
+ * Android / Android TV capture/playback + `yv1` Opus media (UDP, TLS TCP fallback).
+ *
+ * Enforces the single-stage voice processing chain via [VoiceProcessingChain]:
+ * - Platform `AcousticEchoCanceler`, `AutomaticGainControl`, and `NoiseSuppressor` are governed by
+ *   their respective toggles.
+ * - When AI noise suppression (DeepFilterNet3 via `libdf.so` JNI) is enabled, the platform
+ *   `NoiseSuppressor` is explicitly disabled (`chain.platformNsEnabled == false`) while AEC and AGC
+ *   stay governed by their own toggles.
+ * - If DeepFilterNet3 fails to load or exceeds the real-time 20 ms frame budget, it automatically
+ *   falls back to the platform `NoiseSuppressor` and surfaces an in-app notice via [statusNotice].
  */
 class AndroidVoiceEngine(
     context: Context,
@@ -42,6 +57,7 @@ class AndroidVoiceEngine(
 ) : VoiceEngine {
     private val app = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val chainPlatform = if (isTv) VoiceChainPlatform.ANDROID_TV else VoiceChainPlatform.ANDROID
     private var preferredInputId: String? = null
     private var preferredOutputId: String? = null
     private var player: MediaPlayer? = null
@@ -53,17 +69,33 @@ class AndroidVoiceEngine(
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var frameSamples: Int = 960
-    private var noiseSuppression = true
+
     @Volatile private var inputGain: Float = 1f
     @Volatile private var outputGain: Float = 1f
-    @Volatile private var playbackResamplerRate: Int = VoicePcm.SAMPLE_RATE
-    @Volatile private var playbackResampler: StreamingResampler? = null
+    @Volatile private var noiseSuppressionPref = true
+    @Volatile private var echoCancellationPref = true
+    @Volatile private var autoGainControlPref = true
+    @Volatile private var aiNoiseSuppressionPref = false
+    @Volatile private var preferredBitrateBps = VoiceMediaSession.DISCORD_BITRATE
+    @Volatile private var preferredStereoMode = false
+
+    private val chainLock = Any()
+    private var deepFilterNet: DeepFilterNetProcessor? = null
+    @Volatile private var dfnLoadFailedReason: String? = null
+    @Volatile private var currentChain: VoiceProcessingChain = VoiceProcessingChain.build(
+        platform = chainPlatform,
+        echoCancellation = true,
+        autoGainControl = true,
+        noiseSuppression = true,
+        aiNoiseSuppression = false,
+        deepFilterNetAvailable = true,
+        discordLobby = true,
+    )
+
     private var platformNs: NoiseSuppressor? = null
     private var platformAec: AcousticEchoCanceler? = null
     private var platformAgc: AutomaticGainControl? = null
     private var previousAudioMode: Int? = null
-    private var previousSpeakerphoneOn: Boolean? = null
-    private var communicationDeviceSet = false
     private var raisedCallVolume = false
     private var previousCallVolume: Int? = null
     private var deviceCallback: AudioDeviceCallback? = null
@@ -72,6 +104,11 @@ class AndroidVoiceEngine(
     init {
         registerDeviceCallback()
     }
+
+    /** Snapshot of the currently active processing chain. */
+    fun activeProcessingChain(): VoiceProcessingChain = currentChain
+
+    override fun statusNotice(): String? = currentChain.fallbackNotice
 
     override suspend fun detectCapture(): VoiceCaptureKind = withContext(Dispatchers.Default) {
         if (ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO)
@@ -123,6 +160,8 @@ class AndroidVoiceEngine(
             activeDiscord = false
         }
         val media = VoiceMediaSession(scope) { _, pcm -> writePlayback(pcm) }
+        media.setPreferredBitrate(preferredBitrateBps)
+        media.setPreferredStereo(preferredStereoMode)
         if (!media.connect(params)) {
             if (activeDiscord) {
                 discordEngine.disconnect()
@@ -130,20 +169,20 @@ class AndroidVoiceEngine(
             }
             return false
         }
-        if (activeDiscord) {
-            // Platform WebRTC NS/AEC/AGC is the SDK's one processor. The spectral gate stays off.
-            media.setNoiseSuppression(false)
-            if (discordEngine.audioConfig().selfDeaf) media.setSelfDeaf(true)
-        } else {
-            media.setNoiseSuppression(noiseSuppression)
+        synchronized(chainLock) {
+            if (activeDiscord && aiNoiseSuppressionPref) {
+                ensureDeepFilterNetLocked()
+            }
         }
-        // Makeup stays on until platform AGC actually attaches in [applyPlatformEffects].
-        media.setAgcStageActive(false)
-        media.setInputGain(if (activeDiscord) inputGain.coerceIn(0f, 2f) else inputGain)
-        media.setOutputGain(if (activeDiscord) discordEngine.outputAmplitude() else outputGain)
+        if (activeDiscord && discordEngine.audioConfig().selfDeaf) {
+            media.setSelfDeaf(true)
+        }
         session.set(media)
         frameSamples = media.frameSamples
-        startPlayback(media.frameSamples)
+        val chain = rebuildProcessingChain(logChain = true)
+        // HARD RULE: never stack the spectral suppressor on top of platform NS or DeepFilterNet.
+        media.setNoiseSuppression(chain.spectralNsEnabled)
+        startPlayback(media.frameSamples, media.activeChannels)
         // Capture starts only while transmitting so a muted/mic-off join does not hold AudioRecord
         // (green privacy indicator) or request the mic FGS type without need.
         return true
@@ -162,6 +201,10 @@ class AndroidVoiceEngine(
         playbackJob = null
         session.getAndSet(null)?.disconnect()
         stopCapture()
+        synchronized(chainLock) {
+            runCatching { deepFilterNet?.close() }
+            deepFilterNet = null
+        }
         runCatching { audioTrack?.pause(); audioTrack?.flush(); audioTrack?.release() }
         audioTrack = null
         restoreAudioMode()
@@ -228,24 +271,23 @@ class AndroidVoiceEngine(
         session.get()?.capturingSpeech() == true || (activeDiscord && discordEngine.capturingSpeech())
 
     override fun setMicTest(active: Boolean) {
-        if (activeDiscord) {
-            discordEngine.setMicTest(active)
-        }
+        if (activeDiscord) discordEngine.setMicTest(active)
         if (active) {
             val existing = session.get()
             if (existing != null) {
                 existing.setMicTest(true)
+                rebuildProcessingChain(logChain = false)
                 syncCapture(existing)
                 return
             }
             val media = VoiceMediaSession(scope) { _, pcm -> writePlayback(pcm) }
             media.startStandaloneMicTest()
-            media.setNoiseSuppression(noiseSuppression)
-            media.setInputGain(inputGain)
-            media.setOutputGain(outputGain)
+            media.setInputGain(inputGainForSession())
+            media.setOutputGain(if (activeDiscord) discordEngine.outputAmplitude() else outputGain)
             session.set(media)
             frameSamples = media.frameSamples
-            startPlayback(media.frameSamples)
+            rebuildProcessingChain(logChain = false)
+            startPlayback(media.frameSamples, media.activeChannels)
             syncCapture(media)
         } else {
             val existing = session.get() ?: return
@@ -267,7 +309,7 @@ class AndroidVoiceEngine(
         return if (activeDiscord) discordEngine.micTestLevel() else 0f
     }
 
-    /** Hold [AudioRecord] only while we are transmitting or running a mic test; release it when muted / mic off. */
+    /** Hold [AudioRecord] only while transmitting or running a mic test. */
     private fun syncCapture(media: VoiceMediaSession?) {
         if (media == null || session.get() !== media) {
             stopCapture()
@@ -287,28 +329,24 @@ class AndroidVoiceEngine(
         runCatching { audioRecord?.stop() }
         runCatching { audioRecord?.release() }
         audioRecord = null
-        // Discord playback keeps communication mode and the loudspeaker while the
-        // call is up. Restoring here would drop the other person back to the earpiece
-        // the moment the local mic closes. Full disconnect restores the previous mode.
-        if (!activeDiscord && session.get()?.shouldCaptureAudio() != true) restoreAudioMode()
+        if (session.get()?.isTransmitting() != true) restoreAudioMode()
     }
 
     override fun setInputGain(gain: Float) {
         inputGain = gain
-        if (activeDiscord) {
-            discordEngine.setInputGain(gain)
-            // The SDK record stays 0–100%. The digital slider still reaches 200%;
-            // the one playback limiter absorbs the boost.
-            session.get()?.setInputGain(gain.coerceIn(0f, 2f))
-        } else {
-            session.get()?.setInputGain(gain)
-        }
+        discordEngine.setInputGain(gain)
+        // The SDK record stays 0–100%. The digital slider still reaches 200%;
+        // the one playback limiter absorbs the boost.
+        session.get()?.setInputGain(inputGainForSession())
     }
+
+    private fun inputGainForSession(): Float =
+        if (activeDiscord) inputGain.coerceIn(0f, 2f) else inputGain
 
     override fun setOutputGain(gain: Float) {
         outputGain = gain
+        discordEngine.setOutputGain(gain)
         if (activeDiscord) {
-            discordEngine.setOutputGain(gain)
             session.get()?.setOutputGain(discordEngine.outputAmplitude())
         } else {
             session.get()?.setOutputGain(gain)
@@ -316,16 +354,113 @@ class AndroidVoiceEngine(
     }
 
     override fun setNoiseSuppression(on: Boolean) {
-        noiseSuppression = on
-        if (activeDiscord) {
-            discordEngine.setNoiseSuppression(on)
-            session.get()?.setNoiseSuppression(false)
-            applyPlatformEffects(audioRecord)
-            return
+        noiseSuppressionPref = on
+        discordEngine.setNoiseSuppression(on)
+        rebuildProcessingChain(logChain = false)
+    }
+
+    override fun setEchoCancellation(on: Boolean) {
+        echoCancellationPref = on
+        discordEngine.setEchoCancellation(on)
+        rebuildProcessingChain(logChain = false)
+    }
+
+    override fun setAutoGainControl(on: Boolean) {
+        autoGainControlPref = on
+        discordEngine.setAutoGainControl(on)
+        rebuildProcessingChain(logChain = false)
+    }
+
+    override fun setAiNoiseSuppression(on: Boolean) {
+        aiNoiseSuppressionPref = on
+        discordEngine.setAiNoiseSuppression(on)
+        if (on && activeDiscord) {
+            synchronized(chainLock) {
+                if (deepFilterNet == null) dfnLoadFailedReason = null
+                if (session.get() != null) {
+                    ensureDeepFilterNetLocked()
+                }
+            }
         }
-        applyPlatformEffects(audioRecord)
-        // Enforce single noise-suppression stage: only enable software NS if platform WebRTC NS is not active.
-        session.get()?.setNoiseSuppression(on && platformNs == null)
+        rebuildProcessingChain(logChain = false)
+    }
+
+    override fun setPreferredBitrate(bitrateBps: Int) {
+        val clamped = bitrateBps.coerceIn(VoiceMediaSession.MIN_VOICE_BITRATE, VoiceMediaSession.MAX_VOICE_BITRATE)
+        preferredBitrateBps = clamped
+        discordEngine.setPreferredBitrate(clamped)
+        session.get()?.setPreferredBitrate(clamped)
+    }
+
+    override fun setPreferredStereo(stereo: Boolean) {
+        preferredStereoMode = stereo
+        discordEngine.setPreferredStereo(stereo)
+        val media = session.get()
+        val before = media?.activeChannels
+        media?.setPreferredStereo(stereo)
+        if (media != null && before != null && media.activeChannels != before) {
+            startPlayback(media.frameSamples, media.activeChannels)
+        }
+    }
+
+    private fun ensureDeepFilterNetLocked(): DeepFilterNetProcessor? {
+        deepFilterNet?.let { if (it.isAvailable) return it }
+        if (dfnLoadFailedReason != null) return null
+        val processor = DeepFilterNetProcessor(
+            backendFactory = { AndroidNativeDeepFilterBackend.open(app) },
+            onFallback = { reason ->
+                dfnLoadFailedReason = reason
+                rebuildProcessingChain(logChain = true)
+            },
+        )
+        if (!processor.isAvailable) {
+            dfnLoadFailedReason = processor.failureReason ?: "DeepFilterNet3 model or native library unavailable"
+            processor.close()
+            return null
+        }
+        deepFilterNet = processor
+        return processor
+    }
+
+    private fun rebuildProcessingChain(logChain: Boolean): VoiceProcessingChain {
+        val chain = synchronized(chainLock) {
+            if (aiNoiseSuppressionPref && activeDiscord && session.get() != null &&
+                deepFilterNet == null && dfnLoadFailedReason == null
+            ) {
+                ensureDeepFilterNetLocked()
+            }
+            val dfn = deepFilterNet
+            val dfnAvailable = if (aiNoiseSuppressionPref) {
+                if (session.get() != null) {
+                    dfn != null && dfn.isAvailable && dfnLoadFailedReason == null
+                } else {
+                    dfnLoadFailedReason == null
+                }
+            } else {
+                true
+            }
+            val discord = if (session.get() != null) activeDiscord else true
+            val built = VoiceProcessingChain.build(
+                platform = chainPlatform,
+                discordLobby = discord,
+                echoCancellation = echoCancellationPref,
+                autoGainControl = autoGainControlPref,
+                noiseSuppression = noiseSuppressionPref,
+                aiNoiseSuppression = aiNoiseSuppressionPref,
+                deepFilterNetAvailable = dfnAvailable,
+                deepFilterNetFailureReason = dfnLoadFailedReason ?: dfn?.failureReason,
+            )
+            currentChain = built
+            session.get()?.setNoiseSuppression(built.spectralNsEnabled)
+            if (logChain) {
+                val line = built.logLine()
+                println(line)
+                runCatching { android.util.Log.i(TAG, line) }
+            }
+            built
+        }
+        applyPlatformEffects(audioRecord, chain)
+        return chain
     }
 
     override fun setPeerMuted(participantId: String, muted: Boolean) {
@@ -376,9 +511,9 @@ class AndroidVoiceEngine(
         if (activeDiscord) discordEngine.setOutputDeviceId(next)
         if (preferredOutputId == next) return
         preferredOutputId = next
-        if (session.get() == null) return
+        val media = session.get() ?: return
         if (!applyPreferredOutput()) {
-            startPlayback(frameSamples)
+            startPlayback(frameSamples, media.activeChannels)
         }
     }
 
@@ -407,11 +542,12 @@ class AndroidVoiceEngine(
             android.util.Log.w(TAG, "startCapture: RECORD_AUDIO not granted")
             return
         }
-        media.setNoiseSuppression(if (activeDiscord) false else noiseSuppression)
+        val chainAtStart = rebuildProcessingChain(logChain = false)
+        media.setNoiseSuppression(chainAtStart.spectralNsEnabled)
         enterCommunicationMode()
         val opened = openCaptureRecord(media.frameSamples, discord = activeDiscord) ?: run {
             android.util.Log.e(TAG, "startCapture: no usable AudioRecord (TV remote mic missing?)")
-            if (!activeDiscord) restoreAudioMode()
+            restoreAudioMode()
             return
         }
         val (record, sourceName) = opened
@@ -420,9 +556,7 @@ class AndroidVoiceEngine(
             if (activeDiscord) discordEngine.setInputDeviceId(null)
             onDeviceLost?.invoke(true)
         }
-        applyPlatformEffects(record)
-        // Enforce single NS stage: if platform WebRTC NoiseSuppressor attached, disable software spectral NS.
-        media.setNoiseSuppression(!activeDiscord && noiseSuppression && platformNs == null)
+        applyPlatformEffects(record, chainAtStart)
         val actualRate = record.sampleRate
         val channels = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             record.channelCount
@@ -440,7 +574,7 @@ class AndroidVoiceEngine(
         android.util.Log.i(
             TAG,
             "capture open $format opusRate=${VoicePcm.SAMPLE_RATE} frameSamples=${media.frameSamples} " +
-                "bytesPerOpusFrame=${VoicePcm.frameSamples * 2} ns=$noiseSuppression",
+                "bytesPerOpusFrame=${VoicePcm.frameSamples * 2} chain=${chainAtStart.logLine()}",
         )
         if (actualRate != VoicePcm.SAMPLE_RATE) {
             android.util.Log.w(
@@ -452,10 +586,10 @@ class AndroidVoiceEngine(
         audioRecord = record
         record.startRecording()
         // Dedicated urgent-audio thread: read ~20 ms chunks, stateful resample, exact Opus frames.
-        val readSamples = maxOf(actualRate / 50, 160) * format.channels
+        val readSamples = maxOf(actualRate / 50, 320) * format.channels
         val readBuf = ShortArray(readSamples)
         val monoScratch = ShortArray(readBuf.size)
-        val resampler = if (actualRate == VoicePcm.SAMPLE_RATE) null else StreamingResampler(actualRate, VoicePcm.SAMPLE_RATE)
+        val resampler = if (actualRate == VoicePcm.SAMPLE_RATE) null else StreamingResampler(actualRate)
         val accumulator = VoicePcm.FrameAccumulator(media.frameSamples)
         captureJob = scope.launch(Dispatchers.IO) {
             Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
@@ -471,7 +605,18 @@ class AndroidVoiceEngine(
                         val mono = toMono(readBuf, n, format.channels, monoScratch)
                         val at48k = resampler?.push(mono) ?: mono
                         for (frame in accumulator.push(at48k)) {
-                            media.offerCapturePcm(frame)
+                            val chain = currentChain
+                            val dfn = deepFilterNet
+                            val outFrame = if (chain.deepFilterNetEnabled && dfn != null && dfn.isAvailable) {
+                                val processed = dfn.processFrame20ms(frame, channels = 1)
+                                if (!dfn.isAvailable) {
+                                    rebuildProcessingChain(logChain = true)
+                                }
+                                processed
+                            } else {
+                                frame
+                            }
+                            media.offerCapturePcm(outFrame)
                         }
                     }
                 }
@@ -500,9 +645,12 @@ class AndroidVoiceEngine(
                 MediaRecorder.AudioSource.DEFAULT to "DEFAULT",
             )
         }
-        // Native rate first so the HAL does not resample, then 48 kHz. Discord still skips 8 kHz
-        // unless nothing wider opens — upsampling 8 kHz sounds robotic.
-        val rates = captureRates(discord)
+        // Prefer 48 kHz. Discord skips 8 kHz unless nothing wider opens — upsampling 8 kHz sounds robotic.
+        val rates = if (discord) {
+            DiscordSdkAudio.preferredCaptureRates()
+        } else {
+            intArrayOf(VoicePcm.SAMPLE_RATE, 44_100, 16_000, DiscordSdkAudio.NARROWBAND_FALLBACK_RATE)
+        }
         val opened = openCaptureRecordAt(sources, rates, frameSamples)
         if (opened != null || !discord) return opened
         return openCaptureRecordAt(
@@ -525,32 +673,23 @@ class AndroidVoiceEngine(
                     AudioFormat.ENCODING_PCM_16BIT,
                 )
                 if (minBuf <= 0) continue
-                val frameBytesAtRate = maxOf(rate / 50, 160) * 2
-                val lowBuf = VoiceDeviceClock.lowLatencyBufferBytes(minBuf, frameBytesAtRate, nativeBurstFrames())
-                val fallbackBuf = maxOf(minBuf * 2, frameBytesAtRate * 4, frameSamples * 2 * 4)
-                // Smallest buffer the HAL accepts is the AAudio fast-capture path (API 26+).
-                // A rejected size falls back to a 4-frame buffer on a new AudioRecord.
-                val candidateBuffers = intArrayOf(lowBuf, fallbackBuf).distinct()
-                for (bufBytes in candidateBuffers) {
-                    val record = runCatching {
-                        val format = AudioFormat.Builder()
-                            .setSampleRate(rate)
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                            .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-                            .build()
-                        AudioRecord.Builder()
-                            .setAudioSource(source)
-                            .setAudioFormat(format)
-                            .setBufferSizeInBytes(bufBytes)
-                            .build()
-                    }.getOrNull() ?: continue
-                    if (record.state != AudioRecord.STATE_INITIALIZED) {
-                        record.release()
-                        continue
-                    }
-                    android.util.Log.i(TAG, "AudioRecord ok source=$name requestedRate=$rate actualRate=${record.sampleRate} buf=$bufBytes")
-                    return record to name
+                // ≥4× min + two 20 ms frames so reads don't underrun under load.
+                val bufBytes = maxOf(minBuf * 4, frameSamples * 2 * 8)
+                val record = runCatching {
+                    AudioRecord(
+                        source,
+                        rate,
+                        AudioFormat.CHANNEL_IN_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT,
+                        bufBytes,
+                    )
+                }.getOrNull() ?: continue
+                if (record.state != AudioRecord.STATE_INITIALIZED) {
+                    record.release()
+                    continue
                 }
+                android.util.Log.i(TAG, "AudioRecord ok source=$name requestedRate=$rate actualRate=${record.sampleRate} buf=$bufBytes")
+                return record to name
             }
         }
         return null
@@ -574,16 +713,19 @@ class AndroidVoiceEngine(
         return out.copyOf(frames)
     }
 
-    private fun applyPlatformEffects(record: AudioRecord?) {
+    /**
+     * Attaches Android platform `NoiseSuppressor`, `AcousticEchoCanceler`, and `AutomaticGainControl`
+     * strictly according to [chain]:
+     * - When DeepFilterNet3 is active (`chain.deepFilterNetEnabled == true`), `chain.platformNsEnabled`
+     *   is `false`, so the platform `NoiseSuppressor` is explicitly disabled/released while AEC and AGC
+     *   remain governed by their own toggles.
+     */
+    private fun applyPlatformEffects(record: AudioRecord?, chain: VoiceProcessingChain = currentChain) {
         releasePlatformEffects()
         if (record == null) return
-        val sdk = if (activeDiscord) discordEngine.audioConfig() else null
-        // Relayed path: the one noise-suppression setting gates all three effects, as before.
-        // Discord path: each WebRTC processor follows the SDK (NS is the user toggle; AEC and AGC
-        // default on and stay on when NS is turned off).
-        val ns = sdk?.noiseSuppression ?: noiseSuppression
-        val aec = sdk?.echoCancellation ?: noiseSuppression
-        val agc = sdk?.automaticGainControl ?: noiseSuppression
+        val ns = chain.platformNsEnabled
+        val aec = chain.platformAecEnabled
+        val agc = chain.platformAgcEnabled
         if (!ns && !aec && !agc) return
         val sessionId = record.audioSessionId
         if (sessionId == AudioManager.AUDIO_SESSION_ID_GENERATE) return
@@ -600,14 +742,14 @@ class AndroidVoiceEngine(
         session.get()?.setAgcStageActive(platformAgc != null)
         android.util.Log.i(
             TAG,
-            "platform effects ns=${platformNs != null} aec=${platformAec != null} agc=${platformAgc != null}",
+            "platform effects ns=${platformNs != null} aec=${platformAec != null} agc=${platformAgc != null} (${chain.logLine()})",
         )
     }
 
     private fun releasePlatformEffects() {
-        runCatching { platformNs?.release() }
-        runCatching { platformAec?.release() }
-        runCatching { platformAgc?.release() }
+        runCatching { platformNs?.enabled = false; platformNs?.release() }
+        runCatching { platformAec?.enabled = false; platformAec?.release() }
+        runCatching { platformAgc?.enabled = false; platformAgc?.release() }
         platformNs = null
         platformAec = null
         platformAgc = null
@@ -622,48 +764,25 @@ class AndroidVoiceEngine(
     }
 
     private fun restoreAudioMode() {
-        val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-        if (am != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && communicationDeviceSet) {
-                communicationDeviceSet = false
-                runCatching { am.clearCommunicationDevice() }
-            }
-            val prevSpeaker = previousSpeakerphoneOn
-            if (prevSpeaker != null) {
-                previousSpeakerphoneOn = null
-                @Suppress("DEPRECATION")
-                runCatching { am.isSpeakerphoneOn = prevSpeaker }
-            }
-        }
         val prev = previousAudioMode ?: return
         previousAudioMode = null
-        if (am != null) runCatching { am.mode = prev }
+        val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        runCatching { am.mode = prev }
     }
 
     /**
-     * Voice-call stream at its minimum step (1, not 0) makes USAGE_VOICE_COMMUNICATION
-     * inaudible. Raise it to match media volume or at least 80% of max. STREAM_MUSIC
-     * (the video slider) is not touched. Never while a phone call owns the stream.
+     * Voice-call stream at 0 makes USAGE_VOICE_COMMUNICATION silent. Raise it only in that case,
+     * and never while a phone call owns the stream. STREAM_MUSIC (the video slider) is not touched.
      */
     private fun ensureDiscordCallStreamAudible() {
         val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
         if (am.mode == AudioManager.MODE_IN_CALL) return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (runCatching { am.isStreamMute(AudioManager.STREAM_VOICE_CALL) }.getOrDefault(false)) {
-                runCatching { am.adjustStreamVolume(AudioManager.STREAM_VOICE_CALL, AudioManager.ADJUST_UNMUTE, 0) }
-            }
-        }
         val current = runCatching { am.getStreamVolume(AudioManager.STREAM_VOICE_CALL) }.getOrNull() ?: return
-        val maxCall = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL).coerceAtLeast(1)
-        val maxMusic = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        val music = runCatching { am.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrDefault((maxMusic * 0.7f).toInt())
-        val target = DiscordSdkAudio.audibleCallStreamVolume(current, maxCall, music, maxMusic)
-        if (target == current) return
-        if (runCatching { am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, target, 0) }.isFailure) return
-        if (!raisedCallVolume) {
-            previousCallVolume = current
-            raisedCallVolume = true
-        }
+        if (current > 0) return
+        val max = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL).coerceAtLeast(1)
+        if (runCatching { am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, max, 0) }.isFailure) return
+        previousCallVolume = current
+        raisedCallVolume = true
     }
 
     private fun restoreDiscordCallStream() {
@@ -685,151 +804,53 @@ class AndroidVoiceEngine(
         return info?.let { labelOf(it, input = true) } ?: "system default"
     }
 
-    private fun startPlayback(frameSamples: Int) {
+    private fun startPlayback(frameSamples: Int, channels: Int = 1) {
         runCatching { audioTrack?.pause(); audioTrack?.flush(); audioTrack?.release() }
         audioTrack = null
-        playbackResampler = null
-        playbackResamplerRate = VoicePcm.SAMPLE_RATE
+        val sampleRate = 48_000
+        val outMask = if (channels >= 2) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
+        val minBuf = AudioTrack.getMinBufferSize(
+            sampleRate,
+            outMask,
+            AudioFormat.ENCODING_PCM_16BIT,
+        )
+        if (minBuf <= 0) return
         // Relayed voice stays on the media stream (TV speakers, and phones where the call stream is 0).
         // Discord lobby voice on a phone uses the voice-call stream so the video volume slider,
         // which sets STREAM_MUSIC, does not scale voice. TV keeps media: the call stream is often silent.
         val shareVideo = !activeDiscord || DiscordSdkAudio.playbackSharesVideoStream(isTv)
-        if (!shareVideo) {
-            enterCommunicationMode()
-            ensureDiscordCallStreamAudible()
-        }
-        val usage = if (shareVideo) AudioAttributes.USAGE_MEDIA else AudioAttributes.USAGE_VOICE_COMMUNICATION
-        val nativeRate = nativeOutputRate()
-        val rates = if (nativeRate == VoicePcm.SAMPLE_RATE) {
-            intArrayOf(VoicePcm.SAMPLE_RATE)
-        } else {
-            intArrayOf(nativeRate, VoicePcm.SAMPLE_RATE)
-        }
-        var track: AudioTrack? = null
-        var openedRate = VoicePcm.SAMPLE_RATE
-        val burst = nativeBurstFrames()
-        for (rate in rates) {
-            val minBuf = AudioTrack.getMinBufferSize(
-                rate,
-                AudioFormat.CHANNEL_OUT_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
+        if (!shareVideo) ensureDiscordCallStreamAudible()
+        val chCount = if (channels >= 2) 2 else 1
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(if (shareVideo) AudioAttributes.USAGE_MEDIA else AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build(),
             )
-            if (minBuf <= 0) continue
-            val frameBytes = maxOf(rate / 50, 160) * 2
-            val lowBuf = VoiceDeviceClock.lowLatencyBufferBytes(minBuf, frameBytes, burst)
-            val built = buildAudioTrack(usage, rate, lowBuf, lowLatency = true)
-            if (built != null) {
-                track = built
-                openedRate = rate
-                break
-            }
-        }
-        if (track == null) {
-            val minBuf = AudioTrack.getMinBufferSize(
-                VoicePcm.SAMPLE_RATE,
-                AudioFormat.CHANNEL_OUT_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(outMask)
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .build(),
             )
-            if (minBuf <= 0) return
-            val fallbackBuf = maxOf(minBuf * 2, frameSamples * 2 * 4)
-            track = buildAudioTrack(usage, VoicePcm.SAMPLE_RATE, fallbackBuf, lowLatency = false) ?: return
-            openedRate = VoicePcm.SAMPLE_RATE
-        }
-        val opened = track ?: return
-        if (!preferOutputDevice(opened) && !preferredOutputId.isNullOrEmpty()) {
+            // ~200 ms (10 × 20 ms frames) so paced jitter-buffer output does not underrun.
+            .setBufferSizeInBytes(maxOf(minBuf * 4, frameSamples * chCount * 2 * 10))
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .build()
+        if (!preferOutputDevice(track) && !preferredOutputId.isNullOrEmpty()) {
             preferredOutputId = null
             if (activeDiscord) discordEngine.setOutputDeviceId(null)
             onDeviceLost?.invoke(false)
         }
-        // One resampler, and only when the track is not already the Opus clock.
-        // The track was opened at the device native rate when that succeeded, so AudioFlinger
-        // does not resample again underneath this.
-        val actualTrackRate = openedRate.takeIf { it > 0 } ?: VoicePcm.SAMPLE_RATE
-        playbackResamplerRate = actualTrackRate
-        playbackResampler = if (actualTrackRate == VoicePcm.SAMPLE_RATE) {
-            null
-        } else {
-            StreamingResampler(VoicePcm.SAMPLE_RATE, actualTrackRate)
-        }
-        audioTrack = opened
-        opened.play()
-    }
-
-    /**
-     * [AudioTrack.PERFORMANCE_MODE_LOW_LATENCY] selects AAudio on Android 8.1+ and falls back
-     * to the legacy path when the HAL rejects it. Oboe is the NDK wrapper over that same
-     * AAudio API; this process stays on the SDK builders.
-     */
-    private fun buildAudioTrack(usage: Int, sampleRate: Int, bufferBytes: Int, lowLatency: Boolean): AudioTrack? {
-        val track = runCatching {
-            val attrsBuilder = AudioAttributes.Builder()
-                .setUsage(usage)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            if (lowLatency && Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                @Suppress("DEPRECATION")
-                attrsBuilder.setFlags(AudioAttributes.FLAG_LOW_LATENCY)
-            }
-            val format = AudioFormat.Builder()
-                .setSampleRate(sampleRate)
-                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .build()
-            val builder = AudioTrack.Builder()
-                .setAudioAttributes(attrsBuilder.build())
-                .setAudioFormat(format)
-                .setBufferSizeInBytes(bufferBytes)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-            if (lowLatency && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                builder.setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-            }
-            builder.build()
-        }.getOrNull() ?: return null
-        if (track.state == AudioTrack.STATE_INITIALIZED) return track
-        runCatching { track.release() }
-        return null
-    }
-
-    /** HAL output rate, or 48 kHz when the device does not report one we can open. */
-    private fun nativeOutputRate(): Int {
-        val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return VoicePcm.SAMPLE_RATE
-        val reported = runCatching {
-            am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull()
-        }.getOrNull() ?: return VoicePcm.SAMPLE_RATE
-        return VoiceDeviceClock.openRate(reported)
-    }
-
-    /** HAL burst length in frames. 0 when the device does not report one. */
-    private fun nativeBurstFrames(): Int {
-        val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return 0
-        return runCatching {
-            am.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)?.toIntOrNull()
-        }.getOrNull()?.coerceIn(32, 4_096) ?: 0
-    }
-
-    private fun captureRates(discord: Boolean): IntArray {
-        val preferred = if (discord) {
-            DiscordSdkAudio.preferredCaptureRates()
-        } else {
-            intArrayOf(VoicePcm.SAMPLE_RATE, 44_100, 16_000, DiscordSdkAudio.NARROWBAND_FALLBACK_RATE)
-        }
-        val native = nativeOutputRate()
-        val ordered = ArrayList<Int>(preferred.size + 1)
-        if (native != VoicePcm.SAMPLE_RATE) ordered += native
-        for (rate in preferred) {
-            if (rate !in ordered) ordered += rate
-        }
-        return ordered.toIntArray()
+        audioTrack = track
+        track.play()
     }
 
     private fun writePlayback(pcm: ShortArray) {
         val track = audioTrack ?: return
-        val outPcm = playbackResampler?.push(pcm) ?: pcm
-        if (outPcm.isEmpty()) return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            runCatching { track.write(outPcm, 0, outPcm.size, AudioTrack.WRITE_NON_BLOCKING) }
-        } else {
-            runCatching { track.write(outPcm, 0, outPcm.size) }
-        }
+        runCatching { track.write(pcm, 0, pcm.size) }
     }
 
     private fun applyPreferredInput(): Boolean {
@@ -864,59 +885,20 @@ class AndroidVoiceEngine(
 
     private fun preferOutputDevice(track: AudioTrack): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return preferredOutputId.isNullOrEmpty()
-        val outputs = outputInfos()
         val id = preferredOutputId?.toIntOrNull()
-        if (id != null) {
-            val device = outputs.firstOrNull { it.id == id } ?: return false
-            val ok = runCatching { track.preferredDevice = device; true }.getOrDefault(false)
-            if (activeDiscord) applyCommunicationRoute(device)
-            return ok
+        if (id == null) {
+            runCatching { track.preferredDevice = null }
+            return true
         }
-        val external = outputs.firstOrNull { it.type in EXTERNAL_OUTPUT_TYPES }
-        if (activeDiscord && DiscordSdkAudio.playbackUsesBuiltInSpeaker(
-                isTv = isTv,
-                userSelectedOutput = false,
-                externalOutputConnected = external != null,
-            )
-        ) {
-            val speaker = outputs.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-            if (speaker != null) {
-                runCatching { track.preferredDevice = speaker }
-                applyCommunicationRoute(speaker)
-                return true
-            }
-        }
-        runCatching { track.preferredDevice = null }
-        if (activeDiscord) applyCommunicationRoute(external)
-        return true
-    }
-
-    /** Loudspeaker unless the chosen device is something else. Restored in [restoreAudioMode]. */
-    private fun applyCommunicationRoute(target: AudioDeviceInfo?) {
-        if (isTv || !activeDiscord) return
-        val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        val wantSpeaker = target?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && target != null) {
-            val applied = runCatching { am.setCommunicationDevice(target) }.getOrDefault(false)
-            if (applied) communicationDeviceSet = true
-        }
-        @Suppress("DEPRECATION")
-        runCatching {
-            if (previousSpeakerphoneOn == null) previousSpeakerphoneOn = am.isSpeakerphoneOn
-            if (am.isSpeakerphoneOn != wantSpeaker) am.isSpeakerphoneOn = wantSpeaker
-        }
+        val device = outputInfos().firstOrNull { it.id == id } ?: return false
+        return runCatching { track.preferredDevice = device; true }.getOrDefault(false)
     }
 
     private fun registerDeviceCallback() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         val am = app.getSystemService(AudioManager::class.java) ?: return
         val callback = object : AudioDeviceCallback() {
-            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
-                val track = audioTrack
-                if (track != null && preferredOutputId == null && activeDiscord) {
-                    preferOutputDevice(track)
-                }
-            }
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) = Unit
 
             override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
                 val removedIds = removedDevices.map { it.id.toString() }.toSet()
@@ -934,7 +916,7 @@ class AndroidVoiceEngine(
                     preferredOutputId = null
                     if (activeDiscord) discordEngine.setOutputDeviceId(null)
                     onDeviceLost?.invoke(false)
-                    if (media != null) startPlayback(frameSamples)
+                    if (media != null) startPlayback(frameSamples, media.activeChannels)
                 }
             }
         }
@@ -1006,23 +988,6 @@ class AndroidVoiceEngine(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(AudioDeviceInfo.TYPE_BLE_HEADSET)
         }
 
-        /** Wired, Bluetooth, USB, or HDMI. Lobby voice follows these instead of forcing the speaker. */
-        private val EXTERNAL_OUTPUT_TYPES: Set<Int> = buildSet {
-            add(AudioDeviceInfo.TYPE_WIRED_HEADSET)
-            add(AudioDeviceInfo.TYPE_WIRED_HEADPHONES)
-            add(AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
-            add(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP)
-            add(AudioDeviceInfo.TYPE_USB_DEVICE)
-            add(AudioDeviceInfo.TYPE_HDMI)
-            add(AudioDeviceInfo.TYPE_HDMI_ARC)
-            add(AudioDeviceInfo.TYPE_DOCK)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) add(AudioDeviceInfo.TYPE_USB_HEADSET)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                add(AudioDeviceInfo.TYPE_BLE_HEADSET)
-                add(AudioDeviceInfo.TYPE_BLE_SPEAKER)
-            }
-        }
-
         /** TV remote / assistant mics often appear as BLE headset, remote submix, or HDMI. */
         private val REMOTE_MIC_TYPES: Set<Int> = buildSet {
             add(AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
@@ -1033,6 +998,92 @@ class AndroidVoiceEngine(
             add(AudioDeviceInfo.TYPE_HDMI)
             add(AudioDeviceInfo.TYPE_HDMI_ARC)
             add(AudioDeviceInfo.TYPE_DOCK)
+        }
+    }
+}
+
+/**
+ * Android / Android TV `libDF` JNI backend wrapping [NativeDeepFilterNet] (`libdf.so` +
+ * `R.raw.deep_filter_mobile_model`).
+ *
+ * Uses [Dispatchers.Unconfined] so `NativeDeepFilterNet` loads the model and initializes its native
+ * handle synchronously inside `open(...)`, allowing immediate verification via `setAttenuationLimit`.
+ */
+internal class AndroidNativeDeepFilterBackend private constructor(
+    private val nativeDfn: NativeDeepFilterNet,
+) : DeepFilterBackend {
+    override val name: String = "deepfilternet3-android-jni"
+
+    private val directHopBuf: ByteBuffer =
+        ByteBuffer.allocateDirect(DeepFilterNetProcessor.HOP_SAMPLES * 2).order(ByteOrder.LITTLE_ENDIAN)
+
+    override fun processHop480(pcm: ShortArray, offset: Int): Float {
+        if (pcm.size - offset < DeepFilterNetProcessor.HOP_SAMPLES) return -15f
+        synchronized(directHopBuf) {
+            directHopBuf.clear()
+            directHopBuf.asShortBuffer().put(pcm, offset, DeepFilterNetProcessor.HOP_SAMPLES)
+            val snr = nativeDfn.processFrame(directHopBuf)
+            if (snr <= -999f) throw IllegalStateException("NativeDeepFilterNet uninitialized")
+            directHopBuf.rewind()
+            directHopBuf.asShortBuffer().get(pcm, offset, DeepFilterNetProcessor.HOP_SAMPLES)
+            return snr
+        }
+    }
+
+    override fun setAttenuationLimitDb(db: Float) {
+        runCatching { nativeDfn.setAttenuationLimit(db.coerceIn(0f, 100f)) }
+    }
+
+    override fun setPostFilterBeta(beta: Float) {
+        runCatching { nativeDfn.setPostFilterBeta(beta.coerceAtLeast(0f)) }
+    }
+
+    override fun close() {
+        runCatching { nativeDfn.release() }
+    }
+
+    companion object {
+        private val inlineDispatchers = object : DispatcherProvider {
+            override val main: CoroutineDispatcher get() = Dispatchers.Unconfined
+            override val mainImmediate: CoroutineDispatcher get() = Dispatchers.Unconfined
+            override val io: CoroutineDispatcher get() = Dispatchers.Unconfined
+            override val default: CoroutineDispatcher get() = Dispatchers.Unconfined
+        }
+
+        fun open(context: Context): AndroidNativeDeepFilterBackend? {
+            return runCatching {
+                val atten = DeepFilterNetProcessor.DEFAULT_ATTENUATION_LIMIT_DB
+                val dfn = NativeDeepFilterNet(
+                    context.applicationContext,
+                    atten,
+                    inlineDispatchers,
+                    DefaultDeepFilterModelLoader(inlineDispatchers),
+                )
+                if (!dfn.setAttenuationLimit(atten)) {
+                    val loaded = CountDownLatch(1)
+                    dfn.onModelLoaded { loaded.countDown() }
+                    loaded.await(5, TimeUnit.SECONDS)
+                    if (!dfn.setAttenuationLimit(atten)) {
+                        runCatching { dfn.release() }
+                        return null
+                    }
+                }
+                val expectedBytes = DeepFilterNetProcessor.HOP_SAMPLES * 2L
+                if (dfn.frameLength != expectedBytes) {
+                    android.util.Log.w(
+                        "AndroidVoice",
+                        "DeepFilterNet3 frame is ${dfn.frameLength} bytes, expected $expectedBytes",
+                    )
+                    runCatching { dfn.release() }
+                    return null
+                }
+                dfn.setPostFilterBeta(DeepFilterNetProcessor.DEFAULT_POST_FILTER_BETA)
+                AndroidNativeDeepFilterBackend(dfn)
+            }.onFailure {
+                runCatching {
+                    android.util.Log.w("AndroidVoice", "DeepFilterNet3 native load failed: ${it.message}")
+                }
+            }.getOrNull()
         }
     }
 }
