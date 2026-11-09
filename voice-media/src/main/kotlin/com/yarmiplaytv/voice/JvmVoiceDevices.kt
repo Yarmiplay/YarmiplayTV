@@ -85,13 +85,12 @@ object JvmVoiceDevices {
     }
 
     private fun openLine(deviceId: String?, info: DataLine.Info, target: Boolean): Any? {
+        // A named mixer that is gone must fail. Callers clear the saved id and reopen the
+        // system default. Substituting the default here leaves the stale id selected.
         if (!deviceId.isNullOrEmpty()) {
-            val mixerInfo = AudioSystem.getMixerInfo().firstOrNull { it.name == deviceId }
-            if (mixerInfo != null) {
-                val mixer = runCatching { AudioSystem.getMixer(mixerInfo) }.getOrNull()
-                val fromMixer = mixer?.let { runCatching { it.getLine(info) }.getOrNull() }
-                if (fromMixer != null) return fromMixer
-            }
+            val mixerInfo = AudioSystem.getMixerInfo().firstOrNull { it.name == deviceId } ?: return null
+            val mixer = runCatching { AudioSystem.getMixer(mixerInfo) }.getOrNull() ?: return null
+            return runCatching { mixer.getLine(info) }.getOrNull()
         }
         return runCatching { AudioSystem.getLine(info) }.getOrNull()
             ?: runCatching {

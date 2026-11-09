@@ -30,6 +30,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -318,11 +319,13 @@ class VoiceE2ETest {
             line!!.close()
         }
         if (namedInputs.isNotEmpty() || namedOutputs.isNotEmpty()) {
-            // Unplugged id: openLine falls back to the system default line when possible.
-            val fallbackIn = JvmVoiceDevices.openCapture("__missing_mic__", 960)
-            val fallbackOut = JvmVoiceDevices.openPlayback("__missing_spk__", 960)
-            assertTrue("unplug input falls back", fallbackIn != null || JvmVoiceDevices.openCapture(null, 960) != null)
-            assertTrue("unplug output falls back", fallbackOut != null || JvmVoiceDevices.openPlayback(null, 960) != null)
+            // A missing id does not open some other mixer. The engine clears it and opens default.
+            assertNull(JvmVoiceDevices.openCapture("__missing_mic__", 960))
+            assertNull(JvmVoiceDevices.openPlayback("__missing_spk__", 960))
+            val fallbackIn = JvmVoiceDevices.openCapture(null, 960)
+            val fallbackOut = JvmVoiceDevices.openPlayback(null, 960)
+            assertTrue("default input still opens", fallbackIn != null || namedInputs.isEmpty())
+            assertTrue("default output still opens", fallbackOut != null || namedOutputs.isEmpty())
             fallbackIn?.close()
             fallbackOut?.close()
         } else {
