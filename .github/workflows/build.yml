@@ -137,11 +137,11 @@ jobs:
       - name: libmpv, a virtual display and .deb tooling
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q libmpv2 xvfb fakeroot pulseaudio
-          # libmpv pulls libpulse. Java Sound then opens Pulse, and a runner with the library but no
-          # server crashes in libstdc++ while the voice engine opens a line. A null sink keeps that open alive.
-          pulseaudio --start --exit-idle-time=-1 || true
-          pactl load-module module-null-sink sink_name=yarmiplaytv || true
+          sudo apt-get update -q && sudo apt-get install -y -q libmpv2 xvfb fakeroot openjdk-17-jdk
+          # Temurin (and other non-Ubuntu JDKs) crash in libstdc++ codecvt<char16_t> while ONNX
+          # Runtime creates a session after WebRTC is loaded (JDK-8379560, same frames). Ubuntu's
+          # OpenJDK does not. The Linux installer is packaged with this JDK.
+          echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> "$GITHUB_ENV"
 
       - name: Desktop tests and installers
         env:
@@ -162,6 +162,12 @@ jobs:
               raise SystemExit("syncplay-server didn't start")
           EOF
           chmod +x gradlew
+          # setup-python puts its lib dir on LD_LIBRARY_PATH. That directory can carry another
+          # libstdc++, which is the ABI mix behind the ONNX crash above.
+          if [ "$RUNNER_OS" = Linux ]; then
+            unset LD_LIBRARY_PATH
+            java -version
+          fi
           display=""; [ "$RUNNER_OS" = Linux ] && display="xvfb-run -a"
           portable=""; [ "$RUNNER_OS" = Windows ] && portable=":desktop:packagePortableZip"
           $display ./gradlew --stacktrace :player-mpv-desktop:test :desktop:test :desktop:packageDistributionForCurrentOS $portable
