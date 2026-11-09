@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -51,13 +52,14 @@ fun DesktopAppMark(size: Dp, modifier: Modifier = Modifier) {
     Box(
         modifier
             .size(size)
-            .clip(shape)
-            .background(Brush.linearGradient(listOf(Color(0xFF182842), Color(0xFF0E1728), Color(0xFF080D16))))
             .border(
                 width = 1.dp,
-                brush = Brush.linearGradient(listOf(Color(0x5970C4FF), Color(0x243E7BFA))),
+                brush = Brush.linearGradient(listOf(Color(0x9970C4FF), Color(0x663E7BFA))),
                 shape = shape,
-            ),
+            )
+            .padding(1.dp)
+            .clip(shape)
+            .background(Brush.linearGradient(listOf(Color(0xFF182842), Color(0xFF0E1728), Color(0xFF080D16)))),
     ) {
         Icon(
             appLogoPainter(),

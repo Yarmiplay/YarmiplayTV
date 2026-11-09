@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -163,7 +164,6 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         BoxWithConstraints(Modifier.fillMaxSize().exposeTestTags()) {
             val isPortrait = maxWidth < maxHeight
-            val compactSidebar = maxWidth < 960.dp
             val style = when {
                 kind == DeviceKind.DESKTOP -> SectionNav.SIDEBAR
                 screen == Screen.Player && isPortrait -> SectionNav.BAR
@@ -182,7 +182,6 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                     screen = screen,
                     isPortrait = isPortrait,
                     desktopPip = desktopPip,
-                    compactSidebar = compactSidebar,
                     onTab = {
                         if (it.screen == Screen.Player) {
                             if (nav.current != Screen.Player) nav.push(Screen.Player)
@@ -240,7 +239,6 @@ private fun MobileScaffold(
     screen: Screen,
     isPortrait: Boolean,
     desktopPip: Boolean = false,
-    compactSidebar: Boolean = false,
     onTab: (Tab) -> Unit,
     onOpenPlayer: () -> Unit,
     content: @Composable () -> Unit,
@@ -322,7 +320,7 @@ private fun MobileScaffold(
                     }
                 }
                 SectionNav.SIDEBAR -> if (screen != Screen.Player || desktopPip) {
-                    Sidebar(container, selected, compactSidebar, onTab)
+                    Sidebar(container, selected, onTab)
                     VerticalDivider(color = AppColors.SurfaceHigh)
                 }
                 SectionNav.BAR -> Unit
@@ -447,57 +445,61 @@ private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
 
 /** Desktop: the app's name, then the sections as a list like the Settings categories. */
 @Composable
-private fun Sidebar(container: AppContainer, selected: Tab, compact: Boolean, onTab: (Tab) -> Unit) {
-    val width = if (compact) SIDEBAR_WIDTH_COMPACT else SIDEBAR_WIDTH
+private fun Sidebar(container: AppContainer, selected: Tab, onTab: (Tab) -> Unit) {
     Surface(
         color = AppColors.Surface,
         contentColor = AppColors.OnSurface,
-        modifier = Modifier.width(width).fillMaxHeight(),
+        modifier = Modifier.width(SIDEBAR_WIDTH).fillMaxHeight(),
     ) {
         SurfaceInk {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 12.dp, vertical = 14.dp)
-                    .testTag("sidebar"),
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+            Column(Modifier.fillMaxSize().testTag("sidebar")) {
+                // The nav scrolls on a short window; Exit stays on screen so it isn't pushed away.
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp, vertical = 16.dp),
                 ) {
-                    DesktopAppMark(34.dp)
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        "YarmiplayTV",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = AppColors.Text,
-                        maxLines = 1,
-                        softWrap = false,
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    tabs.forEach { tab ->
-                        DesktopSideNavItem(
-                            label = tab.label,
-                            icon = tab.icon,
-                            selected = tab == selected,
-                            onClick = { onTab(tab) },
-                            modifier = Modifier.testTag("tab_${tab.label}"),
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        DesktopAppMark(40.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            "YarmiplayTV",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = AppColors.Text,
+                            maxLines = 1,
+                            softWrap = false,
                         )
                     }
+                    Spacer(Modifier.height(18.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        tabs.forEach { tab ->
+                            DesktopSideNavItem(
+                                label = tab.label,
+                                icon = tab.icon,
+                                selected = tab == selected,
+                                onClick = { onTab(tab) },
+                                modifier = Modifier.testTag("tab_${tab.label}"),
+                            )
+                        }
+                    }
                 }
-                Spacer(Modifier.weight(1f))
-                Spacer(Modifier.height(8.dp))
-                DesktopSideNavItem(
-                    label = "Exit",
-                    icon = Icons.AutoMirrored.Filled.Logout,
-                    selected = false,
-                    onClick = { container.exitApp() },
-                    modifier = Modifier.testTag("sidebar_exit"),
-                )
+                Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 14.dp)) {
+                    HorizontalDivider(color = AppColors.SurfaceHigh)
+                    Spacer(Modifier.height(8.dp))
+                    DesktopSideNavItem(
+                        label = "Exit",
+                        icon = Icons.AutoMirrored.Filled.Logout,
+                        selected = false,
+                        onClick = { container.exitApp() },
+                        modifier = Modifier.testTag("sidebar_exit"),
+                    )
+                }
             }
         }
     }
@@ -528,9 +530,9 @@ private fun DesktopSideNavItem(
     Row(
         modifier
             .fillMaxWidth()
-            .heightIn(min = 42.dp)
-            .clip(shape)
+            .heightIn(min = 44.dp)
             .then(if (border != null) Modifier.border(border, shape) else Modifier)
+            .clip(shape)
             .background(bg, shape)
             .pointerHoverIcon(PointerIcon.Hand)
             .clickable(
@@ -571,5 +573,4 @@ private fun DesktopSideNavItem(
     }
 }
 
-private val SIDEBAR_WIDTH = 224.dp
-private val SIDEBAR_WIDTH_COMPACT = 200.dp
+private val SIDEBAR_WIDTH = 248.dp
