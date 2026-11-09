@@ -6,6 +6,7 @@ import com.yarmiplaytv.voice.VoiceAudioDevice
 import com.yarmiplaytv.voice.VoiceCaptureKind
 import com.yarmiplaytv.voice.VoiceEngine
 import com.yarmiplaytv.voice.VoiceMediaSession
+import com.yarmiplaytv.voice.DiscordAudioConfig
 import com.yarmiplaytv.voice.DiscordVoiceEngine
 import com.yarmiplaytv.voice.VoiceSound
 import com.yarmiplaytv.voice.participantSenderId
@@ -78,7 +79,9 @@ class DesktopVoiceEngine : VoiceEngine {
             return false
         }
         // Default on; VoiceController reapplies the saved preference immediately after connect.
+        // Discord lobby connect already disabled the hard silence gate inside the session.
         media.setNoiseSuppression(true)
+        if (activeDiscord && discordEngine.audioConfig().selfDeaf) media.setSelfDeaf(true)
         session.set(media)
         frameSamples = media.frameSamples
         openPlayback()
@@ -123,6 +126,21 @@ class DesktopVoiceEngine : VoiceEngine {
         if (muted) syncCapture(media)
     }
 
+    override fun setSelfDeaf(deaf: Boolean) {
+        if (!activeDiscord) return
+        discordEngine.setSelfDeaf(deaf)
+        val media = session.get() ?: return
+        media.setSelfDeaf(deaf)
+        syncCapture(media)
+    }
+
+    override fun setVoiceActivityMode(activity: Boolean) {
+        if (activeDiscord) discordEngine.setVoiceActivityMode(activity)
+    }
+
+    /** Audio state recorded for the Discord lobby. Empty outside a lobby only if never configured. */
+    internal fun discordAudioConfig(): DiscordAudioConfig = discordEngine.audioConfig()
+
     override fun captureLevel(): Float {
         val s = session.get()
         if (s != null) {
@@ -165,17 +183,27 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     override fun setInputGain(gain: Float) {
-        if (activeDiscord) discordEngine.setInputGain(gain)
-        session.get()?.setInputGain(gain)
+        if (activeDiscord) {
+            discordEngine.setInputGain(gain)
+            session.get()?.setInputGain(discordEngine.inputAmplitude())
+        } else {
+            session.get()?.setInputGain(gain)
+        }
     }
 
     override fun setOutputGain(gain: Float) {
-        if (activeDiscord) discordEngine.setOutputGain(gain)
-        session.get()?.setOutputGain(gain)
+        if (activeDiscord) {
+            discordEngine.setOutputGain(gain)
+            session.get()?.setOutputGain(discordEngine.outputAmplitude())
+        } else {
+            session.get()?.setOutputGain(gain)
+        }
     }
 
     override fun setNoiseSuppression(on: Boolean) {
         if (activeDiscord) discordEngine.setNoiseSuppression(on)
+        // Desktop has no WebRTC APM. The spectral suppressor is the one noise stage, and Discord
+        // lobby capture leaves its hard gate off so pauses are attenuated instead of dropped.
         session.get()?.setNoiseSuppression(on)
     }
 
@@ -188,7 +216,8 @@ class DesktopVoiceEngine : VoiceEngine {
     override fun setPeerVolume(participantId: String, volume: Float) {
         if (activeDiscord) discordEngine.setPeerVolume(participantId, volume)
         val id = participantSenderId(participantId) ?: return
-        session.get()?.setPeerVolume(id, volume)
+        val applied = if (activeDiscord) discordEngine.peerAmplitude(participantId) else volume
+        session.get()?.setPeerVolume(id, applied)
     }
 
     override fun listInputDevices(): List<VoiceAudioDevice> =
@@ -199,6 +228,7 @@ class DesktopVoiceEngine : VoiceEngine {
 
     override fun setInputDeviceId(id: String?) {
         val next = id?.takeIf { it.isNotEmpty() }
+        if (activeDiscord) discordEngine.setInputDeviceId(next)
         if (inputDeviceId == next) return
         inputDeviceId = next
         val media = session.get() ?: return
@@ -208,6 +238,7 @@ class DesktopVoiceEngine : VoiceEngine {
 
     override fun setOutputDeviceId(id: String?) {
         val next = id?.takeIf { it.isNotEmpty() }
+        if (activeDiscord) discordEngine.setOutputDeviceId(next)
         if (outputDeviceId == next) return
         outputDeviceId = next
         if (session.get() != null) openPlayback()
@@ -250,6 +281,7 @@ class DesktopVoiceEngine : VoiceEngine {
         var line = JvmVoiceDevices.openPlayback(id, frameSamples)
         if (line == null && !id.isNullOrEmpty()) {
             outputDeviceId = null
+            if (activeDiscord) discordEngine.setOutputDeviceId(null)
             onDeviceLost?.invoke(false)
             id = null
             line = JvmVoiceDevices.openPlayback(null, frameSamples)
@@ -304,6 +336,7 @@ class DesktopVoiceEngine : VoiceEngine {
             var line = JvmVoiceDevices.openCapture(id, media.frameSamples)
             if (line == null && !id.isNullOrEmpty()) {
                 inputDeviceId = null
+                if (activeDiscord) discordEngine.setInputDeviceId(null)
                 onDeviceLost?.invoke(true)
                 id = null
                 line = JvmVoiceDevices.openCapture(null, media.frameSamples)
@@ -352,12 +385,14 @@ class DesktopVoiceEngine : VoiceEngine {
                 val media = session.get() ?: break
                 if (!JvmVoiceDevices.isAvailable(inputDeviceId, target = true)) {
                     inputDeviceId = null
+                    if (activeDiscord) discordEngine.setInputDeviceId(null)
                     onDeviceLost?.invoke(true)
                     stopCapture()
                     syncCapture(media)
                 }
                 if (!JvmVoiceDevices.isAvailable(outputDeviceId, target = false)) {
                     outputDeviceId = null
+                    if (activeDiscord) discordEngine.setOutputDeviceId(null)
                     onDeviceLost?.invoke(false)
                     openPlayback()
                 }

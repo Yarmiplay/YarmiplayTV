@@ -32,6 +32,19 @@ interface VoiceEngine {
 
     fun setSelfMuted(muted: Boolean)
 
+    /**
+     * Discord lobby deafen ([discordpp::Call::SetSelfDeaf]): stop playout and stop sending.
+     * Mute alone still plays other people. No-op when this engine is not in a Discord lobby.
+     * Undeafen resumes sending if the mic was left open; it does not clear an explicit mute.
+     */
+    fun setSelfDeaf(deaf: Boolean) = Unit
+
+    /**
+     * Discord [discordpp::AudioModeType]: `true` is voice activity, `false` is push-to-talk.
+     * The relayed path ignores this and keeps gating send on [setTransmitting].
+     */
+    fun setVoiceActivityMode(activity: Boolean) = Unit
+
     fun setInputGain(gain: Float)
 
     fun setOutputGain(gain: Float)

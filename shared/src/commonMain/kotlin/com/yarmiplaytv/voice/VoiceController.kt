@@ -767,6 +767,9 @@ class VoiceController(
     private fun applyTransmitEngine(wantTransmit: Boolean, alsoSelfMuted: Boolean?) {
         scope.launch(Dispatchers.Default) {
             transmitMutex.withLock {
+                // OPEN_MIC is Discord's voice-activity mode. Toggle and hold-to-talk are push-to-talk
+                // (the SDK has no third mode); sending still follows [setTransmitting].
+                engine.setVoiceActivityMode(_ui.value.talkMode == VoiceTalkMode.OPEN_MIC)
                 if (alsoSelfMuted != null) engine.setSelfMuted(alsoSelfMuted)
                 engine.setTransmitting(wantTransmit)
             }

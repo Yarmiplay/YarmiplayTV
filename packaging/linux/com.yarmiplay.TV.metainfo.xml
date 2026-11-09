@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="2.9.9" date="2026-11-09">
+      <description>
+        <p>Discord lobby voice follows the mic and speaker you pick, including live changes and unplugs, and encodes at Discord's 48 kHz mono 64 kbps with one noise processor instead of a second gate stacked on top. Mic volume stays inside Discord's 0–100% so it does not clip, speaker and per-person volume use Discord's 0–200%, and mute or deafen cuts the mic immediately. On phones, voice loudness is no longer the video volume. Krisp is not included; Android uses the system's echo cancellation, noise suppression, and automatic gain.</p>
+      </description>
+    </release>
     <release version="2.9.8" date="2026-11-07">
       <description>
         <p>Desktop updates name the step that failed and the error that step reported, including after the app closes. The details can be copied. Windows installer arguments stay one argument when the install folder has spaces. The seek bar marks each chapter in the file on desktop, Android and the browser, and hovering, dragging or the open TV controls show that chapter's name. The browser player uses the container's length when a stream does not report one, so playback is not cut off at the start.</p>

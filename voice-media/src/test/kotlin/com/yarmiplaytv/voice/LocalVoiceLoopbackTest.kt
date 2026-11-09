@@ -77,6 +77,23 @@ class LocalVoiceLoopbackTest {
         session.disconnect()
     }
 
+    @Test
+    fun `deafen blocks transmit and undeafen restores an open mic without clearing mute`() {
+        val session = VoiceMediaSession(kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default))
+        session.setTransmitting(true)
+        session.setSelfDeaf(true)
+        assertTrue(session.isSelfDeaf())
+        assertTrue(!session.isTransmitting())
+        session.setSelfDeaf(false)
+        assertTrue(session.isTransmitting())
+        session.setSelfMuted(true)
+        session.setSelfDeaf(true)
+        session.setSelfDeaf(false)
+        assertTrue(session.isSelfMuted())
+        assertTrue(!session.isTransmitting())
+        session.disconnect()
+    }
+
     private fun rms(pcm: ShortArray): Double {
         var sum = 0.0
         for (s in pcm) sum += s.toDouble() * s.toDouble()

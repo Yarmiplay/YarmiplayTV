@@ -28,7 +28,14 @@ class VoiceMediaSession(
     private val onRemotePcm: ((sender: Long, pcm: ShortArray) -> Unit)? = null,
 ) {
     private val transmitting = AtomicBoolean(false)
+    private val wantTransmit = AtomicBoolean(false)
     private val selfMuted = AtomicBoolean(false)
+    private val deaf = AtomicBoolean(false)
+    /** Set from the mute thread; the capture thread drops any partial frame before the next encode. */
+    private val dropTail = AtomicBoolean(false)
+    /** Discord lobby capture: one soft noise stage, no hard silence drop, −60 dBFS speech. */
+    private var discordCapture = false
+    private var speechThreshold = LEGACY_SPEECH_RMS
     private var inputGain = 1f
     private var outputGain = 1f
     private val peerMuted = ConcurrentHashMap<Long, Boolean>()
@@ -46,6 +53,8 @@ class VoiceMediaSession(
     private val receivedFrames = AtomicBoolean(false)
     private val lastRms = AtomicReference(0.0)
     private val captureRms = AtomicReference(0.0)
+    /** Mic energy before the spectral gate, so the activity ring can show real pickup. */
+    private val pickupRms = AtomicReference(0.0)
     private val lastSender = java.util.concurrent.atomic.AtomicLong(Long.MIN_VALUE)
     /** Senders with real (non-PLC) audible PCM this playback tick — no hangover. */
     private val audibleSenders = AtomicReference<Set<Long>>(emptySet())
@@ -77,9 +86,10 @@ class VoiceMediaSession(
      */
     val captureLevel: Float
         get() {
-            if (!transmitting.get() || selfMuted.get()) return 0f
-            // ~800 RMS ≈ quiet speech after NS; clamp for a smooth ring.
-            return (captureRms.get() / 2500.0).coerceIn(0.0, 1.0).toFloat()
+            if (!transmitting.get() || selfMuted.get() || deaf.get()) return 0f
+            // Discord: pre-gate mic energy (real pickup). Relayed path: post-gate energy, unchanged.
+            val rms = if (discordCapture) pickupRms.get() else captureRms.get()
+            return (rms / 2500.0).coerceIn(0.0, 1.0).toFloat()
         }
     val lastRemoteSender: Long? get() = lastSender.get().takeUnless { it == Long.MIN_VALUE }
 
@@ -87,7 +97,7 @@ class VoiceMediaSession(
      * Remote senders whose audio we are actually playing right now (decoded packet with energy).
      * Empties the same 20 ms tick silence / PLC / local mute stops heard audio — no linger.
      */
-    fun audibleSenderIds(): Set<Long> = audibleSenders.get()
+    fun audibleSenderIds(): Set<Long> = if (deaf.get()) emptySet() else audibleSenders.get()
 
     /**
      * True while we are transmitting unmuted speech energy, for [sendVoiceActivity].
@@ -95,9 +105,13 @@ class VoiceMediaSession(
      * and not held by VAD hangover.
      */
     fun capturingSpeech(): Boolean {
-        if (!transmitting.get() || selfMuted.get()) return false
-        return captureRms.get() > 120.0
+        if (!transmitting.get() || selfMuted.get() || deaf.get()) return false
+        // Post-suppressor energy. Discord's automatic VAD default is −60 dBFS; the relayed path
+        // keeps the historical 120 RMS gate so speaking reports do not move.
+        return captureRms.get() > speechThreshold
     }
+
+    fun isSelfDeaf(): Boolean = deaf.get()
 
     fun resetReceiveStats() {
         receivedFrames.set(false)
@@ -121,8 +135,16 @@ class VoiceMediaSession(
         val token = Yv1Packet.parseTokenHex(seat.token) ?: return false
         val key = Yv1Packet.decodeKeyBase64(seat.key) ?: return false
         // DTX off: silence gating is handled by VoiceNoiseSuppressor VAD (smoother than Opus DTX).
-        val bitrate = seat.maxBitrate.coerceIn(24_000, 64_000)
-        val opus = OpusCodec(bitrate, fec = seat.fec, dtx = false, seat.clockRate, seat.channels)
+        val discord = seat.isDiscordLobby
+        discordCapture = discord
+        noise.setHardGate(!discord)
+        speechThreshold = if (discord) DISCORD_VAD_RMS else LEGACY_SPEECH_RMS
+        val bitrate = opusBitrate(seat)
+        val clock = opusClock(seat)
+        val channels = opusChannels(seat)
+        // DTX stays off. Silence gating on the relayed path is the noise suppressor; Discord
+        // capture sends continuous 20 ms frames so the far end is not asked to conceal holes.
+        val opus = OpusCodec(bitrate, fec = seat.fec, dtx = false, clock, channels)
         codec = opus
         inbound = boundedInbound()
         val frames = inbound
@@ -225,7 +247,14 @@ class VoiceMediaSession(
         muxTransport = null
         codec = null
         transmitting.set(false)
+        wantTransmit.set(false)
+        deaf.set(false)
+        dropTail.set(false)
+        discordCapture = false
+        noise.setHardGate(true)
+        speechThreshold = LEGACY_SPEECH_RMS
         captureRms.set(0.0)
+        pickupRms.set(0.0)
         audibleSenders.set(emptySet())
         peerMuted.clear()
         peerVolume.clear()
@@ -235,8 +264,10 @@ class VoiceMediaSession(
     }
 
     fun setTransmitting(on: Boolean) {
-        transmitting.set(on && !selfMuted.get())
-        if (!transmitting.get()) captureRms.set(0.0)
+        // A transmit request made while muted does not stick; unmute waits for another request.
+        wantTransmit.set(on && !selfMuted.get())
+        applyTransmit()
+        if (!transmitting.get()) requestCaptureFlush()
     }
 
     fun isTransmitting(): Boolean = transmitting.get()
@@ -244,9 +275,48 @@ class VoiceMediaSession(
     fun setSelfMuted(muted: Boolean) {
         selfMuted.set(muted)
         if (muted) {
-            transmitting.set(false)
-            captureRms.set(0.0)
+            wantTransmit.set(false)
+            applyTransmit()
+            requestCaptureFlush()
         }
+    }
+
+    /**
+     * Discord deafen. Stops playout and blocks transmit without clearing the transmit request,
+     * so undeafen resumes an open mic. An explicit mute still stays muted.
+     */
+    fun setSelfDeaf(deafened: Boolean) {
+        deaf.set(deafened)
+        applyTransmit()
+        if (deafened) {
+            audibleSenders.set(emptySet())
+            lastRms.set(0.0)
+        }
+        if (!transmitting.get()) requestCaptureFlush()
+    }
+
+    private fun applyTransmit() {
+        val on = wantTransmit.get() && !selfMuted.get() && !deaf.get()
+        transmitting.set(on)
+        if (!on) {
+            captureRms.set(0.0)
+            pickupRms.set(0.0)
+        }
+    }
+
+    private fun requestCaptureFlush() {
+        dropTail.set(true)
+        captureRms.set(0.0)
+        pickupRms.set(0.0)
+    }
+
+    /** Runs on the capture thread so it does not race the accumulator. */
+    private fun consumeCaptureFlush() {
+        if (!dropTail.getAndSet(false)) return
+        preOpus.clear()
+        noise.flushPending()
+        captureRms.set(0.0)
+        pickupRms.set(0.0)
     }
 
     fun isSelfMuted(): Boolean = selfMuted.get()
@@ -278,21 +348,33 @@ class VoiceMediaSession(
         val opus = codec ?: return false
         if (transport == null && wsTransport == null && muxTransport == null) return false
         if (pcm.isEmpty()) return true
-        if (!transmitting.get() || selfMuted.get()) {
+        consumeCaptureFlush()
+        if (!transmitting.get() || selfMuted.get() || deaf.get()) {
             captureRms.set(0.0)
+            pickupRms.set(0.0)
             return true
         }
-        val cleaned = noise.process(pcm)
-        // Meter post-NS audio (before VAD zeroing) so the mic ring tracks real pickup.
+        // Discord applies the SDK input volume before the single noise stage, and never above
+        // unity (the platform passes the capped amplitude). The relayed path still gains after NS.
+        val source = if (discordCapture) applyInputGain(pcm) else pcm
+        if (discordCapture) {
+            val pre = VoicePcm.rms(source)
+            pickupRms.set(pickupRms.get() * 0.55 + pre * 0.45)
+        }
+        val cleaned = noise.process(source)
         val rms = VoicePcm.rms(cleaned)
         val prev = captureRms.get()
         captureRms.set(prev * 0.55 + rms * 0.45)
+        if (!discordCapture) pickupRms.set(captureRms.get())
         for (frame in preOpus.push(cleaned)) {
-            // Skip frames the VAD gated to (near) silence when NS is on — already zeroed.
-            if (noise.isEnabled() && !noise.lastSpeech && isNearSilence(frame)) continue
-            val gained = if (inputGain == 1f) frame.copyOf() else ShortArray(opus.frameSamples) { i ->
-                (frame[i] * inputGain).roundToInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+            if (!transmitting.get() || selfMuted.get() || deaf.get() || dropTail.get()) {
+                consumeCaptureFlush()
+                return true
             }
+            // Relayed path drops gated silence. Discord sends the attenuated frame so receivers
+            // are not left concealing a hole.
+            if (shouldDropGatedSilence(discordCapture, noise.isEnabled(), noise.lastSpeech, frame)) continue
+            val gained = if (discordCapture || inputGain == 1f) frame.copyOf() else applyInputGain(frame)
             val encoded = opus.encode(gained) ?: continue
             muxTransport?.sendAudio(encoded, opus.frameSamples)
                 ?: wsTransport?.sendAudio(encoded, opus.frameSamples)
@@ -303,11 +385,23 @@ class VoiceMediaSession(
 
     fun pollMixedPcm(out: ShortArray): Int {
         val n = minOf(out.size, mixBuf.size)
+        if (deaf.get()) {
+            out.fill(0, 0, n)
+            synchronized(mixBuf) { mixBuf.fill(0) }
+            return n
+        }
         synchronized(mixBuf) {
             System.arraycopy(mixBuf, 0, out, 0, n)
             mixBuf.fill(0)
         }
         return n
+    }
+
+    private fun applyInputGain(pcm: ShortArray): ShortArray {
+        if (inputGain == 1f) return pcm
+        return ShortArray(pcm.size) { i ->
+            (pcm[i] * inputGain).roundToInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+        }
     }
 
     private suspend fun ingestLoop(frames: Channel<Triple<Long, Int, ByteArray>>) {
@@ -325,6 +419,21 @@ class VoiceMediaSession(
             if (senders.isEmpty()) {
                 audibleSenders.set(emptySet())
                 delay(5)
+                continue
+            }
+            if (deaf.get()) {
+                // Keep the jitter buffer moving so undeafen is not a backlog, but play nothing.
+                audibleSenders.set(emptySet())
+                lastRms.set(0.0)
+                for (sender in senders) {
+                    val frame = jitter.poll(sender, decode = { null }, plc = { null }, fec = { null })
+                    if (frame == null) {
+                        peerMuted.remove(sender)
+                        peerVolume.remove(sender)
+                    }
+                }
+                val elapsedDeaf = (System.nanoTime() - start) / 1_000_000L
+                delay((20L - elapsedDeaf).coerceAtLeast(1L))
                 continue
             }
             val heard = LinkedHashSet<Long>()
@@ -389,6 +498,26 @@ class VoiceMediaSession(
         /** Decoded PCM below this is treated as silence for the speaking-name overlay. */
         private const val AUDIBLE_RMS = 80.0
 
+        /** Relayed-path speaking threshold (historical). Not used for Discord lobby capture. */
+        const val LEGACY_SPEECH_RMS = 120.0
+
+        /** Discord [Call::SetVADThreshold] automatic default, −60 dBFS on PCM16. */
+        val DISCORD_VAD_RMS: Double = 32768.0 * Math.pow(10.0, -60.0 / 20.0)
+
+        const val DISCORD_BITRATE = 64_000
+        const val DISCORD_CLOCK = 48_000
+        const val DISCORD_CHANNELS = 1
+
+        /** Bitrate the encoder will use. Discord lobby voice is 64 kbps; the relay keeps the seat cap. */
+        fun opusBitrate(seat: VoiceMediaParams): Int =
+            if (seat.isDiscordLobby) DISCORD_BITRATE else seat.maxBitrate.coerceIn(24_000, 64_000)
+
+        fun opusClock(seat: VoiceMediaParams): Int =
+            if (seat.isDiscordLobby) DISCORD_CLOCK else seat.clockRate
+
+        fun opusChannels(seat: VoiceMediaParams): Int =
+            if (seat.isDiscordLobby) DISCORD_CHANNELS else seat.channels.coerceAtLeast(1)
+
         /** Cap inbound Opus frames (~1.28 s at 20 ms) — drop oldest if ingest stalls. */
         private const val INBOUND_CAP = 64
 
@@ -396,11 +525,24 @@ class VoiceMediaSession(
             Channel<Triple<Long, Int, ByteArray>>(INBOUND_CAP, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     }
 
-    private fun isNearSilence(frame: ShortArray): Boolean {
-        var sum = 0.0
-        for (s in frame) sum += s.toDouble() * s.toDouble()
-        return sqrt(sum / frame.size) < 80.0
-    }
+}
+
+/** Relayed path only: drop a noise-gated near-silent Opus frame. Discord capture never drops. */
+internal fun shouldDropGatedSilence(
+    discordCapture: Boolean,
+    noiseSuppressionEnabled: Boolean,
+    speech: Boolean,
+    frame: ShortArray,
+): Boolean {
+    if (discordCapture || !noiseSuppressionEnabled || speech) return false
+    return frameIsNearSilence(frame)
+}
+
+internal fun frameIsNearSilence(frame: ShortArray): Boolean {
+    if (frame.isEmpty()) return true
+    var sum = 0.0
+    for (s in frame) sum += s.toDouble() * s.toDouble()
+    return sqrt(sum / frame.size) < 80.0
 }
 
 /** Map Syncplay `c17` participant id → numeric sender (connection id) when possible. */

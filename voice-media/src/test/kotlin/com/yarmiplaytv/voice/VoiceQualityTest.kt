@@ -74,4 +74,16 @@ class VoiceQualityTest {
         val passthrough = ns.process(speech)
         assertEquals(speech.toList(), passthrough.toList())
     }
+
+    @Test
+    fun softGateAttenuatesSilenceInsteadOfZeroingIt() {
+        val hiss = ShortArray(VoiceNoiseSuppressor.FRAME) { if (it % 2 == 0) 180 else -180 }
+        val soft = VoiceNoiseSuppressor()
+        soft.setHardGate(false)
+        val attenuated = soft.process(hiss)
+        assertEquals(VoiceNoiseSuppressor.FRAME, attenuated.size)
+        assertTrue(attenuated.any { it != 0.toShort() })
+        val gated = VoiceNoiseSuppressor().process(hiss)
+        assertTrue(gated.all { it == 0.toShort() })
+    }
 }

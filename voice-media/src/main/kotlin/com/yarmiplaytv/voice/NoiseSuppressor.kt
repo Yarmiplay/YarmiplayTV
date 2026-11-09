@@ -30,6 +30,12 @@ class VoiceNoiseSuppressor {
     private var noiseInited = false
     private var speechRun = 0
     private var enabled = true
+    /**
+     * When true, frames the VAD rejects are replaced with digital silence (the relayed path).
+     * Discord lobby capture turns this off: the SDK's noise suppressor attenuates, it does not
+     * punch holes that the receiver has to conceal.
+     */
+    private var hardGate = true
     /** Last VAD decision (true = speech / hangover). */
     var lastSpeech = true
         private set
@@ -43,6 +49,17 @@ class VoiceNoiseSuppressor {
     }
 
     fun isEnabled(): Boolean = enabled
+
+    fun setHardGate(on: Boolean) {
+        hardGate = on
+    }
+
+    fun isHardGate(): Boolean = hardGate
+
+    /** Drop samples waiting for a full frame. Does not reset the noise model. */
+    fun flushPending() {
+        pendingLen = 0
+    }
 
     /**
      * Push any amount of 48 kHz mono PCM; returns processed samples for whole RNNoise frames
@@ -100,7 +117,7 @@ class VoiceNoiseSuppressor {
             for (i in 0 until BINS) noisePow[i] = 0.92 * noisePow[i] + 0.08 * mag[i]
         }
         lastSpeech = speechRun > 0
-        if (!lastSpeech) return ShortArray(FRAME)
+        if (!lastSpeech && hardGate) return ShortArray(FRAME)
 
         val gains = DoubleArray(BINS) { i ->
             val n = noisePow[i]
