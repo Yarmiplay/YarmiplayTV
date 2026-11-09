@@ -8,7 +8,7 @@ plugins {
 }
 
 val appVersion = "2.9.9"
-// 2.9.7 download page re-run after Pages deploy failed with "try again later" (2)
+// 2.9.9 download page re-run: Pages timed out syncing, and the main Build's Windows desktop job flaked.
 
 /** Play needs an ever-increasing versionCode: major * 10000 + minor * 100 + patch. */
 fun versionCodeOf(name: String): Int {

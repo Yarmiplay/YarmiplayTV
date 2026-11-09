@@ -28,9 +28,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -74,10 +76,21 @@ class UpdateFailureUiTest {
 
     @After
     fun tearDown() {
-        app.scope.cancel()
-        storeScope.cancel()
-        Dispatchers.resetMain()
-        main.close()
+        // AppContainer collects settings on Main. Cancel and join before resetMain, or a
+        // collector still reading Main fails the test with "used concurrently with setting it".
+        if (::app.isInitialized) app.scope.cancel()
+        if (::storeScope.isInitialized) storeScope.cancel()
+        runBlocking {
+            if (::app.isInitialized) app.scope.coroutineContext[Job]?.join()
+            if (::storeScope.isInitialized) storeScope.coroutineContext[Job]?.join()
+        }
+        if (::main.isInitialized) {
+            for (attempt in 0 until 8) {
+                if (runCatching { Dispatchers.resetMain() }.isSuccess) break
+                if (attempt < 7) Thread.sleep(40)
+            }
+            main.close()
+        }
     }
 
     @Test
