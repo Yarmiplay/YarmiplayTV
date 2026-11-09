@@ -2,10 +2,12 @@ package com.yarmiplaytv.desktop
 
 import com.yarmiplaytv.syncplay.VoiceMediaParams
 import com.yarmiplaytv.voice.JvmVoiceDevices
+import com.yarmiplaytv.voice.StreamingResampler
 import com.yarmiplaytv.voice.VoiceAudioDevice
 import com.yarmiplaytv.voice.VoiceCaptureKind
 import com.yarmiplaytv.voice.VoiceEngine
 import com.yarmiplaytv.voice.VoiceMediaSession
+import com.yarmiplaytv.voice.VoicePcm
 import com.yarmiplaytv.voice.DiscordAudioConfig
 import com.yarmiplaytv.voice.DiscordVoiceEngine
 import com.yarmiplaytv.voice.VoiceSound
@@ -18,6 +20,8 @@ import javax.sound.sampled.Clip
 import javax.sound.sampled.FloatControl
 import javax.sound.sampled.SourceDataLine
 import javax.sound.sampled.TargetDataLine
+import kotlin.concurrent.thread
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,7 +29,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.concurrent.thread
 
 /**
  * Desktop/macOS capture + `yv1` Opus media (UDP, TLS TCP fallback).
@@ -40,11 +43,18 @@ class DesktopVoiceEngine : VoiceEngine {
     private var captureThread: Thread? = null
     private var captureLine: TargetDataLine? = null
     private var playbackLine: SourceDataLine? = null
+    private var wasapiRender: WasapiRender? = null
+    private var wasapiCapture: WasapiCapture? = null
+    @Volatile private var preferWasapiPlayback = false
+    @Volatile private var wasapiPlaybackFailed = false
     private var inputDeviceId: String? = null
     private var outputDeviceId: String? = null
     private var playbackJob: Job? = null
     private var watchJob: Job? = null
     private var frameSamples: Int = 960
+    @Volatile private var inputGain: Float = 1f
+    @Volatile private var outputGain: Float = 1f
+    @Volatile private var noiseSuppression: Boolean = true
     override var onDeviceLost: ((input: Boolean) -> Unit)? = null
 
     override suspend fun detectCapture(): VoiceCaptureKind {
@@ -80,7 +90,9 @@ class DesktopVoiceEngine : VoiceEngine {
         }
         // Default on; VoiceController reapplies the saved preference immediately after connect.
         // Discord lobby connect already disabled the hard silence gate inside the session.
-        media.setNoiseSuppression(true)
+        media.setNoiseSuppression(noiseSuppression)
+        media.setInputGain(if (activeDiscord) discordEngine.inputAmplitude() else inputGain)
+        media.setOutputGain(if (activeDiscord) discordEngine.outputAmplitude() else outputGain)
         if (activeDiscord && discordEngine.audioConfig().selfDeaf) media.setSelfDeaf(true)
         session.set(media)
         frameSamples = media.frameSamples
@@ -159,12 +171,54 @@ class DesktopVoiceEngine : VoiceEngine {
     override fun capturingSpeech(): Boolean =
         session.get()?.capturingSpeech() == true || (activeDiscord && discordEngine.capturingSpeech())
 
+    override fun setMicTest(active: Boolean) {
+        if (activeDiscord) {
+            discordEngine.setMicTest(active)
+        }
+        if (active) {
+            val existing = session.get()
+            if (existing != null) {
+                existing.setMicTest(true)
+                syncCapture(existing)
+                return
+            }
+            val media = VoiceMediaSession(scope)
+            media.startStandaloneMicTest()
+            media.setNoiseSuppression(noiseSuppression)
+            media.setInputGain(inputGain)
+            media.setOutputGain(outputGain)
+            session.set(media)
+            frameSamples = media.frameSamples
+            openPlayback()
+            startMixPump(media)
+            startDeviceWatch()
+            syncCapture(media)
+        } else {
+            val existing = session.get() ?: return
+            if (existing.isStandaloneLoopback) {
+                disconnect()
+            } else {
+                existing.setMicTest(false)
+                syncCapture(existing)
+            }
+        }
+    }
+
+    override fun isMicTestActive(): Boolean =
+        session.get()?.isMicTestActive == true || (activeDiscord && discordEngine.isMicTestActive())
+
+    override fun micTestLevel(): Float {
+        val s = session.get()
+        if (s != null && s.isMicTestActive) return s.micTestLevel
+        return if (activeDiscord) discordEngine.micTestLevel() else 0f
+    }
+
     private fun syncCapture(media: VoiceMediaSession?) {
         if (media == null || session.get() !== media) {
             stopCapture()
             return
         }
-        if (media.isTransmitting()) {
+        if (media.shouldCaptureAudio()) {
             if (captureThread?.isAlive != true) startCapture(media)
         } else {
             stopCapture()
@@ -183,6 +237,7 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     override fun setInputGain(gain: Float) {
+        inputGain = gain
         if (activeDiscord) {
             discordEngine.setInputGain(gain)
             session.get()?.setInputGain(discordEngine.inputAmplitude())
@@ -192,6 +247,7 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     override fun setOutputGain(gain: Float) {
+        outputGain = gain
         if (activeDiscord) {
             discordEngine.setOutputGain(gain)
             session.get()?.setOutputGain(discordEngine.outputAmplitude())
@@ -201,6 +257,7 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     override fun setNoiseSuppression(on: Boolean) {
+        noiseSuppression = on
         if (activeDiscord) discordEngine.setNoiseSuppression(on)
         // Desktop has no WebRTC APM. The spectral suppressor is the one noise stage, and Discord
         // lobby capture leaves its hard gate off so pauses are attenuated instead of dropped.
@@ -277,6 +334,15 @@ class DesktopVoiceEngine : VoiceEngine {
 
     private fun openPlayback() {
         closePlaybackLine()
+        wasapiPlaybackFailed = false
+        // Default device on Windows: open WASAPI on the playback thread (same COM apartment).
+        // A chosen device, or any non-Windows host, stays on Java Sound (CoreAudio / PipeWire / DirectSound).
+        preferWasapiPlayback = outputDeviceId.isNullOrEmpty() && isWindows
+        if (preferWasapiPlayback) return
+        openJavaSoundPlayback()
+    }
+
+    private fun openJavaSoundPlayback() {
         var id = outputDeviceId
         var line = JvmVoiceDevices.openPlayback(id, frameSamples)
         if (line == null && !id.isNullOrEmpty()) {
@@ -287,38 +353,82 @@ class DesktopVoiceEngine : VoiceEngine {
             line = JvmVoiceDevices.openPlayback(null, frameSamples)
         }
         if (line == null) {
-            println("DesktopVoice playback open failed device=${id ?: "system default"} (need 48 kHz mono PCM)")
+            println("DesktopVoice playback open failed device=${id ?: "system default"} backend=${javaSoundBackend()}")
+        } else {
+            println("DesktopVoice playback backend=${javaSoundBackend()} rate=${line.format.sampleRate}")
         }
         playbackLine = line
     }
 
+    private fun javaSoundBackend(): String {
+        val os = System.getProperty("os.name").orEmpty()
+        return when {
+            os.startsWith("Mac") -> "CoreAudio"
+            os.startsWith("Windows") -> "DirectSound"
+            else -> "PipeWire/PulseAudio/ALSA"
+        }
+    }
+
     private fun startMixPump(media: VoiceMediaSession) {
         val out = ShortArray(media.frameSamples)
-        val bytes = ByteArray(out.size * 2)
+        var bytes = ByteArray(out.size * 2)
         var loggedFormat = false
+        var resamplerRate = VoicePcm.SAMPLE_RATE
+        var resampler: StreamingResampler? = null
         playbackJob = scope.launch(Dispatchers.IO) {
             while (isActive && session.get() === media) {
+                if (preferWasapiPlayback && wasapiRender == null && !wasapiPlaybackFailed) {
+                    wasapiRender = WasapiAudio.openRender()
+                    if (wasapiRender == null) {
+                        wasapiPlaybackFailed = true
+                        preferWasapiPlayback = false
+                        println("DesktopVoice playback backend=JavaSound (WASAPI unavailable)")
+                        openJavaSoundPlayback()
+                    } else {
+                        println("DesktopVoice playback backend=WASAPI shared rate=${wasapiRender?.sampleRate}")
+                    }
+                }
                 val n = media.pollMixedPcm(out)
+                val render = wasapiRender
+                if (n > 0 && render != null) {
+                    val inputPcm = if (n == out.size) out else out.copyOf(n)
+                    runCatching { render.writeMono48k(inputPcm) }
+                    continue
+                }
                 val line = playbackLine
                 if (n > 0 && line != null) {
-                    if (!loggedFormat) {
-                        loggedFormat = true
-                        println(
-                            "DesktopVoice playback format=PCM16LE rate=48000 ch=1 " +
-                                "frameSamples=${media.frameSamples} bytesPerFrame=${media.frameSamples * 2} " +
-                                "firstRemoteRms=${media.lastRemoteRms}",
-                        )
+                    val lineRate = line.format.sampleRate.roundToInt().takeIf { it > 0 } ?: VoicePcm.SAMPLE_RATE
+                    if (lineRate != resamplerRate) {
+                        resamplerRate = lineRate
+                        resampler = if (lineRate == VoicePcm.SAMPLE_RATE) {
+                            null
+                        } else {
+                            StreamingResampler(VoicePcm.SAMPLE_RATE, lineRate)
+                        }
                     }
-                    for (i in 0 until n) {
-                        val s = out[i].toInt()
-                        bytes[i * 2] = (s and 0xff).toByte()
-                        bytes[i * 2 + 1] = (s shr 8).toByte()
+                    val inputPcm = if (n == out.size) out else out.copyOf(n)
+                    val playPcm = resampler?.push(inputPcm) ?: inputPcm
+                    if (playPcm.isNotEmpty()) {
+                        if (!loggedFormat) {
+                            loggedFormat = true
+                            println(
+                                "DesktopVoice playback format=PCM16LE rate=$lineRate ch=1 " +
+                                    "frameSamples=${playPcm.size} bytesPerFrame=${playPcm.size * 2} " +
+                                    "firstRemoteRms=${media.lastRemoteRms}",
+                            )
+                        }
+                        if (bytes.size < playPcm.size * 2) {
+                            bytes = ByteArray(playPcm.size * 2)
+                        }
+                        for (i in playPcm.indices) {
+                            val s = playPcm[i].toInt()
+                            bytes[i * 2] = (s and 0xff).toByte()
+                            bytes[i * 2 + 1] = (s shr 8).toByte()
+                        }
+                        runCatching { line.write(bytes, 0, playPcm.size * 2) }
                     }
-                    runCatching { line.write(bytes, 0, n * 2) }
                 } else {
-                    bytes.fill(0)
-                    runCatching { line?.write(bytes, 0, minOf(bytes.size, 480)) }
-                    Thread.sleep(5)
+                    delay(3)
                 }
             }
         }
@@ -327,12 +437,36 @@ class DesktopVoiceEngine : VoiceEngine {
     private fun startCapture(media: VoiceMediaSession) {
         stopCapture()
         val preferredId = inputDeviceId
-        val frameBytes = media.frameSamples * 2
-        val buf = ByteArray(frameBytes)
-        val pcm = ShortArray(media.frameSamples)
         // Open the line on this worker thread so mute/unmute never blocks the UI on Java Sound.
         captureThread = thread(name = "voice-capture", isDaemon = true) {
+            runCatching { Thread.currentThread().priority = Thread.MAX_PRIORITY }
             var id = preferredId
+            if (id.isNullOrEmpty() && isWindows) {
+                val cap = WasapiAudio.openCapture()
+                if (cap != null) {
+                    wasapiCapture = cap
+                    println("DesktopVoice capture backend=WASAPI shared")
+                    val accumulator = VoicePcm.FrameAccumulator(media.frameSamples)
+                    try {
+                        while (!Thread.currentThread().isInterrupted && session.get() === media) {
+                            val pcm48 = cap.readMono48k()
+                            if (pcm48.isEmpty()) {
+                                Thread.sleep(4)
+                                continue
+                            }
+                            for (frame in accumulator.push(pcm48)) {
+                                kotlinx.coroutines.runBlocking { media.offerCapturePcm(frame) }
+                            }
+                        }
+                    } catch (_: Exception) {
+                    } finally {
+                        cap.close()
+                        if (wasapiCapture === cap) wasapiCapture = null
+                    }
+                    return@thread
+                }
+                println("DesktopVoice capture backend=${javaSoundBackend()} (WASAPI unavailable)")
+            }
             var line = JvmVoiceDevices.openCapture(id, media.frameSamples)
             if (line == null && !id.isNullOrEmpty()) {
                 inputDeviceId = null
@@ -342,7 +476,7 @@ class DesktopVoiceEngine : VoiceEngine {
                 line = JvmVoiceDevices.openCapture(null, media.frameSamples)
             }
             if (line == null) {
-                println("DesktopVoice capture open failed device=${id ?: "system default"} (need 48 kHz mono PCM)")
+                println("DesktopVoice capture open failed device=${id ?: "system default"} (need mono PCM)")
                 return@thread
             }
             if (session.get() !== media || Thread.currentThread().isInterrupted) {
@@ -350,9 +484,24 @@ class DesktopVoiceEngine : VoiceEngine {
                 return@thread
             }
             captureLine = line
+            val actualRate = line.format.sampleRate.roundToInt().takeIf { it > 0 } ?: VoicePcm.SAMPLE_RATE
+            val readSamples = if (actualRate == VoicePcm.SAMPLE_RATE) {
+                media.frameSamples
+            } else {
+                maxOf(actualRate / 50, 160)
+            }
+            val frameBytes = readSamples * 2
+            val buf = ByteArray(frameBytes)
+            val pcm = ShortArray(readSamples)
+            val resampler = if (actualRate == VoicePcm.SAMPLE_RATE) {
+                null
+            } else {
+                StreamingResampler(actualRate, VoicePcm.SAMPLE_RATE)
+            }
+            val accumulator = if (resampler != null) VoicePcm.FrameAccumulator(media.frameSamples) else null
             println(
-                "DesktopVoice capture format=PCM16LE rate=48000 ch=1 " +
-                    "frameSamples=${media.frameSamples} bytesPerFrame=$frameBytes device=${id ?: "system default"}",
+                "DesktopVoice capture format=PCM16LE rate=$actualRate opusRate=${VoicePcm.SAMPLE_RATE} ch=1 " +
+                    "readSamples=$readSamples bytesPerRead=$frameBytes device=${id ?: "system default"}",
             )
             try {
                 while (!Thread.currentThread().isInterrupted && session.get() === media) {
@@ -367,7 +516,14 @@ class DesktopVoiceEngine : VoiceEngine {
                         val hi = buf[i * 2 + 1].toInt()
                         pcm[i] = ((hi shl 8) or lo).toShort()
                     }
-                    kotlinx.coroutines.runBlocking { media.offerCapturePcm(pcm) }
+                    if (resampler == null) {
+                        kotlinx.coroutines.runBlocking { media.offerCapturePcm(pcm) }
+                    } else {
+                        val resampled = resampler.push(pcm)
+                        for (frame in accumulator!!.push(resampled)) {
+                            kotlinx.coroutines.runBlocking { media.offerCapturePcm(frame) }
+                        }
+                    }
                 }
             } catch (_: Exception) {
             } finally {
@@ -401,11 +557,16 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     private fun closeCaptureLine() {
+        wasapiCapture?.close()
+        wasapiCapture = null
         runCatching { captureLine?.stop(); captureLine?.close() }
         captureLine = null
     }
 
     private fun closePlaybackLine() {
+        wasapiRender?.close()
+        wasapiRender = null
+        preferWasapiPlayback = false
         runCatching { playbackLine?.stop(); playbackLine?.close() }
         playbackLine = null
     }

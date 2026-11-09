@@ -51,6 +51,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -107,7 +108,7 @@ private enum class SettingsCategory(val title: String, val icon: ImageVector, va
     MEDIA("Media", Icons.Filled.VideoLibrary, "Media servers, media folders, sharing your files, where files are saved"),
     MAL("MyAnimeList", Icons.Filled.Tv, "Your account and list updates"),
     SYNCING("Syncing", Icons.Filled.Sync, "Unpausing, catching up, readiness, playlists, chat, your device's name"),
-    VOICE("Voice", Icons.Filled.Mic, "Room voice, auto-join, auto-mute, devices, volume, join/leave sounds"),
+    VOICE("Voice", Icons.Filled.Mic, "Room voice, auto-join, auto-mute, devices, volume, mic test, join/leave sounds"),
     PLAYBACK("Playback", Icons.Filled.PlayCircle, "Decoding, picture-in-picture, openings and endings, seeking, languages"),
     APPEARANCE("Appearance", Icons.Filled.Palette, "Theme: dark, noire, monochrome, light, or as your device is set"),
     UPDATES("Updates", Icons.Filled.SystemUpdate, "Checking for and installing new versions"),
@@ -371,7 +372,7 @@ private fun VoiceSettings(container: AppContainer) {
     ) { container.scope.launch { container.settingsStore.saveVoiceAutoJoin(it) } }
     SettingsToggle(
         "Noise suppression",
-        "Cut background noise on your mic (RNNoise-framed spectral NS + VAD; Android also uses WebRTC AEC/NS/AGC). Applies live",
+        "One noise suppressor on the mic: the device WebRTC stage when it is available, otherwise the built-in spectral suppressor. Echo cancellation and gain control stay one stage each. Applies live",
         settings.voiceNoiseSuppression,
         Modifier.testTag("toggle_voice_noise_suppression"),
     ) { container.scope.launch { container.settingsStore.saveVoiceNoiseSuppression(it) } }
@@ -398,6 +399,7 @@ private fun VoiceSettings(container: AppContainer) {
         settings.voiceOutputGain,
         Modifier.testTag("voice_output_gain"),
     ) { container.scope.launch { container.settingsStore.saveVoiceOutputGain(it) } }
+    MicTestRow(container)
     SettingsToggle(
         "Join and leave sounds",
         "Short sound when someone joins or leaves voice",
@@ -411,6 +413,52 @@ private fun VoiceSettings(container: AppContainer) {
             Modifier.testTag("voice_join_leave_volume"),
             max = 1f,
         ) { container.scope.launch { container.settingsStore.saveVoiceJoinLeaveVolume(it) } }
+    }
+}
+
+@Composable
+private fun MicTestRow(container: AppContainer) {
+    val active by container.voice.micTestActive.collectAsStateWithLifecycle()
+    val level by container.voice.micTestLevel.collectAsStateWithLifecycle()
+    DisposableEffect(Unit) {
+        onDispose { container.voice.stopMicTest() }
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { container.voice.toggleMicTest() }
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .testTag("voice_mic_test"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Mic test", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "Hear yourself through the voice pipeline. Nothing is sent to the room",
+                color = AppColors.TextDim,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (active) {
+                Box(
+                    Modifier
+                        .padding(top = 6.dp)
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(AppColors.SurfaceHigh)
+                        .testTag("voice_mic_test_level"),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(level.coerceIn(0f, 1f))
+                            .background(AppColors.Accent),
+                    )
+                }
+            }
+        }
+        Text(if (active) "Stop" else "Start", color = AppColors.Accent, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

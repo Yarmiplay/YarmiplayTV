@@ -12,28 +12,82 @@ object VoicePcm {
     val frameSamples: Int get() = SAMPLE_RATE / (1000 / FRAME_MS) // 960
 
     /**
-     * Linear-interpolation resampler from [inRate] Hz mono PCM16 → [outRate] Hz.
-     * Used when Android [AudioRecord.getSampleRate] differs from the Opus clock (common: 44.1 kHz
-     * or 16 kHz VOICE_COMMUNICATION hardware vs 48 kHz Opus) — encoding the wrong rate as 48 kHz
-     * produces garbled/pitch-shifted audio on every peer.
+     * Band-limited polyphase Kaiser-windowed sinc resampler from [inRate] Hz mono PCM16 → [outRate] Hz.
+     * Used when hardware capture/playback rate differs from the 48 kHz Opus clock; avoids linear or
+     * nearest interpolation so passband stays flat and stopband/aliasing is rejected by >80 dB.
      */
     fun resampleMono(input: ShortArray, inRate: Int, outRate: Int = SAMPLE_RATE): ShortArray {
         if (inRate <= 0 || outRate <= 0) return ShortArray(0)
         if (inRate == outRate) return input.copyOf()
         if (input.isEmpty()) return ShortArray(0)
-        val outLen = maxOf(1, (input.size.toLong() * outRate / inRate).toInt())
-        val out = ShortArray(outLen)
-        val step = inRate.toDouble() / outRate
-        var pos = 0.0
-        for (i in 0 until outLen) {
-            val idx = pos.toInt().coerceIn(0, input.lastIndex)
-            val frac = pos - idx
-            val a = input[idx].toInt()
-            val b = input[minOf(idx + 1, input.lastIndex)].toInt()
-            out[i] = (a + (b - a) * frac).roundToInt()
+        return StreamingResampler(inRate, outRate).push(input)
+    }
+
+    /** Interleave one mono frame into stereo (L = R) for a stereo Opus encoder. */
+    fun monoToStereo(pcm: ShortArray, offset: Int = 0, frameSamples: Int = this.frameSamples): ShortArray {
+        val n = frameSamples.coerceAtMost(pcm.size - offset).coerceAtLeast(0)
+        val out = ShortArray(n * 2)
+        for (i in 0 until n) {
+            val s = pcm[offset + i]
+            out[i * 2] = s
+            out[i * 2 + 1] = s
+        }
+        return out
+    }
+
+    /** Average interleaved PCM16 channels down to mono. One channel is copied. */
+    fun interleavedPcm16ToMono(input: ShortArray, channels: Int): ShortArray {
+        val ch = channels.coerceAtLeast(1)
+        if (ch == 1) return input.copyOf()
+        val frames = input.size / ch
+        val out = ShortArray(frames)
+        var i = 0
+        for (f in 0 until frames) {
+            var sum = 0
+            for (c in 0 until ch) sum += input[i + c].toInt()
+            out[f] = (sum / ch).toShort()
+            i += ch
+        }
+        return out
+    }
+
+    /** Average interleaved float channels (range about −1..1) down to mono PCM16. */
+    fun interleavedFloatToMono(input: FloatArray, channels: Int): ShortArray {
+        val ch = channels.coerceAtLeast(1)
+        val frames = input.size / ch
+        val out = ShortArray(frames)
+        var i = 0
+        for (f in 0 until frames) {
+            var sum = 0f
+            for (c in 0 until ch) sum += input[i + c]
+            val mono = sum / ch
+            out[f] = (mono * 32767f).roundToInt()
                 .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
                 .toShort()
-            pos += step
+            i += ch
+        }
+        return out
+    }
+
+    /** Expand mono PCM16 into interleaved float channels in −1..1. */
+    fun monoToInterleavedFloat(mono: ShortArray, channels: Int): FloatArray {
+        val ch = channels.coerceAtLeast(1)
+        val out = FloatArray(mono.size * ch)
+        for (i in mono.indices) {
+            val v = mono[i] / 32768f
+            for (c in 0 until ch) out[i * ch + c] = v
+        }
+        return out
+    }
+
+    /** Expand mono PCM16 into interleaved PCM16 channels. */
+    fun monoToInterleavedPcm16(mono: ShortArray, channels: Int): ShortArray {
+        val ch = channels.coerceAtLeast(1)
+        if (ch == 1) return mono.copyOf()
+        val out = ShortArray(mono.size * ch)
+        for (i in mono.indices) {
+            val s = mono[i]
+            for (c in 0 until ch) out[i * ch + c] = s
         }
         return out
     }
