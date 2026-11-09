@@ -15,6 +15,8 @@ import org.junit.Test
 class DesktopVoiceEngineTest {
     @Test
     fun connectsDiscordLobbyAndMediaSession() = runBlocking {
+        // Loads WebRTC APM and, when AI suppression is toggled, the ONNX model in this JVM.
+        // A native crash here fails the Linux desktop job; the assertions below are the chain contract.
         val mux = object : SyncplayVoiceMux {
             override fun send(packet: ByteArray) {}
             override fun setOnPacket(handler: ((ByteArray) -> Unit)?) {}
