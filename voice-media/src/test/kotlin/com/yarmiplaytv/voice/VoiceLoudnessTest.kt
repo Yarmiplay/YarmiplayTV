@@ -167,7 +167,7 @@ class VoiceLoudnessTest {
             }
             val deadline = System.nanoTime() + 3_000_000_000L
             while (heard.size < frame * 8 && System.nanoTime() < deadline) delay(20)
-            return heard.toShortArray()
+            return synchronized(heard) { heard.toShortArray() }
         } finally {
             alice.disconnect()
             bob.disconnect()
