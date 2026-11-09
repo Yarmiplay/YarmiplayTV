@@ -89,6 +89,7 @@ import com.yarmiplaytv.ui.theme.THEME_NOTE
 import com.yarmiplaytv.update.UpdateCheck
 import com.yarmiplaytv.update.UpdateState
 import com.yarmiplaytv.update.openStoreApp
+import com.yarmiplaytv.voice.DiscordSdkAudio
 import com.yarmiplaytv.voice.VoiceAudioDevice
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -552,7 +553,7 @@ private fun TvVoiceGainRow(
     val current = steps.minByOrNull { kotlin.math.abs(it - value) } ?: value
     ValueRow(
         title,
-        "%.0f%%".format(current / max * 100f),
+        DiscordSdkAudio.voiceGainPercentLabel(current),
         {
             val idx = steps.indexOfFirst { kotlin.math.abs(it - current) < 0.001f }.let { if (it < 0) 0 else it }
             onChange(steps[(idx + 1) % steps.size])

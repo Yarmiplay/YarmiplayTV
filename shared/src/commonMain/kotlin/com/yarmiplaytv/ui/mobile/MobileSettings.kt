@@ -96,6 +96,7 @@ import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.AppTheme
 import com.yarmiplaytv.ui.theme.Palette
 import com.yarmiplaytv.ui.theme.THEME_NOTE
+import com.yarmiplaytv.voice.DiscordSdkAudio
 import com.yarmiplaytv.voice.VoiceAudioDevice
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -472,7 +473,7 @@ private fun VoiceGainSlider(
 ) {
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
-        Text("%.0f%%".format(value / max * 100f), color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+        Text(DiscordSdkAudio.voiceGainPercentLabel(value), color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
         Slider(value = value.coerceIn(0f, max), onValueChange = onChange, valueRange = 0f..max)
     }
 }

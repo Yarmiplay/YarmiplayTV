@@ -90,8 +90,11 @@ class DesktopVoiceEngine : VoiceEngine {
         }
         // Default on; VoiceController reapplies the saved preference immediately after connect.
         // Discord lobby connect already disabled the hard silence gate inside the session.
+        // Desktop has no AGC stage yet. The session's fixed makeup is the level correction.
+        // WebRTC AGC (the 3.0.0 chain) must call setAgcStageActive(true) and not leave makeup on.
         media.setNoiseSuppression(noiseSuppression)
-        media.setInputGain(if (activeDiscord) discordEngine.inputAmplitude() else inputGain)
+        media.setAgcStageActive(false)
+        media.setInputGain(if (activeDiscord) inputGain.coerceIn(0f, 2f) else inputGain)
         media.setOutputGain(if (activeDiscord) discordEngine.outputAmplitude() else outputGain)
         if (activeDiscord && discordEngine.audioConfig().selfDeaf) media.setSelfDeaf(true)
         session.set(media)
@@ -240,7 +243,9 @@ class DesktopVoiceEngine : VoiceEngine {
         inputGain = gain
         if (activeDiscord) {
             discordEngine.setInputGain(gain)
-            session.get()?.setInputGain(discordEngine.inputAmplitude())
+            // The SDK record stays 0–100%. The digital slider still reaches 200%;
+            // the one playback limiter absorbs the boost.
+            session.get()?.setInputGain(gain.coerceIn(0f, 2f))
         } else {
             session.get()?.setInputGain(gain)
         }

@@ -62,6 +62,8 @@ class AndroidVoiceEngine(
     private var platformAec: AcousticEchoCanceler? = null
     private var platformAgc: AutomaticGainControl? = null
     private var previousAudioMode: Int? = null
+    private var previousSpeakerphoneOn: Boolean? = null
+    private var communicationDeviceSet = false
     private var raisedCallVolume = false
     private var previousCallVolume: Int? = null
     private var deviceCallback: AudioDeviceCallback? = null
@@ -135,7 +137,9 @@ class AndroidVoiceEngine(
         } else {
             media.setNoiseSuppression(noiseSuppression)
         }
-        media.setInputGain(if (activeDiscord) discordEngine.inputAmplitude() else inputGain)
+        // Makeup stays on until platform AGC actually attaches in [applyPlatformEffects].
+        media.setAgcStageActive(false)
+        media.setInputGain(if (activeDiscord) inputGain.coerceIn(0f, 2f) else inputGain)
         media.setOutputGain(if (activeDiscord) discordEngine.outputAmplitude() else outputGain)
         session.set(media)
         frameSamples = media.frameSamples
@@ -283,15 +287,19 @@ class AndroidVoiceEngine(
         runCatching { audioRecord?.stop() }
         runCatching { audioRecord?.release() }
         audioRecord = null
-        if (session.get()?.shouldCaptureAudio() != true) restoreAudioMode()
+        // Discord playback keeps communication mode and the loudspeaker while the
+        // call is up. Restoring here would drop the other person back to the earpiece
+        // the moment the local mic closes. Full disconnect restores the previous mode.
+        if (!activeDiscord && session.get()?.shouldCaptureAudio() != true) restoreAudioMode()
     }
 
     override fun setInputGain(gain: Float) {
         inputGain = gain
         if (activeDiscord) {
             discordEngine.setInputGain(gain)
-            // SDK input is 0–100%. The 200% slider stop is not applied (it clips).
-            session.get()?.setInputGain(discordEngine.inputAmplitude())
+            // The SDK record stays 0–100%. The digital slider still reaches 200%;
+            // the one playback limiter absorbs the boost.
+            session.get()?.setInputGain(gain.coerceIn(0f, 2f))
         } else {
             session.get()?.setInputGain(gain)
         }
@@ -403,7 +411,7 @@ class AndroidVoiceEngine(
         enterCommunicationMode()
         val opened = openCaptureRecord(media.frameSamples, discord = activeDiscord) ?: run {
             android.util.Log.e(TAG, "startCapture: no usable AudioRecord (TV remote mic missing?)")
-            restoreAudioMode()
+            if (!activeDiscord) restoreAudioMode()
             return
         }
         val (record, sourceName) = opened
@@ -588,6 +596,8 @@ class AndroidVoiceEngine(
         if (agc && AutomaticGainControl.isAvailable()) {
             platformAgc = runCatching { AutomaticGainControl.create(sessionId)?.also { it.enabled = true } }.getOrNull()
         }
+        // Platform AGC is the one auto-gain stage. Fixed capture makeup stays off while it is attached.
+        session.get()?.setAgcStageActive(platformAgc != null)
         android.util.Log.i(
             TAG,
             "platform effects ns=${platformNs != null} aec=${platformAec != null} agc=${platformAgc != null}",
@@ -601,6 +611,7 @@ class AndroidVoiceEngine(
         platformNs = null
         platformAec = null
         platformAgc = null
+        session.get()?.setAgcStageActive(false)
     }
 
     private fun enterCommunicationMode() {
@@ -611,25 +622,48 @@ class AndroidVoiceEngine(
     }
 
     private fun restoreAudioMode() {
+        val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        if (am != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && communicationDeviceSet) {
+                communicationDeviceSet = false
+                runCatching { am.clearCommunicationDevice() }
+            }
+            val prevSpeaker = previousSpeakerphoneOn
+            if (prevSpeaker != null) {
+                previousSpeakerphoneOn = null
+                @Suppress("DEPRECATION")
+                runCatching { am.isSpeakerphoneOn = prevSpeaker }
+            }
+        }
         val prev = previousAudioMode ?: return
         previousAudioMode = null
-        val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        runCatching { am.mode = prev }
+        if (am != null) runCatching { am.mode = prev }
     }
 
     /**
-     * Voice-call stream at 0 makes USAGE_VOICE_COMMUNICATION silent. Raise it only in that case,
-     * and never while a phone call owns the stream. STREAM_MUSIC (the video slider) is not touched.
+     * Voice-call stream at its minimum step (1, not 0) makes USAGE_VOICE_COMMUNICATION
+     * inaudible. Raise it to match media volume or at least 80% of max. STREAM_MUSIC
+     * (the video slider) is not touched. Never while a phone call owns the stream.
      */
     private fun ensureDiscordCallStreamAudible() {
         val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
         if (am.mode == AudioManager.MODE_IN_CALL) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (runCatching { am.isStreamMute(AudioManager.STREAM_VOICE_CALL) }.getOrDefault(false)) {
+                runCatching { am.adjustStreamVolume(AudioManager.STREAM_VOICE_CALL, AudioManager.ADJUST_UNMUTE, 0) }
+            }
+        }
         val current = runCatching { am.getStreamVolume(AudioManager.STREAM_VOICE_CALL) }.getOrNull() ?: return
-        if (current > 0) return
-        val max = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL).coerceAtLeast(1)
-        if (runCatching { am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, max, 0) }.isFailure) return
-        previousCallVolume = current
-        raisedCallVolume = true
+        val maxCall = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL).coerceAtLeast(1)
+        val maxMusic = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val music = runCatching { am.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrDefault((maxMusic * 0.7f).toInt())
+        val target = DiscordSdkAudio.audibleCallStreamVolume(current, maxCall, music, maxMusic)
+        if (target == current) return
+        if (runCatching { am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, target, 0) }.isFailure) return
+        if (!raisedCallVolume) {
+            previousCallVolume = current
+            raisedCallVolume = true
+        }
     }
 
     private fun restoreDiscordCallStream() {
@@ -660,7 +694,10 @@ class AndroidVoiceEngine(
         // Discord lobby voice on a phone uses the voice-call stream so the video volume slider,
         // which sets STREAM_MUSIC, does not scale voice. TV keeps media: the call stream is often silent.
         val shareVideo = !activeDiscord || DiscordSdkAudio.playbackSharesVideoStream(isTv)
-        if (!shareVideo) ensureDiscordCallStreamAudible()
+        if (!shareVideo) {
+            enterCommunicationMode()
+            ensureDiscordCallStreamAudible()
+        }
         val usage = if (shareVideo) AudioAttributes.USAGE_MEDIA else AudioAttributes.USAGE_VOICE_COMMUNICATION
         val nativeRate = nativeOutputRate()
         val rates = if (nativeRate == VoicePcm.SAMPLE_RATE) {
@@ -827,20 +864,59 @@ class AndroidVoiceEngine(
 
     private fun preferOutputDevice(track: AudioTrack): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return preferredOutputId.isNullOrEmpty()
+        val outputs = outputInfos()
         val id = preferredOutputId?.toIntOrNull()
-        if (id == null) {
-            runCatching { track.preferredDevice = null }
-            return true
+        if (id != null) {
+            val device = outputs.firstOrNull { it.id == id } ?: return false
+            val ok = runCatching { track.preferredDevice = device; true }.getOrDefault(false)
+            if (activeDiscord) applyCommunicationRoute(device)
+            return ok
         }
-        val device = outputInfos().firstOrNull { it.id == id } ?: return false
-        return runCatching { track.preferredDevice = device; true }.getOrDefault(false)
+        val external = outputs.firstOrNull { it.type in EXTERNAL_OUTPUT_TYPES }
+        if (activeDiscord && DiscordSdkAudio.playbackUsesBuiltInSpeaker(
+                isTv = isTv,
+                userSelectedOutput = false,
+                externalOutputConnected = external != null,
+            )
+        ) {
+            val speaker = outputs.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+            if (speaker != null) {
+                runCatching { track.preferredDevice = speaker }
+                applyCommunicationRoute(speaker)
+                return true
+            }
+        }
+        runCatching { track.preferredDevice = null }
+        if (activeDiscord) applyCommunicationRoute(external)
+        return true
+    }
+
+    /** Loudspeaker unless the chosen device is something else. Restored in [restoreAudioMode]. */
+    private fun applyCommunicationRoute(target: AudioDeviceInfo?) {
+        if (isTv || !activeDiscord) return
+        val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        val wantSpeaker = target?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && target != null) {
+            val applied = runCatching { am.setCommunicationDevice(target) }.getOrDefault(false)
+            if (applied) communicationDeviceSet = true
+        }
+        @Suppress("DEPRECATION")
+        runCatching {
+            if (previousSpeakerphoneOn == null) previousSpeakerphoneOn = am.isSpeakerphoneOn
+            if (am.isSpeakerphoneOn != wantSpeaker) am.isSpeakerphoneOn = wantSpeaker
+        }
     }
 
     private fun registerDeviceCallback() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         val am = app.getSystemService(AudioManager::class.java) ?: return
         val callback = object : AudioDeviceCallback() {
-            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) = Unit
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+                val track = audioTrack
+                if (track != null && preferredOutputId == null && activeDiscord) {
+                    preferOutputDevice(track)
+                }
+            }
 
             override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
                 val removedIds = removedDevices.map { it.id.toString() }.toSet()
@@ -928,6 +1004,23 @@ class AndroidVoiceEngine(
             add(AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) add(AudioDeviceInfo.TYPE_USB_HEADSET)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(AudioDeviceInfo.TYPE_BLE_HEADSET)
+        }
+
+        /** Wired, Bluetooth, USB, or HDMI. Lobby voice follows these instead of forcing the speaker. */
+        private val EXTERNAL_OUTPUT_TYPES: Set<Int> = buildSet {
+            add(AudioDeviceInfo.TYPE_WIRED_HEADSET)
+            add(AudioDeviceInfo.TYPE_WIRED_HEADPHONES)
+            add(AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
+            add(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP)
+            add(AudioDeviceInfo.TYPE_USB_DEVICE)
+            add(AudioDeviceInfo.TYPE_HDMI)
+            add(AudioDeviceInfo.TYPE_HDMI_ARC)
+            add(AudioDeviceInfo.TYPE_DOCK)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) add(AudioDeviceInfo.TYPE_USB_HEADSET)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                add(AudioDeviceInfo.TYPE_BLE_HEADSET)
+                add(AudioDeviceInfo.TYPE_BLE_SPEAKER)
+            }
         }
 
         /** TV remote / assistant mics often appear as BLE headset, remote submix, or HDMI. */

@@ -22,6 +22,8 @@ import kotlin.math.sqrt
  * remote PCM from [pollMixedPcm] (or [onRemotePcm] if set).
  *
  * Capture path: single [VoiceNoiseSuppressor] stage (unless platform WebRTC NS is active) + Opus.
+ * Auto-gain is one stage: platform or WebRTC AGC when [setAgcStageActive] is true. Otherwise
+ * Discord capture uses one fixed makeup ([VoicePcm.FIXED_CAPTURE_MAKEUP]), not a second AGC.
  * Receive path: per-sender [VoiceJitterBuffer] + per-sender [OpusCodec] decoder, float participant
  * summing without 1/N division, and a single final look-ahead soft [VoiceLimiter] (~-1 dBFS ceiling).
  */
@@ -39,6 +41,11 @@ class VoiceMediaSession(
     private val dropTail = AtomicBoolean(false)
     /** Discord lobby capture: one soft noise stage, no hard silence drop, −60 dBFS speech. */
     private var discordCapture = false
+    /**
+     * True when platform or WebRTC AGC is already on this capture path.
+     * Discord makeup stays at unity while this is set.
+     */
+    @Volatile private var agcStageActive = false
     private var speechThreshold = LEGACY_SPEECH_RMS
     private var inputGain = 1f
     private var outputGain = 1f
@@ -337,6 +344,7 @@ class VoiceMediaSession(
         standaloneLoopback.set(false)
         dropTail.set(false)
         discordCapture = false
+        agcStageActive = false
         noise.setHardGate(true)
         speechThreshold = LEGACY_SPEECH_RMS
         captureRms.set(0.0)
@@ -419,6 +427,19 @@ class VoiceMediaSession(
         inputGain = gain.coerceIn(0f, 2f)
     }
 
+    /**
+     * True when an AGC stage is already running on this capture path
+     * (Android `AutomaticGainControl`, or desktop WebRTC AGC once that chain is on).
+     *
+     * Discord lobby capture then skips [VoicePcm.FIXED_CAPTURE_MAKEUP]. The makeup is a
+     * fixed scale, not a second AGC. Leave this false only when no AGC stage exists.
+     */
+    fun setAgcStageActive(active: Boolean) {
+        agcStageActive = active
+    }
+
+    fun isAgcStageActive(): Boolean = agcStageActive
+
     fun setOutputGain(gain: Float) {
         outputGain = gain.coerceIn(0f, 2f)
     }
@@ -482,7 +503,14 @@ class VoiceMediaSession(
             val nowTesting = micTest.get()
             // Relayed path drops gated silence. Discord capture and mic test never drop frames.
             if (shouldDropGatedSilence(useDiscordChain, noise.isEnabled(), noise.lastSpeech, frame)) continue
-            val gained = if (useDiscordChain || inputGain == 1f) frame.copyOf() else applyInputGain(frame)
+            // Discord already applied the mic slider before NS. Makeup is the one extra
+            // scale, and only when no AGC stage is on. The relayed path gains here instead.
+            val gained = when {
+                discordCapture && !agcStageActive ->
+                    VoicePcm.scale(frame, VoicePcm.discordMakeupGain(agcStageActive = false))
+                useDiscordChain || inputGain == 1f -> frame.copyOf()
+                else -> applyInputGain(frame)
+            }
             val encoded = opus.encode(gained) ?: continue
             if (nowTesting) {
                 // Mic test isolation: decode locally through the receive limiter; NEVER send to lobby.
