@@ -136,7 +136,12 @@ jobs:
 
       - name: libmpv, a virtual display and .deb tooling
         if: runner.os == 'Linux'
-        run: sudo apt-get update -q && sudo apt-get install -y -q libmpv2 xvfb fakeroot
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q libmpv2 xvfb fakeroot pulseaudio
+          # libmpv pulls libpulse. Java Sound then opens Pulse, and a runner with the library but no
+          # server crashes in libstdc++ while the voice engine opens a line. A null sink keeps that open alive.
+          pulseaudio --start --exit-idle-time=-1 || true
+          pactl load-module module-null-sink sink_name=yarmiplaytv || true
 
       - name: Desktop tests and installers
         env:
@@ -214,6 +219,7 @@ jobs:
           name: desktop-test-reports-${{ runner.os }}
           path: |
             **/build/reports/tests/
+            **/hs_err_pid*.log
             ${{ runner.temp }}/syncplay-server.log
 
   # Compose UI and local-playback tests on a phone emulator (touch UI, content:// playback through mpv),
