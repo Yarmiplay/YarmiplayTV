@@ -185,6 +185,21 @@ private val profileContainerNames = setOf(
 private fun normalizeSlashes(path: String): String =
     path.replace('\\', '/').trimEnd('/').ifEmpty { "/" }
 
+/**
+ * Extracts the parent directory of [file], handling both `/` and `\` separators even when Windows paths
+ * are tested on macOS/Linux.
+ */
+internal fun parentDirOf(file: File?): File? {
+    if (file == null) return null
+    val raw = file.path.trimEnd('/', '\\')
+    val lastSep = maxOf(raw.lastIndexOf('/'), raw.lastIndexOf('\\'))
+    if (lastSep > 0) return File(raw.substring(0, lastSep))
+    return file.parentFile ?: file.absoluteFile.parentFile
+}
+
+private fun nameOf(file: File?): String =
+    file?.path?.trimEnd('/', '\\')?.substringAfterLast('/')?.substringAfterLast('\\').orEmpty()
+
 /** Whether [dir] lives under a per-machine system folder (`Program Files`, `Program Files (x86)`, `ProgramData`). */
 internal fun isPerMachineInstallDir(
     dir: File?,
@@ -239,7 +254,7 @@ internal fun resolveInstalledLauncher(
         val candidate = file?.let { cleanInstallPath(it.path) }?.takeIf { it.isFile } ?: return null
         val abs = candidate.absoluteFile
         if (!isWin || !requireSafeDir) return abs
-        return abs.takeIf { isSafeWindowsInstallDir(it.parentFile, home, env) }
+        return abs.takeIf { isSafeWindowsInstallDir(parentDirOf(it), home, env) }
     }
 
     // 1. jpackage.app-path when it sits in a safe install folder.
@@ -249,8 +264,8 @@ internal fun resolveInstalledLauncher(
     // 2. Running app image: <installDir>/runtime (java.home) or <installDir>/app/*.jar (java.class.path).
     if (!javaHome.isNullOrBlank()) {
         val runtimeDir = cleanInstallPath(javaHome)
-        if (runtimeDir?.name.equals("runtime", ignoreCase = true)) {
-            val imageRoot = runtimeDir?.parentFile
+        if (nameOf(runtimeDir).equals("runtime", ignoreCase = true)) {
+            val imageRoot = parentDirOf(runtimeDir)
             val candidate = imageRoot?.let {
                 if (isWin) File(it, exeName)
                 else File(it, "bin/$exeName").takeIf(File::isFile) ?: File(it, "Contents/MacOS/$exeName")
@@ -261,9 +276,9 @@ internal fun resolveInstalledLauncher(
     if (!classPath.isNullOrBlank()) {
         for (entry in classPath.split(File.pathSeparatorChar)) {
             val jar = cleanInstallPath(entry) ?: continue
-            val parent = jar.parentFile ?: continue
-            if (parent.name.equals("app", ignoreCase = true)) {
-                val imageRoot = parent.parentFile ?: continue
+            val parent = parentDirOf(jar) ?: continue
+            if (nameOf(parent).equals("app", ignoreCase = true)) {
+                val imageRoot = parentDirOf(parent) ?: continue
                 val candidate = if (isWin) File(imageRoot, exeName) else File(imageRoot, "bin/$exeName")
                 validLauncher(candidate, requireSafeDir = true)?.let { return it }
             }
@@ -273,7 +288,7 @@ internal fun resolveInstalledLauncher(
     // 3. ProcessHandle command when it names the launcher directly.
     if (!processCommand.isNullOrBlank()) {
         val cmdFile = cleanInstallPath(processCommand)
-        if (cmdFile?.name.equals(exeName, ignoreCase = true)) {
+        if (nameOf(cmdFile).equals(exeName, ignoreCase = true)) {
             validLauncher(cmdFile, requireSafeDir = true)?.let { return it }
         }
     }
@@ -294,7 +309,7 @@ internal fun resolveWindowsInstallDir(
     home: String = System.getProperty("user.home").orEmpty(),
     env: (String) -> String? = System::getenv,
 ): File {
-    val launcherDir = launcher?.let { it.parentFile ?: it.absoluteFile.parentFile }
+    val launcherDir = parentDirOf(launcher)
     if (isSafeWindowsInstallDir(launcherDir, home, env)) return launcherDir!!
     if (isSafeWindowsInstallDir(appImageDir, home, env)) return appImageDir!!
     if (isSafeWindowsInstallDir(registryDir, home, env)) return registryDir!!
@@ -328,7 +343,7 @@ internal fun installKind(
     val os = osName.lowercase()
     return when {
         os.startsWith("windows") -> when {
-            portable && launcher != null && isSafePortableDir(launcher.parentFile ?: launcher.absoluteFile.parentFile, env = env) ->
+            portable && launcher != null && isSafePortableDir(parentDirOf(launcher), env = env) ->
                 InstallKind.PORTABLE
             launcher != null -> InstallKind.MSI
             else -> InstallKind.WINDOWS_OTHER
@@ -353,7 +368,7 @@ internal fun updateSource(
             when (kind) {
                 InstallKind.MSI -> WindowsUpdater(it, args)
                 InstallKind.PORTABLE -> {
-                    val dir = it.parentFile ?: it.absoluteFile.parentFile
+                    val dir = parentDirOf(it)
                     if (isSafePortableDir(dir)) PortableUpdater(it, args) else WindowsUpdater(it, args)
                 }
                 InstallKind.DMG -> if (MacUpdater.bundleOf(it) != null) MacUpdater(it, args) else null

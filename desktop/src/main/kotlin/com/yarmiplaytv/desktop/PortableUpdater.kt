@@ -24,7 +24,7 @@ internal class PortableUpdater(
 
     override fun installAfterExit(relaunch: Boolean) {
         val zip = zip ?: throw UpdateFailedException("launch", "the downloaded archive is missing")
-        val targetDir = launcher.parentFile ?: launcher.absoluteFile.parentFile
+        val targetDir = parentDirOf(launcher)
         if (!isSafePortableDir(targetDir)) {
             throw UpdateFailedException("replace", "Couldn't replace files in ${targetDir?.path ?: launcher.path}: unsafe portable folder")
         }

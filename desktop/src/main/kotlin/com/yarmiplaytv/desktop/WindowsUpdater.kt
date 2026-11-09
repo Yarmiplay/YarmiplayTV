@@ -186,7 +186,7 @@ internal class WindowsUpdater(
         env: (String) -> String? = System::getenv,
     ): String = buildString {
         val targetDir = resolveWindowsInstallDir(launcher, home = home, env = env)
-        val relaunchExe = if (isSafeWindowsInstallDir(launcher.parentFile, home, env)) launcher else File(targetDir, launcher.name.ifBlank { "YarmiplayTV.exe" })
+        val relaunchExe = if (isSafeWindowsInstallDir(parentDirOf(launcher), home, env)) launcher else File(targetDir, "YarmiplayTV.exe")
         val setupArgs = windowsCommandLine(listOf("--silent", "--dir", targetDir.path))
         val status = updateStatusFile().path
         append(psWaitForAppExit(pids))
