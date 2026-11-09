@@ -1,6 +1,7 @@
 package com.yarmiplaytv.voice
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -17,5 +18,7 @@ class JvmVoiceDevicesTest {
         assertTrue(JvmVoiceDevices.isAvailable(null, target = true))
         assertTrue(JvmVoiceDevices.isAvailable("", target = false))
         assertFalse(JvmVoiceDevices.isAvailable("__no_such_device__", target = true))
+        assertNull(JvmVoiceDevices.openCapture("__no_such_device__", 960))
+        assertNull(JvmVoiceDevices.openPlayback("__no_such_device__", 960))
     }
 }
