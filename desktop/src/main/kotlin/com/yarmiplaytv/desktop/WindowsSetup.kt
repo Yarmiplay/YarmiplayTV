@@ -43,9 +43,14 @@ internal data class ProbeResult(val discovered: DiscoveredInstall, val paths: Se
 
 /**
  * What the current PC already has, from the probe script's lines:
- * `desktop=`, `programs=`, `local=`, `desktopLnk=0|1`, `startLnk=0|1`, `ours=<dir>`, `msi=<code><tab><dir>`, `assoc=0|1`.
+ * `desktop=`, `programs=`, `local=`, `desktopLnk=0|1`, `startLnk=0|1`, `ours=<dir>`, `msi=<code><tab><dir>`,
+ * `lnkDir=<dir>`, `assoc=0|1`.
  */
-internal fun parseProbe(text: String): ProbeResult {
+internal fun parseProbe(
+    text: String,
+    home: String = System.getProperty("user.home").orEmpty(),
+    env: (String) -> String? = System::getenv,
+): ProbeResult {
     val body = text.removePrefix("\uFEFF")
     var desktop: String? = null
     var programs: String? = null
@@ -53,6 +58,7 @@ internal fun parseProbe(text: String): ProbeResult {
     var desktopLnk = false
     var startLnk = false
     var ours: String? = null
+    var lnkDir: String? = null
     var assoc = false
     val msi = mutableListOf<Pair<String, String>>()
     for (raw in body.lineSequence()) {
@@ -64,6 +70,9 @@ internal fun parseProbe(text: String): ProbeResult {
             line.startsWith("desktopLnk=") -> desktopLnk = line.endsWith("1")
             line.startsWith("startLnk=") -> startLnk = line.endsWith("1")
             line.startsWith("ours=") -> ours = line.substringAfter("ours=").trim().ifBlank { null }
+            line.startsWith("lnkDir=") -> {
+                if (lnkDir == null) lnkDir = line.substringAfter("lnkDir=").trim().ifBlank { null }
+            }
             line.startsWith("assoc=") -> assoc = line.endsWith("1")
             line.startsWith("msi=") -> {
                 val rest = line.substringAfter("msi=")
@@ -73,19 +82,20 @@ internal fun parseProbe(text: String): ProbeResult {
             }
         }
     }
-    val home = File(System.getProperty("user.home"))
-    val desktopDir = desktop?.let(::File) ?: File(home, "Desktop")
-    val programsDir = programs?.let(::File) ?: File(home, "AppData/Roaming/Microsoft/Windows/Start Menu/Programs")
-    val localDir = when {
-        local != null -> File(local)
-        !System.getenv("LOCALAPPDATA").isNullOrBlank() -> File(System.getenv("LOCALAPPDATA"))
-        else -> File(home, "AppData/Local")
-    }
-    val oursDir = ours?.let(::File)
-    val msiDir = msi.firstOrNull { it.second.isNotEmpty() }?.second?.let(::File)
+    val homeFile = File(home.ifBlank { System.getProperty("user.home").orEmpty() })
+    val desktopDir = desktop?.let(::cleanInstallPath) ?: File(homeFile, "Desktop")
+    val programsDir = programs?.let(::cleanInstallPath) ?: File(homeFile, "AppData/Roaming/Microsoft/Windows/Start Menu/Programs")
+    val localDir = local?.let(::cleanInstallPath)
+        ?: env("LOCALAPPDATA")?.let(::cleanInstallPath)
+        ?: File(homeFile, "AppData/Local")
+    val oursDir = cleanInstallPath(ours)?.takeIf { isSafeWindowsInstallDir(it, homeFile.path, env) }
+    val msiDir = msi.asSequence()
+        .mapNotNull { cleanInstallPath(it.second) }
+        .firstOrNull { isSafeWindowsInstallDir(it, homeFile.path, env) }
+    val shortcutDir = cleanInstallPath(lnkDir)?.takeIf { isSafeWindowsInstallDir(it, homeFile.path, env) }
     return ProbeResult(
         discovered = DiscoveredInstall(
-            directory = oursDir ?: msiDir,
+            directory = oursDir ?: msiDir ?: shortcutDir,
             desktopShortcut = desktopLnk,
             startMenuShortcut = startLnk,
             videoFiles = assoc,
@@ -106,9 +116,15 @@ internal fun choicesFor(
     args: Array<String>,
     defaultDir: File,
     unattended: Boolean,
+    home: String = System.getProperty("user.home").orEmpty(),
+    env: (String) -> String? = System::getenv,
 ): SetupChoices {
     val upgrade = discovered.directory != null || discovered.msiProductCodes.isNotEmpty() || discovered.managedByUs
-    val dir = WindowsSetupArgs.installDir(args)?.let(::File) ?: discovered.directory ?: defaultDir
+    val argDir = WindowsSetupArgs.installDir(args)?.let(::cleanInstallPath)?.takeIf { isSafeWindowsInstallDir(it, home, env) }
+    val discDir = discovered.directory?.takeIf { isSafeWindowsInstallDir(it, home, env) }
+    val safeDefault = defaultDir.takeIf { isSafeWindowsInstallDir(it, home, env) }
+        ?: resolveWindowsInstallDir(null, home = home, env = env)
+    val dir = argDir ?: discDir ?: safeDefault
     return SetupChoices(
         directory = dir,
         desktopShortcut = if (upgrade) discovered.desktopShortcut else true,
@@ -123,12 +139,47 @@ internal fun choicesFor(
     )
 }
 
-internal fun assertInstallable(source: File, dest: File) {
+internal fun assertInstallable(
+    source: File,
+    dest: File,
+    home: String = System.getProperty("user.home").orEmpty(),
+    env: (String) -> String? = System::getenv,
+) {
+    val cleaned = cleanInstallPath(dest.path)
+        ?: error("Choose a valid install folder (${dest.path})")
+    if (!isSafeWindowsInstallDir(cleaned, home, env)) {
+        error("Choose a dedicated install folder for YarmiplayTV, not ${dest.path}")
+    }
     val src = source.canonicalFile
-    val dst = dest.canonicalFile
+    val dst = cleaned.canonicalFile
     if (dst == src || dst.path.startsWith(src.path + File.separator)) {
         error("Choose a folder that isn't the setup package itself")
     }
+}
+
+/**
+ * Formats an error thrown while copying the app image into [dest] without duplicating [dest]'s path
+ * when [error]'s message already starts with it (e.g. `FileNotFoundException` on Windows).
+ */
+internal fun formatReplaceFailure(dest: File, error: Throwable): String {
+    val raw = error.message?.trim().orEmpty()
+    if (raw.isEmpty()) return "Couldn't replace files in ${dest.path}: ${error.javaClass.simpleName}"
+    if (raw.startsWith("Couldn't replace files in ", ignoreCase = true)) return raw
+    val prefixes = listOfNotNull(
+        dest.path.trimEnd('\\', '/'),
+        runCatching { dest.canonicalPath.trimEnd('\\', '/') }.getOrNull(),
+    ).distinct()
+    var detail = raw
+    for (prefix in prefixes) {
+        if (prefix.isNotEmpty() && detail.startsWith(prefix, ignoreCase = true)) {
+            val rest = detail.substring(prefix.length).trimStart('\\', '/', ' ', ':')
+            if (rest.isNotEmpty()) {
+                detail = rest
+                break
+            }
+        }
+    }
+    return "Couldn't replace files in ${dest.path}: $detail"
 }
 
 /**
@@ -142,7 +193,10 @@ internal fun copyAppImage(source: File, dest: File, onFraction: (Float) -> Unit)
     var lastPct = -1
     for (file in files) {
         val target = dest.resolve(file.relativeTo(source))
-        target.parentFile?.mkdirs()
+        val parent = target.parentFile
+        if (parent != null && !parent.isDirectory && !parent.mkdirs() && !parent.isDirectory) {
+            throw java.io.IOException("Couldn't create folder ${parent.path}")
+        }
         copyFileWithRetry(file, target)
         copied += file.length()
         val pct = ((copied * 100) / total).toInt()
@@ -154,6 +208,7 @@ internal fun copyAppImage(source: File, dest: File, onFraction: (Float) -> Unit)
     val keep = files.map { it.relativeTo(source).invariantSeparatorsPath }.toSet()
     dest.walkBottomUp().filter { it != dest }.forEach { file ->
         val rel = file.relativeTo(dest).invariantSeparatorsPath
+        if (rel == "data" || rel.startsWith("data/")) return@forEach
         if (file.isFile && rel !in keep) file.delete()
         else if (file.isDirectory && file.list().isNullOrEmpty()) file.delete()
     }
@@ -165,6 +220,7 @@ internal fun copyFileWithRetry(source: File, target: File, attempts: Int = 10) {
     var last: Exception? = null
     repeat(attempts) { attempt ->
         try {
+            target.parentFile?.mkdirs()
             source.inputStream().use { input ->
                 target.outputStream().use { output ->
                     val buf = ByteArray(256 * 1024)
@@ -232,11 +288,11 @@ internal fun performInstall(
                 progress(0.12f + 0.73f * fraction, "Copying files · $pct%")
             }
         } catch (e: Exception) {
-            error("Couldn't replace files in ${dest.path}: ${e.message ?: e.javaClass.simpleName}")
+            error(formatReplaceFailure(dest, e))
         }
         val previous = discovered.directory
-        if (discovered.managedByUs && previous != null && previous.canonicalFile != dest.canonicalFile &&
-            File(previous, "YarmiplayTV.exe").isFile
+        if (discovered.managedByUs && previous != null && isSafeWindowsInstallDir(previous) &&
+            previous.canonicalFile != dest.canonicalFile && File(previous, "YarmiplayTV.exe").isFile
         ) {
             progress(0.88f, "Removing the previous copy…")
             previous.deleteRecursively()
@@ -263,7 +319,7 @@ internal fun performUninstall(
 ) {
     if (!File(dir, "YarmiplayTV.exe").isFile) error("YarmiplayTV isn't installed in ${dir.path}")
     val root = dir.canonicalFile
-    if (root.parentFile == null) error("Refusing to remove ${dir.path}")
+    if (root.parentFile == null || !isSafeWindowsInstallDir(root)) error("Refusing to remove ${dir.path}")
     progress(0.35f, "Removing shortcuts…")
     host.runScript(removalScript(paths.desktopShortcut, paths.startMenuShortcut))
     progress(0.8f, "Removing files…")
@@ -281,17 +337,41 @@ internal fun probeScript(): String = """
     Write-Output ('desktop=' + ${'$'}desk)
     Write-Output ('programs=' + ${'$'}prog)
     Write-Output ('local=' + ${'$'}local)
-    Write-Output ('desktopLnk=' + [int](Test-Path -LiteralPath (Join-Path ${'$'}desk 'YarmiplayTV.lnk')))
-    Write-Output ('startLnk=' + [int](Test-Path -LiteralPath (Join-Path ${'$'}prog 'YarmiplayTV\YarmiplayTV.lnk')))
-    Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+    ${'$'}deskLnk = Join-Path ${'$'}desk 'YarmiplayTV.lnk'
+    ${'$'}startLnk = Join-Path ${'$'}prog 'YarmiplayTV\YarmiplayTV.lnk'
+    Write-Output ('desktopLnk=' + [int](Test-Path -LiteralPath ${'$'}deskLnk))
+    Write-Output ('startLnk=' + [int](Test-Path -LiteralPath ${'$'}startLnk))
+    ${'$'}uninstallRoots = @(
+      'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+      'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+      'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    Get-ItemProperty ${'$'}uninstallRoots -ErrorAction SilentlyContinue |
       Where-Object { ${'$'}_.DisplayName -eq 'YarmiplayTV' } |
       ForEach-Object {
         ${'$'}id = ${'$'}_.PSChildName
-        ${'$'}loc = [string]${'$'}_.InstallLocation
+        ${'$'}loc = ([string]${'$'}_.InstallLocation).Trim().Trim('"')
+        if (-not ${'$'}loc -and ${'$'}_.DisplayIcon) {
+          ${'$'}iconExe = (([string]${'$'}_.DisplayIcon) -replace ',[0-9-]+${'$'}','').Trim().Trim('"')
+          if (${'$'}iconExe) { ${'$'}loc = Split-Path -Parent ${'$'}iconExe }
+        }
         ${'$'}un = [string]${'$'}_.UninstallString
+        if (-not ${'$'}loc -and ${'$'}un -match '"([^"]+YarmiplayTV\.exe)"') {
+          ${'$'}loc = Split-Path -Parent ${'$'}Matches[1]
+        }
         if (${'$'}un -match 'msiexec') { Write-Output ('msi=' + ${'$'}id + "`t" + ${'$'}loc) }
         elseif (${'$'}id -eq 'YarmiplayTV') { Write-Output ('ours=' + ${'$'}loc) }
       }
+    foreach (${'$'}lnk in @(${'$'}startLnk, ${'$'}deskLnk)) {
+      if (Test-Path -LiteralPath ${'$'}lnk) {
+        try {
+          ${'$'}target = (New-Object -ComObject WScript.Shell).CreateShortcut(${'$'}lnk).TargetPath
+          if (${'$'}target -and (Test-Path -LiteralPath ${'$'}target)) {
+            Write-Output ('lnkDir=' + (Split-Path -Parent ${'$'}target))
+          }
+        } catch {}
+      }
+    }
     ${'$'}assoc = ${'$'}false
     foreach (${'$'}ext in @(${windowsVideoExtensions.joinToString(",") { "'$it'" }})) {
       ${'$'}key = Get-Item -LiteralPath ('HKCU:\Software\Classes\.' + ${'$'}ext) -ErrorAction SilentlyContinue
@@ -397,7 +477,7 @@ private fun uninstallKeyScript(exe: String, dir: String, version: String, sizeKb
 }
 
 private fun setupSourceDir(): File {
-    val launcher = System.getProperty("jpackage.app-path")?.let(::File)?.takeIf { it.isFile }
+    val launcher = System.getProperty("jpackage.app-path")?.let(::cleanInstallPath)?.absoluteFile?.takeIf { it.isFile }
         ?: error("This installer has to run from the YarmiplayTV setup package")
     return launcher.parentFile ?: error("This installer has to run from the YarmiplayTV setup package")
 }
@@ -408,7 +488,7 @@ private fun runPowerShell(script: String) {
         "powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
         "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded,
     ).redirectErrorStream(true).start()
-    val out = process.inputStream.bufferedReader().readText()
+    val out = process.inputStream.bufferedReader(Charsets.UTF_8).readText()
     if (process.waitFor() != 0) error(out.lineSequence().map { it.trim() }.lastOrNull { it.isNotEmpty() } ?: "A setup step failed")
 }
 
@@ -416,10 +496,18 @@ private val realHost = object : SetupHost {
     override fun uninstallProducts(codes: List<String>, onProgress: (String) -> Unit) {
         for (code in codes) {
             onProgress("Removing the previous version…")
-            val process = ProcessBuilder("msiexec.exe", "/x", code, "/qn", "/norestart").start()
+            var process = ProcessBuilder("msiexec.exe", "/x", code, "/qn", "/norestart").start()
             if (!process.waitFor(5, TimeUnit.MINUTES)) {
                 process.destroyForcibly()
                 error("Removing the previous version took too long")
+            }
+            // Per-machine MSI uninstalls fail with 1603 under /qn when not elevated; /passive allows UAC elevation.
+            if (process.exitValue() == 1603) {
+                process = ProcessBuilder("msiexec.exe", "/x", code, "/passive", "/norestart").start()
+                if (!process.waitFor(5, TimeUnit.MINUTES)) {
+                    process.destroyForcibly()
+                    error("Removing the previous version took too long")
+                }
             }
             // 1605: nothing to remove. 3010: removed, Windows wants a restart for something else.
             if (process.exitValue() !in setOf(0, 1605, 3010)) error("Couldn't remove the previous version (${process.exitValue()})")
@@ -444,6 +532,8 @@ internal fun runWindowsSetup(args: List<String>): Int {
         return 1
     }
     return try {
+        System.setProperty("sun.java2d.dpiaware", "true")
+        System.setProperty("sun.java2d.uiScale.enabled", "true")
         UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName())
         val argv = args.toTypedArray()
         val probe = runCatching { parseProbe(runProbe()) }.getOrElse { parseProbe("") }
@@ -464,9 +554,10 @@ private fun runProbe(): String {
     val process = ProcessBuilder(
         "powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
         "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded,
-    ).redirectErrorStream(true).start()
+    ).start()
     val text = process.inputStream.bufferedReader(Charsets.UTF_8).readText()
-    if (process.waitFor() != 0) error(text.ifBlank { "Couldn't see the current installation" })
+    val err = process.errorStream.bufferedReader(Charsets.UTF_8).readText()
+    if (process.waitFor() != 0) error(err.ifBlank { text }.ifBlank { "Couldn't see the current installation" })
     return text
 }
 

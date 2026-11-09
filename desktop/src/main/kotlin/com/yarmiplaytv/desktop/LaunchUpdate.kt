@@ -28,7 +28,9 @@ import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
 import java.awt.geom.Path2D
 import java.awt.geom.RoundRectangle2D
+import java.awt.image.AbstractMultiResolutionImage
 import java.awt.image.BufferedImage
+import java.util.concurrent.ConcurrentHashMap
 import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JButton
@@ -41,6 +43,7 @@ import javax.swing.SwingUtilities
 import javax.swing.Timer
 import javax.swing.WindowConstants
 import javax.swing.border.EmptyBorder
+import kotlin.math.roundToInt
 
 /** What [updateBeforeLaunch] decided. */
 internal sealed interface LaunchUpdate {
@@ -170,7 +173,7 @@ internal class LaunchUpdateWindow : LaunchUpdateUi {
             addWindowListener(object : WindowAdapter() {
                 override fun windowClosing(e: WindowEvent) = skip()
             })
-            iconImages = listOf(16, 32, 48, 64, 128).map(::logoImage)
+            iconImages = windowIcons()
             contentPane = card
             rootPane.registerKeyboardAction({ skip() }, KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
             rootPane.defaultButton = null
@@ -213,34 +216,119 @@ internal class LaunchUpdateWindow : LaunchUpdateUi {
             return "Version $version · $progress"
         }
 
-        /** The app's logo on its dark rounded square, [size] pixels wide. */
-        fun logoImage(size: Int): BufferedImage {
-            val stream = LaunchUpdateWindow::class.java.getResourceAsStream("/icon.png")
-            if (stream != null) {
-                return runCatching {
-                    stream.use {
-                        val master = javax.imageio.ImageIO.read(it)
-                        val image = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
-                        val g = image.createGraphics()
-                        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
-                        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
-                        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-                        g.drawImage(master, 0, 0, size, size, null)
-                        g.dispose()
-                        image
-                    }
-                }.getOrNull() ?: fallbackLogoImage(size)
-            }
-            return fallbackLogoImage(size)
+        private val masterLogo: BufferedImage? by lazy {
+            runCatching {
+                LaunchUpdateWindow::class.java.getResourceAsStream("/icon.png")?.use(javax.imageio.ImageIO::read)
+            }.getOrNull()
         }
 
-        private fun fallbackLogoImage(size: Int): BufferedImage = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB).also { image ->
-            val g = image.createGraphics()
+        private val logoCache = ConcurrentHashMap<Int, BufferedImage>()
+
+        /** Standard Windows/desktop window and taskbar icon sizes across 100%–300% DPI scales. */
+        val WINDOW_ICON_SIZES = listOf(16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
+
+        /** Multi-size icon list suitable for [JFrame.setIconImages] across all DPI scales. */
+        fun windowIcons(): List<BufferedImage> = WINDOW_ICON_SIZES.map(::logoImage)
+
+        /**
+         * The app's logo on its dark rounded square, [size] pixels wide.
+         * Uses progressive multi-step bicubic downscaling from the 1024×1024 `/icon.png` master
+         * so small sizes (16–156 px) remain razor-sharp without single-pass downsampling aliasing.
+         */
+        fun logoImage(size: Int): BufferedImage {
+            val target = size.coerceAtLeast(1)
+            return logoCache.computeIfAbsent(target) { px ->
+                val master = masterLogo
+                if (master != null) {
+                    scaleHighQuality(master, px)
+                } else {
+                    fallbackLogoImage(px)
+                }
+            }
+        }
+
+        /**
+         * Progressive multi-step halving with bicubic interpolation.
+         * Downscaling a 1024×1024 image directly to 52×52 in a single Java2D `drawImage` pass only
+         * samples a 2×2/4×4 neighborhood per output pixel, causing severe stair-step aliasing on diagonal
+         * edges. Halving iteratively until within 2× of [targetSize] acts as a box/bicubic mipmap pyramid.
+         */
+        internal fun scaleHighQuality(source: BufferedImage, targetSize: Int): BufferedImage {
+            val target = targetSize.coerceAtLeast(1)
+            var current = source
+            var w = source.width
+            var h = source.height
+            if (w == target && h == target && current.type == BufferedImage.TYPE_INT_ARGB) {
+                return current
+            }
+            while (w > target * 2 || h > target * 2) {
+                w = maxOf(target, w / 2)
+                h = maxOf(target, h / 2)
+                val step = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+                val g = step.createGraphics()
+                try {
+                    g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+                    g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                    g.drawImage(current, 0, 0, w, h, null)
+                } finally {
+                    g.dispose()
+                }
+                current = step
+            }
+            val out = BufferedImage(target, target, BufferedImage.TYPE_INT_ARGB)
+            val g = out.createGraphics()
             try {
-                paintLogo(g, size)
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+                g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+                g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                g.drawImage(current, 0, 0, target, target, null)
             } finally {
                 g.dispose()
             }
+            return out
+        }
+
+        /**
+         * DPI-aware [AbstractMultiResolutionImage] backed by the 1024×1024 master icon so Swing/Java2D
+         * automatically selects and renders the exact physical-pixel resolution on 100%–300% HiDPI displays
+         * instead of upscaling a 1× (52×52) bitmap.
+         */
+        fun multiResLogo(baseSize: Int = 52): java.awt.Image = object : AbstractMultiResolutionImage() {
+            private val base = logoImage(baseSize)
+
+            override fun getBaseImage(): java.awt.Image = base
+
+            override fun getResolutionVariant(destImageWidth: Double, destImageHeight: Double): java.awt.Image {
+                val targetPx = maxOf(destImageWidth.roundToInt(), destImageHeight.roundToInt(), baseSize)
+                    .coerceIn(1, 1024)
+                return logoImage(targetPx)
+            }
+
+            override fun getResolutionVariants(): List<java.awt.Image> =
+                listOf(baseSize, (baseSize * 1.25).roundToInt(), (baseSize * 1.5).roundToInt(), baseSize * 2, baseSize * 3, 256)
+                    .distinct()
+                    .sorted()
+                    .map(::logoImage)
+        }
+
+        /**
+         * Creates a DPI-aware Swing component that renders the app logo at native physical device pixels
+         * on any Windows DPI scale (100%–300%).
+         */
+        fun logoComponent(size: Int = 52): JComponent = LogoIcon(size)
+
+        private fun fallbackLogoImage(size: Int): BufferedImage {
+            val masterSize = maxOf(size * 4, 256)
+            val master = BufferedImage(masterSize, masterSize, BufferedImage.TYPE_INT_ARGB).also { image ->
+                val g = image.createGraphics()
+                try {
+                    paintLogo(g, masterSize)
+                } finally {
+                    g.dispose()
+                }
+            }
+            return scaleHighQuality(master, size)
         }
 
         /** The play prism from packaging/app_icon.png, used only when that file is not on the classpath. */
@@ -317,15 +405,25 @@ internal class LaunchUpdateWindow : LaunchUpdateUi {
         }
     }
 
-    private class LogoIcon(private val size: Int) : JComponent() {
+    internal class LogoIcon(private val size: Int) : JComponent() {
+        private val multiRes = multiResLogo(size)
+
         init {
             preferredSize = Dimension(size, size)
+            minimumSize = Dimension(size, size)
+            maximumSize = Dimension(size, size)
+            isOpaque = false
         }
 
         override fun paintComponent(g: Graphics) {
             val g2 = g.create() as Graphics2D
             try {
-                g2.drawImage(logoImage(size), 0, 0, null)
+                g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+                g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                val w = if (width > 0) width else size
+                val h = if (height > 0) height else size
+                g2.drawImage(multiRes, 0, 0, w, h, null)
             } finally {
                 g2.dispose()
             }

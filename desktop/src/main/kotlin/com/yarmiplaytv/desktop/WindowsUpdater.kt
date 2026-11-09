@@ -107,13 +107,20 @@ internal fun psRelaunch(launcher: File, args: List<String>, version: String): St
  * and drops quotes, which splits an install folder such as `C:\Users\Dor Farhi\...`.
  * `$ok` is not set here. The caller sets it from `$code`.
  */
-internal fun psStartWait(file: String, argumentsExpr: String): String = buildString {
+internal fun psStartWait(file: String, argumentsExpr: String, elevateIfNeededDir: String? = null): String = buildString {
     append("\$p = \$null; \$stage = 'launch'; \$code = -1; \$detail = ''; \$ok = \$false; ")
     append("try { ")
     append("\$psi = New-Object System.Diagnostics.ProcessStartInfo; ")
     append("\$psi.FileName = ${psQuoted(file)}; ")
     append("\$psi.Arguments = $argumentsExpr; ")
     append("\$psi.UseShellExecute = \$true; ")
+    if (!elevateIfNeededDir.isNullOrBlank()) {
+        val quotedDir = psQuoted(elevateIfNeededDir)
+        append("if (Test-Path -LiteralPath $quotedDir) { ")
+        append("try { \$probe = Join-Path $quotedDir ('.yptv-write-' + [guid]::NewGuid()); [IO.File]::WriteAllText(\$probe, ''); Remove-Item -LiteralPath \$probe -Force -ErrorAction SilentlyContinue } ")
+        append("catch { \$psi.Verb = 'runas' } ")
+        append("}; ")
+    }
     append("\$p = [System.Diagnostics.Process]::Start(\$psi); ")
     append("if (\$null -eq \$p) { \$code = -2; \$detail = 'the installer returned no process' } ")
     append("else { \$p.WaitForExit(); ")
@@ -171,23 +178,31 @@ internal class WindowsUpdater(
      * Arguments are a PowerShell array so a path with spaces stays one argument. Relaunch is [psRelaunch],
      * after the installer exits, so the new copy is what starts.
      */
-    internal fun exeScript(exe: File, pids: List<Long>, relaunch: Boolean): String = buildString {
-        val setupArgs = windowsCommandLine(listOf("--silent", "--dir", launcher.parentFile?.path.orEmpty()))
+    internal fun exeScript(
+        exe: File,
+        pids: List<Long>,
+        relaunch: Boolean,
+        home: String = System.getProperty("user.home").orEmpty(),
+        env: (String) -> String? = System::getenv,
+    ): String = buildString {
+        val targetDir = resolveWindowsInstallDir(launcher, home = home, env = env)
+        val relaunchExe = if (isSafeWindowsInstallDir(launcher.parentFile, home, env)) launcher else File(targetDir, launcher.name.ifBlank { "YarmiplayTV.exe" })
+        val setupArgs = windowsCommandLine(listOf("--silent", "--dir", targetDir.path))
         val status = updateStatusFile().path
         append(psWaitForAppExit(pids))
         append("Unblock-File -LiteralPath ${psQuoted(exe.path)} -ErrorAction SilentlyContinue; ")
         append("Remove-Item -LiteralPath ${psQuoted(status)} -Force -ErrorAction SilentlyContinue; ")
-        append(psStartWait(exe.path, psQuoted(setupArgs)))
+        append(psStartWait(exe.path, psQuoted(setupArgs), elevateIfNeededDir = targetDir.path))
         append("if (\$code -in -2, -3) { \$stage = 'launch' } else { \$stage = 'install' }; ")
         // 3010: installed, Windows wants a restart for something else. Anything else is not success.
         append("\$ok = \$code -in 0, 3010; ")
         append("if (-not \$ok -and (Test-Path -LiteralPath ${psQuoted(status)})) { ")
-        append("\$fromSetup = ((Get-Content -LiteralPath ${psQuoted(status)} -Raw -ErrorAction SilentlyContinue) + '').Trim(); ")
+        append("\$fromSetup = ((Get-Content -LiteralPath ${psQuoted(status)} -Encoding UTF8 -Raw -ErrorAction SilentlyContinue) + '').Trim(); ")
         append("if (\$fromSetup) { \$detail = \$fromSetup } ")
         append("}; ")
         append("if (-not \$ok -and -not \$detail) { \$detail = \"exit code \$code\" }; ")
         append("Remove-Item -LiteralPath ${psQuoted(exe.path)} -ErrorAction SilentlyContinue; ")
-        append(if (relaunch) psRelaunch(launcher, args, version.orEmpty()) else psWriteOutcome(version.orEmpty()))
+        append(if (relaunch) psRelaunch(relaunchExe, args, version.orEmpty()) else psWriteOutcome(version.orEmpty()))
     }
 
     internal fun msiScript(msi: File, pids: List<Long>, relaunch: Boolean): String = buildString {

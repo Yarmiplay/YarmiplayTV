@@ -24,6 +24,10 @@ internal class PortableUpdater(
 
     override fun installAfterExit(relaunch: Boolean) {
         val zip = zip ?: throw UpdateFailedException("launch", "the downloaded archive is missing")
+        val targetDir = launcher.parentFile ?: launcher.absoluteFile.parentFile
+        if (!isSafePortableDir(targetDir)) {
+            throw UpdateFailedException("replace", "Couldn't replace files in ${targetDir?.path ?: launcher.path}: unsafe portable folder")
+        }
         runDetachedPowerShell(script(zip, launcher, args, version.orEmpty(), appProcessIds(launcher), relaunch))
     }
 

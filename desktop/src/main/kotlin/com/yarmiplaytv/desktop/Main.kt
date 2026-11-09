@@ -8,6 +8,8 @@ fun main(args: Array<String>) {
     // Dark macOS title bars, like the app (Windows: useTitleBarTheme); the app sets the saved theme's before its first
     // window. Read when AWT starts, so it goes before any window.
     System.setProperty("apple.awt.application.appearance", "NSAppearanceNameDarkAqua")
+    System.setProperty("sun.java2d.dpiaware", "true")
+    System.setProperty("sun.java2d.uiScale.enabled", "true")
     val list = args.toList()
     when {
         "--setup" in list -> enterWindowsSetup(list)

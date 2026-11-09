@@ -23,13 +23,36 @@ class LaunchUpdateWindowTest {
 
     @Test
     fun theLogoIsDrawnAtEverySizeTheTaskbarAsksFor() {
-        for (size in listOf(16, 32, 64, 128)) {
+        for (size in LaunchUpdateWindow.WINDOW_ICON_SIZES + listOf(52, 65, 78, 104, 156)) {
             val image = LaunchUpdateWindow.logoImage(size)
             assertEquals(size, image.width)
+            assertEquals(size, image.height)
             // The blue triangle is there, the corner is see-through.
             val blue = image.getRGB(size * 40 / 108, size / 2)
             assertTrue("blue at $size px", (blue and 0xFF) > 0xC0 && (blue shr 24 and 0xFF) == 0xFF)
             assertEquals(0, image.getRGB(0, 0) ushr 24)
+        }
+    }
+
+    @Test
+    fun multiResLogoAndComponentProvideNativeHiDpiVariantsUpTo300Percent() {
+        val multiRes = LaunchUpdateWindow.multiResLogo(52) as java.awt.image.MultiResolutionImage
+        // 100% (52px), 125% (65px), 150% (78px), 200% (104px), 300% (156px)
+        for ((scale, expectedPx) in listOf(1.0 to 52, 1.25 to 65, 1.5 to 78, 2.0 to 104, 3.0 to 156)) {
+            val variant = multiRes.getResolutionVariant(52.0 * scale, 52.0 * scale)
+            assertEquals("native pixel width at ${scale}x DPI", expectedPx, variant.getWidth(null))
+            assertEquals("native pixel height at ${scale}x DPI", expectedPx, variant.getHeight(null))
+
+            // Render the logo component onto a scaled HiDPI Graphics2D surface
+            val canvas = java.awt.image.BufferedImage(expectedPx, expectedPx, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+            val g2 = canvas.createGraphics()
+            g2.scale(scale, scale)
+            val comp = LaunchUpdateWindow.logoComponent(52)
+            comp.setSize(52, 52)
+            comp.paint(g2)
+            g2.dispose()
+            val center = canvas.getRGB(expectedPx * 40 / 108, expectedPx / 2)
+            assertTrue("rendered HiDPI logo at ${scale}x is opaque blue", (center and 0xFF) > 0xC0 && (center ushr 24) == 0xFF)
         }
     }
 

@@ -52,7 +52,7 @@ class WindowsSetupUi {
         }
         val header = JPanel(BorderLayout(16, 0)).apply {
             isOpaque = false
-            add(JLabel(javax.swing.ImageIcon(LaunchUpdateWindow.logoImage(52))), BorderLayout.WEST)
+            add(LaunchUpdateWindow.logoComponent(52), BorderLayout.WEST)
             add(text, BorderLayout.CENTER)
         }
         val card = Card().apply {
@@ -66,7 +66,7 @@ class WindowsSetupUi {
             isUndecorated = true
             if (translucencySupported()) background = Color(0, 0, 0, 0)
             defaultCloseOperation = WindowConstants.DO_NOTHING_ON_CLOSE
-            iconImages = listOf(16, 32, 48, 64).map(LaunchUpdateWindow::logoImage)
+            iconImages = LaunchUpdateWindow.windowIcons()
             contentPane = card
             val drag = object : java.awt.event.MouseAdapter() {
                 private var from: java.awt.Point? = null
@@ -187,9 +187,47 @@ object WindowsSetupArgs {
     fun isUninstall(args: Array<String>): Boolean =
         args.any { it.equals("--uninstall", true) }
 
+    private val KNOWN_FLAGS = setOf(
+        "--setup", "--silent", "/s", "/silent", "/quiet", "/qn", "--relaunch", "--uninstall", "--dir",
+    )
+
+    private fun isFlagToken(token: String): Boolean {
+        val t = token.trim()
+        if (KNOWN_FLAGS.any { it.equals(t, ignoreCase = true) }) return true
+        if (t.startsWith("--") && !t.contains('\\') && !t.contains('/')) return true
+        return false
+    }
+
+    /**
+     * Extracts the target install directory from `--dir <path>` or `--dir=<path>`.
+     * Also reconstructs paths that were split at spaces by unquoted PowerShell `Start-Process -ArgumentList`
+     * in older updaters (e.g. `["--dir", "C:\\Users\\Dor", "Farhi\\AppData\\Local\\YarmiplayTV"]`).
+     */
     fun installDir(args: Array<String>): String? {
-        val i = args.indexOfFirst { it.equals("--dir", true) }
-        return if (i >= 0 && i + 1 < args.size) args[i + 1] else null
+        for (i in args.indices) {
+            val arg = args[i]
+            if (arg.equals("--dir", ignoreCase = true)) {
+                val parts = mutableListOf<String>()
+                var j = i + 1
+                while (j < args.size && !isFlagToken(args[j])) {
+                    parts += args[j]
+                    j++
+                }
+                val joined = parts.joinToString(" ").trim().trim('"').trim()
+                return joined.ifEmpty { null }
+            }
+            if (arg.startsWith("--dir=", ignoreCase = true)) {
+                val parts = mutableListOf(arg.substring("--dir=".length))
+                var j = i + 1
+                while (j < args.size && !isFlagToken(args[j])) {
+                    parts += args[j]
+                    j++
+                }
+                val joined = parts.joinToString(" ").trim().trim('"').trim()
+                return joined.ifEmpty { null }
+            }
+        }
+        return null
     }
 }
 

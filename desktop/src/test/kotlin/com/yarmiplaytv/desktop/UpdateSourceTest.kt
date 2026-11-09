@@ -300,4 +300,92 @@ class UpdateSourceTest {
         assertTrue(portable.contains("LiteralPath"))
         assertTrue(portable.contains("the archive has no YarmiplayTV.exe"))
     }
+
+    @Test
+    fun `path resolution handles per-user, per-machine, non-ASCII, OneDrive, colons, and unsafe user profile`() {
+        val localAppData = "C:\\Users\\דור פרחי\\AppData\\Local"
+        val dorEnv: (String) -> String? = { key ->
+            when (key) {
+                "LOCALAPPDATA" -> "C:\\Users\\Dor\\AppData\\Local"
+                "USERPROFILE" -> "C:\\Users\\Dor"
+                "ProgramFiles" -> "C:\\Program Files"
+                "ProgramFiles(x86)" -> "C:\\Program Files (x86)"
+                else -> null
+            }
+        }
+
+        // User profile root is never accepted as an install dir; falls back to %LOCALAPPDATA%\YarmiplayTV
+        val fromProfile = resolveWindowsInstallDir(
+            launcher = File("C:\\Users\\Dor\\YarmiplayTV.exe"),
+            appImageDir = File("C:\\Users\\Dor"),
+            registryDir = null,
+            home = "C:\\Users\\Dor",
+            env = dorEnv,
+        )
+        assertEquals("C:/Users/Dor/AppData/Local/YarmiplayTV", fromProfile.path.replace('\\', '/'))
+
+        // Corrupted path with multiple colons is rejected; falls back to registry or LocalAppData
+        val fromCorrupted = resolveWindowsInstallDir(
+            launcher = File("C:\\Users\\Dor: C:\\Users\\Dor\\app\\YarmiplayTV.exe"),
+            appImageDir = File("C:\\Users\\Dor: C:\\Users\\Dor\\app"),
+            registryDir = File("C:\\Program Files\\YarmiplayTV"),
+            home = "C:\\Users\\Dor",
+            env = dorEnv,
+        )
+        assertEquals("C:/Program Files/YarmiplayTV", fromCorrupted.path.replace('\\', '/'))
+
+        // Per-machine install in Program Files is preserved and recognized as per-machine
+        val perMachine = resolveWindowsInstallDir(
+            launcher = File("C:\\Program Files\\YarmiplayTV\\YarmiplayTV.exe"),
+            appImageDir = File("C:\\Program Files\\YarmiplayTV"),
+            registryDir = null,
+            home = "C:\\Users\\Dor",
+            env = dorEnv,
+        )
+        assertEquals("C:/Program Files/YarmiplayTV", perMachine.path.replace('\\', '/'))
+        assertTrue(isPerMachineInstallDir(perMachine, env = dorEnv))
+        assertFalse(isSafePortableDir(perMachine, home = "C:\\Users\\Dor", env = dorEnv))
+
+        // Non-ASCII and OneDrive-redirected subfolder is accepted, while OneDrive root/Documents root is rejected
+        val hebrewHome = "C:\\Users\\דור פרחי"
+        val hebrewEnv: (String) -> String? = { key ->
+            when (key) {
+                "USERPROFILE" -> hebrewHome
+                "OneDrive" -> "$hebrewHome\\OneDrive"
+                else -> null
+            }
+        }
+        val oneDriveApp = File("$hebrewHome\\OneDrive\\Documenten\\YarmiplayTV")
+        assertTrue(isSafeWindowsInstallDir(oneDriveApp, home = hebrewHome, env = hebrewEnv))
+        assertTrue(isSafePortableDir(oneDriveApp, home = hebrewHome, env = hebrewEnv))
+        assertFalse(isSafeWindowsInstallDir(File("$hebrewHome\\OneDrive"), home = hebrewHome, env = hebrewEnv))
+        assertFalse(isSafeWindowsInstallDir(File("$hebrewHome\\OneDrive\\Documenten"), home = hebrewHome, env = hebrewEnv))
+
+        // Running app image resolves from java.home (<installDir>/runtime) when jpackage.app-path is missing or in user profile
+        val fakeInstall = tmp.newFolder("YarmiplayTV-install")
+        val fakeExe = File(fakeInstall, "YarmiplayTV.exe").apply { writeText("exe") }
+        val fakeRuntime = File(fakeInstall, "runtime").apply { mkdirs() }
+        val resolvedLauncher = resolveInstalledLauncher(
+            osName = "Windows 11",
+            appPath = "C:\\Users\\Dor\\YarmiplayTV.exe",
+            javaHome = fakeRuntime.path,
+            classPath = null,
+            processCommand = null,
+            home = "C:\\Users\\Dor",
+            env = dorEnv,
+        )
+        assertEquals(fakeExe.absolutePath.replace('\\', '/'), resolvedLauncher?.path?.replace('\\', '/'))
+
+        // When a portable marker exists in an unsafe or per-machine folder, it falls back to the proper setup.exe installer
+        val unsafePortableLauncher = File("C:\\Program Files\\YarmiplayTV\\YarmiplayTV.exe")
+        assertEquals(InstallKind.MSI, kind("Windows 11", env = dorEnv, launcher = unsafePortableLauncher, portable = true))
+        val unsafeSource = updateSource(InstallKind.PORTABLE, unsafePortableLauncher) as UpdateSource.DownloadPage
+        assertEquals("windows", unsafeSource.platform)
+        assertTrue(unsafeSource.installer is WindowsUpdater)
+
+        // Command-line building with non-ASCII, spaces, quotes, and backslashes
+        val nonAsciiDir = "$localAppData\\YarmiplayTV"
+        val cmd = windowsCommandLine(listOf("--silent", "--dir", nonAsciiDir))
+        assertEquals("--silent --dir \"$nonAsciiDir\"", cmd)
+    }
 }

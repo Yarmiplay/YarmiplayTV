@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
@@ -10,8 +11,12 @@ using System.Windows.Forms;
 class SetupStub {
     const string Magic = "YPTVZIP1";
 
+    [DllImport("user32.dll")]
+    static extern bool SetProcessDPIAware();
+
     [STAThread]
     static int Main() {
+        try { SetProcessDPIAware(); } catch (Exception) { }
         try {
             return Run();
         } catch (Exception ex) {

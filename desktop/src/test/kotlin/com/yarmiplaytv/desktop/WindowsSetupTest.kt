@@ -170,4 +170,111 @@ class WindowsSetupTest {
             file.delete()
         }
     }
+
+    @Test
+    fun `installDir reconstructs paths split at spaces and rejects user profile or colon-corrupted paths`() {
+        // Pre-2.9.8 PowerShell Start-Process -ArgumentList split unquoted paths at spaces
+        val splitArgs = arrayOf("--setup", "--silent", "--dir", "C:\\Users\\Dor", "Farhi\\AppData\\Local\\YarmiplayTV", "--relaunch")
+        assertEquals(
+            "C:\\Users\\Dor Farhi\\AppData\\Local\\YarmiplayTV",
+            WindowsSetupArgs.installDir(splitArgs),
+        )
+
+        // Equals syntax with spaces
+        val eqArgs = arrayOf("--silent", "--dir=C:\\Users\\Dor", "Ben", "David\\AppData\\Local\\YarmiplayTV")
+        assertEquals(
+            "C:\\Users\\Dor Ben David\\AppData\\Local\\YarmiplayTV",
+            WindowsSetupArgs.installDir(eqArgs),
+        )
+
+        // When --dir was truncated to the user profile (C:\Users\Dor), choicesFor rejects it and falls back to discovered/default
+        val defaultDir = File("C:/Users/Dor/AppData/Local/YarmiplayTV")
+        val truncatedChoices = choicesFor(
+            empty,
+            arrayOf("--silent", "--dir", "C:\\Users\\Dor"),
+            defaultDir,
+            unattended = true,
+        )
+        assertEquals("C:/Users/Dor/AppData/Local/YarmiplayTV", slash(truncatedChoices.directory))
+
+        // When --dir has an error message or second path concatenated with a colon, choicesFor rejects it
+        val colonChoices = choicesFor(
+            empty,
+            arrayOf("--silent", "--dir", "C:\\Users\\Dor: C:\\Users\\Dor\\app\\.jpackage.xml"),
+            defaultDir,
+            unattended = true,
+        )
+        assertEquals("C:/Users/Dor/AppData/Local/YarmiplayTV", slash(colonChoices.directory))
+    }
+
+    @Test
+    fun `probe falls back to shortcut target when registry InstallLocation is missing or points to user profile`() {
+        val probe = parseProbe(
+            """
+            desktop=C:\Users\Dor\OneDrive\Desktop
+            programs=C:\Users\Dor\AppData\Roaming\Microsoft\Windows\Start Menu\Programs
+            local=C:\Users\Dor\AppData\Local
+            desktopLnk=1
+            startLnk=1
+            ours=C:\Users\Dor
+            lnkDir=C:\Program Files\YarmiplayTV
+            msi={AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}	
+            assoc=1
+            """.trimIndent(),
+        )
+        assertEquals("C:/Program Files/YarmiplayTV", slash(probe.discovered.directory!!))
+        assertFalse("ours was invalid so managedByUs is false", probe.discovered.managedByUs)
+        assertTrue(probe.discovered.desktopShortcut)
+        assertTrue(probe.discovered.startMenuShortcut)
+        assertTrue(probe.discovered.videoFiles)
+    }
+
+    @Test
+    fun `assertInstallable rejects user profile, container folders, and colon-corrupted paths`() {
+        val source = tmp.newFolder("image-src")
+        File(source, "YarmiplayTV.exe").writeText("exe")
+
+        val badTargets = listOf(
+            File("C:/Users/Dor"),
+            File("C:/Users/Dor/AppData"),
+            File("C:/Users/Dor/AppData/Local"),
+            File("C:/Users/Dor/OneDrive"),
+            File("C:/Users/Dor/OneDrive/Documenten"),
+            File("C:/Program Files"),
+            File("C:/Program Files (x86)"),
+            File("C:/Windows"),
+            File("C:/Users/Dor: C:/Users/Dor/app/.jpackage.xml"),
+        )
+        for (bad in badTargets) {
+            assertThrows("expected $bad to be rejected", IllegalStateException::class.java) {
+                assertInstallable(source, bad)
+            }
+        }
+
+        // Valid per-user, per-machine, non-ASCII, and OneDrive subfolder targets are accepted
+        val goodTargets = listOf(
+            File("C:/Users/Dor/AppData/Local/YarmiplayTV"),
+            File("C:/Users/Dor Farhi/AppData/Local/YarmiplayTV"),
+            File("C:/Users/דור פרחי/AppData/Local/YarmiplayTV"),
+            File("C:/Program Files/YarmiplayTV"),
+            File("C:/Users/Dor/OneDrive/Documenten/YarmiplayTV"),
+        )
+        for (good in goodTargets) {
+            assertInstallable(source, good)
+        }
+    }
+
+    @Test
+    fun `formatReplaceFailure strips duplicate destination prefix from FileNotFoundException message`() {
+        val dest = File("C:\\Users\\Dor\\AppData\\Local\\YarmiplayTV")
+        val ex = java.io.FileNotFoundException(
+            "C:\\Users\\Dor\\AppData\\Local\\YarmiplayTV\\app\\.jpackage.xml (The system cannot find the path specified)",
+        )
+        val formatted = formatReplaceFailure(dest, ex)
+        assertEquals(
+            "Couldn't replace files in ${dest.path}: app\\.jpackage.xml (The system cannot find the path specified)",
+            formatted.replace('/', '\\'),
+        )
+        assertFalse("destination path must not appear twice with a colon", formatted.contains("${dest.path}: ${dest.path}"))
+    }
 }
