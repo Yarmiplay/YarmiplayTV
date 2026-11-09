@@ -64,7 +64,7 @@ jobs:
           YARMIPLAYTV_APK_KEYSTORE_PASSWORD: ${{ secrets.YARMIPLAYTV_APK_KEYSTORE_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew --stacktrace :syncplay-protocol:test :media-source:test :shared:desktopTest :app:testDebugUnitTest :app:assembleDebug
+          ./gradlew --stacktrace :syncplay-protocol:test :media-source:test :voice-media:test :shared:desktopTest :app:testDebugUnitTest :app:assembleDebug
 
       # Play's Device and Network Abuse policy: the Play build (release) updates only through Google Play. It mustn't
       # ask to install apps or look at the download page, and the download page's APK (debug) doesn't carry Play's library.

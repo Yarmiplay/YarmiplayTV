@@ -11,9 +11,10 @@ package com.yarmiplaytv.voice
  *
  * - [Client::SetNoiseCancellation] (Krisp) cannot be turned on. The SDK would disable WebRTC
  *   noise suppression when Krisp enables; we refuse Krisp and leave suppression as the user set it.
- * - [Client::SetInputVolume] is a percentage in `[0, 100]` (100 = full). The in-app mic slider
- *   also goes to 200%. That extra boost is not applied on the Discord path, because the SDK has
- *   nowhere to put it and a digital 2× gain clips.
+ * - [Client::SetInputVolume] is recorded as a percentage in `[0, 100]` (100 = full). The in-app
+ *   mic slider goes to 200%. This build has no native SDK, so the digital capture path applies
+ *   that boost; the one playback limiter keeps it from hard-clipping. The recorded SDK percent
+ *   stays capped at 100, which is what `SetInputVolume` would receive.
  * - [Client::SetOutputVolume] and [Call::SetParticipantVolume] are percentages in `[0, 200]`,
  *   100 = unity. The SDK calls this "perceptual loudness" but does not publish a curve, so the
  *   percentage is applied as linear amplitude (`percent / 100`), which matches the SDK's own
@@ -70,9 +71,47 @@ object DiscordSdkAudio {
      */
     fun playbackSharesVideoStream(isTv: Boolean): Boolean = isTv
 
+    /**
+     * Phones with no headset and no user-picked output play lobby voice on the loudspeaker.
+     * Voice-call usage otherwise stays on the earpiece, which is barely audible when the
+     * phone is not against the ear. TV keeps the media stream.
+     */
+    fun playbackUsesBuiltInSpeaker(
+        isTv: Boolean,
+        userSelectedOutput: Boolean,
+        externalOutputConnected: Boolean,
+    ): Boolean = !isTv && !userSelectedOutput && !externalOutputConnected
+
+    /**
+     * Volume step to use for the voice-call stream.
+     *
+     * Android's minimum for that stream is 1, not 0. Treating any `current > 0` as audible
+     * left the stream at step 1 of about 7, which is effectively silent. Raise anything
+     * below the target up to at least 80% of max, or the media slider's fraction of max,
+     * whichever is higher. Never lower a stream the user already set louder.
+     */
+    fun audibleCallStreamVolume(current: Int, maxCall: Int, music: Int, maxMusic: Int): Int {
+        val maxC = maxCall.coerceAtLeast(1)
+        val maxM = maxMusic.coerceAtLeast(1)
+        val musicRatio = (music.coerceAtLeast(0).toFloat() / maxM.toFloat()).coerceIn(0f, 1f)
+        val floor = (maxC * 0.8f).toInt().coerceIn(1, maxC)
+        val matched = (maxC * musicRatio).toInt().coerceIn(0, maxC)
+        val target = maxOf(floor, matched).coerceIn(1, maxC)
+        return if (current >= target) current else target
+    }
+
     /** App mic gain `0–2` → SDK input percent. `1` = 100%. Above `1` clamps to 100. */
     fun inputVolumePercent(appGain: Float): Float =
         (appGain.coerceIn(0f, 1f) / 1f) * INPUT_VOLUME_MAX
+
+    /**
+     * Label for the mic and playback sliders. Unity (gain `1`) is 100%, and `2` is 200%.
+     * Dividing by the slider max made unity look like 50%.
+     */
+    fun voiceGainPercentLabel(gain: Float): String {
+        val rounded = (gain.coerceAtLeast(0f) * 100f + 0.5f).toInt()
+        return "$rounded%"
+    }
 
     /** App output or per-person gain `0–2` → SDK percent. `1` = 100%, `2` = 200%. */
     fun outputVolumePercent(appGain: Float): Float =
