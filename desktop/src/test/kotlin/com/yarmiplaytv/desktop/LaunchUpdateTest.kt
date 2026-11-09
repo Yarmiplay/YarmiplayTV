@@ -130,5 +130,11 @@ class LaunchUpdateTest {
         )
         assertEquals("C:\\a\\b.mkv", windowsCommandLine(listOf("C:\\a\\b.mkv")))
         assertEquals("", windowsCommandLine(emptyList()))
+        val spaced = listOf("--silent", "--dir", "C:\\Users\\Dor Farhi\\AppData\\Local\\YarmiplayTV")
+        assertEquals(spaced, splitWindowsCommandLine(windowsCommandLine(spaced)))
+        assertEquals(
+            listOf("--name", "Living room", "C:\\Videos\\My film.mkv", "C:\\My Clips\\", "say \"hi\"", ""),
+            splitWindowsCommandLine(windowsCommandLine(listOf("--name", "Living room", "C:\\Videos\\My film.mkv", "C:\\My Clips\\", "say \"hi\"", ""))),
+        )
     }
 }

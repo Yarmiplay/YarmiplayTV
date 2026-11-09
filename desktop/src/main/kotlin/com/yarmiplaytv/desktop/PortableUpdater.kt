@@ -24,6 +24,10 @@ internal class PortableUpdater(
 
     override fun installAfterExit(relaunch: Boolean) {
         val zip = zip ?: throw UpdateFailedException("launch", "the downloaded archive is missing")
+        val targetDir = parentDirOf(launcher)
+        if (!isSafePortableDir(targetDir)) {
+            throw UpdateFailedException("replace", "Couldn't replace files in ${targetDir?.path ?: launcher.path}: unsafe portable folder")
+        }
         runDetachedPowerShell(script(zip, launcher, args, version.orEmpty(), appProcessIds(launcher), relaunch))
     }
 
@@ -32,7 +36,9 @@ internal class PortableUpdater(
         val REPLACED = listOf("app", "runtime")
 
         fun script(zip: File, launcher: File, args: List<String>, version: String, pids: List<Long>, relaunch: Boolean): String {
-            val dir = psQuoted(launcher.absoluteFile.parent)
+            // parentDirOf keeps `C:\Users\Dor Farhi\...` one folder even when `\` is not this OS's separator.
+            val folder = parentDirOf(launcher) ?: launcher.absoluteFile.parentFile
+            val dir = psQuoted(folder?.path ?: launcher.parent.orEmpty())
             val exe = psQuoted(launcher.name)
             val replaced = REPLACED.joinToString(",") { psQuoted(it) }
             return buildString {

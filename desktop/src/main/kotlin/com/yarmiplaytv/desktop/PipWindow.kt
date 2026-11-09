@@ -74,6 +74,7 @@ internal fun PipWindow(
         },
     ) {
         val awt = window
+        LaunchedEffect(Unit) { runCatching { awt.iconImages = LaunchUpdateWindow.windowIcons() } }
         fun keepBounds() = onBounds(MiniBounds(awt.x, awt.y, awt.width))
         // Keep the video's shape when it changes (another file).
         LaunchedEffect(aspect.displayAspect) {
