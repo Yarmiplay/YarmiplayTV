@@ -70,6 +70,8 @@ class AndroidVoiceEngine(
     private var audioTrack: AudioTrack? = null
     private var frameSamples: Int = 960
 
+    @Volatile private var inputGain: Float = 1f
+    @Volatile private var outputGain: Float = 1f
     @Volatile private var noiseSuppressionPref = true
     @Volatile private var echoCancellationPref = true
     @Volatile private var autoGainControlPref = true
@@ -268,13 +270,52 @@ class AndroidVoiceEngine(
     override fun capturingSpeech(): Boolean =
         session.get()?.capturingSpeech() == true || (activeDiscord && discordEngine.capturingSpeech())
 
-    /** Hold [AudioRecord] only while we are transmitting; release it when muted / mic off. */
+    override fun setMicTest(active: Boolean) {
+        if (activeDiscord) discordEngine.setMicTest(active)
+        if (active) {
+            val existing = session.get()
+            if (existing != null) {
+                existing.setMicTest(true)
+                rebuildProcessingChain(logChain = false)
+                syncCapture(existing)
+                return
+            }
+            val media = VoiceMediaSession(scope) { _, pcm -> writePlayback(pcm) }
+            media.startStandaloneMicTest()
+            media.setInputGain(inputGainForSession())
+            media.setOutputGain(if (activeDiscord) discordEngine.outputAmplitude() else outputGain)
+            session.set(media)
+            frameSamples = media.frameSamples
+            rebuildProcessingChain(logChain = false)
+            startPlayback(media.frameSamples, media.activeChannels)
+            syncCapture(media)
+        } else {
+            val existing = session.get() ?: return
+            if (existing.isStandaloneLoopback) {
+                disconnectMedia()
+            } else {
+                existing.setMicTest(false)
+                syncCapture(existing)
+            }
+        }
+    }
+
+    override fun isMicTestActive(): Boolean =
+        session.get()?.isMicTestActive == true || (activeDiscord && discordEngine.isMicTestActive())
+
+    override fun micTestLevel(): Float {
+        val s = session.get()
+        if (s != null && s.isMicTestActive) return s.micTestLevel
+        return if (activeDiscord) discordEngine.micTestLevel() else 0f
+    }
+
+    /** Hold [AudioRecord] only while transmitting or running a mic test. */
     private fun syncCapture(media: VoiceMediaSession?) {
         if (media == null || session.get() !== media) {
             stopCapture()
             return
         }
-        if (media.isTransmitting()) {
+        if (media.shouldCaptureAudio()) {
             if (captureJob?.isActive != true) startCapture(media)
         } else {
             stopCapture()
@@ -292,16 +333,18 @@ class AndroidVoiceEngine(
     }
 
     override fun setInputGain(gain: Float) {
+        inputGain = gain
         discordEngine.setInputGain(gain)
-        if (activeDiscord) {
-            // SDK input is 0–100%. The 200% slider stop is not applied (it clips).
-            session.get()?.setInputGain(discordEngine.inputAmplitude())
-        } else {
-            session.get()?.setInputGain(gain)
-        }
+        // The SDK record stays 0–100%. The digital slider still reaches 200%;
+        // the one playback limiter absorbs the boost.
+        session.get()?.setInputGain(inputGainForSession())
     }
 
+    private fun inputGainForSession(): Float =
+        if (activeDiscord) inputGain.coerceIn(0f, 2f) else inputGain
+
     override fun setOutputGain(gain: Float) {
+        outputGain = gain
         discordEngine.setOutputGain(gain)
         if (activeDiscord) {
             session.get()?.setOutputGain(discordEngine.outputAmplitude())
@@ -695,6 +738,8 @@ class AndroidVoiceEngine(
         if (agc && AutomaticGainControl.isAvailable()) {
             platformAgc = runCatching { AutomaticGainControl.create(sessionId)?.also { it.enabled = true } }.getOrNull()
         }
+        // Platform AGC is the one auto-gain stage. Fixed capture makeup stays off while it is attached.
+        session.get()?.setAgcStageActive(platformAgc != null)
         android.util.Log.i(
             TAG,
             "platform effects ns=${platformNs != null} aec=${platformAec != null} agc=${platformAgc != null} (${chain.logLine()})",
@@ -708,6 +753,7 @@ class AndroidVoiceEngine(
         platformNs = null
         platformAec = null
         platformAgc = null
+        session.get()?.setAgcStageActive(false)
     }
 
     private fun enterCommunicationMode() {

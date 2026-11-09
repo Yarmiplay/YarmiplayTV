@@ -2,110 +2,103 @@ package com.yarmiplaytv.voice
 
 import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
-import javax.sound.sampled.BooleanControl
-import javax.sound.sampled.CompoundControl
-import javax.sound.sampled.Control
 import javax.sound.sampled.DataLine
 import javax.sound.sampled.Mixer
 import javax.sound.sampled.SourceDataLine
 import javax.sound.sampled.TargetDataLine
+import kotlin.math.roundToInt
 
-/** A Java Sound mixer that can capture or play 48 kHz PCM. */
+/** A Java Sound mixer that can capture or play PCM16 voice audio. */
 data class JvmAudioDevice(val id: String, val label: String)
 
 /**
- * Java Sound mic/speaker enumeration for desktop (Windows, Linux, macOS).
- * IDs are mixer names from [AudioSystem.getMixerInfo]; empty id is the system default.
+ * Low-latency desktop mic/speaker enumeration and line opener (Windows WASAPI/DirectAudio,
+ * macOS CoreAudio, Linux PipeWire/PulseAudio/ALSA).
+ *
+ * - Prefers 48 kHz mono PCM16 so devices that support 48 kHz run with zero resampling.
+ * - Falls back to 44.1 kHz / 32 kHz / 96 kHz / 16 kHz when hardware is locked to a non-48 kHz clock
+ *   (caller resamples once via [StreamingResampler]).
+ * - Requests a 2-frame (~40 ms) hardware buffer for low mouth-to-ear latency, falling back to
+ *   4 frames (~80 ms) or the driver default if a device rejects small buffers.
  */
 object JvmVoiceDevices {
     val pcm48Mono: AudioFormat = AudioFormat(48_000f, 16, 1, true, false)
-    val pcm48Stereo: AudioFormat = AudioFormat(48_000f, 16, 2, true, false)
+    val preferredRates: IntArray = intArrayOf(48_000, 44_100, 32_000, 96_000, 16_000)
+
+    /** Target low-latency line buffer in 20 ms frame multiples (2 frames = 40 ms). */
+    const val LOW_LATENCY_BUFFER_FRAMES = 2
+    const val FALLBACK_BUFFER_FRAMES = 4
+
+    fun formatForRate(sampleRate: Int, channels: Int = 1): AudioFormat =
+        AudioFormat(sampleRate.toFloat(), 16, channels, true, false)
 
     fun listInputs(): List<JvmAudioDevice> = listMixers(target = true)
 
     fun listOutputs(): List<JvmAudioDevice> = listMixers(target = false)
 
     fun openCapture(deviceId: String?, frameSamples: Int): TargetDataLine? =
-        openCapture(deviceId, frameSamples, channels = 1)
+        openPcmLine(deviceId, frameSamples, target = true) as? TargetDataLine
 
-    fun openCapture(deviceId: String?, frameSamples: Int, channels: Int): TargetDataLine? {
-        if (channels >= 2) {
-            openCaptureFormat(deviceId, frameSamples, pcm48Stereo)?.let { return it }
-        }
-        return openCaptureFormat(deviceId, frameSamples, pcm48Mono)
-    }
-
-    private fun openCaptureFormat(deviceId: String?, frameSamples: Int, format: AudioFormat): TargetDataLine? {
-        val info = DataLine.Info(TargetDataLine::class.java, format)
-        val line = openLine(deviceId, info, target = true) as? TargetDataLine ?: return null
-        return runCatching {
-            val ch = format.channels.coerceAtLeast(1)
-            line.open(format, frameSamples * ch * 2 * 8)
-            disableDriverProcessingControls(line)
-            line.start()
-            line
-        }.getOrElse {
-            runCatching { line.close() }
-            null
-        }
-    }
+    fun openCapture(deviceId: String?, frameSamples: Int, channels: Int): TargetDataLine? =
+        openPcmLine(deviceId, frameSamples, target = true, channels = channels) as? TargetDataLine
 
     fun openPlayback(deviceId: String?, frameSamples: Int): SourceDataLine? =
-        openPlayback(deviceId, frameSamples, channels = 1)
+        openPcmLine(deviceId, frameSamples, target = false) as? SourceDataLine
 
-    fun openPlayback(deviceId: String?, frameSamples: Int, channels: Int): SourceDataLine? {
-        if (channels >= 2) {
-            openPlaybackFormat(deviceId, frameSamples, pcm48Stereo)?.let { return it }
-        }
-        return openPlaybackFormat(deviceId, frameSamples, pcm48Mono)
-    }
-
-    private fun openPlaybackFormat(deviceId: String?, frameSamples: Int, format: AudioFormat): SourceDataLine? {
-        val info = DataLine.Info(SourceDataLine::class.java, format)
-        val line = openLine(deviceId, info, target = false) as? SourceDataLine ?: return null
-        return runCatching {
-            val ch = format.channels.coerceAtLeast(1)
-            line.open(format, frameSamples * ch * 2 * 8)
-            line.start()
-            line
-        }.getOrElse {
-            runCatching { line.close() }
-            null
-        }
-    }
+    fun openPlayback(deviceId: String?, frameSamples: Int, channels: Int): SourceDataLine? =
+        openPcmLine(deviceId, frameSamples, target = false, channels = channels) as? SourceDataLine
 
     /**
-     * Best-effort check to disable any driver/mixer-exposed noise suppression, echo cancellation,
-     * or automatic gain boolean controls on the capture line so they cannot stack with our chain.
+     * A Java Sound line cannot be reopened after [DataLine.close]. Each buffer size therefore
+     * gets a fresh line, so a rejected 40 ms buffer still falls through to 80 ms and the
+     * driver default instead of failing the device.
      */
-    internal fun disableDriverProcessingControls(line: TargetDataLine) {
-        val controls = runCatching { line.controls }.getOrNull() ?: return
-        for (control in controls) {
-            disableDriverControlRecursive(control)
-        }
-    }
-
-    private fun disableDriverControlRecursive(control: Control) {
-        when (control) {
-            is CompoundControl -> {
-                for (member in runCatching { control.memberControls }.getOrNull().orEmpty()) {
-                    disableDriverControlRecursive(member)
+    private fun openPcmLine(
+        deviceId: String?,
+        frameSamples: Int,
+        target: Boolean,
+        channels: Int = 1,
+    ): Any? {
+        val ch = channels.coerceIn(1, 2)
+        for (rate in preferredRates) {
+            val format = formatForRate(rate, ch)
+            val frameBytes = frameSamplesAtRate(rate, frameSamples) * 2 * ch
+            val buffers = intArrayOf(
+                frameBytes * LOW_LATENCY_BUFFER_FRAMES,
+                frameBytes * FALLBACK_BUFFER_FRAMES,
+                0, // driver default
+            )
+            for (bufBytes in buffers) {
+                val info = if (target) {
+                    DataLine.Info(TargetDataLine::class.java, format)
+                } else {
+                    DataLine.Info(SourceDataLine::class.java, format)
+                }
+                val line = openLine(deviceId, info, target) ?: continue
+                val opened = runCatching {
+                    when (line) {
+                        is TargetDataLine -> {
+                            if (bufBytes > 0) line.open(format, bufBytes) else line.open(format)
+                            line.start()
+                        }
+                        is SourceDataLine -> {
+                            if (bufBytes > 0) line.open(format, bufBytes) else line.open(format)
+                            line.start()
+                        }
+                        else -> return@runCatching false
+                    }
+                    true
+                }.getOrDefault(false)
+                if (opened) return line
+                runCatching {
+                    when (line) {
+                        is TargetDataLine -> line.close()
+                        is SourceDataLine -> line.close()
+                    }
                 }
             }
-            is BooleanControl -> {
-                val name = control.type?.toString()?.lowercase().orEmpty()
-                if (
-                    name.contains("noise") ||
-                    name.contains("suppress") ||
-                    name.contains("echo") ||
-                    name.contains("aec") ||
-                    name.contains("agc") ||
-                    name.contains("automatic gain")
-                ) {
-                    runCatching { control.value = false }
-                }
-            }
         }
+        return null
     }
 
     /** True when [deviceId] is still present (empty/null always counts as available). */
@@ -127,19 +120,35 @@ object JvmVoiceDevices {
     }
 
     private fun mixersSupporting(target: Boolean): List<Mixer.Info> {
-        val format = pcm48Mono
-        val want = if (target) {
-            DataLine.Info(TargetDataLine::class.java, format)
-        } else {
-            DataLine.Info(SourceDataLine::class.java, format)
-        }
         return AudioSystem.getMixerInfo().filter { mi ->
             val mixer = runCatching { AudioSystem.getMixer(mi) }.getOrNull() ?: return@filter false
-            runCatching { mixer.isLineSupported(want) }.getOrDefault(false) ||
-                runCatching {
-                    val lines = if (target) mixer.targetLineInfo else mixer.sourceLineInfo
-                    lines.any { want.matches(it) || it.matches(want) }
-                }.getOrDefault(false)
+            preferredRates.any { rate ->
+                val format = formatForRate(rate)
+                val want = if (target) {
+                    DataLine.Info(TargetDataLine::class.java, format)
+                } else {
+                    DataLine.Info(SourceDataLine::class.java, format)
+                }
+                runCatching { mixer.isLineSupported(want) }.getOrDefault(false) ||
+                    runCatching {
+                        val lines = if (target) mixer.targetLineInfo else mixer.sourceLineInfo
+                        lines.any { want.matches(it) || it.matches(want) }
+                    }.getOrDefault(false)
+            }
+        }.sortedByDescending { lowLatencyMixerPriority(it) }
+    }
+
+    /**
+     * Rank low-latency native audio backends ahead of legacy software mixers when selecting default.
+     */
+    private fun lowLatencyMixerPriority(info: Mixer.Info): Int {
+        val text = "${info.name} ${info.description} ${info.vendor}".lowercase()
+        return when {
+            "java sound audio engine" in text -> -10
+            "port " in text -> -5
+            "wasapi" in text || "coreaudio" in text || "pipewire" in text -> 20
+            "default" in text || "primary" in text || "direct" in text || "pulse" in text -> 10
+            else -> 0
         }
     }
 
@@ -151,10 +160,15 @@ object JvmVoiceDevices {
             val mixer = runCatching { AudioSystem.getMixer(mixerInfo) }.getOrNull() ?: return null
             return runCatching { mixer.getLine(info) }.getOrNull()
         }
+        // Try low-latency ranked mixer first, then AudioSystem fallback.
+        for (mi in mixersSupporting(target)) {
+            val line = runCatching { AudioSystem.getMixer(mi).getLine(info) }.getOrNull()
+            if (line != null) return line
+        }
         return runCatching { AudioSystem.getLine(info) }.getOrNull()
-            ?: runCatching {
-                val mi = mixersSupporting(target).firstOrNull() ?: return null
-                AudioSystem.getMixer(mi).getLine(info)
-            }.getOrNull()
     }
+
+    /** Compute how many samples one 20 ms frame has at [sampleRate]. */
+    fun frameSamplesAtRate(sampleRate: Int, baseFrameSamples48k: Int = 960): Int =
+        ((sampleRate.toDouble() * baseFrameSamples48k) / 48_000.0).roundToInt().coerceAtLeast(160)
 }

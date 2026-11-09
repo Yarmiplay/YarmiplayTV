@@ -194,7 +194,7 @@ internal class WindowsSetupWindow {
         }
         val header = JPanel(BorderLayout(16, 0)).apply {
             isOpaque = false
-            add(JLabel(javax.swing.ImageIcon(LaunchUpdateWindow.logoImage(52))), BorderLayout.WEST)
+            add(LaunchUpdateWindow.logoComponent(52), BorderLayout.WEST)
             add(text, BorderLayout.CENTER)
         }
         bar.isVisible = false
@@ -223,7 +223,7 @@ internal class WindowsSetupWindow {
             isUndecorated = true
             if (roundedWindow()) background = Color(0, 0, 0, 0)
             defaultCloseOperation = WindowConstants.DO_NOTHING_ON_CLOSE
-            iconImages = listOf(16, 32, 48, 64).map(LaunchUpdateWindow::logoImage)
+            iconImages = LaunchUpdateWindow.windowIcons()
             contentPane = card
             rootPane.registerKeyboardAction(
                 { if (!working) closeAction() },

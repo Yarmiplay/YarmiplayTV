@@ -31,6 +31,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.sun.net.httpserver.HttpServer
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.data.desktopSettingsStore
+import com.yarmiplaytv.voice.NullVoiceEngine
+import com.yarmiplaytv.voice.VoiceEngine
 import com.yarmiplaytv.device.FileDeviceKeyStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.ui.mobile.DesktopBack
@@ -60,6 +62,7 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.net.InetSocketAddress
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.imageio.ImageIO
 
 /** Settings on desktop: categories beside the settings on wide windows, and text boxes that keep the caret. */
@@ -70,6 +73,7 @@ class SettingsUiTest {
     private lateinit var main: ExecutorCoroutineDispatcher
     private lateinit var storeScope: CoroutineScope
     private lateinit var app: AppContainer
+    private val opened = mutableListOf<AppContainer>()
     private lateinit var site: HttpServer
     /** The version the fake download page offers. */
     @Volatile private var offered = "1.0"
@@ -89,14 +93,7 @@ class SettingsUiTest {
             start()
         }
         System.setProperty("yarmiplaytv.updateManifest", "http://127.0.0.1:${site.address.port}/version.json")
-        app = AppContainer(
-            settingsStore = desktopSettingsStore(tmp.root, storeScope),
-            deviceName = "desk",
-            appVersion = "1.0",
-            createPlayer = { IdlePlayer() },
-            createLocalLibrary = { s, scope, folders -> FileLocalLibrary(s, scope, folders, watchForChanges = false) },
-            deviceKeys = FileDeviceKeyStore(tmp.newFolder("keys")),
-        )
+        app = container()
         app.updates.platform = "windows"
     }
 
@@ -105,11 +102,24 @@ class SettingsUiTest {
         System.clearProperty("yarmiplaytv.updateManifest")
         if (::site.isInitialized) site.stop(0)
         // Join before resetMain: an update check still on Main races and fails on macOS CI.
-        if (::app.isInitialized) runBlocking { app.scope.coroutineContext.job.cancelAndJoin() }
+        if (::app.isInitialized) {
+            runBlocking { app.scope.coroutineContext.job.cancelAndJoin() }
+            opened.forEach { if (it !== app) runBlocking { it.scope.coroutineContext.job.cancelAndJoin() } }
+        }
         if (::storeScope.isInitialized) runBlocking { storeScope.coroutineContext.job.cancelAndJoin() }
         runCatching { Dispatchers.resetMain() }
         if (::main.isInitialized) main.close()
     }
+
+    private fun container(dir: File = tmp.root, voiceEngine: VoiceEngine = NullVoiceEngine()) = AppContainer(
+        settingsStore = desktopSettingsStore(dir, storeScope),
+        deviceName = "desk",
+        appVersion = "1.0",
+        createPlayer = { IdlePlayer() },
+        createLocalLibrary = { s, scope, folders -> FileLocalLibrary(s, scope, folders, watchForChanges = false) },
+        deviceKeys = FileDeviceKeyStore(File(dir, "keys").apply { mkdirs() }),
+        voiceEngine = voiceEngine,
+    ).also { opened += it }
 
     private fun ComposeUiTest.show(width: Int, height: Int) {
         val lifecycle = object : LifecycleOwner {
@@ -122,6 +132,21 @@ class SettingsUiTest {
             }
         }
         waitForIdle()
+    }
+
+    @Test
+    fun `voice settings start and stop a mic test`() = runComposeUiTest {
+        // The shared settings screen talks to VoiceEngine. A flag engine avoids opening a real device.
+        app = container(tmp.newFolder("mic-settings"), FlagMicEngine())
+        show(1280, 800)
+        onNodeWithTag("settings_category_voice").performClick()
+        onNodeWithTag("voice_mic_test").performScrollTo().assertIsDisplayed().assertTextContains("Start")
+        onNodeWithTag("voice_mic_test").performClick()
+        waitUntil(timeoutMillis = 5_000) { app.voice.micTestActive.value }
+        onNodeWithTag("voice_mic_test").assertTextContains("Stop")
+        onNodeWithTag("voice_mic_test_level", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithTag("voice_mic_test").performClick()
+        waitUntil(timeoutMillis = 5_000) { !app.voice.micTestActive.value }
     }
 
     @Test
@@ -232,4 +257,12 @@ class SettingsUiTest {
         file.parentFile.mkdirs()
         ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", file)
     }
+}
+
+/** Records mic-test on/off without opening a capture device. */
+private class FlagMicEngine : VoiceEngine by NullVoiceEngine() {
+    private val active = AtomicBoolean(false)
+    override fun setMicTest(active: Boolean) { this.active.set(active) }
+    override fun isMicTestActive(): Boolean = active.get()
+    override fun micTestLevel(): Float = if (active.get()) 0.42f else 0f
 }

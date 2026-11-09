@@ -1,8 +1,9 @@
 package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -33,6 +35,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -95,6 +99,7 @@ fun UpdateBanner(container: AppContainer, modifier: Modifier = Modifier) {
 }
 
 /** A failure that happened before a package was known, or after the app was closed. The text can be selected or copied. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun UpdateProblemBanner(message: String, onDismiss: () -> Unit, modifier: Modifier) {
     val clipboard = LocalClipboardManager.current
@@ -113,13 +118,21 @@ private fun UpdateProblemBanner(message: String, onDismiss: () -> Unit, modifier
                 SelectionContainer {
                     Text(message, style = MaterialTheme.typography.bodySmall, color = AppColors.Error, modifier = Modifier.testTag("update_state"))
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton({ clipboard.setText(AnnotatedString(message)) }, Modifier.testTag("update_error_copy")) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    TextButton(
+                        { clipboard.setText(AnnotatedString(message)) },
+                        Modifier.pointerHoverIcon(PointerIcon.Hand).testTag("update_error_copy"),
+                    ) {
                         Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Copy details")
+                        Text("Copy details", maxLines = 1, softWrap = false)
                     }
-                    TextButton(onDismiss) { Text("Not now") }
+                    TextButton(onDismiss, Modifier.pointerHoverIcon(PointerIcon.Hand)) {
+                        Text("Not now", maxLines = 1, softWrap = false)
+                    }
                 }
             }
         }
@@ -127,6 +140,7 @@ private fun UpdateProblemBanner(message: String, onDismiss: () -> Unit, modifier
 }
 
 /** A newer version in the store that installed the app (Google Play): Update there, or not now. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StoreUpdateBanner(container: AppContainer, store: StoreUpdates, modifier: Modifier) {
     val uriHandler = LocalUriHandler.current
@@ -142,9 +156,17 @@ private fun StoreUpdateBanner(container: AppContainer, store: StoreUpdates, modi
                 Spacer(Modifier.width(14.dp))
                 Text("A new version of YarmiplayTV is available in ${store.name}", style = MaterialTheme.typography.titleMedium)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button({ container.updates.updateFromStore(uriHandler::openUri) }, Modifier.testTag("store_update")) { Text("Update") }
-                TextButton(container.updates::dismissStoreUpdate) { Text("Not now") }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Button(
+                    { container.updates.updateFromStore(uriHandler::openUri) },
+                    Modifier.pointerHoverIcon(PointerIcon.Hand).testTag("store_update"),
+                ) { Text("Update", maxLines = 1, softWrap = false) }
+                TextButton(container.updates::dismissStoreUpdate, Modifier.pointerHoverIcon(PointerIcon.Hand)) {
+                    Text("Not now", maxLines = 1, softWrap = false)
+                }
             }
         }
         }
@@ -161,6 +183,7 @@ private fun UpdateProgress(container: AppContainer, s: UpdateState, dismiss: Boo
     key(lifecycleState) { UpdateProgressContent(updates, s, dismiss, canInstall) }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun UpdateProgressContent(updates: Updates, s: UpdateState, dismiss: Boolean, canInstall: Boolean) {
     val uriHandler = LocalUriHandler.current
@@ -175,28 +198,47 @@ private fun UpdateProgressContent(updates: Updates, s: UpdateState, dismiss: Boo
         )
     }
     UpdateProgressBar(s)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
         when {
             s is UpdateState.Installing || s is UpdateState.Downloading -> Unit
-            s is UpdateState.Ready -> Button(updates::restartToInstall, Modifier.testTag("update_install")) { Text(readyButtonLabel(updates)) }
+            s is UpdateState.Ready -> Button(
+                updates::restartToInstall,
+                Modifier.pointerHoverIcon(PointerIcon.Hand).testTag("update_install"),
+            ) { Text(readyButtonLabel(updates), maxLines = 1, softWrap = false) }
             (s is UpdateState.Available || s is UpdateState.Failed) && canInstall ->
-                Button({ updates.download(thenRestart = true) }, Modifier.testTag("update_install")) { Text(if (s is UpdateState.Failed) "Try again" else "Install") }
-            else -> Button({ uriHandler.openUri(s.update.pageUrl) }) { Text("Download page") }
+                Button(
+                    { updates.download(thenRestart = true) },
+                    Modifier.pointerHoverIcon(PointerIcon.Hand).testTag("update_install"),
+                ) { Text(if (s is UpdateState.Failed) "Try again" else "Install", maxLines = 1, softWrap = false) }
+            else -> Button(
+                { uriHandler.openUri(s.update.pageUrl) },
+                Modifier.pointerHoverIcon(PointerIcon.Hand),
+            ) { Text("Download page", maxLines = 1, softWrap = false) }
         }
         if (failed != null) {
             TextButton(
                 { clipboard.setText(AnnotatedString(failed.message)) },
-                Modifier.testTag("update_error_copy"),
+                Modifier.pointerHoverIcon(PointerIcon.Hand).testTag("update_error_copy"),
             ) {
                 Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Copy details")
+                Text("Copy details", maxLines = 1, softWrap = false)
             }
         }
         if (s !is UpdateState.Installing && (dismiss || s is UpdateState.Downloading)) {
-            TextButton({ updates.dismiss(remember = s !is UpdateState.Downloading) }) { Text(if (s is UpdateState.Downloading) "Cancel" else "Not now") }
+            TextButton(
+                { updates.dismiss(remember = s !is UpdateState.Downloading) },
+                Modifier.pointerHoverIcon(PointerIcon.Hand),
+            ) { Text(if (s is UpdateState.Downloading) "Cancel" else "Not now", maxLines = 1, softWrap = false) }
         }
-        TextButton({ uriHandler.openUri(CHANGELOG_URL) }) { Text("Patch notes") }
+        TextButton(
+            { uriHandler.openUri(CHANGELOG_URL) },
+            Modifier.pointerHoverIcon(PointerIcon.Hand),
+        ) { Text("Patch notes", maxLines = 1, softWrap = false) }
     }
 }
 

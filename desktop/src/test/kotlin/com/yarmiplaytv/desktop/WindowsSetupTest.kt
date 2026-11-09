@@ -139,6 +139,21 @@ class WindowsSetupTest {
         assertTrue(script.contains("DisplayVersion"))
         assertTrue(script.contains("2.7.4"))
         assertTrue(script.contains("Remove-Item"))
+        val spacedExe = File("C:/Users/Dor Farhi/AppData/Local/YarmiplayTV/YarmiplayTV.exe")
+        val spacedDir = spacedExe.parentFile
+        val spaced = installScript(
+            spacedExe,
+            spacedDir,
+            "3.0.0",
+            10,
+            SetupChoices(spacedDir, true, true, true, false),
+            File("C:/Users/Dor Farhi/Desktop/YarmiplayTV.lnk"),
+            File("C:/Users/Dor Farhi/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/YarmiplayTV/YarmiplayTV.lnk"),
+        )
+        assertTrue(spaced.contains(psQuoted(spacedExe.absolutePath)))
+        assertTrue(spaced.contains(psQuoted(spacedDir.absolutePath)))
+        assertTrue(spaced.contains(psQuoted("\"${spacedExe.absolutePath}\" \"%1\"")))
+        assertTrue(spaced.contains(psQuoted("\"${spacedExe.absolutePath}\" --setup --uninstall")))
         val removal = removalScript(desktop, start)
         assertTrue(removal.contains("Uninstall\\YarmiplayTV") || removal.contains("Uninstall\\\\YarmiplayTV") || removal.contains("YarmiplayTV"))
         assertFalse(removal.contains("Set-Link"))
@@ -169,5 +184,164 @@ class WindowsSetupTest {
             assertEquals("parse errors in:\n$script\n$out", "0", out)
             file.delete()
         }
+    }
+
+    /**
+     * 2.9.9's updater is what starts the 3.0.0 setup.exe. It builds one CommandLineToArgvW-quoted
+     * line (`--silent --dir "C:\Users\Dor Farhi\AppData\Local\YarmiplayTV"`) and passes it with
+     * `UseShellExecute = $true`. ShellExecuteEx drops those quotes, so the process receives the
+     * path split on the space. The setup stub re-quotes each token and the installer has to join
+     * them back. A token list that stops at the profile root must not be used as the install folder.
+     */
+    @Test
+    fun `a 2_9_9 shell-execute update into a profile path with spaces installs in that folder`() {
+        val install = "C:\\Users\\Dor Farhi\\AppData\\Local\\YarmiplayTV"
+        val quoted = windowsCommandLine(listOf("--silent", "--dir", install))
+        assertEquals("--silent --dir \"$install\"", quoted)
+
+        // What 2.9.9 actually hands the process: the same line with the quotes removed.
+        val received = splitWindowsCommandLine(quoted.replace("\"", ""))
+        assertEquals(listOf("--silent", "--dir", "C:\\Users\\Dor", "Farhi\\AppData\\Local\\YarmiplayTV"), received)
+
+        // SetupStub.ChildArguments quotes every token again, then the JVM parses that line.
+        val forwarded = splitWindowsCommandLine(received.joinToString(" ") { token ->
+            if (token.none { it == ' ' || it == '\t' || it == '"' }) token else "\"$token\""
+        })
+        val argv = arrayOf("--setup", *forwarded.toTypedArray())
+        assertEquals(install, WindowsSetupArgs.installDir(argv))
+
+        val home = "C:\\Users\\Dor Farhi"
+        val localAppData = "C:\\Users\\Dor Farhi\\AppData\\Local"
+        val choices = choicesFor(
+            empty,
+            argv,
+            File(localAppData, "YarmiplayTV"),
+            unattended = true,
+            home = home,
+            env = { key -> if (key == "USERPROFILE") home else if (key == "LOCALAPPDATA") localAppData else null },
+        )
+        assertEquals(install.replace('\\', '/'), choices.directory.path.replace('\\', '/'))
+        assertTrue(isSafeWindowsInstallDir(choices.directory, home) { key ->
+            if (key == "USERPROFILE") home else if (key == "LOCALAPPDATA") localAppData else null
+        })
+
+        // If the leftover token never arrives, the truncated profile root is rejected and the
+        // default per-user folder (the same YarmiplayTV directory) is used instead.
+        val truncated = choicesFor(
+            empty,
+            arrayOf("--silent", "--dir", "C:\\Users\\Dor"),
+            File(localAppData, "YarmiplayTV"),
+            unattended = true,
+            home = home,
+            env = { key -> if (key == "USERPROFILE") home else if (key == "LOCALAPPDATA") localAppData else null },
+        )
+        assertEquals(install.replace('\\', '/'), truncated.directory.path.replace('\\', '/'))
+    }
+
+    @Test
+    fun `installDir reconstructs paths split at spaces and rejects user profile or colon-corrupted paths`() {
+        // Pre-2.9.8 PowerShell Start-Process -ArgumentList split unquoted paths at spaces
+        val splitArgs = arrayOf("--setup", "--silent", "--dir", "C:\\Users\\Dor", "Farhi\\AppData\\Local\\YarmiplayTV", "--relaunch")
+        assertEquals(
+            "C:\\Users\\Dor Farhi\\AppData\\Local\\YarmiplayTV",
+            WindowsSetupArgs.installDir(splitArgs),
+        )
+
+        // Equals syntax with spaces
+        val eqArgs = arrayOf("--silent", "--dir=C:\\Users\\Dor", "Ben", "David\\AppData\\Local\\YarmiplayTV")
+        assertEquals(
+            "C:\\Users\\Dor Ben David\\AppData\\Local\\YarmiplayTV",
+            WindowsSetupArgs.installDir(eqArgs),
+        )
+
+        // When --dir was truncated to the user profile (C:\Users\Dor), choicesFor rejects it and falls back to discovered/default
+        val defaultDir = File("C:/Users/Dor/AppData/Local/YarmiplayTV")
+        val truncatedChoices = choicesFor(
+            empty,
+            arrayOf("--silent", "--dir", "C:\\Users\\Dor"),
+            defaultDir,
+            unattended = true,
+        )
+        assertEquals("C:/Users/Dor/AppData/Local/YarmiplayTV", slash(truncatedChoices.directory))
+
+        // When --dir has an error message or second path concatenated with a colon, choicesFor rejects it
+        val colonChoices = choicesFor(
+            empty,
+            arrayOf("--silent", "--dir", "C:\\Users\\Dor: C:\\Users\\Dor\\app\\.jpackage.xml"),
+            defaultDir,
+            unattended = true,
+        )
+        assertEquals("C:/Users/Dor/AppData/Local/YarmiplayTV", slash(colonChoices.directory))
+    }
+
+    @Test
+    fun `probe falls back to shortcut target when registry InstallLocation is missing or points to user profile`() {
+        val probe = parseProbe(
+            """
+            desktop=C:\Users\Dor\OneDrive\Desktop
+            programs=C:\Users\Dor\AppData\Roaming\Microsoft\Windows\Start Menu\Programs
+            local=C:\Users\Dor\AppData\Local
+            desktopLnk=1
+            startLnk=1
+            ours=C:\Users\Dor
+            lnkDir=C:\Program Files\YarmiplayTV
+            msi={AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}	
+            assoc=1
+            """.trimIndent(),
+        )
+        assertEquals("C:/Program Files/YarmiplayTV", slash(probe.discovered.directory!!))
+        assertFalse("ours was invalid so managedByUs is false", probe.discovered.managedByUs)
+        assertTrue(probe.discovered.desktopShortcut)
+        assertTrue(probe.discovered.startMenuShortcut)
+        assertTrue(probe.discovered.videoFiles)
+    }
+
+    @Test
+    fun `assertInstallable rejects user profile, container folders, and colon-corrupted paths`() {
+        val source = tmp.newFolder("image-src")
+        File(source, "YarmiplayTV.exe").writeText("exe")
+
+        val badTargets = listOf(
+            File("C:/Users/Dor"),
+            File("C:/Users/Dor/AppData"),
+            File("C:/Users/Dor/AppData/Local"),
+            File("C:/Users/Dor/OneDrive"),
+            File("C:/Users/Dor/OneDrive/Documenten"),
+            File("C:/Program Files"),
+            File("C:/Program Files (x86)"),
+            File("C:/Windows"),
+            File("C:/Users/Dor: C:/Users/Dor/app/.jpackage.xml"),
+        )
+        for (bad in badTargets) {
+            assertThrows("expected $bad to be rejected", IllegalStateException::class.java) {
+                assertInstallable(source, bad)
+            }
+        }
+
+        // Valid per-user, per-machine, non-ASCII, and OneDrive subfolder targets are accepted
+        val goodTargets = listOf(
+            File("C:/Users/Dor/AppData/Local/YarmiplayTV"),
+            File("C:/Users/Dor Farhi/AppData/Local/YarmiplayTV"),
+            File("C:/Users/דור פרחי/AppData/Local/YarmiplayTV"),
+            File("C:/Program Files/YarmiplayTV"),
+            File("C:/Users/Dor/OneDrive/Documenten/YarmiplayTV"),
+        )
+        for (good in goodTargets) {
+            assertInstallable(source, good)
+        }
+    }
+
+    @Test
+    fun `formatReplaceFailure strips duplicate destination prefix from FileNotFoundException message`() {
+        val dest = File("C:\\Users\\Dor\\AppData\\Local\\YarmiplayTV")
+        val ex = java.io.FileNotFoundException(
+            "C:\\Users\\Dor\\AppData\\Local\\YarmiplayTV\\app\\.jpackage.xml (The system cannot find the path specified)",
+        )
+        val formatted = formatReplaceFailure(dest, ex)
+        assertEquals(
+            "Couldn't replace files in ${dest.path}: app\\.jpackage.xml (The system cannot find the path specified)",
+            formatted.replace('/', '\\'),
+        )
+        assertFalse("destination path must not appear twice with a colon", formatted.contains("${dest.path}: ${dest.path}"))
     }
 }

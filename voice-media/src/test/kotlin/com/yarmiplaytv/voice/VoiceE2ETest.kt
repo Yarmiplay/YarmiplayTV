@@ -39,7 +39,9 @@ import org.junit.Test
 /**
  * Live voice e2e against YarmiplayServerTV 2.0 with voice on.
  *
- * Requires SYNCPLAY_TEST_SERVER=host:port (e.g. 127.0.0.1:18999).
+ * Requires SYNCPLAY_TEST_SERVER=host:port (e.g. 127.0.0.1:18999) pointing at a
+ * Yarmiplay server that advertises a voice session. Stock Syncplay (what CI
+ * starts for the protocol tests) skips this class instead of timing out.
  * Optional VOICE_CONTROL=http://127.0.0.1:28999 for server toggle tests.
  */
 class VoiceE2ETest {
@@ -53,6 +55,10 @@ class VoiceE2ETest {
     @Before
     fun setUp() {
         assumeTrue("SYNCPLAY_TEST_SERVER not set", server.isNotBlank())
+        assumeTrue(
+            "SYNCPLAY_TEST_SERVER is not YarmiplayServerTV with voice",
+            serverOffersVoice(),
+        )
         if (control.isNotBlank()) {
             httpGet("$control/control/vanilla/off")
             httpGet("$control/control/voice/on")
@@ -343,6 +349,39 @@ class VoiceE2ETest {
         eventually("bob still hears after device probe") {
             bobMedia.decodedAudio && bobMedia.lastRemoteRms > 50.0
         }
+    }
+
+    /**
+     * One short hello per JVM. CI sets [SYNCPLAY_TEST_SERVER] to stock Syncplay,
+     * which never opens a Yarmiplay session, so the suite skips instead of
+     * burning the 20s `eventually` timeout on every test.
+     */
+    private fun serverOffersVoice(): Boolean {
+        val cached = voiceOffered.get()
+        if (cached >= 0) return cached == 1
+        val probe = connectClient("voice-probe")
+        val offers = runBlocking {
+            val deadline = System.currentTimeMillis() + 5_000
+            var voice = false
+            while (System.currentTimeMillis() < deadline) {
+                val state = probe.state.value
+                if (state.status == ConnectionStatus.CONNECTED && state.yarmiplay.session) {
+                    voice = state.yarmiplay.voiceAvailable
+                    break
+                }
+                delay(50)
+            }
+            voice
+        }
+        probe.close()
+        clients.remove(probe)
+        voiceOffered.compareAndSet(-1, if (offers) 1 else 0)
+        return voiceOffered.get() == 1
+    }
+
+    private companion object {
+        /** -1 unknown, 0 stock Syncplay, 1 Yarmiplay voice session. */
+        val voiceOffered = java.util.concurrent.atomic.AtomicInteger(-1)
     }
 
     private fun host(): String = server.substringBefore(':')

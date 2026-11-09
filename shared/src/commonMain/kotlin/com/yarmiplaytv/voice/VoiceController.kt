@@ -50,6 +50,14 @@ class VoiceController(
     /** 0…1 post-NS mic level for the activity ring; 0 when muted / not transmitting. */
     val captureLevel: StateFlow<Float> = _captureLevel.asStateFlow()
 
+    private val _micTestActive = MutableStateFlow(false)
+    /** True while local mic loopback test is running in Voice settings. */
+    val micTestActive: StateFlow<Boolean> = _micTestActive.asStateFlow()
+
+    private val _micTestLevel = MutableStateFlow(0f)
+    /** 0…1 post-encode/decode loopback level for the Voice settings Mic test meter. */
+    val micTestLevel: StateFlow<Float> = _micTestLevel.asStateFlow()
+
     private val settings = MutableStateFlow(AppSettings())
     private var connectJob: Job? = null
     private var retryJob: Job? = null
@@ -82,8 +90,12 @@ class VoiceController(
         scope.launch {
             var lastReportedSpeech: Boolean? = null
             while (isActive) {
+                val testing = engine.isMicTestActive()
+                if (testing != _micTestActive.value) _micTestActive.value = testing
+                val testLvl = if (testing) engine.micTestLevel() else 0f
+                if (testLvl != _micTestLevel.value) _micTestLevel.value = testLvl
                 val ui = _ui.value
-                val live = ui.micControlLive() && !ui.selfMuted
+                val live = ui.micControlLive() && !ui.selfMuted && !testing
                 val next = if (live) engine.captureLevel() else 0f
                 if (next != _captureLevel.value) _captureLevel.value = next
                 val notice = engine.statusNotice()
@@ -99,7 +111,7 @@ class VoiceController(
                             .map { it.username.ifBlank { it.participantId } }
                         _ui.update { it.copy(speakingIds = heard, receivingNames = names) }
                     }
-                    val speech = engine.capturingSpeech()
+                    val speech = if (testing) false else engine.capturingSpeech()
                     if (speech != lastReportedSpeech) {
                         lastReportedSpeech = speech
                         sync.client?.sendVoiceActivity(speech)
@@ -225,6 +237,39 @@ class VoiceController(
 
     fun setOutputDeviceId(id: String) {
         scope.launch { settingsStore.saveVoiceOutputDeviceId(id) }
+    }
+
+    /**
+     * Start local microphone loopback test through the exact send chain (input gain -> noise
+     * suppression -> Opus encode -> Opus decode -> look-ahead limiter) without transmitting to
+     * the lobby or room.
+     */
+    fun startMicTest() {
+        withMicPermission {
+            val s = settings.value
+            engine.setInputGain(s.voiceInputGain)
+            engine.setOutputGain(s.voiceOutputGain)
+            engine.setNoiseSuppression(s.voiceNoiseSuppression)
+            engine.setInputDeviceId(s.voiceInputDeviceId.ifEmpty { null })
+            engine.setOutputDeviceId(s.voiceOutputDeviceId.ifEmpty { null })
+            engine.setMicTest(true)
+            _micTestActive.value = engine.isMicTestActive()
+        }
+    }
+
+    /** Stop local microphone loopback test and restore normal room transmit state if connected. */
+    fun stopMicTest() {
+        engine.setMicTest(false)
+        _micTestActive.value = false
+        _micTestLevel.value = 0f
+    }
+
+    fun toggleMicTest() {
+        if (_micTestActive.value || engine.isMicTestActive()) {
+            stopMicTest()
+        } else {
+            startMicTest()
+        }
     }
 
     fun setSelfMuted(muted: Boolean) {
@@ -829,6 +874,8 @@ class VoiceController(
         awaitingReplace = false
         sync.client?.voiceMux()?.setOnPacket(null)
         engine.disconnect()
+        _micTestActive.value = false
+        _micTestLevel.value = 0f
         lastPeers = emptyList()
         pttHeld = false
         talkLatched = false

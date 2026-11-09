@@ -28,6 +28,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,7 +90,7 @@ private fun ReleaseNoteCard(note: ReleaseNote, current: Boolean) {
 
 /** "What's new in 1.8.5", once after an update; opening or closing it doesn't show it again. */
 @Composable
-fun WhatsNewCard(container: AppContainer, nav: Navigator, modifier: Modifier = Modifier) {
+fun WhatsNewCard(container: AppContainer, nav: Navigator, modifier: Modifier = Modifier, desktop: Boolean = false) {
     val settings by container.settings.collectAsStateWithLifecycle()
     val version = WhatsNew.cardVersion(settings.lastSeenVersion, container.appVersion) ?: return
     val note = ReleaseNotes.of(version) ?: return
@@ -96,7 +98,7 @@ fun WhatsNewCard(container: AppContainer, nav: Navigator, modifier: Modifier = M
     // The card's own click, so hovering and pressing highlight it within its rounded corners.
     Card(
         onClick = { seen(); nav.push(Screen.WhatsNew) },
-        modifier = modifier.testTag("whats_new_card"),
+        modifier = modifier.pointerHoverIcon(PointerIcon.Hand).testTag("whats_new_card"),
         colors = CardDefaults.cardColors(containerColor = AppColors.Surface, contentColor = AppColors.OnSurface),
         shape = RoundedCornerShape(16.dp),
     ) {
@@ -106,9 +108,17 @@ fun WhatsNewCard(container: AppContainer, nav: Navigator, modifier: Modifier = M
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
                 Text("What's new in $version", style = MaterialTheme.typography.titleMedium)
-                Text(note.paragraphs.firstOrNull().orEmpty(), color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    note.paragraphs.firstOrNull().orEmpty(),
+                    color = AppColors.TextDim,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = if (desktop) Int.MAX_VALUE else 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            IconButton({ seen() }, Modifier.testTag("whats_new_dismiss")) { Icon(Icons.Filled.Close, "Hide", tint = AppColors.TextDim) }
+            IconButton({ seen() }, Modifier.pointerHoverIcon(PointerIcon.Hand).testTag("whats_new_dismiss")) {
+                Icon(Icons.Filled.Close, "Hide", tint = AppColors.TextDim)
+            }
         }
         }
     }

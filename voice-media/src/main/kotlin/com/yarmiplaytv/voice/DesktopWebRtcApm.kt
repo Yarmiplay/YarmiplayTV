@@ -12,8 +12,9 @@ import dev.onvoid.webrtc.media.audio.AudioProcessingStreamConfig
  * and processes 20 ms capture frames ([processCaptureFrame20ms]) in two 10 ms (480-sample/ch) chunks
  * at 48 kHz.
  *
- * HARD RULE: one AEC (AEC3), one AGC (AGC2 adaptive digital; AGC1 stays off), and at most one noise
- * suppressor. AGC2's built-in limiter is the only limiter in this stage. When AI noise suppression
+ * HARD RULE: one AEC (AEC3), one AGC (AGC2 adaptive digital; AGC1 and its limiter stay off), and
+ * at most one noise suppressor. AGC2's capture limiter cannot be switched off separately in
+ * webrtc-java; the playback mix uses [VoiceLimiter] once. When AI noise suppression
  * (DeepFilterNet) is active, [noiseSuppression] MUST be passed as `false`.
  */
 class DesktopWebRtcApm(
@@ -109,8 +110,8 @@ class DesktopWebRtcApm(
             cfg.echoCanceller.enabled = aec
             cfg.echoCanceller.enforceHighPassFiltering = true
 
-            // AGC1 (legacy) stays off. Enabling it together with AGC2 runs two gain stages and
-            // two limiters. AGC2 adaptive digital is the single AGC; its limiter is the only one.
+            // AGC1 (legacy) stays off, including its limiter. AGC2 adaptive digital is the single
+            // capture AGC. The playback mix limiter is VoiceLimiter, not a second AGC.
             cfg.gainController.enabled = false
             cfg.gainController.enableLimiter = false
             cfg.gainController.analogGainController.enabled = false

@@ -30,7 +30,9 @@ class DiscordVoiceEngine(
     private val transmitting = AtomicBoolean(false)
     private val selfMuted = AtomicBoolean(false)
     private val localSpeaking = AtomicBoolean(false)
+    private val micTesting = AtomicBoolean(false)
     private val micLevel = AtomicReference(0.0f)
+    private val testLevel = AtomicReference(0.0f)
     private val activeSpeakers = AtomicReference<Set<String>>(emptySet())
     private val peerMutes = ConcurrentHashMap<String, Boolean>()
     private val configLock = Any()
@@ -83,7 +85,9 @@ class DiscordVoiceEngine(
         transmitting.set(false)
         selfMuted.set(false)
         localSpeaking.set(false)
+        micTesting.set(false)
         micLevel.set(0.0f)
+        testLevel.set(0.0f)
         activeSpeakers.set(emptySet())
         currentParams = null
         update { it.copy(selfMute = false, selfDeaf = false, pttActive = false) }
@@ -218,8 +222,18 @@ class DiscordVoiceEngine(
     }
 
     override fun capturingSpeech(): Boolean {
+        if (micTesting.get()) return false
         return transmitting.get() && !selfMuted.get() && !config.selfDeaf && localSpeaking.get()
     }
+
+    override fun setMicTest(active: Boolean) {
+        micTesting.set(active)
+        if (!active) testLevel.set(0.0f)
+    }
+
+    override fun isMicTestActive(): Boolean = micTesting.get()
+
+    override fun micTestLevel(): Float = if (micTesting.get()) testLevel.get() else 0f
 
     /** Forwards a remote speaking callback. Production audio uses the capture/playback mix. */
     fun onUserSpeaking(userId: String, speaking: Boolean) {
@@ -230,6 +244,11 @@ class DiscordVoiceEngine(
 
     /** Forwards local speech. [level] is 0–1 before the SDK input cap. */
     fun onLocalSpeaking(speaking: Boolean, level: Float = if (speaking) 0.5f else 0.0f) {
+        if (micTesting.get()) {
+            localSpeaking.set(false)
+            testLevel.set(if (speaking) (level * inputAmplitude()).coerceIn(0f, 1f) else 0.0f)
+            return
+        }
         val audible = speaking && transmitting.get() && !selfMuted.get() && !config.selfDeaf
         localSpeaking.set(audible)
         micLevel.set(if (audible) (level * inputAmplitude()).coerceIn(0f, 1f) else 0.0f)

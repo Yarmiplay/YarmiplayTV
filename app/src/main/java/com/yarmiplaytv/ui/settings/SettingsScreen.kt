@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -88,6 +89,7 @@ import com.yarmiplaytv.ui.theme.THEME_NOTE
 import com.yarmiplaytv.update.UpdateCheck
 import com.yarmiplaytv.update.UpdateState
 import com.yarmiplaytv.update.openStoreApp
+import com.yarmiplaytv.voice.DiscordSdkAudio
 import com.yarmiplaytv.voice.VoiceAudioDevice
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -203,9 +205,9 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         settings.voiceNoiseSuppression,
                         { container.scope.launch { container.settingsStore.saveVoiceNoiseSuppression(!settings.voiceNoiseSuppression) } },
                         subtitle = if (settings.voiceAiNoiseSuppression && voiceUi.aiFallbackNotice == null) {
-                            "Standard platform noise suppression (replaced while AI noise suppression is on)"
+                            "AI noise suppression replaces the regular suppressor. Echo cancellation and gain each stay one stage. Applies live"
                         } else {
-                            "Cut background noise on your mic. Applies live"
+                            "One noise suppressor on the mic. Echo cancellation and gain control stay one stage each. Applies live"
                         },
                         modifier = Modifier.testTag("toggle_voice_noise_suppression"),
                     )
@@ -277,6 +279,18 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         max = 2f,
                         Modifier.testTag("voice_output_gain"),
                     ) { container.scope.launch { container.settingsStore.saveVoiceOutputGain(it) } }
+                    val micTest by container.voice.micTestActive.collectAsStateWithLifecycle()
+                    val micLevel by container.voice.micTestLevel.collectAsStateWithLifecycle()
+                    DisposableEffect(Unit) {
+                        onDispose { container.voice.stopMicTest() }
+                    }
+                    ValueRow(
+                        "Mic test",
+                        if (micTest) "Stop ${"%.0f".format(micLevel * 100)}%" else "Start",
+                        { container.voice.toggleMicTest() },
+                        subtitle = "Hear yourself through the voice pipeline. Nothing is sent to the room",
+                        modifier = Modifier.testTag("voice_mic_test"),
+                    )
                     ToggleRow(
                         "Join and leave sounds",
                         settings.voiceJoinLeaveSounds,
@@ -586,7 +600,7 @@ private fun TvVoiceGainRow(
     val current = steps.minByOrNull { kotlin.math.abs(it - value) } ?: value
     ValueRow(
         title,
-        "%.0f%%".format(current / max * 100f),
+        DiscordSdkAudio.voiceGainPercentLabel(current),
         {
             val idx = steps.indexOfFirst { kotlin.math.abs(it - current) < 0.001f }.let { if (it < 0) 0 else it }
             onChange(steps[(idx + 1) % steps.size])

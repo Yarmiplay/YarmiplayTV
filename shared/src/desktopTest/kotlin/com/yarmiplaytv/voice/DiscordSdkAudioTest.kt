@@ -14,7 +14,7 @@ class DiscordSdkAudioTest {
         assertEquals(0f, DiscordSdkAudio.inputVolumePercent(0f), 0.01f)
         assertEquals(100f, DiscordSdkAudio.inputVolumePercent(1f), 0.01f)
         assertEquals(50f, DiscordSdkAudio.inputVolumePercent(0.5f), 0.01f)
-        // The in-app slider goes to 200%. Discord input does not, so the boost is not passed through.
+        // The recorded SDK percent stays at 100. The digital capture path applies the 200% boost.
         assertEquals(100f, DiscordSdkAudio.inputVolumePercent(2f), 0.01f)
         assertEquals(1f, DiscordSdkAudio.amplitudeFromPercent(100f), 0.01f)
         assertEquals(0.5f, DiscordSdkAudio.amplitudeFromPercent(50f), 0.01f)
@@ -26,6 +26,26 @@ class DiscordSdkAudioTest {
         assertEquals(200f, DiscordSdkAudio.outputVolumePercent(4f), 0.01f)
         assertEquals(1.5f, DiscordSdkAudio.amplitudeFromPercent(150f), 0.01f)
         assertEquals(2f, DiscordSdkAudio.amplitudeFromPercent(200f), 0.01f)
+        assertEquals("100%", DiscordSdkAudio.voiceGainPercentLabel(1f))
+        assertEquals("200%", DiscordSdkAudio.voiceGainPercentLabel(2f))
+        assertEquals("50%", DiscordSdkAudio.voiceGainPercentLabel(0.5f))
+        assertEquals("0%", DiscordSdkAudio.voiceGainPercentLabel(0f))
+    }
+
+    @Test
+    fun `call stream at step 1 is raised and the phone speaker is used without a headset`() {
+        // max 7, step 1 was left alone by `current > 0` and is inaudible. 80% of 7 is 5.
+        assertEquals(5, DiscordSdkAudio.audibleCallStreamVolume(current = 1, maxCall = 7, music = 10, maxMusic = 15))
+        assertEquals(5, DiscordSdkAudio.audibleCallStreamVolume(current = 0, maxCall = 7, music = 5, maxMusic = 15))
+        // Already louder than the floor: do not turn the user down.
+        assertEquals(6, DiscordSdkAudio.audibleCallStreamVolume(current = 6, maxCall = 7, music = 1, maxMusic = 15))
+        // Media slider at full raises a call stream that is still below that fraction.
+        assertEquals(7, DiscordSdkAudio.audibleCallStreamVolume(current = 6, maxCall = 7, music = 15, maxMusic = 15))
+
+        assertTrue(DiscordSdkAudio.playbackUsesBuiltInSpeaker(isTv = false, userSelectedOutput = false, externalOutputConnected = false))
+        assertFalse(DiscordSdkAudio.playbackUsesBuiltInSpeaker(isTv = true, userSelectedOutput = false, externalOutputConnected = false))
+        assertFalse(DiscordSdkAudio.playbackUsesBuiltInSpeaker(isTv = false, userSelectedOutput = true, externalOutputConnected = false))
+        assertFalse(DiscordSdkAudio.playbackUsesBuiltInSpeaker(isTv = false, userSelectedOutput = false, externalOutputConnected = true))
     }
 
     @Test

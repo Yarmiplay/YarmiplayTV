@@ -9,6 +9,7 @@ import com.yarmiplaytv.voice.NsBackend
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -100,5 +101,14 @@ class DesktopVoiceEngineTest {
         assertEquals(2, engine.discordAudioConfig().channels)
 
         engine.disconnect()
+    }
+
+    @Test
+    fun wasapiIsNotOpenedOffWindows() {
+        val os = System.getProperty("os.name").orEmpty()
+        if (!os.startsWith("Windows")) {
+            assertNull(WasapiAudio.openRender())
+            assertNull(WasapiAudio.openCapture())
+        }
     }
 }

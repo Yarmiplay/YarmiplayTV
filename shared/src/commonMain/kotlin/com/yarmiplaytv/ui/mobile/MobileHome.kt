@@ -65,6 +65,10 @@ import kotlinx.coroutines.flow.map
 
 @Composable
 fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) {
+    if (kind == DeviceKind.DESKTOP) {
+        DesktopHomeScreen(container, nav)
+        return
+    }
     val room by container.sync.room.collectAsStateWithLifecycle()
     val source by container.mediaSource.collectAsStateWithLifecycle()
     val jellyfin by container.jellyfinServers.collectAsStateWithLifecycle()

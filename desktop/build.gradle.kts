@@ -108,7 +108,7 @@ abstract class GenerateAppIcons : DefaultTask() {
     fun generate() {
         val dir = outputDir.get().asFile.apply { mkdirs() }
         dir.resolve("icon.png").writeBytes(png(512))
-        dir.resolve("icon.ico").writeBytes(ico(listOf(16, 24, 32, 48, 64, 256)))
+        dir.resolve("icon.ico").writeBytes(ico(listOf(16, 20, 24, 32, 40, 48, 64, 96, 128, 256)))
         dir.resolve("icon.icns").writeBytes(
             icns(listOf("icp4" to 16, "icp5" to 32, "icp6" to 64, "ic07" to 128, "ic08" to 256, "ic09" to 512, "ic10" to 1024)),
         )
@@ -152,13 +152,27 @@ abstract class GenerateAppIcons : DefaultTask() {
     private fun render(size: Int): BufferedImage {
         val masterFile = masterIcon.orNull?.asFile
         if (masterFile != null && masterFile.exists()) {
-            val master = ImageIO.read(masterFile)
+            var current = ImageIO.read(masterFile)
+            var w = current.width
+            var h = current.height
+            while (w > size * 2 || h > size * 2) {
+                w = maxOf(size, w / 2)
+                h = maxOf(size, h / 2)
+                val step = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+                val sg = step.createGraphics()
+                sg.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+                sg.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+                sg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                sg.drawImage(current, 0, 0, w, h, null)
+                sg.dispose()
+                current = step
+            }
             val image = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
             val g = image.createGraphics()
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
             g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            g.drawImage(master, 0, 0, size, size, null)
+            g.drawImage(current, 0, 0, size, size, null)
             g.dispose()
             return image
         }
@@ -254,6 +268,10 @@ compose.desktop {
     application {
         mainClass = "com.yarmiplaytv.desktop.MainKt"
         jvmArgs += "-Dyarmiplaytv.version=$appVersion"
+        // Before AWT starts, so the update window is DPI-aware and its icon is drawn at device pixels
+        // instead of Windows bitmap-stretching a 96 DPI frame.
+        jvmArgs += "-Dsun.java2d.dpiaware=true"
+        jvmArgs += "-Dsun.java2d.uiScale.enabled=true"
         // MyAnimeList's Client ID: from ~/.gradle/gradle.properties or the CI secret, never the repository.
         val malClientId = ((findProperty("MAL_CLIENT_ID") as String?) ?: System.getenv("MAL_CLIENT_ID") ?: "").filter { it.isLetterOrDigit() }
         if (malClientId.isNotEmpty()) jvmArgs += "-Dyarmiplaytv.malClientId=$malClientId"
