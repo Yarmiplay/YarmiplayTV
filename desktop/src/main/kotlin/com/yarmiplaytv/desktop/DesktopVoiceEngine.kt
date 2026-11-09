@@ -43,6 +43,10 @@ class DesktopVoiceEngine : VoiceEngine {
     private var captureThread: Thread? = null
     private var captureLine: TargetDataLine? = null
     private var playbackLine: SourceDataLine? = null
+    private var wasapiRender: WasapiRender? = null
+    private var wasapiCapture: WasapiCapture? = null
+    @Volatile private var preferWasapiPlayback = false
+    @Volatile private var wasapiPlaybackFailed = false
     private var inputDeviceId: String? = null
     private var outputDeviceId: String? = null
     private var playbackJob: Job? = null
@@ -201,11 +205,11 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     override fun isMicTestActive(): Boolean =
-        session.get()?.isMicTestActive() == true || (activeDiscord && discordEngine.isMicTestActive())
+        session.get()?.isMicTestActive == true || (activeDiscord && discordEngine.isMicTestActive())
 
     override fun micTestLevel(): Float {
         val s = session.get()
-        if (s != null && s.isMicTestActive()) return s.micTestLevel()
+        if (s != null && s.isMicTestActive) return s.micTestLevel
         return if (activeDiscord) discordEngine.micTestLevel() else 0f
     }
 
@@ -330,6 +334,15 @@ class DesktopVoiceEngine : VoiceEngine {
 
     private fun openPlayback() {
         closePlaybackLine()
+        wasapiPlaybackFailed = false
+        // Default device on Windows: open WASAPI on the playback thread (same COM apartment).
+        // A chosen device, or any non-Windows host, stays on Java Sound (CoreAudio / PipeWire / DirectSound).
+        preferWasapiPlayback = outputDeviceId.isNullOrEmpty() && isWindows
+        if (preferWasapiPlayback) return
+        openJavaSoundPlayback()
+    }
+
+    private fun openJavaSoundPlayback() {
         var id = outputDeviceId
         var line = JvmVoiceDevices.openPlayback(id, frameSamples)
         if (line == null && !id.isNullOrEmpty()) {
@@ -340,9 +353,20 @@ class DesktopVoiceEngine : VoiceEngine {
             line = JvmVoiceDevices.openPlayback(null, frameSamples)
         }
         if (line == null) {
-            println("DesktopVoice playback open failed device=${id ?: "system default"} (need 48 kHz mono PCM)")
+            println("DesktopVoice playback open failed device=${id ?: "system default"} backend=${javaSoundBackend()}")
+        } else {
+            println("DesktopVoice playback backend=${javaSoundBackend()} rate=${line.format.sampleRate}")
         }
         playbackLine = line
+    }
+
+    private fun javaSoundBackend(): String {
+        val os = System.getProperty("os.name").orEmpty()
+        return when {
+            os.startsWith("Mac") -> "CoreAudio"
+            os.startsWith("Windows") -> "DirectSound"
+            else -> "PipeWire/PulseAudio/ALSA"
+        }
     }
 
     private fun startMixPump(media: VoiceMediaSession) {
@@ -353,7 +377,24 @@ class DesktopVoiceEngine : VoiceEngine {
         var resampler: StreamingResampler? = null
         playbackJob = scope.launch(Dispatchers.IO) {
             while (isActive && session.get() === media) {
+                if (preferWasapiPlayback && wasapiRender == null && !wasapiPlaybackFailed) {
+                    wasapiRender = WasapiAudio.openRender()
+                    if (wasapiRender == null) {
+                        wasapiPlaybackFailed = true
+                        preferWasapiPlayback = false
+                        println("DesktopVoice playback backend=JavaSound (WASAPI unavailable)")
+                        openJavaSoundPlayback()
+                    } else {
+                        println("DesktopVoice playback backend=WASAPI shared rate=${wasapiRender?.sampleRate}")
+                    }
+                }
                 val n = media.pollMixedPcm(out)
+                val render = wasapiRender
+                if (n > 0 && render != null) {
+                    val inputPcm = if (n == out.size) out else out.copyOf(n)
+                    runCatching { render.writeMono48k(inputPcm) }
+                    continue
+                }
                 val line = playbackLine
                 if (n > 0 && line != null) {
                     val lineRate = line.format.sampleRate.roundToInt().takeIf { it > 0 } ?: VoicePcm.SAMPLE_RATE
@@ -400,6 +441,32 @@ class DesktopVoiceEngine : VoiceEngine {
         captureThread = thread(name = "voice-capture", isDaemon = true) {
             runCatching { Thread.currentThread().priority = Thread.MAX_PRIORITY }
             var id = preferredId
+            if (id.isNullOrEmpty() && isWindows) {
+                val cap = WasapiAudio.openCapture()
+                if (cap != null) {
+                    wasapiCapture = cap
+                    println("DesktopVoice capture backend=WASAPI shared")
+                    val accumulator = VoicePcm.FrameAccumulator(media.frameSamples)
+                    try {
+                        while (!Thread.currentThread().isInterrupted && session.get() === media) {
+                            val pcm48 = cap.readMono48k()
+                            if (pcm48.isEmpty()) {
+                                Thread.sleep(4)
+                                continue
+                            }
+                            for (frame in accumulator.push(pcm48)) {
+                                kotlinx.coroutines.runBlocking { media.offerCapturePcm(frame) }
+                            }
+                        }
+                    } catch (_: Exception) {
+                    } finally {
+                        cap.close()
+                        if (wasapiCapture === cap) wasapiCapture = null
+                    }
+                    return@thread
+                }
+                println("DesktopVoice capture backend=${javaSoundBackend()} (WASAPI unavailable)")
+            }
             var line = JvmVoiceDevices.openCapture(id, media.frameSamples)
             if (line == null && !id.isNullOrEmpty()) {
                 inputDeviceId = null
@@ -490,11 +557,16 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     private fun closeCaptureLine() {
+        wasapiCapture?.close()
+        wasapiCapture = null
         runCatching { captureLine?.stop(); captureLine?.close() }
         captureLine = null
     }
 
     private fun closePlaybackLine() {
+        wasapiRender?.close()
+        wasapiRender = null
+        preferWasapiPlayback = false
         runCatching { playbackLine?.stop(); playbackLine?.close() }
         playbackLine = null
     }

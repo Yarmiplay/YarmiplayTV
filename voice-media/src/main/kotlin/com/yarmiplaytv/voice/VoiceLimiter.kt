@@ -34,10 +34,13 @@ class VoiceLimiter(
 
     private var envGain: Float = 1.0f
     private var holdCounter: Int = 0
+    /** Samples held so the gain envelope sees [lookAheadSamples] of audio before those samples play. */
+    private var delay = FloatArray(0)
 
     fun reset() {
         envGain = 1.0f
         holdCounter = 0
+        delay = FloatArray(0)
     }
 
     /**
@@ -70,17 +73,25 @@ class VoiceLimiter(
     }
 
     /**
-     * Apply the look-ahead soft limiter in-place on [floatMix] (normalized `-1..1` per talker)
+     * Apply the look-ahead soft limiter on [floatMix] (normalized `-1..1` per talker)
      * and write the limited PCM16 samples into [out].
+     *
+     * Output is delayed by [lookAheadSamples] (~2 ms) so the envelope has already reached
+     * the gain required by a peak before that peak is emitted. The delay line carries the
+     * tail of one 20 ms frame into the next, so a transient on a frame boundary is not clipped.
      */
     fun limitToPcm16(floatMix: FloatArray, count: Int = floatMix.size, out: ShortArray = ShortArray(count)): ShortArray {
         val n = min(count, min(floatMix.size, out.size))
+        val la = lookAheadSamples.coerceAtLeast(1)
+        if (delay.size != la) delay = FloatArray(la)
+        val concat = FloatArray(la + n)
+        System.arraycopy(delay, 0, concat, 0, la)
+        System.arraycopy(floatMix, 0, concat, la, n)
         for (i in 0 until n) {
-            // Find peak in the look-ahead window [i .. i + lookAheadSamples].
-            val end = min(n - 1, i + lookAheadSamples)
+            val end = min(concat.lastIndex, i + la)
             var aheadPeak = 0f
             for (j in i..end) {
-                val a = abs(floatMix[j])
+                val a = abs(concat[j])
                 if (a > aheadPeak) aheadPeak = a
             }
             val neededGain = if (aheadPeak > attackTargetCeiling) {
@@ -91,8 +102,7 @@ class VoiceLimiter(
 
             if (neededGain < envGain) {
                 envGain += (neededGain - envGain) * attackCoeff
-                // Guard against un-ramped first-sample transient exceeding the soft knee input range.
-                val instAbs = abs(floatMix[i])
+                val instAbs = abs(concat[i])
                 if (instAbs * envGain > ceilingLinear) {
                     envGain = ceilingLinear / instAbs
                 }
@@ -103,11 +113,12 @@ class VoiceLimiter(
                 envGain += (neededGain - envGain) * releaseCoeff
             }
 
-            val gained = floatMix[i] * envGain
+            val gained = concat[i] * envGain
             val limited = softClip(gained)
             val pcm = (limited * 32767.0f).roundToInt().coerceIn(-ceilingPcm16, ceilingPcm16)
             out[i] = pcm.toShort()
         }
+        System.arraycopy(concat, n, delay, 0, la)
         return out
     }
 

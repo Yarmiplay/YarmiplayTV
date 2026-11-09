@@ -51,10 +51,17 @@ class VoiceJitterBuffer(
         var concealRun = 0
         /** How many concealment frames were already emitted while waiting on an empty queue. */
         var underrunConcealed = 0
+        /**
+         * True after a jitter hold expired and the expected packet was declared lost.
+         * Further empty polls then advance the sequence and call Opus PLC every tick.
+         * A held packet that is merely late does not set this, so the decoder stays in sync.
+         */
+        var inLossBurst = false
         /** Logical 20 ms tick counter incremented on each [poll] and wall-clock arrival tracking. */
         var pollTick: Long = 0L
         var lastPushTick: Long = -1L
-        var lastPushNano: Long = 0L
+        var lastWallNano: Long = 0L
+        var lastArrivalMs: Long = Long.MIN_VALUE
         var lastPushSeq: Int = Int.MIN_VALUE
         /** RFC 3550 smoothed inter-arrival jitter in 20 ms frame units. */
         var jitterFrames: Double = 0.0
@@ -182,16 +189,19 @@ class VoiceJitterBuffer(
         val nowNano = System.nanoTime()
         synchronized(slot) {
             // Measure inter-arrival jitter using explicit arrivalTimeMs, logical poll ticks, or wall clock.
+            // Arrival timestamps and nanoTime stay in separate fields so a test clock cannot be
+            // subtracted from a wall-clock reading.
             if (slot.lastPushSeq != Int.MIN_VALUE) {
                 val seqDelta = (sequence - slot.lastPushSeq).coerceIn(-16, 16)
                 if (seqDelta != 0) {
                     val arrivalFrames = when {
-                        arrivalTimeMs >= 0L && slot.lastPushNano >= 0L ->
-                            (arrivalTimeMs - slot.lastPushNano) / 20.0
+                        arrivalTimeMs >= 0L && slot.lastArrivalMs != Long.MIN_VALUE ->
+                            (arrivalTimeMs - slot.lastArrivalMs) / 20.0
                         slot.pollTick != slot.lastPushTick ->
                             (slot.pollTick - slot.lastPushTick).toDouble()
-                        else ->
-                            ((nowNano - slot.lastPushNano) / 20_000_000.0).coerceIn(0.0, 10.0)
+                        slot.lastWallNano > 0L ->
+                            ((nowNano - slot.lastWallNano) / 20_000_000.0).coerceIn(0.0, 10.0)
+                        else -> seqDelta.toDouble()
                     }
                     val transitDiff = abs(arrivalFrames - seqDelta.toDouble())
                     slot.jitterFrames += (transitDiff - slot.jitterFrames) / 8.0
@@ -199,7 +209,8 @@ class VoiceJitterBuffer(
             }
             slot.lastPushSeq = sequence
             slot.lastPushTick = slot.pollTick
-            slot.lastPushNano = if (arrivalTimeMs >= 0L) arrivalTimeMs else nowNano
+            slot.lastWallNano = nowNano
+            if (arrivalTimeMs >= 0L) slot.lastArrivalMs = arrivalTimeMs
 
             val next = slot.nextSeq
             if (next != null && sequence < next) {
@@ -260,13 +271,15 @@ class VoiceJitterBuffer(
                 slot.packets.headMap(next, false).clear()
             }
 
-            // If we previously emitted concealment frames during an empty-queue underrun wait,
-            // and the next available packet is ahead of `next`, account for the already-played gap
-            // so we don't conceal the same lost packet twice.
+            // If we previously time-stretched while waiting on an empty queue, and the next
+            // available packet is ahead of `next`, those held sequences are lost. Advance the
+            // Opus decoder with PLC (discarding the samples — stretch audio already played)
+            // so the late-but-newer packet decodes in sequence.
             if (slot.underrunConcealed > 0 && slot.packets.isNotEmpty()) {
                 val firstAvail = slot.packets.firstKey()
                 if (firstAvail > next) {
                     val skipped = min(firstAvail - next, slot.underrunConcealed)
+                    repeat(skipped) { plc() }
                     slot.recordLost(skipped)
                     next += skipped
                     slot.nextSeq = next
@@ -278,6 +291,7 @@ class VoiceJitterBuffer(
             if (packet != null) {
                 slot.concealRun = 0
                 slot.underrunConcealed = 0
+                slot.inLossBurst = false
                 slot.recordReceived(1)
                 slot.cleanRun++
                 val pcm1 = decode(packet) ?: silence()
@@ -322,7 +336,9 @@ class VoiceJitterBuffer(
 
             val hasNewerPacket = slot.packets.isNotEmpty()
             if (hasNewerPacket) {
-                // Genuine gap (packet `next` was lost or reordered behind `next + 1`).
+                // Genuine gap (packet `next` was lost; a newer one is already queued).
+                // FEC from packet N+1 recovers N without consuming N+1. PLC is the fallback.
+                slot.inLossBurst = false
                 slot.nextSeq = next + 1
                 slot.underrunConcealed = 0
                 slot.recordLost(1)
@@ -343,27 +359,35 @@ class VoiceJitterBuffer(
                 slot.wasConcealed = true
                 slot.appendHistory(out)
                 return JitterFrame(out, concealed = true)
-            } else {
-                // Queue is temporarily empty: `next` may still be in flight (jitter delay) or lost.
-                // Hold `nextSeq = next` for up to `maxFrames` ticks so a jitter-delayed packet is
-                // still played when it arrives, and nudge target depth upward.
+            }
+
+            // Queue is empty. The packet may still be in flight (30–80 ms jitter) or gone.
+            // Hold `nextSeq` and time-stretch history WITHOUT calling Opus PLC, so a late
+            // packet still decodes against a matching decoder state. After [maxFrames] of
+            // that hold, declare a loss burst and PLC every tick until audio returns.
+            slot.cleanRun = 0
+            if (!slot.inLossBurst) {
                 slot.underrunConcealed++
-                slot.cleanRun = 0
                 if (slot.underrunConcealed == 1 && slot.historyFilled > 0) {
                     slot.late.incrementAndGet()
                 }
-                if (slot.underrunConcealed > maxFrames) {
-                    slot.nextSeq = next + 1
-                    slot.underrunConcealed = 0
-                    slot.recordLost(1)
+                if (slot.underrunConcealed <= maxFrames) {
+                    val out = timeStretchHold(slot)
+                    slot.wasConcealed = true
+                    slot.appendHistory(out)
+                    return JitterFrame(out, concealed = true)
                 }
-                slot.plcCount++
-                val plcPcm = plc()
-                val out = buildConcealedFrame(slot, plcPcm)
-                slot.wasConcealed = true
-                slot.appendHistory(out)
-                return JitterFrame(out, concealed = true)
+                slot.inLossBurst = true
+                slot.underrunConcealed = 0
             }
+            slot.nextSeq = next + 1
+            slot.recordLost(1)
+            slot.plcCount++
+            val plcPcm = plc()
+            val out = buildConcealedFrame(slot, plcPcm)
+            slot.wasConcealed = true
+            slot.appendHistory(out)
+            return JitterFrame(out, concealed = true)
         }
     }
 
@@ -505,7 +529,8 @@ class VoiceJitterBuffer(
         if (candidate.size < frameSamples) return false
         if (slot.lastRealRms > 250.0) {
             val rms = VoicePcm.rms(candidate)
-            if (rms < 2.0) return false
+            // A near-silent FEC/PLC frame during voiced speech is a gap. Prefer pitch extrapolation.
+            if (rms < max(120.0, slot.lastRealRms * 0.22)) return false
         }
         return true
     }
@@ -515,17 +540,24 @@ class VoiceJitterBuffer(
      * of [PeerSlot.history] when [plcPcm] is empty/silent during active speech).
      */
     private fun buildConcealedFrame(slot: PeerSlot, plcPcm: ShortArray?): ShortArray {
-        if (plcPcm != null && plcPcm.size == frameSamples) {
-            val hasSignal = plcPcm.any { it != 0.toShort() }
-            if (hasSignal || slot.lastRealRms <= 250.0 || slot.historyFilled < frameSamples) {
-                return smoothConcealedFrame(slot, plcPcm)
-            }
+        if (plcPcm != null && plcPcm.size == frameSamples && isUsableConcealment(slot, plcPcm)) {
+            return smoothConcealedFrame(slot, plcPcm)
         }
-        if (slot.historyFilled >= frameSamples && slot.lastRealRms > 250.0 && slot.concealRun <= 6) {
-            val extrapolated = extrapolatePitchPeriod(slot)
-            return smoothConcealedFrame(slot, extrapolated)
+        if (slot.historyFilled >= frameSamples / 4 && slot.lastRealRms > 80.0 && slot.concealRun <= 8) {
+            return smoothConcealedFrame(slot, extrapolatePitchPeriod(slot))
         }
         return plcPcm?.takeIf { it.size == frameSamples } ?: silence()
+    }
+
+    /**
+     * One concealed 20 ms frame by repeating the newest pitch period in [PeerSlot.history].
+     * History is right-aligned (newest sample at the end of the array).
+     */
+    private fun timeStretchHold(slot: PeerSlot): ShortArray {
+        if (slot.historyFilled >= frameSamples / 4 && slot.lastRealRms > 40.0) {
+            return smoothConcealedFrame(slot, extrapolatePitchPeriod(slot))
+        }
+        return silence()
     }
 
     /**
@@ -535,12 +567,13 @@ class VoiceJitterBuffer(
      */
     private fun extrapolatePitchPeriod(slot: PeerSlot): ShortArray {
         val hist = slot.history
-        val n = slot.historyFilled
+        val n = slot.historyFilled.coerceAtMost(hist.size)
         val minPeriod = max(40, frameSamples / 20) // ~1000 Hz max pitch
         val maxPeriod = min(n / 2, (frameSamples * 3) / 4) // ~66 Hz min pitch
         val period = if (maxPeriod > minPeriod) {
-            val tailStart = n - minPeriod
-            var bestP = frameSamples / 4
+            // Newest samples sit at the end of [hist].
+            val tailStart = hist.size - minPeriod
+            var bestP = (minPeriod + maxPeriod) / 2
             var bestCorr = Double.NEGATIVE_INFINITY
             var p = minPeriod
             while (p <= maxPeriod) {
@@ -553,17 +586,29 @@ class VoiceJitterBuffer(
             }
             bestP
         } else {
-            min(n, frameSamples)
+            min(n, frameSamples).coerceAtLeast(1)
         }
 
-        val decay = (0.88 - (slot.concealRun - 1) * 0.12).coerceIn(0.25, 0.88)
+        val decay = (0.92 - (slot.concealRun - 1) * 0.08).coerceIn(0.35, 0.92)
         val out = ShortArray(frameSamples)
-        val srcBase = n - period
+        val srcBase = hist.size - period
         for (i in 0 until frameSamples) {
             val sample = hist[srcBase + (i % period)]
             out[i] = (sample * decay).roundToInt()
                 .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
                 .toShort()
+        }
+        // A trough can lock the correlator onto a near-silent period. Repeat the last
+        // real frame instead of opening a hole.
+        if (slot.lastRealRms > 200.0 && VoicePcm.rms(out) < slot.lastRealRms * 0.35) {
+            val n = min(frameSamples, n).coerceAtLeast(1)
+            val origin = hist.size - n
+            for (i in 0 until frameSamples) {
+                val sample = hist[origin + (i % n)]
+                out[i] = (sample * decay).roundToInt()
+                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                    .toShort()
+            }
         }
         return out
     }

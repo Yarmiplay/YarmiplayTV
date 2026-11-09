@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -200,7 +201,7 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         "Noise suppression",
                         settings.voiceNoiseSuppression,
                         { container.scope.launch { container.settingsStore.saveVoiceNoiseSuppression(!settings.voiceNoiseSuppression) } },
-                        subtitle = "Cut background noise on your mic (RNNoise-framed spectral NS + VAD; also WebRTC AEC/NS/AGC). Applies live",
+                        subtitle = "One noise suppressor on the mic: the device WebRTC stage when it is available, otherwise the built-in spectral suppressor. Echo cancellation and gain control stay one stage each. Applies live",
                         modifier = Modifier.testTag("toggle_voice_noise_suppression"),
                     )
                     ToggleRow(
@@ -230,6 +231,18 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         max = 2f,
                         Modifier.testTag("voice_output_gain"),
                     ) { container.scope.launch { container.settingsStore.saveVoiceOutputGain(it) } }
+                    val micTest by container.voice.micTestActive.collectAsStateWithLifecycle()
+                    val micLevel by container.voice.micTestLevel.collectAsStateWithLifecycle()
+                    DisposableEffect(Unit) {
+                        onDispose { container.voice.stopMicTest() }
+                    }
+                    ValueRow(
+                        "Mic test",
+                        if (micTest) "Stop ${"%.0f".format(micLevel * 100)}%" else "Start",
+                        { container.voice.toggleMicTest() },
+                        subtitle = "Hear yourself through the voice pipeline. Nothing is sent to the room",
+                        modifier = Modifier.testTag("voice_mic_test"),
+                    )
                     ToggleRow(
                         "Join and leave sounds",
                         settings.voiceJoinLeaveSounds,

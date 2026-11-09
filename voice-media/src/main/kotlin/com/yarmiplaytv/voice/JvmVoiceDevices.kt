@@ -36,72 +36,55 @@ object JvmVoiceDevices {
 
     fun listOutputs(): List<JvmAudioDevice> = listMixers(target = false)
 
-    fun openCapture(deviceId: String?, frameSamples: Int): TargetDataLine? {
+    fun openCapture(deviceId: String?, frameSamples: Int): TargetDataLine? =
+        openPcmLine(deviceId, frameSamples, target = true) as? TargetDataLine
+
+    fun openPlayback(deviceId: String?, frameSamples: Int): SourceDataLine? =
+        openPcmLine(deviceId, frameSamples, target = false) as? SourceDataLine
+
+    /**
+     * A Java Sound line cannot be reopened after [DataLine.close]. Each buffer size therefore
+     * gets a fresh line, so a rejected 40 ms buffer still falls through to 80 ms and the
+     * driver default instead of failing the device.
+     */
+    private fun openPcmLine(deviceId: String?, frameSamples: Int, target: Boolean): Any? {
         for (rate in preferredRates) {
             val format = formatForRate(rate)
-            val info = DataLine.Info(TargetDataLine::class.java, format)
-            val line = openLine(deviceId, info, target = true) as? TargetDataLine ?: continue
-            val rateFrameSamples = ((rate.toLong() * frameSamples) / 48_000L).toInt().coerceAtLeast(160)
-            val frameBytes = rateFrameSamples * 2
-            val opened = tryOpenWithLowLatency(line, format, frameBytes)
-            if (opened != null) return opened
-        }
-        return null
-    }
-
-    fun openPlayback(deviceId: String?, frameSamples: Int): SourceDataLine? {
-        for (rate in preferredRates) {
-            val format = formatForRate(rate)
-            val info = DataLine.Info(SourceDataLine::class.java, format)
-            val line = openLine(deviceId, info, target = false) as? SourceDataLine ?: continue
-            val rateFrameSamples = ((rate.toLong() * frameSamples) / 48_000L).toInt().coerceAtLeast(160)
-            val frameBytes = rateFrameSamples * 2
-            val opened = tryOpenPlaybackWithLowLatency(line, format, frameBytes)
-            if (opened != null) return opened
-        }
-        return null
-    }
-
-    private fun tryOpenWithLowLatency(
-        line: TargetDataLine,
-        format: AudioFormat,
-        frameBytes: Int,
-    ): TargetDataLine? {
-        val candidates = intArrayOf(
-            frameBytes * LOW_LATENCY_BUFFER_FRAMES,
-            frameBytes * FALLBACK_BUFFER_FRAMES,
-            0, // driver default
-        )
-        for (bufBytes in candidates) {
-            val ok = runCatching {
-                if (bufBytes > 0) line.open(format, bufBytes) else line.open(format)
-                line.start()
-                true
-            }.getOrDefault(false)
-            if (ok) return line
-            runCatching { line.close() }
-        }
-        return null
-    }
-
-    private fun tryOpenPlaybackWithLowLatency(
-        line: SourceDataLine,
-        format: AudioFormat,
-        frameBytes: Int,
-    ): SourceDataLine? {
-        val candidates = intArrayOf(
-            frameBytes * LOW_LATENCY_BUFFER_FRAMES,
-            frameBytes * FALLBACK_BUFFER_FRAMES,
-            0, // driver default
-        )
-        for (bufBytes in candidates) {
-            val ok = runCatching {
-                if (bufBytes > 0) line.open(format, bufBytes) else line.open(format)
-                line.start()
-                true
-            }.getOrDefault(false)
-            if (ok) return line
-            runCatching { line.close() }
+            val frameBytes = frameSamplesAtRate(rate, frameSamples) * 2
+            val buffers = intArrayOf(
+                frameBytes * LOW_LATENCY_BUFFER_FRAMES,
+                frameBytes * FALLBACK_BUFFER_FRAMES,
+                0, // driver default
+            )
+            for (bufBytes in buffers) {
+                val info = if (target) {
+                    DataLine.Info(TargetDataLine::class.java, format)
+                } else {
+                    DataLine.Info(SourceDataLine::class.java, format)
+                }
+                val line = openLine(deviceId, info, target) ?: continue
+                val opened = runCatching {
+                    when (line) {
+                        is TargetDataLine -> {
+                            if (bufBytes > 0) line.open(format, bufBytes) else line.open(format)
+                            line.start()
+                        }
+                        is SourceDataLine -> {
+                            if (bufBytes > 0) line.open(format, bufBytes) else line.open(format)
+                            line.start()
+                        }
+                        else -> return@runCatching false
+                    }
+                    true
+                }.getOrDefault(false)
+                if (opened) return line
+                runCatching {
+                    when (line) {
+                        is TargetDataLine -> line.close()
+                        is SourceDataLine -> line.close()
+                    }
+                }
+            }
         }
         return null
     }

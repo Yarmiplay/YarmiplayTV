@@ -18,6 +18,8 @@ import kotlin.math.roundToInt
  * - In-band FEC: on, with [packetLossPercent] fed from receiver stats
  * - DTX: off (never drops frames into silence gaps)
  * - Bitrate: adapts dynamically to measured receiver packet loss
+ * - Bitrate range [MIN_BITRATE]..[MAX_BITRATE] (24–128 kbps) and 1 or 2 channels, so a later
+ *   stereo / 128 kbps session can construct the same encoder without a second code path
  */
 class OpusCodec(
     bitrate: Int = 48_000,
@@ -94,10 +96,25 @@ class OpusCodec(
     }
 
     fun encode(pcm: ShortArray, offset: Int = 0): ByteArray? {
-        if (pcm.size - offset < frameSamples * channels) return null
+        val available = pcm.size - offset
+        val needed = frameSamples * channels
+        val inputPcm: ShortArray
+        val inputOffset: Int
+        when {
+            available >= needed -> {
+                inputPcm = pcm
+                inputOffset = offset
+            }
+            channels == 2 && available >= frameSamples -> {
+                // Stereo sessions (128 kbps voice) still accept a mono 20 ms frame.
+                inputPcm = VoicePcm.monoToStereo(pcm, offset, frameSamples)
+                inputOffset = 0
+            }
+            else -> return null
+        }
         return synchronized(encoder) {
             try {
-                val n = encoder.encode(pcm, offset, frameSamples, encBuf, 0, encBuf.size)
+                val n = encoder.encode(inputPcm, inputOffset, frameSamples, encBuf, 0, encBuf.size)
                 if (n <= 0) null else encBuf.copyOf(n)
             } catch (_: OpusException) {
                 null
