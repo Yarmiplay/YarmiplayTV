@@ -30,6 +30,12 @@ class LatencyCompensator(
     @Volatile var appliedMs: Double = 0.0
         private set
 
+    /**
+     * Off for audio-only files. Delaying the sound to line up with a picture would put the spectrum
+     * ahead of the music, and there is no picture to line up.
+     */
+    @Volatile var compensate: Boolean = true
+
     private var job: Job? = null
 
     fun start(scope: CoroutineScope) {
@@ -37,6 +43,10 @@ class LatencyCompensator(
         job = scope.launch {
             while (isActive) {
                 delay(1_000)
+                if (!compensate) {
+                    if (appliedMs != 0.0) apply(0.0, force = true)
+                    continue
+                }
                 val handoff = renderer.recentHandoffMs() ?: continue
                 val estimate = (handoff + 1000.0 / refreshRateHz().coerceIn(20.0, 500.0))
                     .coerceIn(0.0, MAX_COMPENSATION_MS)

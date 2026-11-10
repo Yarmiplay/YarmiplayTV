@@ -3,6 +3,7 @@
   import { attachPlayer, go, session as sessionStore, settings } from "../app/context";
   import { FileSource, HttpSource, type ByteSource } from "../lib/player/bytes";
   import { MediaPlayer, type PlayerState } from "../lib/player/mediaPlayer";
+  import { approach, barsFromFrequency, idle } from "../lib/player/spectrum";
   import { SeekFrames } from "../lib/player/seekFrames";
   import { dropSeek, jpegUrl, seekOffer, sheetUrl, sidecarLanguage, trickplayTile } from "../lib/media/seekThumbs";
   import type { FeedMessage, PlaylistStatus } from "../lib/sync/room";
@@ -27,6 +28,8 @@
 
   let stage: HTMLDivElement;
   let videoCanvas: HTMLCanvasElement;
+  let vizCanvas = $state<HTMLCanvasElement | undefined>();
+  let vizLevels = idle(0);
   let subtitleCanvas: HTMLCanvasElement;
   let pictureSubtitleCanvas: HTMLCanvasElement;
   let chatInput: HTMLInputElement | undefined = $state();
@@ -124,6 +127,61 @@
     };
   });
 
+  $effect(() => {
+    const name = s?.loaded && !s.video ? s.name : "";
+    vizLevels = idle(0);
+    void name;
+  });
+
+  $effect(() => {
+    const canvas = vizCanvas;
+    const audioOnly = !!s?.loaded && !s.video && s.audioTrack != null;
+    const hold = !s || s.paused || s.buffering;
+    if (!canvas || !audioOnly) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    let last = 0;
+    let raf = 0;
+    const paint = (now: number) => {
+      const dt = last ? Math.min(0.05, (now - last) / 1000) : 0;
+      last = now;
+      if (!hold) {
+        const freq = player?.spectrum();
+        const target = freq ? barsFromFrequency(freq) : idle(now / 1000);
+        vizLevels = approach(vizLevels, target, dt);
+      }
+      const dpr = window.devicePixelRatio || 1;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      if (width > 0 && height > 0 && (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr))) {
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3da5f4";
+      const n = vizLevels.length;
+      const gap = width * 0.008;
+      const barW = (width - gap * (n + 1)) / n;
+      const base = height * 0.9;
+      const maxH = height * 0.34;
+      for (let i = 0; i < n; i++) {
+        const h = Math.max(4, maxH * vizLevels[i]);
+        const x = gap + i * (barW + gap);
+        const gradient = ctx.createLinearGradient(0, base - h, 0, base);
+        gradient.addColorStop(0, accent);
+        gradient.addColorStop(1, "transparent");
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.roundRect(x, base - h, barW, h, barW / 2);
+        ctx.fill();
+      }
+      if (!hold) raf = requestAnimationFrame(paint);
+    };
+    raf = requestAnimationFrame(paint);
+    return () => cancelAnimationFrame(raf);
+  });
+
   onMount(() => {
     const p = new MediaPlayer(videoCanvas, subtitleCanvas, pictureSubtitleCanvas);
     player = p;
@@ -157,9 +215,11 @@
   $effect(() => {
     if (!("mediaSession" in navigator) || !s?.loaded) return;
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: s.name,
-      artist: room && inRoom ? `YarmiplayTV · ${ManagedRooms.display(room.room)}` : "YarmiplayTV",
-      artwork: [{ src: "./favicon.svg", sizes: "any", type: "image/svg+xml" }],
+      title: s.mediaTitle || s.name,
+      artist: s.mediaArtist || (room && inRoom ? `YarmiplayTV · ${ManagedRooms.display(room.room)}` : "YarmiplayTV"),
+      artwork: s.coverUrl
+        ? [{ src: s.coverUrl }]
+        : [{ src: "./favicon.svg", sizes: "any", type: "image/svg+xml" }],
     });
     const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
       ["play", () => player?.setPaused(false)],
@@ -510,14 +570,21 @@
     <canvas bind:this={subtitleCanvas} class="subs"></canvas>
     <canvas bind:this={pictureSubtitleCanvas} class="subs"></canvas>
 
-    {#if s?.loaded && FileNames.isAudio(s.name)}
+    {#if s?.loaded && !s.video && s.audioTrack != null}
       <div class="audio-backdrop">
+        <canvas bind:this={vizCanvas} class="viz"></canvas>
         <div class="audio-art">
-          <Icon name="audiotrack" size={72} />
+          {#if s.coverUrl}
+            <img src={s.coverUrl} alt="" />
+          {:else}
+            <Icon name="audiotrack" size={72} />
+          {/if}
         </div>
         <div class="audio-meta">
-          <h2>{s.name}</h2>
-          {#if session?.nowPlaying.value?.episode?.seriesName}
+          <h2>{s.mediaTitle || session?.nowPlaying.value?.title || s.name}</h2>
+          {#if s.mediaArtist}
+            <p>{s.mediaArtist}</p>
+          {:else if session?.nowPlaying.value?.episode?.seriesName}
             <p class="dim">{session.nowPlaying.value.episode.seriesName}</p>
           {/if}
         </div>
@@ -1293,8 +1360,25 @@
     align-items: center;
     justify-content: center;
     gap: 20px;
-    background: radial-gradient(circle at center, var(--surface-high) 0%, #000 70%);
+    background: radial-gradient(circle at center, #1a2433 0%, #000 72%);
     pointer-events: none;
+    z-index: 1;
+  }
+  .viz {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .audio-art img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 20px;
+  }
+  .audio-art,
+  .audio-meta {
+    position: relative;
     z-index: 1;
   }
   .audio-art {

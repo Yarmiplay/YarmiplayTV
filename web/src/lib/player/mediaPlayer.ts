@@ -1,5 +1,6 @@
 import type { PlayerAdapter } from "../syncplay/models";
 import { AudioOutput, openAudioDecoding, openSoftwareAudio, type AudioDecoding, type PcmChunk } from "./audio";
+import { readEmbeddedTags } from "./embeddedTags";
 import type { ByteSource } from "./bytes";
 import { Demuxer, type Chapter, type StreamInfo, type TimedPacket } from "./demuxer";
 import { createLibAV, type LibAV } from "./libav";
@@ -39,6 +40,11 @@ export interface PlayerState {
   audioTrack: number | null;
   subtitleTrack: number | null;
   chapters: Chapter[];
+  /** From the file's tags, when it has them. Only set for audio with no video. */
+  mediaTitle: string | null;
+  mediaArtist: string | null;
+  /** Object URL of embedded cover art, revoked when the file changes. */
+  coverUrl: string | null;
 }
 
 export interface LoadOptions {
@@ -68,6 +74,9 @@ const initialState = (): PlayerState => ({
   audioTrack: null,
   subtitleTrack: null,
   chapters: [],
+  mediaTitle: null,
+  mediaArtist: null,
+  coverUrl: null,
 });
 
 /** Video frames decoded ahead of the clock, at most. */
@@ -100,6 +109,7 @@ export class MediaPlayer implements PlayerAdapter {
   private videoStream: StreamInfo | null = null;
   private video: VideoDecoding | null = null;
   private audioStream: StreamInfo | null = null;
+  private coverUrl: string | null = null;
   private audio: AudioDecoding | null = null;
   private output: AudioOutput | null = null;
   private subtitles: SubtitleLayer | PgsLayer | ScriptSubtitles | null = null;
@@ -281,6 +291,7 @@ export class MediaPlayer implements PlayerAdapter {
         chapters: demuxer.chapters.map((c) => ({ ...c, start: c.start - this.origin, end: c.end - this.origin })),
       });
       if (opts.start && opts.start > 0) this.seek(opts.start);
+      if (!this.videoStream && this.audioStream) void this.readTags(source, generation);
       void this.pump(generation);
     } catch (e) {
       if (generation === this.generation) this.fail(e as Error);
@@ -383,6 +394,7 @@ export class MediaPlayer implements PlayerAdapter {
     this.output = await AudioOutput.create(sampleRate);
     this.output.setRate(this.state.speed);
     this.output.setVolume(this.state.muted ? 0 : this.state.volume);
+    if (!this.videoStream) this.output.enableSpectrum();
     this.audioFedAt = 0;
     this.pcmSeen = false;
     this.audioHealthy = false;
@@ -419,6 +431,7 @@ export class MediaPlayer implements PlayerAdapter {
     this.demuxer = null;
     this.output?.close();
     this.output = null;
+    this.dropCover();
     await this.subtitles?.destroy();
     this.subtitles = null;
     this.scripts.clear();
@@ -427,6 +440,42 @@ export class MediaPlayer implements PlayerAdapter {
     await audio?.close().catch(() => {});
     await demuxer?.close().catch(() => {});
     this.renderer.clear();
+  }
+
+  /** Frequency bins of the audio being heard, for an audio-only file. Null while paused or during video. */
+  spectrum(): Uint8Array | null {
+    if (this.videoStream || !this.audioStream) return null;
+    return this.output?.spectrum() ?? null;
+  }
+
+  private dropCover() {
+    if (this.coverUrl) URL.revokeObjectURL(this.coverUrl);
+    this.coverUrl = null;
+  }
+
+  /** Cover and tags from the start of the file, after playback has already opened it. */
+  private async readTags(source: ByteSource, generation: number) {
+    try {
+      const length = Math.min(2_000_000, source.size);
+      if (length < 16) return;
+      const bytes = await source.read(0, length);
+      if (generation !== this.generation || this.videoStream) return;
+      const tags = readEmbeddedTags(bytes);
+      let coverUrl: string | null = null;
+      if (tags.picture && tags.pictureType) {
+        const copy = new Uint8Array(tags.picture);
+        coverUrl = URL.createObjectURL(new Blob([copy], { type: tags.pictureType }));
+      }
+      if (generation !== this.generation) {
+        if (coverUrl) URL.revokeObjectURL(coverUrl);
+        return;
+      }
+      this.dropCover();
+      this.coverUrl = coverUrl;
+      this.update({ mediaTitle: tags.title, mediaArtist: tags.artist, coverUrl });
+    } catch {
+      // No tags. The screen still has the file name.
+    }
   }
 
   /** The file time playing now. */

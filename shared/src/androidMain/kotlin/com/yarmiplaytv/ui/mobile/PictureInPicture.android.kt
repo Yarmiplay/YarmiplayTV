@@ -28,7 +28,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.yarmiplaytv.Logger
-import com.yarmiplaytv.media.FileNames
+import com.yarmiplaytv.ui.player.playbackShowsVideo
 import com.yarmiplaytv.player.Player
 import kotlin.math.roundToInt
 
@@ -52,7 +52,7 @@ actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: 
 
     var active by remember { mutableStateOf(activity.isInPictureInPictureMode) }
     val state by player.state.collectAsState()
-    val isVideo = state.fileLoaded && (state.videoWidth > 0 || state.displayAspect > 0 || !FileNames.isAudio(state.url.orEmpty()))
+    val isVideo = playbackShowsVideo(state)
     val auto = autoEnter && isVideo
     val params = remember(state.displayAspect, state.paused, auto) { pipParams(activity, state.displayAspect, state.paused, auto) }
     val latestParams by rememberUpdatedState(params)
@@ -93,7 +93,7 @@ actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: 
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) activity.removeOnUserLeaveHintListener(leaveHint)
             PlayerPictureInPicture.active = false
             // Off the player screen, keep auto-enter enabled if media is loaded and setting is on.
-            val keepAuto = latestAuto && player.isFileLoaded && (state.videoWidth > 0 || state.displayAspect > 0 || !FileNames.isAudio(state.url.orEmpty()))
+            val keepAuto = latestAuto && playbackShowsVideo(state)
             runCatching { activity.setPictureInPictureParams(pipParams(activity, state.displayAspect, state.paused, autoEnter = keepAuto)) }
         }
     }
