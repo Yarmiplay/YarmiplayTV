@@ -18,6 +18,9 @@ export interface PcmChunk {
 export class AudioOutput {
   readonly context: AudioContext;
   private node!: AudioWorkletNode;
+  /** A copy of the worklet's output, not in the path to the speakers. Null until an audio-only file asks for it. */
+  private analyser: AnalyserNode | null = null;
+  private readonly freq = new Uint8Array(1024);
   private lastClock = { mediaTime: 0, contextTime: 0, playing: false, buffered: 0, rate: 1 };
   private rate = 1;
 
@@ -44,6 +47,26 @@ export class AudioOutput {
   /** Seconds of sound queued and not yet played. */
   get buffered(): number {
     return this.lastClock.buffered;
+  }
+
+  /**
+   * Taps the worklet for a spectrum. The existing connection to the speakers is left as it is, so this
+   * doesn't delay, resample or attenuate playback, and it never touches voice chat's own context.
+   */
+  enableSpectrum() {
+    if (this.analyser) return;
+    const analyser = this.context.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.75;
+    this.node.connect(analyser);
+    this.analyser = analyser;
+  }
+
+  /** Frequency bins of the sound being heard right now, or null while paused or before the tap exists. */
+  spectrum(): Uint8Array | null {
+    if (!this.analyser || this.context.state !== "running") return null;
+    this.analyser.getByteFrequencyData(this.freq);
+    return this.freq;
   }
 
   push(chunk: PcmChunk) {

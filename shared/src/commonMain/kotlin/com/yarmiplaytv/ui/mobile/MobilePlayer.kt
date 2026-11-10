@@ -36,6 +36,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonDefaults
 import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.media.FileNames
+import com.yarmiplaytv.ui.player.AudioStage
 import com.yarmiplaytv.playback.PlaybackAction
 import com.yarmiplaytv.playback.playbackAction
 import com.yarmiplaytv.player.SubtitleScale
@@ -281,39 +282,14 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         VideoSurface(player, Modifier.fillMaxSize())
                         Box(Modifier.fillMaxSize().testTag("player_gestures").videoGestures(input))
 
-                        if (state.fileLoaded && isAudio) {
-                            if (isPortrait) {
-                                Box(
-                                    Modifier.size(80.dp).clip(RoundedCornerShape(16.dp)).background(AppColors.SurfaceHigh).align(Alignment.Center),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(Icons.Filled.Audiotrack, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(48.dp))
-                                }
-                            } else {
-                                Column(
-                                    Modifier.align(Alignment.Center),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                                ) {
-                                    Box(
-                                        Modifier.size(120.dp).clip(RoundedCornerShape(20.dp)).background(AppColors.SurfaceHigh),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(Icons.Filled.Audiotrack, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(64.dp))
-                                    }
-                                    Text(
-                                        nowPlaying?.title ?: FileNames.baseName(state.url.orEmpty()),
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = Color.White,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    nowPlaying?.episode?.seriesName?.let {
-                                        Text(it, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                }
-                            }
-                        }
+                        AudioStage(
+                            player,
+                            state,
+                            fileName = nowPlaying?.fileName ?: state.url.orEmpty(),
+                            title = nowPlaying?.title ?: FileNames.baseName(state.url.orEmpty()),
+                            subtitle = nowPlaying?.episode?.seriesName,
+                            compact = isPortrait,
+                        )
 
                         CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom, compact = isPortrait)
                         RelayOnPlayer(container, state.fileLoaded, controls, isPortrait = isPortrait)

@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.concurrent.thread
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -48,6 +49,10 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     override val tracks: StateFlow<List<Track>> = _tracks.asStateFlow()
     private val _events = MutableSharedFlow<PlayerEvent>(extraBufferCapacity = 64)
     override val events: SharedFlow<PlayerEvent> = _events.asSharedFlow()
+    private val _cover = MutableStateFlow<ByteArray?>(null)
+    override val coverArt: StateFlow<ByteArray?> = _cover.asStateFlow()
+    @Volatile private var coverGeneration = 0
+    private var coverFor: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile private var cachedPosition = 0.0
@@ -188,6 +193,9 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         userSeekedFlag = false
         lastSeekTarget = startPosition
         lastSeekAt = now
+        coverGeneration++
+        coverFor = null
+        _cover.value = null
         _state.update { PlaybackState(url = url, paused = startPaused, position = startPosition) }
         _tracks.value = emptyList()
         mpv.setPropertyBoolean("pause", startPaused)
@@ -223,6 +231,9 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         currentUrl = null
         latestLoad = -1
         userSeekedFlag = false
+        coverGeneration++
+        coverFor = null
+        _cover.value = null
         mpv.command(arrayOf("stop"))
         _state.value = PlaybackState()
         _tracks.value = emptyList()
@@ -389,8 +400,8 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
     override fun eventProperty(property: String, value: Long) {
         when (property) {
-            "width" -> publishState { it.copy(videoWidth = value.toInt()) }
-            "height" -> publishState { it.copy(videoHeight = value.toInt()) }
+            "width" -> publishState { if (it.audioOnly) it else it.copy(videoWidth = value.toInt()) }
+            "height" -> publishState { if (it.audioOnly) it else it.copy(videoHeight = value.toInt()) }
         }
     }
 
@@ -398,7 +409,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         when (property) {
             "time-pos" -> onTimePos(value)
             "duration" -> publishState { it.copy(duration = value) }
-            "video-params/aspect" -> publishState { it.copy(displayAspect = value) }
+            "video-params/aspect" -> publishState { if (it.audioOnly) it else it.copy(displayAspect = value) }
             "speed" -> {
                 cachedSpeed = value
                 publishState { it.copy(speed = value) }
@@ -454,8 +465,8 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
     override fun eventProperty(property: String, value: String) {
         when (property) {
-            "video-codec" -> publishState { it.copy(videoCodec = value) }
-            "hwdec-current" -> publishState { it.copy(hwdec = value) }
+            "video-codec" -> publishState { if (it.audioOnly) it else it.copy(videoCodec = value) }
+            "hwdec-current" -> publishState { if (it.audioOnly) it else it.copy(hwdec = value) }
         }
     }
 
@@ -532,9 +543,58 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
                 selected = mpv.getPropertyBoolean("track-list/$i/selected") ?: false,
                 isDefault = mpv.getPropertyBoolean("track-list/$i/default") ?: false,
                 isExternal = mpv.getPropertyBoolean("track-list/$i/external") ?: false,
+                image = (mpv.getPropertyBoolean("track-list/$i/albumart") ?: false) ||
+                    (mpv.getPropertyBoolean("track-list/$i/image") ?: false),
             )
         }
         publishTracks(list)
+        val only = AudioOnly.isAudioOnly(list)
+        val title = if (only) MediaTags.title { mpv.getPropertyString(it) } else null
+        val artist = if (only) MediaTags.artist { mpv.getPropertyString(it) } else null
+        publishState { it.withAudioPresentation(list, title, artist) }
+        val url = currentUrl
+        if (only && url != null && coverFor != url) scheduleCover(url) else if (!only) {
+            coverGeneration++
+            coverFor = null
+            _cover.value = null
+        }
+    }
+
+    /**
+     * The bundled libmpv's libavfilter is built without audio visualizers (`showfreqs`, `showspectrum`),
+     * so a lavfi graph cannot see the samples and is not installed: a rejected graph can stall playback.
+     * The screen draws the idle spectrum instead. Cover art and tags are read beside playback, not through it.
+     */
+    private fun scheduleCover(url: String?) {
+        val generation = ++coverGeneration
+        coverFor = url
+        _cover.value = null
+        if (url == null) return
+        thread(isDaemon = true, name = "cover-art") {
+            val bytes = coverPrefix(url) ?: return@thread
+            if (generation != coverGeneration) return@thread
+            val tags = EmbeddedMedia.read(bytes)
+            if (generation != coverGeneration) return@thread
+            if (tags.picture != null) _cover.value = tags.picture
+            if (tags.title == null && tags.artist == null) return@thread
+            publishState { current ->
+                if (!current.audioOnly || generation != coverGeneration) current
+                else current.copy(
+                    mediaTitle = current.mediaTitle ?: tags.title?.takeIf { it.isNotBlank() },
+                    mediaArtist = current.mediaArtist ?: tags.artist?.takeIf { it.isNotBlank() },
+                )
+            }
+        }
+    }
+
+    private fun coverPrefix(url: String): ByteArray? {
+        EmbeddedMedia.readPrefix(url)?.let { return it }
+        if (!url.startsWith("content://")) return null
+        return runCatching {
+            appContext.contentResolver.openInputStream(Uri.parse(url))?.use {
+                EmbeddedMedia.readPrefix(it, EmbeddedMedia.PREFIX_BYTES)
+            }
+        }.getOrNull()
     }
 
     fun destroy() {

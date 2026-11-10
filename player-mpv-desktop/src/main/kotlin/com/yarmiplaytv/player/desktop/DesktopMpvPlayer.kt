@@ -1,6 +1,11 @@
 package com.yarmiplaytv.player.desktop
 
+import com.yarmiplaytv.player.AudioOnly
+import com.yarmiplaytv.player.AudioVisualizerController
+import com.yarmiplaytv.player.commit
 import com.yarmiplaytv.player.Chapter
+import com.yarmiplaytv.player.EmbeddedMedia
+import com.yarmiplaytv.player.MediaTags
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.PlayerEvent
@@ -8,6 +13,8 @@ import com.yarmiplaytv.player.StreamRoutes
 import com.yarmiplaytv.player.SubtitleScale
 import com.yarmiplaytv.player.Track
 import com.yarmiplaytv.player.TrackType
+import com.yarmiplaytv.player.VisualizerCommand
+import com.yarmiplaytv.player.withAudioPresentation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URI
 import java.nio.file.Paths
@@ -84,6 +92,13 @@ class DesktopMpvPlayer(
     private val _muted = MutableStateFlow(false)
     /** mpv's mute, which keeps [volume] for when it's turned off again. */
     val muted: StateFlow<Boolean> = _muted.asStateFlow()
+    private val _cover = MutableStateFlow<ByteArray?>(null)
+    override val coverArt: StateFlow<ByteArray?> = _cover.asStateFlow()
+    private val visualizer = AudioVisualizerController()
+    private val vizLock = Any()
+    private var latestTracks: List<Track> = emptyList()
+    @Volatile private var coverGeneration = 0
+    private var coverFor: String? = null
 
     @Volatile private var cachedPosition = 0.0
     @Volatile private var cachedPositionAt = 0L
@@ -141,6 +156,7 @@ class DesktopMpvPlayer(
         userSeekedFlag = false
         lastSeekTarget = startPosition
         lastSeekAt = now
+        resetPresentation()
         _state.update { PlaybackState(url = url, paused = startPaused, position = startPosition) }
         _tracks.value = emptyList()
         core.setFlag("pause", startPaused)
@@ -166,6 +182,7 @@ class DesktopMpvPlayer(
         currentUrl = null
         latestLoad = -1
         userSeekedFlag = false
+        resetPresentation()
         core.command("stop")
         _state.value = PlaybackState()
         _tracks.value = emptyList()
@@ -241,6 +258,10 @@ class DesktopMpvPlayer(
     override fun propertyDouble(name: String): Double? = core.getDouble(name)
 
     override fun propertyString(name: String): String? = core.getString(name)
+
+    override fun setAudioVisualizerColor(rgb: Int) {
+        synchronized(vizLock) { commitVisualizer(visualizer.onColor(rgb)) }
+    }
 
     @Volatile private var appliedSubtitleScale = SubtitleScale.DEFAULT
 
@@ -345,11 +366,11 @@ class DesktopMpvPlayer(
         when (name) {
             "track-list" -> loadTracks()
             "chapter-list" -> loadChapters()
-            "width" -> (value as? Long)?.let { v -> _state.update { it.copy(videoWidth = v.toInt()) } }
-            "height" -> (value as? Long)?.let { v -> _state.update { it.copy(videoHeight = v.toInt()) } }
+            "width" -> if (!_state.value.audioOnly) (value as? Long)?.let { v -> _state.update { it.copy(videoWidth = v.toInt()) } }
+            "height" -> if (!_state.value.audioOnly) (value as? Long)?.let { v -> _state.update { it.copy(videoHeight = v.toInt()) } }
             "time-pos" -> (value as? Double)?.let(::onTimePos)
             "duration" -> (value as? Double)?.let { v -> _state.update { it.copy(duration = v) } }
-            "video-params/aspect" -> _state.update { it.copy(displayAspect = (value as? Double) ?: 0.0) }
+            "video-params/aspect" -> if (!_state.value.audioOnly) _state.update { it.copy(displayAspect = (value as? Double) ?: 0.0) }
             "speed" -> (value as? Double)?.let { v ->
                 cachedSpeed = v
                 _state.update { it.copy(speed = v) }
@@ -371,8 +392,8 @@ class DesktopMpvPlayer(
                 _state.update { it.copy(seeking = v) }
             }
             "eof-reached" -> (value as? Boolean)?.let { v -> _state.update { it.copy(eofReached = v) } }
-            "video-codec" -> _state.update { it.copy(videoCodec = value as? String) }
-            "hwdec-current" -> _state.update { it.copy(hwdec = value as? String) }
+            "video-codec" -> if (!_state.value.audioOnly) _state.update { it.copy(videoCodec = value as? String) }
+            "hwdec-current" -> if (!_state.value.audioOnly) _state.update { it.copy(hwdec = value as? String) }
             "frame-drop-count" -> (value as? Long)?.let { v -> _state.update { it.copy(frameDrops = v) } }
             "decoder-frame-drop-count" -> (value as? Long)?.let { v -> _state.update { it.copy(decoderFrameDrops = v) } }
             "avsync" -> (value as? Double)?.let { v ->
@@ -413,6 +434,63 @@ class DesktopMpvPlayer(
         System.err.println("mpv [${event.prefix}] ${event.level}: ${event.text}")
         _events.tryEmit(PlayerEvent.Log(event.prefix, level, event.text))
         if (event.prefix == "cplayer" && level <= LOG_ERROR) _events.tryEmit(PlayerEvent.EndFile(currentUrl, event.text))
+        if (level <= LOG_ERROR && _state.value.audioVisualizer && lavfiRejected(event.text)) giveUpOnVisualizer()
+    }
+
+    /** A graph mpv accepted and then could not build. The idle animation takes over for this file. */
+    private fun lavfiRejected(text: String): Boolean =
+        text.contains("No such filter", ignoreCase = true) ||
+            text.contains("Error initializing", ignoreCase = true) ||
+            text.contains("parsing failed", ignoreCase = true) ||
+            text.contains("failed to configure", ignoreCase = true)
+
+    private fun giveUpOnVisualizer() {
+        synchronized(vizLock) {
+            visualizer.rejected()
+            visualizer.rejected()
+            if (visualizer.disarm()) core.setString("lavfi-complex", "")
+        }
+        _state.update { it.copy(audioVisualizer = false) }
+    }
+
+    private fun commitVisualizer(command: VisualizerCommand) {
+        val showing = visualizer.commit(command) { graph -> core.setString("lavfi-complex", graph) >= 0 }
+        if (showing != null) _state.update { it.copy(audioVisualizer = showing) }
+    }
+
+    private fun refreshVisualizer() {
+        synchronized(vizLock) { commitVisualizer(visualizer.onTracks(latestTracks, canRender = true)) }
+    }
+
+    /** Drops a graph from the previous file before the next one opens, and forgets its cover. */
+    private fun resetPresentation() {
+        coverGeneration++
+        coverFor = null
+        _cover.value = null
+        latestTracks = emptyList()
+        synchronized(vizLock) { commitVisualizer(visualizer.onNewFile()) }
+    }
+
+    private fun scheduleCover(url: String?) {
+        val generation = ++coverGeneration
+        coverFor = url
+        _cover.value = null
+        if (url == null) return
+        scope.launch(Dispatchers.IO) {
+            val bytes = EmbeddedMedia.readPrefix(url) ?: return@launch
+            if (generation != coverGeneration) return@launch
+            val tags = EmbeddedMedia.read(bytes)
+            if (generation != coverGeneration) return@launch
+            if (tags.picture != null) _cover.value = tags.picture
+            if (tags.title == null && tags.artist == null) return@launch
+            _state.update { current ->
+                if (!current.audioOnly || generation != coverGeneration) current
+                else current.copy(
+                    mediaTitle = current.mediaTitle ?: tags.title?.takeIf { it.isNotBlank() },
+                    mediaArtist = current.mediaArtist ?: tags.artist?.takeIf { it.isNotBlank() },
+                )
+            }
+        }
     }
 
     private fun loadChapters() {
@@ -425,7 +503,7 @@ class DesktopMpvPlayer(
 
     private fun loadTracks() {
         val count = core.getLong("track-list/count")?.toInt() ?: 0
-        _tracks.value = (0 until count).mapNotNull { i ->
+        val list = (0 until count).mapNotNull { i ->
             val type = when (core.getString("track-list/$i/type")) {
                 "video" -> TrackType.VIDEO
                 "audio" -> TrackType.AUDIO
@@ -441,8 +519,23 @@ class DesktopMpvPlayer(
                 selected = core.getFlag("track-list/$i/selected") ?: false,
                 isDefault = core.getFlag("track-list/$i/default") ?: false,
                 isExternal = core.getFlag("track-list/$i/external") ?: false,
+                image = (core.getFlag("track-list/$i/albumart") ?: false) || (core.getFlag("track-list/$i/image") ?: false),
             )
         }
+        latestTracks = list
+        _tracks.value = list
+        val only = AudioOnly.isAudioOnly(list)
+        val title = if (only) MediaTags.title { core.getString(it) } else null
+        val artist = if (only) MediaTags.artist { core.getString(it) } else null
+        _state.update { it.withAudioPresentation(list, title, artist, visualizer = it.audioVisualizer && only) }
+        compensator.compensate = !only
+        val url = currentUrl
+        if (only && url != null && coverFor != url) scheduleCover(url) else if (!only) {
+            coverGeneration++
+            coverFor = null
+            _cover.value = null
+        }
+        refreshVisualizer()
     }
 
     override fun close() {

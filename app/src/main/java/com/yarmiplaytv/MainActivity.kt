@@ -19,7 +19,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.yarmiplaytv.media.FileNames
+import com.yarmiplaytv.ui.player.playbackShowsVideo
 import com.yarmiplaytv.playback.PlaybackService
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.TvRoot
@@ -118,7 +118,7 @@ class MainActivity : ComponentActivity() {
                 combine(container.settings, container.player.state) { settings, playerState ->
                     settings.playback.pictureInPicture to playerState
                 }.collect { (pipEnabled, state) ->
-                    val isVideo = state.fileLoaded && (state.videoWidth > 0 || state.displayAspect > 0 || !FileNames.isAudio(state.url.orEmpty()))
+                    val isVideo = playbackShowsVideo(state)
                     val auto = pipEnabled && isVideo
                     val params = pipParams(this@MainActivity, state.displayAspect, state.paused, autoEnter = auto)
                     runCatching { setPictureInPictureParams(params) }
@@ -199,7 +199,7 @@ class MainActivity : ComponentActivity() {
             val settings = container.settings.value
             val player = container.player
             val state = player.state.value
-            val isVideo = state.fileLoaded && (state.videoWidth > 0 || state.displayAspect > 0 || !FileNames.isAudio(state.url.orEmpty()))
+            val isVideo = playbackShowsVideo(state)
             if (settings.playback.pictureInPicture && isVideo && !isInPictureInPictureMode) {
                 val screens = (application as YarmiplayTvApp).screens
                 if (screens.lastOrNull() != Screen.Player) {

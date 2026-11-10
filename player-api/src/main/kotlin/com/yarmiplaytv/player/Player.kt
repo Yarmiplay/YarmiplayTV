@@ -1,5 +1,6 @@
 package com.yarmiplaytv.player
 
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -80,7 +81,22 @@ interface Player {
 
     /** Position extrapolated from the last update, so polling between mpv updates stays smooth. */
     fun currentPosition(): Double
+
+    /**
+     * Embedded cover art for the file that's playing, when one was found without disturbing playback.
+     * Empty while a video is playing and for players that don't look for one.
+     */
+    val coverArt: StateFlow<ByteArray?> get() = NoCover
+
+    /**
+     * Accent for the audio visualizer, as `0xRRGGBB`. Players that are showing a video ignore it,
+     * and players without a visualizer ignore it.
+     */
+    fun setAudioVisualizerColor(rgb: Int) {}
 }
+
+/** Shared empty cover, so a player that never finds one doesn't allocate a flow per instance. */
+private val NoCover = MutableStateFlow<ByteArray?>(null)
 
 data class PlaybackState(
     val url: String? = null,
@@ -109,6 +125,17 @@ data class PlaybackState(
     val avSync: Double? = null,
     /** Display handoff compensation currently applied to audio, in ms (desktop). */
     val displayLatencyMs: Double? = null,
+    /**
+     * The file has audio and no real video track. An embedded cover is not a video track.
+     * The visualizer is shown only while this is true.
+     */
+    val audioOnly: Boolean = false,
+    /** The player is drawing a spectrum from the audio. When false, the screen uses the idle visual. */
+    val audioVisualizer: Boolean = false,
+    /** Title from the file's tags, when it has one. */
+    val mediaTitle: String? = null,
+    /** Artist from the file's tags, when it has one. */
+    val mediaArtist: String? = null,
 )
 
 /** A chapter of the playing file: its [title] (when it has one) and where it starts, in seconds. */
@@ -129,6 +156,8 @@ data class Track(
     val selected: Boolean,
     val isDefault: Boolean,
     val isExternal: Boolean,
+    /** An attached still picture (cover art), not a moving image. */
+    val image: Boolean = false,
 ) {
     val label: String
         get() = listOfNotNull(
