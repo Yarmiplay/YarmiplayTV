@@ -22,7 +22,8 @@ name: Release
 #   - AUR_PACKAGE (yarmiplaytv-bin) and the secret AUR_SSH_PRIVATE_KEY: the AUR package, tested in Arch Linux;
 #   - SNAP_NAME (yarmiplaytv) and the secret SNAPCRAFT_STORE_CREDENTIALS: the snap, released to the channel in
 #     SNAP_CHANNEL (default stable). Content snaps are fetched on a runner that can open api.snapcraft.io
-#     (GitHub-hosted Ubuntu cannot) and the publish step runs on macOS for the same reason;
+#     (GitHub-hosted Ubuntu cannot). Publishing uses dashboard.snapcraft.io and
+#     storage.snapcraftcontent.com, which this runner can reach, via the Snapcraft image;
 #   - FLATHUB_REPO (flathub/com.yarmiplay.TV) and the secret FLATHUB_TOKEN: a pull request to the app's Flathub
 #     repository with the manifest pointing at the tag, merged automatically when the repository allows it.
 # A manual run builds everything again; its inputs submit or publish to a store, the Linux ones for the latest
@@ -593,8 +594,8 @@ jobs:
           retention-days: 1
           compression-level: 0
 
-  # Builds the snap from the release's .deb, installs it and plays a clip. Publishing runs on macOS,
-  # which can open the store API that GitHub-hosted Ubuntu cannot. SNAP_NAME has to be
+  # Builds the snap from the release's .deb, installs it and plays a clip. Publishing uses the
+  # Snapcraft image against the upload hosts, not api.snapcraft.io. SNAP_NAME has to be
   # snap/snapcraft.yaml's name (yarmiplaytv), registered with snapcraft register.
   snap:
     needs: [linux-installers, snap-seed]
@@ -668,15 +669,17 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # The Node publish action talks to api.snapcraft.io from the runner. Ubuntu runners cannot open
-  # that API; macOS can when the seed job could. A publish failure is reported and does not fail
-  # the release.
+  # snapcraft upload uses dashboard.snapcraft.io, storage.snapcraftcontent.com and login.ubuntu.com.
+  # The official publish action first installs Snapcraft from the store, which needs api.snapcraft.io,
+  # so this runs the Snapcraft image instead. A publish failure is reported and does not fail the release.
   snap-publish:
     needs: snap
     if: needs.snap.outputs.built == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           name: snap
@@ -694,12 +697,10 @@ jobs:
 
       - name: Publish the snap
         continue-on-error: true
-        uses: snapcore/action-publish@v1
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        with:
-          snap: ${{ steps.file.outputs.snap }}
-          release: ${{ vars.SNAP_CHANNEL || 'stable' }}
+          SNAP_CHANNEL: ${{ vars.SNAP_CHANNEL || 'stable' }}
+        run: bash scripts/snap-publish.sh "${{ steps.file.outputs.snap }}"
 
   # Points the Flatpak manifest at the release tag, lists the Gradle files its offline build needs, and opens a
   # pull request with them on the app's Flathub repository; Flathub builds the pull request as its test, and it

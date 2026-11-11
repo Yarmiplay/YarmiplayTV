@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # How this machine reaches the Snap Store.
 #
-# GitHub-hosted runners often black-hole IPv6 to api.snapcraft.io. curl and snapd then spend the
-# whole timeout on that route and report "unable to contact snap store" while IPv4 to the same
-# host answers. diagnose_store_route prints DNS and both address families. prefer_store_route
-# pins the family that answered, and when only IPv4 works it turns IPv6 off so snapd (which does
-# not use gai.conf) cannot try the black-holed route.
+# GitHub-hosted Ubuntu cannot open api.snapcraft.io (185.125.188.54-60): IPv4 times out and IPv6
+# has no route. Uploading a snap does not use that API. snapcraft upload talks to
+# dashboard.snapcraft.io, storage.snapcraftcontent.com, and login.ubuntu.com.
+# diagnose_store_route prints DNS and both address families for the info API and those upload hosts.
+# prefer_store_route pins the family that answered the info API, and when only IPv4 works it turns
+# IPv6 off so snapd (which does not use gai.conf) cannot try the black-holed route.
 set -u
 
 store_api_url=https://api.snapcraft.io/v2/snaps/info/core24
@@ -18,7 +19,7 @@ store_curl_ok() {
 diagnose_store_route() {
   echo "::group::Snap Store DNS"
   local host
-  for host in api.snapcraft.io dashboard.snapcraft.io storage.snapcraftcontent.com public.apps.ubuntu.com login.ubuntu.com; do
+  for host in api.snapcraft.io dashboard.snapcraft.io storage.snapcraftcontent.com upload.apps.ubuntu.com public.apps.ubuntu.com login.ubuntu.com; do
     echo "-- $host"
     getent ahostsv4 "$host" || echo "(no A record)"
     getent ahostsv6 "$host" || echo "(no AAAA record)"
@@ -37,12 +38,28 @@ diagnose_store_route() {
   done
 
   local code
-  for host in storage.snapcraftcontent.com login.ubuntu.com dashboard.snapcraft.io public.apps.ubuntu.com; do
+  for host in storage.snapcraftcontent.com upload.apps.ubuntu.com login.ubuntu.com dashboard.snapcraft.io public.apps.ubuntu.com; do
     for flag in -4 -6; do
       code=$(curl "$flag" -sS -o /dev/null -w '%{http_code}' --connect-timeout 8 --max-time 12 "https://$host/" || echo fail)
       echo "RESULT $flag $host $code"
     done
   done
+
+  # The hosts snapcraft upload actually calls. Any HTTP status means the route works; 000 does not.
+  echo "::group::Snap upload endpoints"
+  local url
+  for url in \
+    https://dashboard.snapcraft.io/dev/api/account \
+    https://storage.snapcraftcontent.com/ \
+    https://upload.apps.ubuntu.com/ \
+    https://login.ubuntu.com/
+  do
+    for flag in -4 -6; do
+      code=$(curl "$flag" -sS -o /dev/null -w '%{http_code}' --connect-timeout 8 --max-time 12 "$url" || echo fail)
+      echo "RESULT $flag $url $code"
+    done
+  done
+  echo "::endgroup::"
 }
 
 # Call after diagnose, or on its own. Sets STORE_CURL_FLAGS to -4 or -6 when one family answers.
