@@ -584,8 +584,11 @@ jobs:
           bash scripts/release-deb.sh
           cp deb/*.deb yarmiplaytv.deb
 
-      - uses: snapcore/action-build@v1
-        id: build
+      # Same builder as the Linux packages workflow, including the snap-store retries.
+      - id: build
+        run: |
+          bash scripts/snapcraft-build.sh
+          echo "snap=$(echo *.snap)" >> "$GITHUB_OUTPUT"
 
       - name: Install the snap and play a clip
         run: bash scripts/snap-smoke-test.sh "${{ steps.build.outputs.snap }}"

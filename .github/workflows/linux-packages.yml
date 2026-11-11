@@ -11,6 +11,7 @@ on:
       - snap/**
       - scripts/aur-package.sh
       - scripts/snap-smoke-test.sh
+      - scripts/snapcraft-build.sh
       - scripts/flatpak_gradle_sources.py
       - scripts/retry.sh
       - settings.gradle.kts
@@ -22,6 +23,7 @@ on:
       - snap/**
       - scripts/aur-package.sh
       - scripts/snap-smoke-test.sh
+      - scripts/snapcraft-build.sh
       - scripts/flatpak_gradle_sources.py
       - scripts/retry.sh
       - settings.gradle.kts
@@ -107,8 +109,12 @@ jobs:
 
       - run: cp deb/*.deb yarmiplaytv.deb
 
-      - uses: snapcore/action-build@v1
-        id: build
+      # The action installs LXD with one store call and no retry. Runners often answer
+      # "unable to contact snap store" on that call; snapcraft-build.sh retries it.
+      - id: build
+        run: |
+          bash scripts/snapcraft-build.sh
+          echo "snap=$(echo *.snap)" >> "$GITHUB_OUTPUT"
 
       - name: Install the snap and play a clip
         run: bash scripts/snap-smoke-test.sh "${{ steps.build.outputs.snap }}"
