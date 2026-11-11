@@ -56,6 +56,7 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.playback.PlaybackAction
 import com.yarmiplaytv.player.Chapter
 import com.yarmiplaytv.player.TrackType
+import com.yarmiplaytv.ui.player.collectPlayback
 import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.delay
@@ -281,7 +282,7 @@ private fun signedMillis(seconds: Double): String {
 /** Picture, speed, looping, and chapters. Each adjustment shows its value and resets on its own. */
 @Composable
 fun VideoAdjustments(container: AppContainer, modifier: Modifier = Modifier, initialFocus: FocusRequester? = null) {
-    val state by container.player.state.collectAsStateWithLifecycle()
+    val state = container.player.collectPlayback()
     val zoom = rememberPlayerValue(container.player.propertyDouble("video-zoom") ?: 0.0) { container.player.propertyDouble("video-zoom") ?: 0.0 }
     val contrast = rememberPlayerValue(container.player.propertyDouble("contrast") ?: 0.0) { container.player.propertyDouble("contrast") ?: 0.0 }
     val brightness = rememberPlayerValue(container.player.propertyDouble("brightness") ?: 0.0) { container.player.propertyDouble("brightness") ?: 0.0 }

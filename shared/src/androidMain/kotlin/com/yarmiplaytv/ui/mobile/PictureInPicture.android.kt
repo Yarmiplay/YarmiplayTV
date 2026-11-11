@@ -14,7 +14,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,6 +27,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.yarmiplaytv.Logger
+import com.yarmiplaytv.ui.player.collectPlayback
 import com.yarmiplaytv.ui.player.playbackShowsVideo
 import com.yarmiplaytv.player.Player
 import kotlin.math.roundToInt
@@ -51,7 +51,7 @@ actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: 
     if (activity == null || !supported) return PictureInPicture(supported = false, active = false) {}
 
     var active by remember { mutableStateOf(activity.isInPictureInPictureMode) }
-    val state by player.state.collectAsState()
+    val state = player.collectPlayback()
     val isVideo = playbackShowsVideo(state)
     val auto = autoEnter && isVideo
     val params = remember(state.displayAspect, state.paused, auto) { pipParams(activity, state.displayAspect, state.paused, auto) }

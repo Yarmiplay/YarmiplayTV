@@ -14,6 +14,7 @@ import com.yarmiplaytv.player.SubtitleScale
 import com.yarmiplaytv.player.Track
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.player.VisualizerCommand
+import com.yarmiplaytv.player.VisualizerProfile
 import com.yarmiplaytv.player.withAudioPresentation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -96,6 +97,8 @@ class DesktopMpvPlayer(
     override val coverArt: StateFlow<ByteArray?> = _cover.asStateFlow()
     private val visualizer = AudioVisualizerController()
     private val vizLock = Any()
+    private val publishes = PlaybackPublishes()
+    @Volatile private var surfaceShown = false
     private var latestTracks: List<Track> = emptyList()
     @Volatile private var coverGeneration = 0
     private var coverFor: String? = null
@@ -143,12 +146,29 @@ class DesktopMpvPlayer(
         ).forEach { (name, format) -> core.observe(name, format) }
         core.startEvents(::onEvent)
         compensator.start(scope)
+        val software = renderer.isSoftwareRasterizer
+        val ceiling = when {
+            effectiveOptions.lowEnd -> minOf(effectiveOptions.maxRenderEdge.takeIf { it > 0 } ?: 1280, 1280)
+            software -> minOf(effectiveOptions.maxRenderEdge.takeIf { it > 0 } ?: 960, 960)
+            else -> effectiveOptions.maxRenderEdge.takeIf { it > 0 } ?: 1920
+        }
+        renderer.armBudget(ceiling)
+        renderer.onAttachedChanged = { shown ->
+            surfaceShown = shown
+            refreshVisualizer()
+        }
+        visualizer.profile = VisualizerProfile.choose(
+            lowEnd = effectiveOptions.lowEnd,
+            softwareRasterizer = software,
+            processors = Runtime.getRuntime().availableProcessors(),
+        )
     }
 
     // --- Commands ----------------------------------------------------------------
 
     override fun load(url: String, mediaTitle: String?, startPaused: Boolean, startPosition: Double) {
         val now = System.nanoTime()
+        publishes.reset()
         currentUrl = url
         cachedPaused = startPaused
         cachedPosition = startPosition
@@ -157,6 +177,7 @@ class DesktopMpvPlayer(
         lastSeekTarget = startPosition
         lastSeekAt = now
         resetPresentation()
+        publishes.notePosition(now, startPosition)
         _state.update { PlaybackState(url = url, paused = startPaused, position = startPosition) }
         _tracks.value = emptyList()
         core.setFlag("pause", startPaused)
@@ -191,7 +212,8 @@ class DesktopMpvPlayer(
     override fun setPaused(paused: Boolean) {
         snapshotPosition()
         cachedPaused = paused
-        _state.update { it.copy(paused = paused) }
+        publishes.notePosition(System.nanoTime(), cachedPosition)
+        _state.update { it.copy(paused = paused, position = cachedPosition) }
         core.setFlag("pause", paused)
     }
 
@@ -208,6 +230,7 @@ class DesktopMpvPlayer(
         lastSeekAt = now
         cachedPosition = target
         cachedPositionAt = now
+        publishes.notePosition(now, target)
         _state.update { it.copy(position = target, seeking = true) }
         core.command("seek", target.toString(), "absolute+exact")
     }
@@ -337,6 +360,7 @@ class DesktopMpvPlayer(
                 cachedPositionAt = now
                 lastSeekTarget = position
                 lastSeekAt = now
+                publishes.notePosition(now, position)
                 _state.update { it.copy(fileLoaded = true, duration = duration, position = position, eofReached = false) }
                 loadTracks()
                 currentUrl?.let { _events.tryEmit(PlayerEvent.FileLoaded(it, duration)) }
@@ -377,11 +401,15 @@ class DesktopMpvPlayer(
             }
             "volume" -> (value as? Double)?.let { _volume.value = it }
             "mute" -> (value as? Boolean)?.let { _muted.value = it }
-            "demuxer-cache-duration" -> (value as? Double)?.let { v -> _state.update { it.copy(cacheSeconds = v) } }
+            "demuxer-cache-duration" -> (value as? Double)?.let { v ->
+                if (publishes.cache(v, _state.value.buffering)) _state.update { it.copy(cacheSeconds = v) }
+            }
             "pause" -> (value as? Boolean)?.let { v ->
                 if (v != cachedPaused) snapshotPosition()
                 cachedPaused = v
-                _state.update { it.copy(paused = v) }
+                val pos = cachedPosition
+                publishes.notePosition(System.nanoTime(), pos)
+                _state.update { it.copy(paused = v, position = pos) }
             }
             "paused-for-cache" -> (value as? Boolean)?.let { v ->
                 snapshotPosition()
@@ -397,7 +425,9 @@ class DesktopMpvPlayer(
             "frame-drop-count" -> (value as? Long)?.let { v -> _state.update { it.copy(frameDrops = v) } }
             "decoder-frame-drop-count" -> (value as? Long)?.let { v -> _state.update { it.copy(decoderFrameDrops = v) } }
             "avsync" -> (value as? Double)?.let { v ->
-                _state.update { it.copy(avSync = v, displayLatencyMs = compensator.appliedMs) }
+                if (publishes.avSync(System.nanoTime())) {
+                    _state.update { it.copy(avSync = v, displayLatencyMs = compensator.appliedMs) }
+                }
             }
         }
     }
@@ -425,15 +455,25 @@ class DesktopMpvPlayer(
         }
         cachedPosition = value
         cachedPositionAt = now
-        _state.update { it.copy(position = value) }
+        if (publishes.position(now, value)) _state.update { it.copy(position = value) }
     }
+
+    private var lastLog = ""
+    private var lastLogAt = 0L
 
     private fun onLog(event: MpvEvent.Log) {
         val level = logLevel(event.level)
         if (level > LOG_WARN) return
-        System.err.println("mpv [${event.prefix}] ${event.level}: ${event.text}")
-        _events.tryEmit(PlayerEvent.Log(event.prefix, level, event.text))
-        if (event.prefix == "cplayer" && level <= LOG_ERROR) _events.tryEmit(PlayerEvent.EndFile(currentUrl, event.text))
+        val line = "mpv [${event.prefix}] ${event.level}: ${event.text}"
+        val now = System.currentTimeMillis()
+        val duplicate = line == lastLog && now - lastLogAt < 500
+        if (!duplicate) {
+            lastLog = line
+            lastLogAt = now
+            System.err.println(line)
+            _events.tryEmit(PlayerEvent.Log(event.prefix, level, event.text))
+            if (event.prefix == "cplayer" && level <= LOG_ERROR) _events.tryEmit(PlayerEvent.EndFile(currentUrl, event.text))
+        }
         if (level <= LOG_ERROR && _state.value.audioVisualizer && lavfiRejected(event.text)) giveUpOnVisualizer()
     }
 
@@ -459,7 +499,7 @@ class DesktopMpvPlayer(
     }
 
     private fun refreshVisualizer() {
-        synchronized(vizLock) { commitVisualizer(visualizer.onTracks(latestTracks, canRender = true)) }
+        synchronized(vizLock) { commitVisualizer(visualizer.onTracks(latestTracks, canRender = surfaceShown)) }
     }
 
     /** Drops a graph from the previous file before the next one opens, and forgets its cover. */
@@ -540,6 +580,7 @@ class DesktopMpvPlayer(
 
     override fun close() {
         MpvBackgroundLoad.setPlayerActive(false)
+        renderer.onAttachedChanged = {}
         scope.cancel()
         compensator.stop()
         renderer.close()

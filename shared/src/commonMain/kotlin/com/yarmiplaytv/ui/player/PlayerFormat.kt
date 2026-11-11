@@ -1,7 +1,13 @@
 package com.yarmiplaytv.ui.player
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.player.PlaybackState
+import com.yarmiplaytv.player.Player
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import com.yarmiplaytv.syncplay.FileDifference
 import com.yarmiplaytv.syncplay.FileInfo
 import com.yarmiplaytv.syncplay.FileMatch
@@ -23,6 +29,48 @@ fun formatClock(seconds: Double): String {
  * True when picture-in-picture should treat this as a video. A spectrum on an audio-only file
  * reports a picture size, and that must not pull music into the video window.
  */
+/**
+ * The playback snapshot the window should recompose on.
+ *
+ * The position, the A/V offset and the drop counters change many times a second. The seek bar
+ * polls [Player.currentPosition] on its own, so those fields must not invalidate the player.
+ * The cache is quantized to a quarter second, which is finer than the "Ns cached" label.
+ * [showStats] keeps the diagnostic fields, with the A/V offset rounded to 50 ms, so turning
+ * stats on still doesn't recompose on every frame.
+ */
+fun PlaybackState.forControls(showStats: Boolean): PlaybackState {
+    val cache = kotlin.math.round(cacheSeconds * 4.0) / 4.0
+    val sync = if (showStats) avSync?.let { kotlin.math.round(it * 20.0) / 20.0 } else null
+    val latency = if (showStats) displayLatencyMs?.let { kotlin.math.round(it) } else null
+    val drops = if (showStats) frameDrops else null
+    val decoder = if (showStats) decoderFrameDrops else null
+    if (position == 0.0 && cacheSeconds == cache && avSync == sync && displayLatencyMs == latency &&
+        frameDrops == drops && decoderFrameDrops == decoder
+    ) {
+        return this
+    }
+    return copy(
+        position = 0.0,
+        cacheSeconds = cache,
+        avSync = sync,
+        displayLatencyMs = latency,
+        frameDrops = drops,
+        decoderFrameDrops = decoder,
+    )
+}
+
+/** [forControls] with the diagnostics hidden. */
+fun PlaybackState.forUi(): PlaybackState = forControls(showStats = false)
+
+/** Collects [Player.state] as [forControls], so a frame of playback does not recompose this caller. */
+@Composable
+fun Player.collectPlayback(showStats: Boolean = false): PlaybackState {
+    val flow = remember(this, showStats) {
+        state.map { it.forControls(showStats) }.distinctUntilChanged()
+    }
+    return flow.collectAsStateWithLifecycle(state.value.forControls(showStats)).value
+}
+
 fun playbackShowsVideo(state: PlaybackState, name: String = state.url.orEmpty()): Boolean =
     state.fileLoaded && !state.audioOnly &&
         (state.videoWidth > 0 || state.displayAspect > 0.0 || !FileNames.isAudio(name))

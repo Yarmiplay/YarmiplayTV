@@ -86,6 +86,7 @@ import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.nav.Navigator
+import com.yarmiplaytv.ui.player.collectPlayback
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.SurfaceInk
@@ -337,7 +338,7 @@ private fun MobileScaffold(
 
 @Composable
 private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
-    val state by container.player.state.collectAsStateWithLifecycle()
+    val state = container.player.collectPlayback()
     if (!state.fileLoaded) return
 
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()

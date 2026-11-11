@@ -26,6 +26,35 @@ class AudioVisualizerTest {
     }
 
     @Test
+    fun defaultBarsGraphIsTheOnePhonesAlreadyUse() {
+        assertEquals(
+            "[aid1]asplit=2[ao][vis];[vis]showfreqs=s=960x540:mode=bar:cmode=combined:colors=0x3DA5F4:" +
+                "fscale=log:ascale=cbrt:win_size=2048:win_func=hann:overlap=0:rate=30:averaging=1[vo]",
+            AudioVisualizerGraph.bars(1),
+        )
+        assertEquals(
+            "[aid1]asplit=2[ao][vis];[vis]showspectrum=s=960x540:mode=combined:color=cool:scale=cbrt:fscale=log:" +
+                "slide=replace:win_func=hann:overlap=0:fps=30:legend=0[vo]",
+            AudioVisualizerGraph.spectrum(1),
+        )
+    }
+
+    @Test
+    fun lightProfileDrawsFewerPixelsAtALowerRate() {
+        val bars = AudioVisualizerGraph.bars(1, profile = VisualizerProfile.LIGHT)
+        val spectrum = AudioVisualizerGraph.spectrum(1, VisualizerProfile.LIGHT)
+        assertTrue(bars.contains("s=480x270"))
+        assertTrue(bars.contains("rate=15"))
+        assertTrue(bars.contains("win_size=1024"))
+        assertTrue(spectrum.contains("s=480x270"))
+        assertTrue(spectrum.contains("fps=15"))
+        assertEquals(VisualizerProfile.LIGHT, VisualizerProfile.choose(lowEnd = true, softwareRasterizer = false, processors = 8))
+        assertEquals(VisualizerProfile.LIGHT, VisualizerProfile.choose(lowEnd = false, softwareRasterizer = true, processors = 8))
+        assertEquals(VisualizerProfile.LIGHT, VisualizerProfile.choose(lowEnd = false, softwareRasterizer = false, processors = 2))
+        assertEquals(VisualizerProfile.FULL, VisualizerProfile.choose(lowEnd = false, softwareRasterizer = false, processors = 4))
+    }
+
+    @Test
     fun barsGraphLeavesPlaybackAudioUntouchedAndUsesTheAccent() {
         val graph = AudioVisualizerGraph.bars(3, 0xE39A4A)
         assertTrue(graph.startsWith("[aid3]asplit=2[ao][vis];"))

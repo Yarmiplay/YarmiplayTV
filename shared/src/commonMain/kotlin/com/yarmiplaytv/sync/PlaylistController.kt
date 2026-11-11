@@ -137,6 +137,7 @@ class PlaylistController(
 
     private data class PendingLoad(val media: NowPlaying, val resetPosition: Boolean, val fromRoom: Boolean)
 
+    private val seekAutosave = SeekAutosave()
     private var pending: PendingLoad? = null
     private var resolveJob: Job? = null
     /** The room's entry whose search last gave up, until something else loads; [retryGivenUp] looks for it again. */
@@ -168,8 +169,10 @@ class PlaylistController(
         scope.launch {
             player.state.collect { st ->
                 if (pending != null || !st.fileLoaded) return@collect
-                val name = _nowPlaying.value?.fileName
-                if (name != null && st.position > 1.0) {
+                val name = _nowPlaying.value?.fileName ?: return@collect
+                // time-pos arrives about once a frame. Writing each one rewrites the settings file
+                // and makes every settings reader parse it again, which is the hitch on a playing PC.
+                if (seekAutosave.shouldSave(name, st.position, st.paused, st.eofReached, System.currentTimeMillis())) {
                     saveSeekPosition(name, st.position)
                 }
             }

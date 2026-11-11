@@ -20,6 +20,27 @@ object AudioOnly {
     }
 }
 
+/**
+ * How big and how often the spectrum picture is.
+ * [FULL] is what phones, tablets and TV use. [LIGHT] is for a desktop that is already spending
+ * its time copying video frames (a software rasterizer, a low-end mode, or a two-core machine):
+ * a quarter of the pixels and half the frame rate, same bars, same colour.
+ */
+data class VisualizerProfile(
+    val width: Int,
+    val height: Int,
+    val fps: Int,
+    val winSize: Int,
+) {
+    companion object {
+        val FULL = VisualizerProfile(960, 540, 30, 2048)
+        val LIGHT = VisualizerProfile(480, 270, 15, 1024)
+
+        fun choose(lowEnd: Boolean, softwareRasterizer: Boolean, processors: Int): VisualizerProfile =
+            if (lowEnd || softwareRasterizer || processors <= 2) LIGHT else FULL
+    }
+}
+
 /** libavfilter graphs. [bars] takes the theme colour; [spectrum] is the older filter, in blue. */
 object AudioVisualizerGraph {
     /** The app's night-blue accent, used until the screen says which theme is showing. */
@@ -28,19 +49,20 @@ object AudioVisualizerGraph {
     /**
      * Spectrum bars in [rgb] (`0xRRGGBB`). `[ao]` is `asplit`'s first pad, with no filter of its own,
      * so playback audio is not resampled or delayed by the picture.
+     * Omitting [profile] keeps the graph phones and TV have always used.
      */
-    fun bars(audioTrackId: Int, rgb: Int = DEFAULT_ACCENT): String {
+    fun bars(audioTrackId: Int, rgb: Int = DEFAULT_ACCENT, profile: VisualizerProfile = VisualizerProfile.FULL): String {
         val color = "%06X".format(rgb and 0xFFFFFF)
         return "[aid$audioTrackId]asplit=2[ao][vis];" +
-            "[vis]showfreqs=s=960x540:mode=bar:cmode=combined:colors=0x$color:" +
-            "fscale=log:ascale=cbrt:win_size=2048:win_func=hann:overlap=0:rate=30:averaging=1[vo]"
+            "[vis]showfreqs=s=${profile.width}x${profile.height}:mode=bar:cmode=combined:colors=0x$color:" +
+            "fscale=log:ascale=cbrt:win_size=${profile.winSize}:win_func=hann:overlap=0:rate=${profile.fps}:averaging=1[vo]"
     }
 
     /** Heatmap spectrum, used when [bars] isn't in this libmpv build. */
-    fun spectrum(audioTrackId: Int): String =
+    fun spectrum(audioTrackId: Int, profile: VisualizerProfile = VisualizerProfile.FULL): String =
         "[aid$audioTrackId]asplit=2[ao][vis];" +
-            "[vis]showspectrum=s=960x540:mode=combined:color=cool:scale=cbrt:fscale=log:" +
-            "slide=replace:win_func=hann:overlap=0:fps=30:legend=0[vo]"
+            "[vis]showspectrum=s=${profile.width}x${profile.height}:mode=combined:color=cool:scale=cbrt:fscale=log:" +
+            "slide=replace:win_func=hann:overlap=0:fps=${profile.fps}:legend=0[vo]"
 }
 
 /** What to assign to mpv's `lavfi-complex`. [Leave] means don't touch the property. */
@@ -56,6 +78,9 @@ sealed interface VisualizerCommand {
 class AudioVisualizerController {
     var accent: Int = AudioVisualizerGraph.DEFAULT_ACCENT
         private set
+
+    /** Size of the next graph. Set before a file loads; the default matches the historical graph. */
+    var profile: VisualizerProfile = VisualizerProfile.FULL
 
     private var applied: String? = null
     private var aid: Int? = null
@@ -82,7 +107,7 @@ class AudioVisualizerController {
         }
         if (mode == 2) return clear()
         aid = id
-        val graph = if (mode == 0) AudioVisualizerGraph.bars(id, accent) else AudioVisualizerGraph.spectrum(id)
+        val graph = if (mode == 0) AudioVisualizerGraph.bars(id, accent, profile) else AudioVisualizerGraph.spectrum(id, profile)
         if (graph == applied) return VisualizerCommand.Leave
         applied = graph
         return VisualizerCommand.Set(graph)
@@ -95,7 +120,7 @@ class AudioVisualizerController {
         accent = color
         val id = aid
         if (applied == null || mode != 0 || id == null) return VisualizerCommand.Leave
-        val graph = AudioVisualizerGraph.bars(id, accent)
+        val graph = AudioVisualizerGraph.bars(id, accent, profile)
         if (graph == applied) return VisualizerCommand.Leave
         applied = graph
         return VisualizerCommand.Set(graph)
@@ -114,7 +139,7 @@ class AudioVisualizerController {
         }
         mode = 1
         val id = aid ?: return VisualizerCommand.Set("")
-        val graph = AudioVisualizerGraph.spectrum(id)
+        val graph = AudioVisualizerGraph.spectrum(id, profile)
         applied = graph
         return VisualizerCommand.Set(graph)
     }
@@ -195,29 +220,38 @@ object MediaTags {
 object SpectrumMotion {
     const val BARS = 48
 
-    fun idle(phase: Float, bars: Int = BARS): FloatArray = FloatArray(bars) { i ->
-        val n = if (bars <= 1) 0.5f else i / (bars - 1f)
-        val lobe = kotlin.math.sin(Math.PI * n).toFloat()
-        val flick = 0.55f + 0.45f * kotlin.math.sin(phase * 1.6f + i * 0.45f)
-        val slow = 0.75f + 0.25f * kotlin.math.sin(phase * 0.7f + n * 4f)
-        (0.08f + 0.72f * lobe * flick * slow).coerceIn(0.04f, 1f)
+    fun idle(phase: Float, bars: Int = BARS): FloatArray = FloatArray(bars).also { idleInto(it, phase) }
+
+    /** Fills [dest] in place. The idle animation draws every frame, so it must not allocate. */
+    fun idleInto(dest: FloatArray, phase: Float) {
+        val bars = dest.size
+        for (i in 0 until bars) {
+            val n = if (bars <= 1) 0.5f else i / (bars - 1f)
+            val lobe = kotlin.math.sin(Math.PI * n).toFloat()
+            val flick = 0.55f + 0.45f * kotlin.math.sin(phase * 1.6f + i * 0.45f)
+            val slow = 0.75f + 0.25f * kotlin.math.sin(phase * 0.7f + n * 4f)
+            dest[i] = (0.08f + 0.72f * lobe * flick * slow).coerceIn(0.04f, 1f)
+        }
     }
 
     /** Moves [current] toward [target]. A zero [dt] returns a copy of [current] unchanged. */
     fun approach(current: FloatArray, target: FloatArray, dt: Float, bars: Int = BARS): FloatArray {
         val out = FloatArray(bars)
-        if (dt <= 0f) {
-            for (i in 0 until bars) out[i] = current.getOrElse(i) { 0f }
-            return out
-        }
-        for (i in 0 until bars) {
-            val c = current.getOrElse(i) { 0f }
+        for (i in 0 until bars) out[i] = current.getOrElse(i) { 0f }
+        if (dt > 0f) approachInto(out, target, dt)
+        return out
+    }
+
+    /** Moves [current] toward [target] in place. A zero [dt] leaves [current] as it is. */
+    fun approachInto(current: FloatArray, target: FloatArray, dt: Float) {
+        if (dt <= 0f) return
+        for (i in current.indices) {
+            val c = current[i]
             val t = target.getOrElse(i) { 0f }
             val k = if (t > c) 14f else 4.5f
             val a = (1f - kotlin.math.exp(-k * dt)).coerceIn(0f, 1f)
-            out[i] = (c + (t - c) * a).coerceIn(0f, 1f)
+            current[i] = (c + (t - c) * a).coerceIn(0f, 1f)
         }
-        return out
     }
 }
 

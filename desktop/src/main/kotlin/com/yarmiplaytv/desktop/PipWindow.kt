@@ -19,6 +19,8 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import com.yarmiplaytv.AppContainer
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import com.yarmiplaytv.playback.PlaybackAction
 import com.yarmiplaytv.playback.playbackAction
 import com.yarmiplaytv.ui.mobile.MobileTheme
@@ -49,8 +51,11 @@ internal fun PipWindow(
     onBack: () -> Unit,
     onClose: () -> Unit,
 ) {
-    val aspect by container.player.state.collectAsState()
-    val initial = remember { PipPlacement.bounds(PipPlacement.workArea(near, remembered), aspect.displayAspect, remembered) }
+    val player = container.player
+    val aspect by remember(player) {
+        player.state.map { it.displayAspect }.distinctUntilChanged()
+    }.collectAsState(player.state.value.displayAspect)
+    val initial = remember { PipPlacement.bounds(PipPlacement.workArea(near, remembered), aspect, remembered) }
     val state = rememberWindowState(position = WindowPosition(initial.x.dp, initial.y.dp), size = DpSize(initial.width.dp, initial.height.dp))
     Window(
         onCloseRequest = onClose,
@@ -77,8 +82,8 @@ internal fun PipWindow(
         LaunchedEffect(Unit) { runCatching { awt.iconImages = LaunchUpdateWindow.windowIcons() } }
         fun keepBounds() = onBounds(MiniBounds(awt.x, awt.y, awt.width))
         // Keep the video's shape when it changes (another file).
-        LaunchedEffect(aspect.displayAspect) {
-            val ratio = PipPlacement.ratio(aspect.displayAspect)
+        LaunchedEffect(aspect) {
+            val ratio = PipPlacement.ratio(aspect)
             awt.setSize(awt.width, (awt.width / ratio).roundToInt())
         }
         // All video: what's on it is white whatever the theme, and the seek bar takes the theme's accent.

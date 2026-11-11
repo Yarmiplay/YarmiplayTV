@@ -27,6 +27,7 @@ import com.yarmiplaytv.syncplay.UnpauseMode
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -513,7 +514,7 @@ class SettingsStore(
         val malKeys = listOf(malAccount, malAuto, malAsk, malMappings, malIgnored, malIgnoredNames, malQueue)
     }
 
-    val settings: Flow<AppSettings> = dataStore.data.map(::read)
+    val settings: Flow<AppSettings> = dataStore.data.map(::read).distinctUntilChanged()
 
     suspend fun current(): AppSettings = settings.first()
 
