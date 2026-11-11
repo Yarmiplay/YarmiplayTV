@@ -584,8 +584,12 @@ jobs:
           bash scripts/release-deb.sh
           cp deb/*.deb yarmiplaytv.deb
 
-      # Same builder as the Linux packages workflow. A store outage skips the snap (exit 0).
-      # Publishing is only the store, so a publish failure is reported and does not fail the release.
+      - name: Diagnose the Snap Store route
+        run: bash scripts/snap-store-route.sh
+
+      # Same builder as the Linux packages workflow, including the IPv4 pin. A store that still
+      # does not answer after that skips the snap. Publishing is only the store, so a publish
+      # failure is reported and does not fail the release.
       - id: build
         run: |
           bash scripts/snapcraft-build.sh

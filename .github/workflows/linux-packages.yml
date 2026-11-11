@@ -13,6 +13,7 @@ on:
       - scripts/snap-smoke-test.sh
       - scripts/snapcraft-build.sh
       - scripts/snap-store.sh
+      - scripts/snap-store-route.sh
       - scripts/flatpak_gradle_sources.py
       - scripts/retry.sh
       - settings.gradle.kts
@@ -26,6 +27,7 @@ on:
       - scripts/snap-smoke-test.sh
       - scripts/snapcraft-build.sh
       - scripts/snap-store.sh
+      - scripts/snap-store-route.sh
       - scripts/flatpak_gradle_sources.py
       - scripts/retry.sh
       - settings.gradle.kts
@@ -111,10 +113,13 @@ jobs:
 
       - run: cp deb/*.deb yarmiplaytv.deb
 
-      # The Snapcraft image carries Snapcraft and core24, so a store outage cannot fail this
-      # check. snapcraft-build.sh exits 0 with a warning when the store is down, and exits
-      # non-zero when snapcraft itself rejects the project. Install and upload run only when a
-      # snap was produced; the smoke test applies the same store-outage rule.
+      # DNS and curl -4/-6 for the store hosts, before anything changes the route.
+      - name: Diagnose the Snap Store route
+        run: bash scripts/snap-store-route.sh
+
+      # The image carries Snapcraft and core24. When the runner's IPv6 path to the store
+      # black-holes, the build pins IPv4 for curl and snapd. A skip is only what remains after
+      # that and the retries. This pull request fails the job unless a .snap was produced.
       - id: build
         run: |
           bash scripts/snapcraft-build.sh
@@ -123,9 +128,17 @@ jobs:
           if ((${#snaps[@]} > 0)); then
             echo "snap=${snaps[0]}" >> "$GITHUB_OUTPUT"
             echo "built=true" >> "$GITHUB_OUTPUT"
+            echo "SNAP_BUILT=${snaps[0]}" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "built=false" >> "$GITHUB_OUTPUT"
+            echo "SNAP_BUILT=" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Require the built snap
+        if: success() && steps.build.outputs.built != 'true'
+        run: |
+          echo "::error::No .snap was produced. The route diagnostics are above; a skip is not a successful build."
+          exit 1
 
       - name: Install the snap and play a clip
         if: steps.build.outputs.built == 'true'

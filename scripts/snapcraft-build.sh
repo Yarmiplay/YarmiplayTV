@@ -9,10 +9,13 @@ cd "$(dirname "$0")/.."
 # shellcheck source=snap-store.sh
 source scripts/snap-store.sh
 
-export ATTEMPTS="${STORE_PROBE_ATTEMPTS:-3}"
-export DELAY="${STORE_PROBE_DELAY:-10}"
+# IPv6 to api.snapcraft.io is a black hole on GitHub-hosted runners. Prefer the family that answers
+# before any snapd or snapcraft traffic, then give a still-dead route several slow retries.
+prefer_store_route
+export ATTEMPTS="${STORE_PROBE_ATTEMPTS:-6}"
+export DELAY="${STORE_PROBE_DELAY:-15}"
 if ! probe_store; then
-  skip_store "The Snap Store did not answer, so this run did not build the snap. The check stays green. A snapcraft error in the project still fails the job."
+  skip_store "The Snap Store did not answer on IPv4 or IPv6 after retries, so this run did not build the snap. The route diagnostics are in the log above."
 fi
 
 image="${SNAPCRAFT_IMAGE:-ghcr.io/canonical/snapcraft:8_core24}"
@@ -21,7 +24,7 @@ echo "Building the snap with ${image}"
 # The rock's Python install leaves the GNOME extension's command-chain under site-packages, and
 # an empty /usr/share/snapcraft/extensions makes Snapcraft look in the wrong place
 # ("unable to determine source type of .../extensions/desktop/command-chain"). Point it at the files.
-export ATTEMPTS="${STORE_BUILD_ATTEMPTS:-2}"
+export ATTEMPTS="${STORE_BUILD_ATTEMPTS:-3}"
 export DELAY="${STORE_BUILD_DELAY:-20}"
 if retry_store docker run --rm --privileged --network host \
   -v "$PWD:/project" \
@@ -51,6 +54,36 @@ if retry_store docker run --rm --privileged --network host \
         ln -s "${dir}" "${dest}"
       fi
     done
+    # The image ships snapd but does not start it. Destructive builds install the GNOME
+    # content snaps through this daemon; with the host network it uses the IPv4 route pinned above.
+    if [[ ! -S /run/snapd.socket && -x /usr/lib/snapd/snapd ]]; then
+      mkdir -p /run/snapd
+      /usr/lib/snapd/snapd &
+      for _ in $(seq 1 40); do
+        if [[ -S /run/snapd.socket ]]; then
+          break
+        fi
+        sleep 0.5
+      done
+    fi
+    if [[ -S /run/snapd.socket ]]; then
+      timeout 120 snap wait system seed.loaded || echo "snapd did not finish seeding; snapcraft will try the store itself" >&2
+      install_content() {
+        local name=$1 try delay=10
+        for try in 1 2 3 4 5 6; do
+          if snap install "$name"; then
+            return 0
+          fi
+          echo "snap install ${name} failed (try ${try}); retrying in ${delay}s" >&2
+          sleep "$delay"
+          delay=$((delay * 2))
+        done
+        return 1
+      }
+      install_content core24
+      install_content gtk-common-themes
+      install_content gnome-46-2404
+    fi
     exec /bin/run-snapcraft.sh pack
   '; then
   exit 0

@@ -9,10 +9,12 @@ snap=$1
 dir=$(dirname "$0")
 # shellcheck source=snap-store.sh
 source "$dir/snap-store.sh"
+# Same route as the build: IPv4 when the runner's IPv6 path to the store black-holes.
+prefer_store_route
 # Content snaps come from the store. An outage skips the smoke test instead of failing the job.
 # A snap that installs and then fails to draw frames still fails the job.
-export ATTEMPTS="${STORE_INSTALL_ATTEMPTS:-3}"
-export DELAY="${STORE_INSTALL_DELAY:-10}"
+export ATTEMPTS="${STORE_INSTALL_ATTEMPTS:-6}"
+export DELAY="${STORE_INSTALL_DELAY:-15}"
 install_status=0
 retry_store sudo snap install core24 gtk-common-themes gnome-46-2404 mesa-2404 || install_status=$?
 if [[ "$install_status" -eq "$STORE_FAILURE_STATUS" ]]; then
