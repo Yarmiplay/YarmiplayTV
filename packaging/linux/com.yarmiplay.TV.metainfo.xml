@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.0.2" date="2026-11-11">
+      <description>
+        <p>Audio-only files on Android phones, tablets and TV use the same live spectrum as desktop.</p>
+      </description>
+    </release>
     <release version="3.0.1" date="2026-11-10">
       <description>
         <p>Audio-only files show a spectrum visualizer (real audio on desktop and web; animated fallback with cover art on Android and TV) instead of a black frame. Video playback is unchanged.</p>

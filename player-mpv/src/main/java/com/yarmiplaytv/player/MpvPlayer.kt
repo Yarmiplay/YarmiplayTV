@@ -53,6 +53,11 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     override val coverArt: StateFlow<ByteArray?> = _cover.asStateFlow()
     @Volatile private var coverGeneration = 0
     private var coverFor: String? = null
+    private val visualizer = AudioVisualizerController()
+    private val vizLock = Any()
+    private var latestTracks: List<Track> = emptyList()
+    /** Bytes of the loaded libavfilter, or null when the file cannot be read. */
+    private val filterLibrary: ByteArray? by lazy { readFilterLibrary() }
     private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile private var cachedPosition = 0.0
@@ -160,6 +165,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             mpv.setPropertyString("vid", "auto")
             surface = holder.surface
             surfaceAttached = true
+            refreshVisualizer()
         }
 
         override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -171,6 +177,8 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         override fun surfaceDestroyed(holder: SurfaceHolder) {
             surfaceAttached = false
             surface = null
+            // Drop the spectrum before the surface goes away, so its frames are not left unconsumed.
+            refreshVisualizer()
             // Without a surface the MediaCodec decoder can't drain its output and mpv's core spins
             // in it holding the lock (the next main-thread mpv call then ANRs), so drop video until
             // a surface is back; audio keeps playing.
@@ -193,9 +201,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         userSeekedFlag = false
         lastSeekTarget = startPosition
         lastSeekAt = now
-        coverGeneration++
-        coverFor = null
-        _cover.value = null
+        resetPresentation()
         _state.update { PlaybackState(url = url, paused = startPaused, position = startPosition) }
         _tracks.value = emptyList()
         mpv.setPropertyBoolean("pause", startPaused)
@@ -231,9 +237,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         currentUrl = null
         latestLoad = -1
         userSeekedFlag = false
-        coverGeneration++
-        coverFor = null
-        _cover.value = null
+        resetPresentation()
         mpv.command(arrayOf("stop"))
         _state.value = PlaybackState()
         _tracks.value = emptyList()
@@ -311,6 +315,10 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     override fun propertyDouble(name: String): Double? = mpv.getPropertyDouble(name)
 
     override fun propertyString(name: String): String? = mpv.getPropertyString(name)
+
+    override fun setAudioVisualizerColor(rgb: Int) {
+        synchronized(vizLock) { commitVisualizer(visualizer.onColor(rgb)) }
+    }
 
     @Volatile private var appliedSubtitleScale = SubtitleScale.DEFAULT
 
@@ -512,6 +520,9 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             if (prefix == "cplayer" && level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_ERROR) {
                 _events.tryEmit(PlayerEvent.EndFile(currentUrl, line))
             }
+            if (level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_ERROR && _state.value.audioVisualizer && lavfiRejected(line)) {
+                giveUpOnVisualizer()
+            }
         } else if (level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_INFO) {
             Log.i(TAG, "[$prefix] $line")
         }
@@ -547,11 +558,13 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
                     (mpv.getPropertyBoolean("track-list/$i/image") ?: false),
             )
         }
+        latestTracks = list
         publishTracks(list)
         val only = AudioOnly.isAudioOnly(list)
         val title = if (only) MediaTags.title { mpv.getPropertyString(it) } else null
         val artist = if (only) MediaTags.artist { mpv.getPropertyString(it) } else null
-        publishState { it.withAudioPresentation(list, title, artist) }
+        publishState { it.withAudioPresentation(list, title, artist, visualizer = it.audioVisualizer && only) }
+        refreshVisualizer()
         val url = currentUrl
         if (only && url != null && coverFor != url) scheduleCover(url) else if (!only) {
             coverGeneration++
@@ -561,10 +574,65 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     }
 
     /**
-     * The bundled libmpv's libavfilter is built without audio visualizers (`showfreqs`, `showspectrum`),
-     * so a lavfi graph cannot see the samples and is not installed: a rejected graph can stall playback.
-     * The screen draws the idle spectrum instead. Cover art and tags are read beside playback, not through it.
+     * The same lavfi graph the desktop player uses. It is installed only when this process's
+     * libavfilter contains the filters and mpv accepts the property. A rejected graph is cleared
+     * immediately and the screen falls back to the idle bars, so playback is not left waiting on it.
+     * Voice chat never goes through this player. Cover art is read beside playback, not through it.
      */
+    private fun readFilterLibrary(): ByteArray? = runCatching {
+        val file = File(appContext.applicationInfo.nativeLibraryDir, "libavfilter.so")
+        if (!file.isFile || file.length() > 8_000_000L) null else file.readBytes()
+    }.getOrNull()
+
+    private fun commitVisualizer(command: VisualizerCommand) {
+        val showing = visualizer.commit(command) { graph -> applyGraph(graph) }
+        if (showing != null) publishState { it.copy(audioVisualizer = showing) }
+    }
+
+    private fun applyGraph(graph: String): Boolean {
+        if (!LavfiProbe.supports(filterLibrary, graph)) return false
+        val before = mpv.getPropertyString("lavfi-complex").orEmpty()
+        if (before == graph) return true
+        mpv.setPropertyString("lavfi-complex", graph)
+        val after = mpv.getPropertyString("lavfi-complex").orEmpty()
+        // A rejected set leaves the previous value. A value mpv accepts may be rewritten.
+        val accepted = after == graph || (after != before && (graph.isEmpty() || after.isNotEmpty()))
+        if (!accepted) {
+            if (after.isNotEmpty()) mpv.setPropertyString("lavfi-complex", "")
+            return false
+        }
+        return graph.isEmpty() || after.isNotEmpty()
+    }
+
+    private fun refreshVisualizer() {
+        synchronized(vizLock) { commitVisualizer(visualizer.onTracks(latestTracks, canRender = surfaceAttached)) }
+    }
+
+    /** Drops a graph from the previous file before the next one opens, and forgets its cover. */
+    private fun resetPresentation() {
+        latestTracks = emptyList()
+        coverGeneration++
+        coverFor = null
+        _cover.value = null
+        synchronized(vizLock) { commitVisualizer(visualizer.onNewFile()) }
+    }
+
+    /** A graph mpv accepted and then could not build. The idle animation takes over for this file. */
+    private fun lavfiRejected(text: String): Boolean =
+        text.contains("No such filter", ignoreCase = true) ||
+            text.contains("Error initializing", ignoreCase = true) ||
+            text.contains("parsing failed", ignoreCase = true) ||
+            text.contains("failed to configure", ignoreCase = true)
+
+    private fun giveUpOnVisualizer() {
+        synchronized(vizLock) {
+            visualizer.rejected()
+            visualizer.rejected()
+            if (visualizer.disarm()) mpv.setPropertyString("lavfi-complex", "")
+        }
+        publishState { it.copy(audioVisualizer = false) }
+    }
+
     private fun scheduleCover(url: String?) {
         val generation = ++coverGeneration
         coverFor = url
