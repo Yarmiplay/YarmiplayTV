@@ -12,6 +12,8 @@ on:
       - scripts/aur-package.sh
       - scripts/snap-smoke-test.sh
       - scripts/snapcraft-build.sh
+      - scripts/snapcraft-pack.sh
+      - scripts/snap-fetch.sh
       - scripts/snap-store.sh
       - scripts/snap-store-route.sh
       - scripts/flatpak_gradle_sources.py
@@ -26,6 +28,8 @@ on:
       - scripts/aur-package.sh
       - scripts/snap-smoke-test.sh
       - scripts/snapcraft-build.sh
+      - scripts/snapcraft-pack.sh
+      - scripts/snap-fetch.sh
       - scripts/snap-store.sh
       - scripts/snap-store-route.sh
       - scripts/flatpak_gradle_sources.py
@@ -99,10 +103,36 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src archlinux:latest \
             bash scripts/aur-package.sh "$VERSION" "$VERSION" "deb/yarmiplaytv_${VERSION}_amd64.deb"
 
+  # api.snapcraft.io (185.125.188.54-60) does not accept a connection from GitHub-hosted Ubuntu.
+  # These runners try the API and, when one can, upload the content snaps the pack step unpacks.
+  # A leg that cannot reach the API fails this job only; continue-on-error keeps the workflow going.
+  snap-seed:
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-24.04-arm, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download content snaps from the Snap Store
+        run: bash scripts/snap-fetch.sh .snap-seed
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: content-snaps-${{ matrix.os }}
+          path: .snap-seed/*.snap
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
   snap:
-    needs: deb
+    needs: [deb, snap-seed]
+    if: always() && needs.deb.result == 'success' && needs.snap-seed.result != 'cancelled'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
 
@@ -113,13 +143,35 @@ jobs:
 
       - run: cp deb/*.deb yarmiplaytv.deb
 
+      - name: Content snaps from a runner that can reach the store
+        id: seed
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: content-snaps-*
+          path: snap-seeds
+
+      - name: Choose one content-snap set
+        run: |
+          shopt -s nullglob
+          mkdir -p .snap-seed
+          for dir in snap-seeds/content-snaps-*; do
+            if [[ -f "$dir/bare.snap" && -f "$dir/core24.snap" && -f "$dir/gtk-common-themes.snap" && -f "$dir/gnome-46-2404.snap" && -f "$dir/mesa-2404.snap" ]]; then
+              cp -a "$dir"/*.snap .snap-seed/
+              echo "Using $dir"
+              ls -lh .snap-seed
+              exit 0
+            fi
+          done
+          echo "No runner could download the content snaps. The build will probe the store and then stop."
+
       # DNS and curl -4/-6 for the store hosts, before anything changes the route.
       - name: Diagnose the Snap Store route
         run: bash scripts/snap-store-route.sh
 
-      # The image carries Snapcraft and core24. When the runner's IPv6 path to the store
-      # black-holes, the build pins IPv4 for curl and snapd. A skip is only what remains after
-      # that and the retries. This pull request fails the job unless a .snap was produced.
+      # Packs with the fetched content snaps, so the store API is not required during the build.
+      # A skip remains only when every fetch failed and the probe still gets nothing. This pull
+      # request fails the job unless a .snap was produced.
       - id: build
         run: |
           bash scripts/snapcraft-build.sh

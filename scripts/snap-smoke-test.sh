@@ -9,29 +9,51 @@ snap=$1
 dir=$(dirname "$0")
 # shellcheck source=snap-store.sh
 source "$dir/snap-store.sh"
-# Same route as the build: IPv4 when the runner's IPv6 path to the store black-holes.
-prefer_store_route
-# Content snaps come from the store. An outage skips the smoke test instead of failing the job.
-# A snap that installs and then fails to draw frames still fails the job.
-export ATTEMPTS="${STORE_INSTALL_ATTEMPTS:-6}"
-export DELAY="${STORE_INSTALL_DELAY:-15}"
-install_status=0
-retry_store sudo snap install core24 gtk-common-themes gnome-46-2404 mesa-2404 || install_status=$?
-if [[ "$install_status" -eq "$STORE_FAILURE_STATUS" ]]; then
-  skip_store "The Snap Store was unreachable, so the snap was not installed or played. The snap artifact from the build is unchanged. A playback failure still fails the job."
+repo=$(cd "$dir/.." && pwd)
+# Content snaps fetched by scripts/snap-fetch.sh. Installing those files does not contact the store.
+# Without them, an unreachable store skips the smoke test. A snap that installs and then fails to
+# draw frames still fails the job.
+if compgen -G "$repo/.snap-seed/*.snap" > /dev/null; then
+  sudo systemctl start snapd.socket snapd
+  sudo timeout 180 snap wait system seed.loaded
+  install_local() {
+    local name=$1
+    if snap list "$name" >/dev/null 2>&1; then
+      echo "$name is already installed"
+      return 0
+    fi
+    [[ -f "$repo/.snap-seed/${name}.snap" ]] || { echo "missing .snap-seed/${name}.snap" >&2; exit 1; }
+    sudo timeout 300 snap install --dangerous "$repo/.snap-seed/${name}.snap"
+  }
+  for name in bare core24 gtk-common-themes gnome-46-2404 mesa-2404; do
+    install_local "$name"
+  done
+else
+  prefer_store_route
+  export ATTEMPTS="${STORE_INSTALL_ATTEMPTS:-6}"
+  export DELAY="${STORE_INSTALL_DELAY:-15}"
+  install_status=0
+  retry_store sudo snap install core24 gtk-common-themes gnome-46-2404 mesa-2404 || install_status=$?
+  if [[ "$install_status" -eq "$STORE_FAILURE_STATUS" ]]; then
+    skip_store "The Snap Store was unreachable, so the snap was not installed or played. The snap artifact from the build is unchanged. A playback failure still fails the job."
+  fi
+  if [[ "$install_status" -ne 0 ]]; then
+    echo "::error title=Snap install failed::Installing the content snaps failed (exit ${install_status}), and the log was not a Snap Store outage."
+    exit "$install_status"
+  fi
 fi
-if [[ "$install_status" -ne 0 ]]; then
-  echo "::error title=Snap install failed::Installing the content snaps failed (exit ${install_status}), and the log was not a Snap Store outage."
-  exit "$install_status"
-fi
-install_status=0
-retry_store sudo snap install --dangerous "$snap" || install_status=$?
-if [[ "$install_status" -eq "$STORE_FAILURE_STATUS" ]]; then
-  skip_store "The Snap Store was unreachable while installing the locally built snap, so it was not played. A playback failure still fails the job."
-fi
-if [[ "$install_status" -ne 0 ]]; then
-  echo "::error title=Snap install failed::Installing ${snap} failed (exit ${install_status})."
-  exit "$install_status"
+if compgen -G "$repo/.snap-seed/*.snap" > /dev/null; then
+  sudo timeout 300 snap install --dangerous "$snap"
+else
+  install_status=0
+  retry_store sudo snap install --dangerous "$snap" || install_status=$?
+  if [[ "$install_status" -eq "$STORE_FAILURE_STATUS" ]]; then
+    skip_store "The Snap Store was unreachable while installing the locally built snap, so it was not played. A playback failure still fails the job."
+  fi
+  if [[ "$install_status" -ne 0 ]]; then
+    echo "::error title=Snap install failed::Installing ${snap} failed (exit ${install_status})."
+    exit "$install_status"
+  fi
 fi
 # Content connections only happen by themselves for snaps from the store.
 sudo snap connect yarmiplaytv:gnome-46-2404 gnome-46-2404

@@ -1,0 +1,132 @@
+name: Snap
+
+# Builds and, when publish is set, releases the snap for the latest GitHub release's .deb.
+# Does not build the Android, Windows, macOS or .deb installers. A version tag uses release.yml instead.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the built snap to the Snap Store
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  snap-seed:
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-24.04-arm, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download content snaps from the Snap Store
+        run: bash scripts/snap-fetch.sh .snap-seed
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: content-snaps-${{ matrix.os }}
+          path: .snap-seed/*.snap
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  snap:
+    needs: snap-seed
+    if: always() && needs.snap-seed.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      built: ${{ steps.build.outputs.built }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash scripts/release-deb.sh
+          cp deb/*.deb yarmiplaytv.deb
+
+      - name: Content snaps from a runner that can reach the store
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: content-snaps-*
+          path: snap-seeds
+
+      - name: Choose one content-snap set
+        run: |
+          shopt -s nullglob
+          mkdir -p .snap-seed
+          for dir in snap-seeds/content-snaps-*; do
+            if [[ -f "$dir/bare.snap" && -f "$dir/core24.snap" && -f "$dir/gtk-common-themes.snap" && -f "$dir/gnome-46-2404.snap" && -f "$dir/mesa-2404.snap" ]]; then
+              cp -a "$dir"/*.snap .snap-seed/
+              echo "Using $dir"
+              ls -lh .snap-seed
+              exit 0
+            fi
+          done
+          echo "No runner could download the content snaps."
+          exit 1
+
+      - name: Diagnose the Snap Store route
+        run: bash scripts/snap-store-route.sh
+
+      - id: build
+        run: |
+          bash scripts/snapcraft-build.sh
+          shopt -s nullglob
+          snaps=(*.snap)
+          if ((${#snaps[@]} == 0)); then
+            echo "built=false" >> "$GITHUB_OUTPUT"
+            echo "::error::No .snap was produced"
+            exit 1
+          fi
+          echo "snap=${snaps[0]}" >> "$GITHUB_OUTPUT"
+          echo "built=true" >> "$GITHUB_OUTPUT"
+          echo "SNAP_BUILT=${snaps[0]}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install the snap and play a clip
+        run: bash scripts/snap-smoke-test.sh "${{ steps.build.outputs.snap }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: snap
+          path: ${{ steps.build.outputs.snap }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: snap
+    if: inputs.publish && needs.snap.outputs.built == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: snap
+          path: snap
+
+      - id: file
+        run: |
+          shopt -s nullglob
+          files=(snap/*.snap)
+          if ((${#files[@]} != 1)); then
+            echo "::error::expected one snap artifact, found ${#files[@]}"
+            exit 1
+          fi
+          echo "snap=${files[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the snap
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.file.outputs.snap }}
+          release: ${{ vars.SNAP_CHANNEL || 'stable' }}

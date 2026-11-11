@@ -21,7 +21,8 @@ name: Release
 #   the release's .deb, each switched on by its variable:
 #   - AUR_PACKAGE (yarmiplaytv-bin) and the secret AUR_SSH_PRIVATE_KEY: the AUR package, tested in Arch Linux;
 #   - SNAP_NAME (yarmiplaytv) and the secret SNAPCRAFT_STORE_CREDENTIALS: the snap, released to the channel in
-#     SNAP_CHANNEL (default stable);
+#     SNAP_CHANNEL (default stable). Content snaps are fetched on a runner that can open api.snapcraft.io
+#     (GitHub-hosted Ubuntu cannot) and the publish step runs on macOS for the same reason;
 #   - FLATHUB_REPO (flathub/com.yarmiplay.TV) and the secret FLATHUB_TOKEN: a pull request to the app's Flathub
 #     repository with the manifest pointing at the tag, merged automatically when the repository allows it.
 # A manual run builds everything again; its inputs submit or publish to a store, the Linux ones for the latest
@@ -567,13 +568,41 @@ jobs:
             commit -m "Update to $VERSION"
           git push origin HEAD:master
 
-  # Builds the snap from the release's .deb, installs it and plays a clip, then releases it to SNAP_CHANNEL.
-  # SNAP_NAME has to be snap/snapcraft.yaml's name (yarmiplaytv), registered with snapcraft register.
-  snap:
-    needs: linux-installers
+  # api.snapcraft.io does not accept a connection from GitHub-hosted Ubuntu. Fetch the content
+  # snaps from a runner that can, so the Ubuntu pack below does not need the store API.
+  snap-seed:
     if: (github.ref_type == 'tag' || inputs.snap) && vars.SNAP_NAME != ''
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-24.04-arm, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download content snaps from the Snap Store
+        run: bash scripts/snap-fetch.sh .snap-seed
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: content-snaps-${{ matrix.os }}
+          path: .snap-seed/*.snap
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  # Builds the snap from the release's .deb, installs it and plays a clip. Publishing runs on macOS,
+  # which can open the store API that GitHub-hosted Ubuntu cannot. SNAP_NAME has to be
+  # snap/snapcraft.yaml's name (yarmiplaytv), registered with snapcraft register.
+  snap:
+    needs: [linux-installers, snap-seed]
+    if: always() && (github.ref_type == 'tag' || inputs.snap) && vars.SNAP_NAME != '' && needs.linux-installers.result == 'success' && needs.snap-seed.result != 'cancelled'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
+    outputs:
+      built: ${{ steps.build.outputs.built }}
     steps:
       - uses: actions/checkout@v7
 
@@ -584,12 +613,30 @@ jobs:
           bash scripts/release-deb.sh
           cp deb/*.deb yarmiplaytv.deb
 
+      - name: Content snaps from a runner that can reach the store
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: content-snaps-*
+          path: snap-seeds
+
+      - name: Choose one content-snap set
+        run: |
+          shopt -s nullglob
+          mkdir -p .snap-seed
+          for dir in snap-seeds/content-snaps-*; do
+            if [[ -f "$dir/bare.snap" && -f "$dir/core24.snap" && -f "$dir/gtk-common-themes.snap" && -f "$dir/gnome-46-2404.snap" && -f "$dir/mesa-2404.snap" ]]; then
+              cp -a "$dir"/*.snap .snap-seed/
+              echo "Using $dir"
+              ls -lh .snap-seed
+              exit 0
+            fi
+          done
+          echo "No runner could download the content snaps. The build will probe the store and then stop."
+
       - name: Diagnose the Snap Store route
         run: bash scripts/snap-store-route.sh
 
-      # Same builder as the Linux packages workflow, including the IPv4 pin. A store that still
-      # does not answer after that skips the snap. Publishing is only the store, so a publish
-      # failure is reported and does not fail the release.
       - id: build
         run: |
           bash scripts/snapcraft-build.sh
@@ -606,14 +653,45 @@ jobs:
         if: steps.build.outputs.built == 'true'
         run: bash scripts/snap-smoke-test.sh "${{ steps.build.outputs.snap }}"
 
-      - name: Publish the snap
+      - uses: actions/upload-artifact@v7
         if: steps.build.outputs.built == 'true'
+        with:
+          name: snap
+          path: ${{ steps.build.outputs.snap }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # The Node publish action talks to api.snapcraft.io from the runner. Ubuntu runners cannot open
+  # that API; macOS can when the seed job could. A publish failure is reported and does not fail
+  # the release.
+  snap-publish:
+    needs: snap
+    if: needs.snap.outputs.built == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: snap
+          path: snap
+
+      - id: file
+        run: |
+          shopt -s nullglob
+          files=(snap/*.snap)
+          if ((${#files[@]} != 1)); then
+            echo "::error::expected one snap artifact, found ${#files[@]}"
+            exit 1
+          fi
+          echo "snap=${files[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the snap
         continue-on-error: true
         uses: snapcore/action-publish@v1
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:
-          snap: ${{ steps.build.outputs.snap }}
+          snap: ${{ steps.file.outputs.snap }}
           release: ${{ vars.SNAP_CHANNEL || 'stable' }}
 
   # Points the Flatpak manifest at the release tag, lists the Gradle files its offline build needs, and opens a
