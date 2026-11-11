@@ -118,12 +118,12 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Download content snaps from the Snap Store
-        run: bash scripts/snap-fetch.sh .snap-seed
+        run: bash scripts/snap-fetch.sh snap-seed
 
       - uses: actions/upload-artifact@v7
         with:
           name: content-snaps-${{ matrix.os }}
-          path: .snap-seed/*.snap
+          path: snap-seed/
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
@@ -153,17 +153,24 @@ jobs:
 
       - name: Choose one content-snap set
         run: |
-          shopt -s nullglob
-          mkdir -p .snap-seed
-          for dir in snap-seeds/content-snaps-*; do
-            if [[ -f "$dir/bare.snap" && -f "$dir/core24.snap" && -f "$dir/gtk-common-themes.snap" && -f "$dir/gnome-46-2404.snap" && -f "$dir/mesa-2404.snap" ]]; then
-              cp -a "$dir"/*.snap .snap-seed/
-              echo "Using $dir"
-              ls -lh .snap-seed
-              exit 0
-            fi
-          done
-          echo "No runner could download the content snaps. The build will probe the store and then stop."
+          mkdir -p snap-seed
+          found=
+          if [[ -d snap-seeds ]]; then
+            while IFS= read -r file; do
+              dir=$(dirname "$file")
+              if [[ -f "$dir/bare.snap" && -f "$dir/core24.snap" && -f "$dir/gtk-common-themes.snap" && -f "$dir/gnome-46-2404.snap" && -f "$dir/mesa-2404.snap" ]]; then
+                found=$dir
+                break
+              fi
+            done < <(find snap-seeds -name bare.snap -print)
+          fi
+          if [[ -z "$found" ]]; then
+            echo "No runner could download the content snaps. The build will probe the store and then stop."
+            exit 0
+          fi
+          cp -a "$found"/*.snap snap-seed/
+          echo "Using $found"
+          ls -lh snap-seed
 
       # DNS and curl -4/-6 for the store hosts, before anything changes the route.
       - name: Diagnose the Snap Store route

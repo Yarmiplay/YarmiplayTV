@@ -13,7 +13,7 @@ repo=$(cd "$dir/.." && pwd)
 # Content snaps fetched by scripts/snap-fetch.sh. Installing those files does not contact the store.
 # Without them, an unreachable store skips the smoke test. A snap that installs and then fails to
 # draw frames still fails the job.
-if compgen -G "$repo/.snap-seed/*.snap" > /dev/null; then
+if compgen -G "$repo/snap-seed/*.snap" > /dev/null; then
   sudo systemctl start snapd.socket snapd
   sudo timeout 180 snap wait system seed.loaded
   install_local() {
@@ -22,8 +22,8 @@ if compgen -G "$repo/.snap-seed/*.snap" > /dev/null; then
       echo "$name is already installed"
       return 0
     fi
-    [[ -f "$repo/.snap-seed/${name}.snap" ]] || { echo "missing .snap-seed/${name}.snap" >&2; exit 1; }
-    sudo timeout 300 snap install --dangerous "$repo/.snap-seed/${name}.snap"
+    [[ -f "$repo/snap-seed/${name}.snap" ]] || { echo "missing snap-seed/${name}.snap" >&2; exit 1; }
+    sudo timeout 300 snap install --dangerous "$repo/snap-seed/${name}.snap"
   }
   for name in bare core24 gtk-common-themes gnome-46-2404 mesa-2404; do
     install_local "$name"
@@ -42,7 +42,7 @@ else
     exit "$install_status"
   fi
 fi
-if compgen -G "$repo/.snap-seed/*.snap" > /dev/null; then
+if compgen -G "$repo/snap-seed/*.snap" > /dev/null; then
   sudo timeout 300 snap install --dangerous "$snap"
 else
   install_status=0

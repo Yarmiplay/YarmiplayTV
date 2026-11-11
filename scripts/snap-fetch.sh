@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Downloads the amd64 content snaps the snap build and smoke test need from the Snap Store API.
 # GitHub-hosted Ubuntu runners cannot open the API (185.125.188.54-60); run this where that URL answers.
-# Writes <name>.snap files into the directory given as the first argument (default .snap-seed).
+# Writes <name>.snap files into the directory given as the first argument (default snap-seed).
 set -euo pipefail
 
-out=${1:-.snap-seed}
+out=${1:-snap-seed}
 mkdir -p "$out"
 
 echo "Snap Store fetch on $(uname -srm)"

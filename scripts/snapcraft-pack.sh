@@ -2,7 +2,7 @@
 # Runs inside ghcr.io/canonical/snapcraft:8_core24 with the repo mounted at /project.
 # The image's Python install leaves the GNOME extension's command-chain under site-packages, and an
 # empty /usr/share/snapcraft/extensions makes Snapcraft look in the wrong place. Point it at the files.
-# Content snaps are unpacked from /project/.snap-seed when that directory was filled by a runner that
+# Content snaps are unpacked from /project/snap-seed when that directory was filled by a runner that
 # can reach the store. Snapcraft skips installing build-snaps inside a container, and the cleanup part
 # only needs the files under /snap/<name>/current.
 set -euo pipefail
@@ -26,7 +26,7 @@ for dir in "${ext_root}"/*; do
   fi
 done
 
-seed=/project/.snap-seed
+seed=/project/snap-seed
 if compgen -G "${seed}/*.snap" > /dev/null; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq

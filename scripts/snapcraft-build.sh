@@ -14,10 +14,10 @@ cd "$(dirname "$0")/.."
 source scripts/snap-store.sh
 
 seed=0
-if compgen -G '.snap-seed/*.snap' > /dev/null; then
+if compgen -G 'snap-seed/*.snap' > /dev/null; then
   seed=1
   echo "Content snaps are on disk; packing without the Snap Store."
-  ls -lh .snap-seed
+  ls -lh snap-seed
 else
   # Still-dead route: several slow retries, then the caller may skip. A pull request fails that skip.
   prefer_store_route
