@@ -195,12 +195,14 @@ class DesktopMpvPlayerTest {
     @Test
     fun muteKeepsTheVolumeAndChangingItUnmutes() = runBlocking {
         player.setVolume(60.0)
+        // mpv echoes volume on its own thread. Asserting immediately races that echo.
+        withTimeout(2_000) { player.volume.first { abs(it - 60.0) < 0.01 } }
         player.setMuted(true)
         withTimeout(2_000) { player.muted.first { it } }
-        assertEquals(60.0, player.volume.value, 0.0)
+        withTimeout(2_000) { player.volume.first { abs(it - 60.0) < 0.01 } }
         player.changeVolume(5.0)
         withTimeout(2_000) { player.muted.first { !it } }
-        withTimeout(2_000) { player.volume.first { it == 65.0 } }
+        withTimeout(2_000) { player.volume.first { abs(it - 65.0) < 0.01 } }
         Unit
     }
 }

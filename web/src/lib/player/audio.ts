@@ -62,6 +62,19 @@ export class AudioOutput {
     this.analyser = analyser;
   }
 
+  /** Drops the spectrum tap. A video file must not keep an AnalyserNode connected. */
+  disableSpectrum() {
+    const analyser = this.analyser;
+    if (!analyser) return;
+    this.analyser = null;
+    try {
+      this.node.disconnect(analyser);
+    } catch {
+      /* The node may already be disconnected. */
+    }
+    analyser.disconnect();
+  }
+
   /** Frequency bins of the sound being heard right now, or null while paused or before the tap exists. */
   spectrum(): Uint8Array | null {
     if (!this.analyser || this.context.state !== "running") return null;
@@ -109,6 +122,7 @@ export class AudioOutput {
   }
 
   close() {
+    this.disableSpectrum();
     this.node?.disconnect();
     void this.context.close();
   }

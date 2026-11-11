@@ -126,6 +126,15 @@ data class VoiceProcessingChain(
          *   falls back gracefully to WebRTC/platform NS (when [noiseSuppression] is true) or [NsBackend.NONE]
          *   (when [noiseSuppression] is false), and populates [fallbackNotice].
          */
+        /**
+         * Desktop mic test and Discord lobby calls share the lobby capture chain.
+         * A Syncplay relay session keeps the spectral chain. The mic test never
+         * transmits, so a test started outside a lobby (or over a relay session)
+         * still uses this lobby chain and the relay chain is rebuilt when it stops.
+         */
+        fun useLobbyCaptureChain(inSession: Boolean, activeDiscord: Boolean, micTest: Boolean): Boolean =
+            !inSession || activeDiscord || micTest
+
         fun build(
             platform: VoiceChainPlatform,
             discordLobby: Boolean = true,

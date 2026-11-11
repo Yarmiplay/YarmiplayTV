@@ -20,9 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,9 +93,9 @@ fun BoxScope.AudioStage(
         return
     }
     val motion = remember(state.url) { IdleSpectrum() }
-    var frame by remember(state.url) { mutableIntStateOf(0) }
-    val tick = frame
-    LaunchedEffect(state.paused, state.buffering) {
+    // Read only inside Canvas, so a new frame redraws the bars and does not recompose the title and cover.
+    val clock = remember(state.url) { androidx.compose.runtime.mutableLongStateOf(0L) }
+    LaunchedEffect(state.paused, state.buffering, state.url) {
         if (state.paused || state.buffering) return@LaunchedEffect
         var last = 0L
         while (isActive) {
@@ -107,7 +105,7 @@ fun BoxScope.AudioStage(
                 motion.phase += dt
                 val next = SpectrumMotion.approach(motion.levels, SpectrumMotion.idle(motion.phase), dt)
                 next.copyInto(motion.levels)
-                frame++
+                clock.longValue = now
             }
         }
     }
@@ -121,9 +119,8 @@ fun BoxScope.AudioStage(
             ),
         )
         Canvas(Modifier.fillMaxSize()) {
-            // [tick] is read during composition, so a paused playback (no new tick) holds this frame.
-            val redraw = tick
-            if (redraw < 0) return@Canvas
+            // Reading [clock] here redraws this canvas only. A paused playback holds the last value.
+            if (clock.longValue < 0L) return@Canvas
             val n = motion.levels.size
             val gap = size.width * 0.008f
             val barW = (size.width - gap * (n + 1)) / n

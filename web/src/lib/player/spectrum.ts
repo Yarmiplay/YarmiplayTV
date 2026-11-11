@@ -1,6 +1,34 @@
 /** Bar count shared with the idle animation. */
 export const BARS = 48;
 
+/** Codecs that are a still picture (album art, attached cover), not a moving picture. */
+const ATTACHED_PICTURE = new Set([
+  "mjpeg",
+  "mjpeg_2000",
+  "png",
+  "bmp",
+  "gif",
+  "webp",
+  "tiff",
+  "jpeg",
+  "jpg",
+  "apng",
+]);
+
+export function isAttachedPicture(codec: string): boolean {
+  return ATTACHED_PICTURE.has(codec.toLowerCase());
+}
+
+/** A video stream the player should decode and show. Cover art is not one. */
+export function isMotionVideo(kind: string, codec: string): boolean {
+  return kind === "video" && !isAttachedPicture(codec);
+}
+
+/** The spectrum (analyser tap and the bar animation) runs only for a loaded audio file with no motion video. */
+export function showSpectrum(loaded: boolean, hasMotionVideo: boolean, hasAudio: boolean): boolean {
+  return loaded && !hasMotionVideo && hasAudio;
+}
+
 /**
  * Log-spaced peaks from an AnalyserNode byte spectrum, each 0..1.
  * Bin 0 is the DC offset and is skipped so silence doesn't lift the first bar.

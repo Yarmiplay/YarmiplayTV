@@ -11,6 +11,8 @@ on:
       - snap/**
       - scripts/aur-package.sh
       - scripts/snap-smoke-test.sh
+      - scripts/snapcraft-build.sh
+      - scripts/snap-store.sh
       - scripts/flatpak_gradle_sources.py
       - scripts/retry.sh
       - settings.gradle.kts
@@ -22,6 +24,8 @@ on:
       - snap/**
       - scripts/aur-package.sh
       - scripts/snap-smoke-test.sh
+      - scripts/snapcraft-build.sh
+      - scripts/snap-store.sh
       - scripts/flatpak_gradle_sources.py
       - scripts/retry.sh
       - settings.gradle.kts
@@ -107,16 +111,32 @@ jobs:
 
       - run: cp deb/*.deb yarmiplaytv.deb
 
-      - uses: snapcore/action-build@v1
-        id: build
+      # The Snapcraft image carries Snapcraft and core24, so a store outage cannot fail this
+      # check. snapcraft-build.sh exits 0 with a warning when the store is down, and exits
+      # non-zero when snapcraft itself rejects the project. Install and upload run only when a
+      # snap was produced; the smoke test applies the same store-outage rule.
+      - id: build
+        run: |
+          bash scripts/snapcraft-build.sh
+          shopt -s nullglob
+          snaps=(*.snap)
+          if ((${#snaps[@]} > 0)); then
+            echo "snap=${snaps[0]}" >> "$GITHUB_OUTPUT"
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install the snap and play a clip
+        if: steps.build.outputs.built == 'true'
         run: bash scripts/snap-smoke-test.sh "${{ steps.build.outputs.snap }}"
 
       - uses: actions/upload-artifact@v7
+        if: steps.build.outputs.built == 'true'
         with:
           name: snap
           path: ${{ steps.build.outputs.snap }}
+          if-no-files-found: error
           retention-days: 7
 
   # A build with an empty Gradle home downloads exactly what the Flatpak build needs.

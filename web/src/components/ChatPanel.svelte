@@ -4,6 +4,7 @@
 
 <script lang="ts">
   import { changeSettings, session as sessionStore, settings } from "../app/context";
+  import { chatParts } from "../lib/chat/links";
   import type { FeedMessage } from "../lib/sync/room";
   import Icon from "./Icon.svelte";
 
@@ -74,7 +75,15 @@
         {#if m.from}
           <button class="from" title="Block {m.from} until you leave the room" onclick={() => session?.block(m.from!)}>{m.from}</button>
         {/if}
-        <span class="text">{m.text}</span>
+        <span class="text">
+          {#each chatParts(m.text) as part, i (i)}
+            {#if part.href}
+              <a href={part.href} target="_blank" rel="noopener noreferrer">{part.text}</a>
+            {:else}
+              {part.text}
+            {/if}
+          {/each}
+        </span>
       </li>
     {/each}
   </ol>
@@ -125,6 +134,10 @@
   }
   li.error .text {
     color: var(--error);
+  }
+  .text a {
+    color: var(--accent);
+    text-decoration: underline;
   }
   .from {
     background: none;

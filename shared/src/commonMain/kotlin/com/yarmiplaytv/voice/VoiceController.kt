@@ -97,7 +97,9 @@ class VoiceController(
                 val ui = _ui.value
                 val live = ui.micControlLive() && !ui.selfMuted && !testing
                 val next = if (live) engine.captureLevel() else 0f
-                if (next != _captureLevel.value) _captureLevel.value = next
+                // The meter is a spring. Steps of 1/16 keep a noisy mic from rebuilding the player at 30 Hz.
+                val stepped = kotlin.math.round(next.coerceIn(0f, 1f) * 16f) / 16f
+                if (stepped != _captureLevel.value) _captureLevel.value = stepped
                 val notice = engine.statusNotice()
                 if (notice != ui.aiFallbackNotice) {
                     _ui.update { it.copy(aiFallbackNotice = notice) }

@@ -39,6 +39,7 @@ import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.ui.player.AudioStage
 import com.yarmiplaytv.playback.PlaybackAction
 import com.yarmiplaytv.playback.playbackAction
+import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.player.SubtitleScale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -313,7 +314,6 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         )
 
                         val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
-                        val voiceLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
                         val speakingNames = remember(voiceUi, settings) { voiceUi.audibleSpeakingNames(settings) }
                         // Edge speaking list — only while someone is heard; nothing when idle.
                         VoiceSpeakingOverlay(
@@ -338,11 +338,10 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                     }
                                     if (!isPortrait) {
                                         // Status cluster (room · ready · ping · compact mic); hides with HUD — no video Mic badge.
-                                        RoomStatusChip(
+                                        LiveRoomStatus(
+                                            container,
                                             room,
                                             playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls },
-                                            micLive = voiceUi.micControlLive(),
-                                            micLevel = voiceLevel,
                                         )
                                     }
                                     if (pip.supported && state.fileLoaded) {
@@ -395,7 +394,6 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         inRoom = inRoom,
                                         ready = room.isReady == true,
                                         voiceUi = voiceUi,
-                                        voiceLevel = voiceLevel,
                                         onInteract = ::touch,
                                         onSheet = { openSheet(it); touch() },
                                         onMenus = { openMenus(); touch() },
@@ -570,13 +568,12 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                             )
                                         }
                                         // Mic beside Ready — full 48dp target (not crushed by the volume row).
-                                        val portraitLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
-                                        PlayerMicButton(
+                                        LiveMicButton(
+                                            container,
                                             portraitVoice,
                                             onToggle = { container.voice.toggleMic(); touch() },
                                             onVideo = false,
                                             showKeyboardShortcut = false,
-                                            level = portraitLevel,
                                         )
                                         PlayerVoiceMembershipButton(
                                             portraitVoice,
@@ -599,23 +596,13 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                 Column(
                                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                                 ) {
-                                    val segments by container.skips.segments.collectAsStateWithLifecycle()
-                                    var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
-                                    LaunchedEffect(Unit) {
-                                        while (true) {
-                                            position = container.player.currentPosition()
-                                            delay(250)
-                                        }
-                                    }
-                                    TvSeekBar(
+                                    PolledSeekBar(
+                                        container,
                                         state,
-                                        position,
                                         ::touch,
-                                        container.seekFrames,
-                                        segments,
                                         onVideo = false,
                                         showStats = settings.playback.showPlaybackStats,
-                                    ) { container.player.seek(it) }
+                                    )
 
                                     Spacer(Modifier.height(8.dp))
 
@@ -696,13 +683,12 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                                     onVideo = false,
                                                 )
                                             }
-                                            val controlsLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
-                                            PlayerMicButton(
+                                            LiveMicButton(
+                                                container,
                                                 portraitVoice,
                                                 onToggle = { container.voice.toggleMic(); touch() },
                                                 onVideo = false,
                                                 showKeyboardShortcut = false,
-                                                level = controlsLevel,
                                             )
                                             PlayerVoiceMembershipButton(
                                                 portraitVoice,
@@ -856,7 +842,6 @@ private fun BottomControls(
     inRoom: Boolean,
     ready: Boolean,
     voiceUi: VoiceUiState,
-    voiceLevel: Float = 0f,
     onInteract: () -> Unit,
     onSheet: (PlayerSheet) -> Unit,
     onMenus: () -> Unit,
@@ -864,13 +849,7 @@ private fun BottomControls(
 ) {
     val state by container.player.state.collectAsStateWithLifecycle()
     val settings by container.settings.collectAsStateWithLifecycle()
-    var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            position = container.player.currentPosition()
-            delay(250)
-        }
-    }
+    val voiceLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
     val useMenus = container.deviceKind == DeviceKind.PHONE || container.deviceKind == DeviceKind.TABLET
     Column(
         modifier.fillMaxWidth()
@@ -878,15 +857,13 @@ private fun BottomControls(
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        val segments by container.skips.segments.collectAsStateWithLifecycle()
-        TvSeekBar(
+        PolledSeekBar(
+            container,
             state,
-            position,
             onInteract,
-            container.seekFrames,
-            segments,
+            onVideo = true,
             showStats = settings.playback.showPlaybackStats,
-        ) { container.player.seek(it) }
+        )
         Row(verticalAlignment = Alignment.CenterVertically) {
             PlayerVolumeControl(onInteract, Modifier.padding(end = 8.dp))
             if (inRoom) {
@@ -932,6 +909,55 @@ private fun BottomControls(
             }
         }
     }
+}
+
+/** Room chip that follows the mic meter without recomposing the video. */
+@Composable
+private fun LiveRoomStatus(container: AppContainer, room: RoomState, streaming: String?) {
+    val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
+    val level by container.voice.captureLevel.collectAsStateWithLifecycle()
+    RoomStatusChip(room, streaming, micLive = voiceUi.micControlLive(), micLevel = level)
+}
+
+/** Mic button that follows the capture meter without recomposing the player. */
+@Composable
+private fun LiveMicButton(
+    container: AppContainer,
+    ui: VoiceUiState,
+    onToggle: () -> Unit,
+    onVideo: Boolean,
+    showKeyboardShortcut: Boolean,
+) {
+    val level by container.voice.captureLevel.collectAsStateWithLifecycle()
+    PlayerMicButton(ui, onToggle, onVideo, showKeyboardShortcut, level)
+}
+
+/** Seek bar clock. Kept in its own composable so the 4 Hz poll does not rebuild the player. */
+@Composable
+private fun PolledSeekBar(
+    container: AppContainer,
+    state: PlaybackState,
+    onInteract: () -> Unit,
+    onVideo: Boolean,
+    showStats: Boolean,
+) {
+    val segments by container.skips.segments.collectAsStateWithLifecycle()
+    var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            position = container.player.currentPosition()
+            delay(250)
+        }
+    }
+    TvSeekBar(
+        state,
+        position,
+        onInteract,
+        container.seekFrames,
+        segments,
+        onVideo = onVideo,
+        showStats = showStats,
+    ) { container.player.seek(it) }
 }
 
 /** Player Mic toggle beside Ready; visual state matches Room tab via [micControlLive]. */

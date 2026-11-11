@@ -3,7 +3,7 @@
   import { attachPlayer, go, session as sessionStore, settings } from "../app/context";
   import { FileSource, HttpSource, type ByteSource } from "../lib/player/bytes";
   import { MediaPlayer, type PlayerState } from "../lib/player/mediaPlayer";
-  import { approach, barsFromFrequency, idle } from "../lib/player/spectrum";
+  import { approach, barsFromFrequency, idle, showSpectrum } from "../lib/player/spectrum";
   import { SeekFrames } from "../lib/player/seekFrames";
   import { dropSeek, jpegUrl, seekOffer, sheetUrl, sidecarLanguage, trickplayTile } from "../lib/media/seekThumbs";
   import type { FeedMessage, PlaylistStatus } from "../lib/sync/room";
@@ -135,7 +135,7 @@
 
   $effect(() => {
     const canvas = vizCanvas;
-    const audioOnly = !!s?.loaded && !s.video && s.audioTrack != null;
+    const audioOnly = showSpectrum(!!s?.loaded, !!s?.video, s?.audioTrack != null);
     const hold = !s || s.paused || s.buffering;
     if (!canvas || !audioOnly) return;
     const ctx = canvas.getContext("2d");
@@ -570,7 +570,7 @@
     <canvas bind:this={subtitleCanvas} class="subs"></canvas>
     <canvas bind:this={pictureSubtitleCanvas} class="subs"></canvas>
 
-    {#if s?.loaded && !s.video && s.audioTrack != null}
+    {#if s && showSpectrum(s.loaded, !!s.video, s.audioTrack != null)}
       <div class="audio-backdrop">
         <canvas bind:this={vizCanvas} class="viz"></canvas>
         <div class="audio-art">

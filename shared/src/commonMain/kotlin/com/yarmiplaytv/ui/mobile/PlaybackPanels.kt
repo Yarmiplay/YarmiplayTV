@@ -58,7 +58,9 @@ import com.yarmiplaytv.player.Chapter
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.theme.AppColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 /**
@@ -261,11 +263,12 @@ private fun AdjustRow(
 private fun <T> rememberPlayerValue(initial: T, read: () -> T): PlayerValue<T> {
     var value by remember { mutableStateOf(initial) }
     var tick by remember { mutableIntStateOf(0) }
-    LaunchedEffect(tick) { value = read() }
+    LaunchedEffect(tick) { value = withContext(Dispatchers.Default) { read() } }
     LaunchedEffect(Unit) {
         while (true) {
             delay(400)
-            value = read()
+            // mpv property reads take the player lock. Keep that off the UI thread while the sheet is open.
+            value = withContext(Dispatchers.Default) { read() }
         }
     }
     return PlayerValue(value) { tick++ }

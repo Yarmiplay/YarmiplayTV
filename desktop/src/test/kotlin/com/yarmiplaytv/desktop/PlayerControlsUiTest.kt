@@ -43,6 +43,9 @@ import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.syncplay.RoomUser
+import com.yarmiplaytv.syncplay.VoiceDescriptor
+import com.yarmiplaytv.syncplay.YarmiplayCapabilities
+import com.yarmiplaytv.syncplay.YarmiplayInfo
 import com.yarmiplaytv.ui.mobile.DesktopBack
 import com.yarmiplaytv.ui.mobile.DesktopPip
 import com.yarmiplaytv.ui.mobile.DesktopPlayerInput
@@ -551,6 +554,13 @@ class PlayerControlsUiTest {
                 username = "Alice",
                 isReady = false,
                 users = listOf(RoomUser(name = "Alice", room = "AnimeNight", isReady = false)),
+                // Voice reconcile tears a forced connection down when the room has no voice.
+                // That raced the Mic lookup on the slower Windows runner.
+                yarmiplay = YarmiplayInfo(
+                    session = true,
+                    capabilities = YarmiplayCapabilities(voice = true),
+                    voice = VoiceDescriptor(),
+                ),
             )
         )
         forceVoiceConnected()
@@ -590,6 +600,9 @@ class PlayerControlsUiTest {
         onNodeWithTag("sheet_tab_audio").assertExists()
         onNodeWithTag("sheet_tab_subtitles").assertExists()
 
+        // Re-apply after the sheet settles, in case reconcile ran during the first frames.
+        forceVoiceConnected()
+        settle()
         val mic = onNodeWithTag("player_mic_toggle").fetchSemanticsNode().boundsInRoot
         assertEquals("Mic is 48dp tall", 48f * densityDpi, mic.height, 1.5f)
         assertEquals("Mic is 48dp wide", 48f * densityDpi, mic.width, 1.5f)

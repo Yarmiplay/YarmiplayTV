@@ -122,6 +122,8 @@ import com.yarmiplaytv.ui.shared.roomSkipSubtitle
 import com.yarmiplaytv.ui.shared.roomsOnServer
 import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serverStatusLine
+import com.yarmiplaytv.ui.chat.ChatMessageText
+import com.yarmiplaytv.ui.chat.chatLineAnnotated
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
@@ -766,22 +768,47 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
         LazyColumn(if (fill) Modifier.weight(1f).fillMaxWidth() else Modifier.heightIn(max = maxHeight), state = listState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(feed) { msg ->
                 val from = msg.from
-                var menu by remember { mutableStateOf(false) }
-                Box {
-                    Row(if (from != null && from != room.username) Modifier.clickable { menu = true } else Modifier) {
-                        if (from != null) Text("$from: ", color = AppColors.Accent, fontWeight = FontWeight.Bold)
-                        Text(
-                            msg.text,
-                            color = when {
-                                msg.isError -> AppColors.Error
-                                from == null -> AppColors.TextDim
-                                else -> AppColors.Text
-                            },
-                        )
-                    }
-                    if (from != null) {
-                        DropdownMenu(menu, { menu = false }) {
-                            DropdownMenuItem({ Text("Block $from (hide their messages)") }, { menu = false; container.sync.block(from) })
+                val desktop = container.deviceKind == DeviceKind.DESKTOP
+                val openLinks = container.deviceKind != DeviceKind.TV
+                val blockName = from?.takeIf { it != room.username }
+                val color = when {
+                    msg.isError -> AppColors.Error
+                    from == null -> AppColors.TextDim
+                    else -> AppColors.Text
+                }
+                if (desktop) {
+                    ChatMessageText(
+                        chatLineAnnotated(from, msg.text, AppColors.Accent, openLinks = true, italic = from == null),
+                        color = color,
+                        blockLabel = blockName?.let { "Block $it" },
+                        onBlock = blockName?.let { name -> { container.sync.block(name) } },
+                    )
+                } else {
+                    var menu by remember { mutableStateOf(false) }
+                    Box {
+                        Row {
+                            if (from != null) {
+                                Text(
+                                    "$from: ",
+                                    color = AppColors.Accent,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = if (blockName != null) Modifier.clickable { menu = true } else Modifier,
+                                )
+                            }
+                            if (openLinks) {
+                                ChatMessageText(
+                                    chatLineAnnotated(null, msg.text, AppColors.Accent, openLinks = true),
+                                    color = color,
+                                )
+                            } else {
+                                Text(msg.text, color = color)
+                            }
+                        }
+                        if (blockName != null) {
+                            val sender = blockName
+                            DropdownMenu(menu, { menu = false }) {
+                                DropdownMenuItem({ Text("Block $sender (hide their messages)") }, { menu = false; container.sync.block(sender) })
+                            }
                         }
                     }
                 }

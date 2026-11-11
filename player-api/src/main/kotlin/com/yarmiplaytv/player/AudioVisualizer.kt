@@ -20,6 +20,24 @@ object AudioOnly {
     }
 }
 
+/**
+ * How large and how often the spectrum picture is drawn. [LIGHT] is for a software renderer or the
+ * low-end playback setting: fewer pixels and a smaller FFT, still the same bars filling the window.
+ */
+data class VisualizerProfile(
+    val width: Int,
+    val height: Int,
+    val fps: Int,
+    val winSize: Int,
+) {
+    val longEdge: Int get() = maxOf(width, height)
+
+    companion object {
+        val STANDARD = VisualizerProfile(width = 960, height = 540, fps = 30, winSize = 2048)
+        val LIGHT = VisualizerProfile(width = 640, height = 360, fps = 24, winSize = 1024)
+    }
+}
+
 /** libavfilter graphs. [bars] takes the theme colour; [spectrum] is the older filter, in blue. */
 object AudioVisualizerGraph {
     /** The app's night-blue accent, used until the screen says which theme is showing. */
@@ -29,18 +47,18 @@ object AudioVisualizerGraph {
      * Spectrum bars in [rgb] (`0xRRGGBB`). `[ao]` is `asplit`'s first pad, with no filter of its own,
      * so playback audio is not resampled or delayed by the picture.
      */
-    fun bars(audioTrackId: Int, rgb: Int = DEFAULT_ACCENT): String {
+    fun bars(audioTrackId: Int, rgb: Int = DEFAULT_ACCENT, profile: VisualizerProfile = VisualizerProfile.STANDARD): String {
         val color = "%06X".format(rgb and 0xFFFFFF)
         return "[aid$audioTrackId]asplit=2[ao][vis];" +
-            "[vis]showfreqs=s=960x540:mode=bar:cmode=combined:colors=0x$color:" +
-            "fscale=log:ascale=cbrt:win_size=2048:win_func=hann:overlap=0:rate=30:averaging=1[vo]"
+            "[vis]showfreqs=s=${profile.width}x${profile.height}:mode=bar:cmode=combined:colors=0x$color:" +
+            "fscale=log:ascale=cbrt:win_size=${profile.winSize}:win_func=hann:overlap=0:rate=${profile.fps}:averaging=1[vo]"
     }
 
     /** Heatmap spectrum, used when [bars] isn't in this libmpv build. */
-    fun spectrum(audioTrackId: Int): String =
+    fun spectrum(audioTrackId: Int, profile: VisualizerProfile = VisualizerProfile.STANDARD): String =
         "[aid$audioTrackId]asplit=2[ao][vis];" +
-            "[vis]showspectrum=s=960x540:mode=combined:color=cool:scale=cbrt:fscale=log:" +
-            "slide=replace:win_func=hann:overlap=0:fps=30:legend=0[vo]"
+            "[vis]showspectrum=s=${profile.width}x${profile.height}:mode=combined:color=cool:scale=cbrt:fscale=log:" +
+            "slide=replace:win_func=hann:overlap=0:fps=${profile.fps}:legend=0[vo]"
 }
 
 /** What to assign to mpv's `lavfi-complex`. [Leave] means don't touch the property. */
@@ -53,7 +71,12 @@ sealed interface VisualizerCommand {
  * Decides when the spectrum graph is installed. It never asks for a change while a real video
  * track is playing, and it asks for the property to be cleared only after this session set it.
  */
-class AudioVisualizerController {
+class AudioVisualizerController(
+    profile: VisualizerProfile = VisualizerProfile.STANDARD,
+) {
+    var profile: VisualizerProfile = profile
+        private set
+
     var accent: Int = AudioVisualizerGraph.DEFAULT_ACCENT
         private set
 
@@ -61,6 +84,8 @@ class AudioVisualizerController {
     private var aid: Int? = null
     /** 0: themed bars, 1: heatmap fallback, 2: this file's filters were rejected. */
     private var mode = 0
+    /** mpv has been given a non-empty graph that this session has not yet cleared. */
+    private var live = false
 
     /** A new file. Clears a graph this session installed; leaves mpv alone otherwise. */
     fun onNewFile(): VisualizerCommand {
@@ -72,6 +97,7 @@ class AudioVisualizerController {
     /**
      * [tracks] just changed. [canRender] is false when nothing is consuming frames (the Android
      * surface is gone): the graph is cleared so an unconsumed picture can't hold the audio back.
+     * A real video track always clears. An attached cover does not: that file stays audio-only.
      */
     fun onTracks(tracks: List<Track>, canRender: Boolean): VisualizerCommand {
         val id = AudioOnly.audioId(tracks)
@@ -82,10 +108,16 @@ class AudioVisualizerController {
         }
         if (mode == 2) return clear()
         aid = id
-        val graph = if (mode == 0) AudioVisualizerGraph.bars(id, accent) else AudioVisualizerGraph.spectrum(id)
-        if (graph == applied) return VisualizerCommand.Leave
-        applied = graph
-        return VisualizerCommand.Set(graph)
+        return install(graphFor(id))
+    }
+
+    /** Smaller bars for a weak machine. A graph that is already showing is rebuilt; video is left alone. */
+    fun onProfile(next: VisualizerProfile): VisualizerCommand {
+        if (next == profile) return VisualizerCommand.Leave
+        profile = next
+        val id = aid
+        if (!live || mode == 2 || id == null) return VisualizerCommand.Leave
+        return install(graphFor(id))
     }
 
     /** The theme colour changed. Rebuilt bars keep the same audio split; a fallback graph has no colour. */
@@ -94,11 +126,8 @@ class AudioVisualizerController {
         if (color == accent) return VisualizerCommand.Leave
         accent = color
         val id = aid
-        if (applied == null || mode != 0 || id == null) return VisualizerCommand.Leave
-        val graph = AudioVisualizerGraph.bars(id, accent)
-        if (graph == applied) return VisualizerCommand.Leave
-        applied = graph
-        return VisualizerCommand.Set(graph)
+        if (!live || mode != 0 || id == null) return VisualizerCommand.Leave
+        return install(AudioVisualizerGraph.bars(id, accent, profile))
     }
 
     /**
@@ -107,6 +136,7 @@ class AudioVisualizerController {
      */
     fun rejected(): VisualizerCommand {
         applied = null
+        live = false
         if (mode >= 1) {
             mode = 2
             aid = null
@@ -114,22 +144,44 @@ class AudioVisualizerController {
         }
         mode = 1
         val id = aid ?: return VisualizerCommand.Set("")
-        val graph = AudioVisualizerGraph.spectrum(id)
+        val graph = AudioVisualizerGraph.spectrum(id, profile)
         applied = graph
+        live = true
         return VisualizerCommand.Set(graph)
     }
 
-    /** Drops the remembered graph. True when mpv had been given one and the caller must clear it. */
+    /**
+     * Forgets the graph after the caller has cleared `lavfi-complex` itself. True when a graph was
+     * live, including one [rejected] installed only in memory.
+     */
     fun disarm(): Boolean {
-        val had = applied != null
+        val had = live || applied != null
         applied = null
+        live = false
         aid = null
         return had
     }
 
+    /** Stops this file for good and reports whether `lavfi-complex` must be cleared. */
+    fun giveUp(): Boolean {
+        mode = 2
+        return disarm()
+    }
+
+    private fun graphFor(id: Int): String =
+        if (mode == 0) AudioVisualizerGraph.bars(id, accent, profile) else AudioVisualizerGraph.spectrum(id, profile)
+
+    private fun install(graph: String): VisualizerCommand {
+        if (graph == applied && live) return VisualizerCommand.Leave
+        applied = graph
+        live = true
+        return VisualizerCommand.Set(graph)
+    }
+
     private fun clear(): VisualizerCommand {
-        if (applied == null) return VisualizerCommand.Leave
+        if (!live && applied == null) return VisualizerCommand.Leave
         applied = null
+        live = false
         return VisualizerCommand.Set("")
     }
 }
@@ -143,9 +195,80 @@ fun AudioVisualizerController.commit(command: VisualizerCommand, setGraph: (Stri
     VisualizerCommand.Leave -> null
     is VisualizerCommand.Set -> {
         val ok = runCatching { setGraph(command.graph) }.getOrDefault(false)
-        if (command.graph.isEmpty() || ok) command.graph.isNotEmpty() && ok
-        else commit(rejected(), setGraph)
+        if (command.graph.isEmpty()) {
+            // An empty assign is the teardown. A failed clear still counts as not showing.
+            false
+        } else if (ok) {
+            true
+        } else {
+            commit(rejected(), setGraph)
+        }
     }
+}
+
+/**
+ * How often playback meters are copied into [PlaybackState] for the UI.
+ *
+ * mpv reports position, cache and A/V sync about once a frame. Each copy notifies Compose, so the
+ * whole player was rebuilding at the video's frame rate. The sync clock reads the player directly
+ * and does not use these copies. The seek bar polls on its own.
+ */
+class PlaybackSignals {
+    private var lastPositionMs = Long.MIN_VALUE
+    private var lastCacheSecond = Int.MIN_VALUE
+    private var lastStatsMs = Long.MIN_VALUE
+
+    /** True when the on-screen clock should take a new [nowMs]. The first sample and each seek pass. */
+    fun position(nowMs: Long, seeking: Boolean = false): Boolean {
+        if (seeking || lastPositionMs == Long.MIN_VALUE || nowMs - lastPositionMs >= POSITION_MS) {
+            lastPositionMs = nowMs
+            return true
+        }
+        return false
+    }
+
+    /** Cache length is shown as whole seconds, and only while buffering. */
+    fun cache(seconds: Double, buffering: Boolean): Boolean {
+        if (!buffering) return false
+        val shown = seconds.toInt()
+        if (shown == lastCacheSecond) return false
+        lastCacheSecond = shown
+        return true
+    }
+
+    /** Drop counters and A/V sync are a diagnostics line, not a per-frame animation. */
+    fun stats(nowMs: Long): Boolean {
+        if (lastStatsMs == Long.MIN_VALUE || nowMs - lastStatsMs >= STATS_MS) {
+            lastStatsMs = nowMs
+            return true
+        }
+        return false
+    }
+
+    fun reset() {
+        lastPositionMs = Long.MIN_VALUE
+        lastCacheSecond = Int.MIN_VALUE
+        lastStatsMs = Long.MIN_VALUE
+    }
+
+    companion object {
+        const val POSITION_MS = 250L
+        const val STATS_MS = 500L
+    }
+}
+
+/**
+ * Longest edge of the frame mpv should render into, in pixels.
+ * A spectrum is only [visualizerEdge] pixels wide, so reading back a larger framebuffer just
+ * upscales it. [configured] and [adaptive] cap real video; 0 means no cap.
+ */
+fun renderLongEdge(viewLong: Int, configured: Int, adaptive: Int, visualizerEdge: Int?): Int {
+    val view = viewLong.coerceAtLeast(2)
+    var cap = view
+    if (configured > 0) cap = minOf(cap, configured)
+    if (adaptive > 0) cap = minOf(cap, adaptive)
+    if (visualizerEdge != null && visualizerEdge > 0) cap = minOf(cap, visualizerEdge)
+    return cap.coerceAtLeast(2)
 }
 
 /**

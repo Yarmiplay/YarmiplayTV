@@ -104,6 +104,25 @@ class DesktopVoiceEngineTest {
     }
 
     @Test
+    fun standaloneMicTestUsesLobbyChainWithoutEchoOrSpectralGate() {
+        val engine = DesktopVoiceEngine()
+        try {
+            engine.setMicTest(true)
+            val chain = engine.activeProcessingChain()
+            assertTrue(chain.discordLobby)
+            assertFalse(chain.spectralNsEnabled)
+            assertFalse(chain.dropGatedSilence)
+            assertEquals(NsBackend.WEBRTC, chain.ns)
+            assertEquals(AecBackend.NONE, chain.aec)
+            assertEquals(AgcBackend.WEBRTC, chain.agc)
+            assertTrue(engine.isMicTestActive())
+        } finally {
+            engine.setMicTest(false)
+            engine.disconnect()
+        }
+    }
+
+    @Test
     fun wasapiIsNotOpenedOffWindows() {
         val os = System.getProperty("os.name").orEmpty()
         if (!os.startsWith("Windows")) {

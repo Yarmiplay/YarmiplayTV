@@ -5,6 +5,7 @@ import type { ByteSource } from "./bytes";
 import { Demuxer, type Chapter, type StreamInfo, type TimedPacket } from "./demuxer";
 import { createLibAV, type LibAV } from "./libav";
 import { Renderer } from "./renderer";
+import { isMotionVideo } from "./spectrum";
 import { externalScript, PGS, PgsLayer, ScriptSubtitles, SubtitleLayer, TEXT_SUBTITLES } from "./subtitles";
 import { sidecarLanguage } from "../media/seekThumbs";
 import { openSoftwareVideo, openVideoDecoding, type VideoDecoding } from "./video";
@@ -238,7 +239,7 @@ export class MediaPlayer implements PlayerAdapter {
       this.demuxer = demuxer;
       this._source = source;
 
-      const videos = demuxer.streams.filter((s) => s.kind === "video" && !["mjpeg", "png", "bmp"].includes(s.codec));
+      const videos = demuxer.streams.filter((s) => isMotionVideo(s.kind, s.codec));
       const audios = demuxer.streams.filter((s) => s.kind === "audio");
       const subtitles = demuxer.streams.filter((s) => s.kind === "subtitle");
       this.videoStream = videos[0] ?? null;
@@ -394,7 +395,8 @@ export class MediaPlayer implements PlayerAdapter {
     this.output = await AudioOutput.create(sampleRate);
     this.output.setRate(this.state.speed);
     this.output.setVolume(this.state.muted ? 0 : this.state.volume);
-    if (!this.videoStream) this.output.enableSpectrum();
+    if (this.videoStream) this.output.disableSpectrum();
+    else this.output.enableSpectrum();
     this.audioFedAt = 0;
     this.pcmSeen = false;
     this.audioHealthy = false;

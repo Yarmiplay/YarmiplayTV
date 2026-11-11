@@ -584,13 +584,28 @@ jobs:
           bash scripts/release-deb.sh
           cp deb/*.deb yarmiplaytv.deb
 
-      - uses: snapcore/action-build@v1
-        id: build
+      # Same builder as the Linux packages workflow. A store outage skips the snap (exit 0).
+      # Publishing is only the store, so a publish failure is reported and does not fail the release.
+      - id: build
+        run: |
+          bash scripts/snapcraft-build.sh
+          shopt -s nullglob
+          snaps=(*.snap)
+          if ((${#snaps[@]} > 0)); then
+            echo "snap=${snaps[0]}" >> "$GITHUB_OUTPUT"
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install the snap and play a clip
+        if: steps.build.outputs.built == 'true'
         run: bash scripts/snap-smoke-test.sh "${{ steps.build.outputs.snap }}"
 
-      - uses: snapcore/action-publish@v1
+      - name: Publish the snap
+        if: steps.build.outputs.built == 'true'
+        continue-on-error: true
+        uses: snapcore/action-publish@v1
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:
