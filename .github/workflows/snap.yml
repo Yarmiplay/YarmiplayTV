@@ -111,9 +111,11 @@ jobs:
   publish:
     needs: snap
     if: inputs.publish && needs.snap.outputs.built == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           name: snap
@@ -130,9 +132,7 @@ jobs:
           echo "snap=${files[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Publish the snap
-        uses: snapcore/action-publish@v1
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        with:
-          snap: ${{ steps.file.outputs.snap }}
-          release: ${{ vars.SNAP_CHANNEL || 'stable' }}
+          SNAP_CHANNEL: ${{ vars.SNAP_CHANNEL || 'stable' }}
+        run: bash scripts/snap-publish.sh "${{ steps.file.outputs.snap }}"

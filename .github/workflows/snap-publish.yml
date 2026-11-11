@@ -1,0 +1,60 @@
+name: Publish snap
+
+# Publishes the snap already built and smoke-tested for 3.0.3 (Actions run 43118480909).
+# Does not build a new version or any other installer. Pushing this branch is what starts it;
+# workflow_dispatch is here for a later run from main once Actions writes are available.
+on:
+  push:
+    branches: [cursor/snap-store-publish-dcc9]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: snap-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Same diagnostics on each runner image, including the upload hosts. A failed route is printed
+  # and does not fail the job: the publish job is what must reach dashboard, storage and login.
+  route:
+    name: Store route (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Diagnose the store and upload hosts
+        shell: bash
+        run: bash scripts/snap-store-route.sh
+
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download the tested 3.0.3 snap
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download 43118480909 -n snap -D dist
+
+      - name: Publish to the Snap Store
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+          SNAP_CHANNEL: ${{ vars.SNAP_CHANNEL || 'stable' }}
+        run: |
+          shopt -s nullglob
+          files=(dist/*.snap)
+          if ((${#files[@]} != 1)); then
+            echo "::error::expected one snap in the 3.0.3 artifact, found ${#files[@]}"
+            ls -la dist || true
+            exit 1
+          fi
+          bash scripts/snap-publish.sh "${files[0]}"
