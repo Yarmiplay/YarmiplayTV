@@ -570,7 +570,7 @@
     <canvas bind:this={subtitleCanvas} class="subs"></canvas>
     <canvas bind:this={pictureSubtitleCanvas} class="subs"></canvas>
 
-    {#if showSpectrum(!!s?.loaded, !!s?.video, s?.audioTrack != null)}
+    {#if s && showSpectrum(s.loaded, !!s.video, s.audioTrack != null)}
       <div class="audio-backdrop">
         <canvas bind:this={vizCanvas} class="viz"></canvas>
         <div class="audio-art">
