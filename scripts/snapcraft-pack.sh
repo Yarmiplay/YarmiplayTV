@@ -15,9 +15,9 @@ fi
 mkdir -p /usr/share/snapcraft/extensions
 for dir in "${ext_root}"/*; do
   [[ -d "${dir}" ]] || continue
-  name=$(basename "${dir}")
-  [[ "${name}" == __pycache__ ]] && continue
-  dest="/usr/share/snapcraft/extensions/${name}"
+  ext_name=$(basename "${dir}")
+  [[ "${ext_name}" == __pycache__ ]] && continue
+  dest="/usr/share/snapcraft/extensions/${ext_name}"
   if [[ -d "${dest}" && ! -L "${dest}" && ! -e "${dest}/command-chain/desktop-launch" && ! -e "${dest}/command-chain/run" ]]; then
     rm -rf "${dest}"
   fi
@@ -32,9 +32,12 @@ if compgen -G "${seed}/*.snap" > /dev/null; then
   apt-get update -qq
   apt-get install -y -qq squashfs-tools
   install_tree() {
-    local name=$1 dest="/snap/${name}/current" file="${seed}/${name}.snap"
+    # Separate assignments: one `local` line expands every value before any of them is set.
+    local snap_name=$1
+    local dest="/snap/${snap_name}/current"
+    local file="${seed}/${snap_name}.snap"
     if [[ -d "${dest}" ]] && [[ -n "$(find "${dest}" -mindepth 1 -print -quit 2>/dev/null)" ]]; then
-      echo "${name} is already on disk at ${dest}"
+      echo "${snap_name} is already on disk at ${dest}"
       return 0
     fi
     [[ -f "${file}" ]] || { echo "missing ${file}" >&2; exit 1; }
