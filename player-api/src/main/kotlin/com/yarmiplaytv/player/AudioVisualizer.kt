@@ -220,3 +220,48 @@ object SpectrumMotion {
         return out
     }
 }
+
+/**
+ * Whether a libavfilter shared library actually contains the filters a graph names.
+ * A missing filter must not be installed: mpv can stall playback on a graph it cannot build.
+ * A null [library] means the file could not be read, so the caller tries the graph and checks
+ * that mpv kept it.
+ */
+object LavfiProbe {
+    fun contains(library: ByteArray, name: String): Boolean {
+        if (name.isEmpty()) return false
+        val needle = name.encodeToByteArray()
+        val last = library.size - needle.size
+        var i = 0
+        while (i <= last) {
+            var matched = true
+            for (j in needle.indices) {
+                if (library[i + j] != needle[j]) {
+                    matched = false
+                    break
+                }
+            }
+            if (matched && (i + needle.size == library.size || library[i + needle.size].toInt() == 0)) {
+                val before = if (i == 0) 0 else library[i - 1].toInt() and 0xFF
+                if (before == 0 || !isNameChar(before)) return true
+            }
+            i++
+        }
+        return false
+    }
+
+    /** [graph] is safe to assign when every filter it depends on is in [library]. */
+    fun supports(library: ByteArray?, graph: String): Boolean {
+        if (graph.isEmpty()) return true
+        if (library == null) return true
+        val needed = ArrayList<String>(4)
+        needed.add("asplit")
+        needed.add("aresample")
+        if ("showfreqs" in graph) needed.add("showfreqs")
+        if ("showspectrum" in graph) needed.add("showspectrum")
+        return needed.all { contains(library, it) }
+    }
+
+    private fun isNameChar(byte: Int): Boolean =
+        byte in 'a'.code..'z'.code || byte in 'A'.code..'Z'.code || byte in '0'.code..'9'.code || byte == '_'.code
+}

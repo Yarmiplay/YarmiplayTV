@@ -139,4 +139,30 @@ class AudioVisualizerTest {
         assertEquals("Ada", MediaTags.artist { values[it] })
         assertNull(MediaTags.title { values[it] })
     }
+
+    @Test
+    fun probeFindsANulTerminatedFilterAndNotAPrefix() {
+        val library = "xx\u0000showfreqs\u0000showspectrum\u0000asplit\u0000aresample\u0000".encodeToByteArray()
+        assertTrue(LavfiProbe.contains(library, "showfreqs"))
+        assertFalse(LavfiProbe.contains(library, "show"))
+        assertFalse(LavfiProbe.contains(library, "showfreq"))
+        assertTrue(LavfiProbe.supports(library, AudioVisualizerGraph.bars(1)))
+        assertTrue(LavfiProbe.supports(library, AudioVisualizerGraph.spectrum(1)))
+        assertTrue(LavfiProbe.supports(null, AudioVisualizerGraph.bars(1)))
+        assertTrue(LavfiProbe.supports(library, ""))
+        assertFalse(LavfiProbe.supports("asplit\u0000aresample\u0000".encodeToByteArray(), AudioVisualizerGraph.bars(1)))
+    }
+
+    @Test
+    fun bundledAndroidLibavfilterHasTheDesktopGraph() {
+        val dir = java.io.File("../player-mpv/src/main/prebuilt-libavfilter")
+        val abis = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+        for (abi in abis) {
+            val file = java.io.File(dir, "$abi/libavfilter.so")
+            assertTrue("$abi libavfilter.so is missing", file.isFile)
+            val bytes = file.readBytes()
+            assertTrue(LavfiProbe.supports(bytes, AudioVisualizerGraph.bars(1)))
+            assertTrue(LavfiProbe.supports(bytes, AudioVisualizerGraph.spectrum(1)))
+        }
+    }
 }
