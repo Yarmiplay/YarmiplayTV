@@ -6,11 +6,31 @@
 set -euo pipefail
 
 snap=$1
-# The content snaps come from the store, which GitHub runners often fail to reach on the first try.
-export ATTEMPTS="${ATTEMPTS:-6}"
-export DELAY="${DELAY:-20}"
-bash "$(dirname "$0")/retry.sh" sudo snap install core24 gtk-common-themes gnome-46-2404 mesa-2404
-bash "$(dirname "$0")/retry.sh" sudo snap install --dangerous "$snap"
+dir=$(dirname "$0")
+# shellcheck source=snap-store.sh
+source "$dir/snap-store.sh"
+# Content snaps come from the store. An outage skips the smoke test instead of failing the job.
+# A snap that installs and then fails to draw frames still fails the job.
+export ATTEMPTS="${STORE_INSTALL_ATTEMPTS:-3}"
+export DELAY="${STORE_INSTALL_DELAY:-10}"
+install_status=0
+retry_store sudo snap install core24 gtk-common-themes gnome-46-2404 mesa-2404 || install_status=$?
+if [[ "$install_status" -eq "$STORE_FAILURE_STATUS" ]]; then
+  skip_store "The Snap Store was unreachable, so the snap was not installed or played. The snap artifact from the build is unchanged. A playback failure still fails the job."
+fi
+if [[ "$install_status" -ne 0 ]]; then
+  echo "::error title=Snap install failed::Installing the content snaps failed (exit ${install_status}), and the log was not a Snap Store outage."
+  exit "$install_status"
+fi
+install_status=0
+retry_store sudo snap install --dangerous "$snap" || install_status=$?
+if [[ "$install_status" -eq "$STORE_FAILURE_STATUS" ]]; then
+  skip_store "The Snap Store was unreachable while installing the locally built snap, so it was not played. A playback failure still fails the job."
+fi
+if [[ "$install_status" -ne 0 ]]; then
+  echo "::error title=Snap install failed::Installing ${snap} failed (exit ${install_status})."
+  exit "$install_status"
+fi
 # Content connections only happen by themselves for snaps from the store.
 sudo snap connect yarmiplaytv:gnome-46-2404 gnome-46-2404
 sudo snap connect yarmiplaytv:gpu-2404 mesa-2404:gpu-2404
