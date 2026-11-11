@@ -19,15 +19,21 @@ fi
 sudo groupadd --force --system lxd
 sudo usermod --append --groups lxd "${USER}"
 
+# Runners often complete TCP to the store on IPv6 and then stall the TLS handshake.
+# snapd reports that as "unable to contact snap store". Prefer IPv4 for this job.
+sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true
+sudo systemctl restart snapd.socket snapd.service || true
+
 if [[ ! -x /snap/bin/lxd ]]; then
-  ATTEMPTS=8 DELAY=20 bash scripts/retry.sh sudo snap install lxd
+  # Each attempt already waits on snapd's own store timeout (~40s). Keep the backoff short.
+  ATTEMPTS=4 DELAY=15 bash scripts/retry.sh sudo snap install lxd
 fi
 ATTEMPTS=8 DELAY=5 bash scripts/retry.sh sudo lxd init --auto
 # Docker on the runner otherwise drops LXD's bridge traffic.
 sudo iptables -P FORWARD ACCEPT
 
 if [[ ! -x /snap/bin/snapcraft ]]; then
-  ATTEMPTS=8 DELAY=20 bash scripts/retry.sh sudo snap install --classic --channel stable snapcraft
+  ATTEMPTS=4 DELAY=15 bash scripts/retry.sh sudo snap install --classic --channel stable snapcraft
 fi
 
 export SNAPCRAFT_BUILD_ENVIRONMENT=lxd

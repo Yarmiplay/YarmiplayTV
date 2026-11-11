@@ -43,6 +43,9 @@ import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.syncplay.RoomUser
+import com.yarmiplaytv.syncplay.VoiceDescriptor
+import com.yarmiplaytv.syncplay.YarmiplayCapabilities
+import com.yarmiplaytv.syncplay.YarmiplayInfo
 import com.yarmiplaytv.ui.mobile.DesktopBack
 import com.yarmiplaytv.ui.mobile.DesktopPip
 import com.yarmiplaytv.ui.mobile.DesktopPlayerInput
@@ -551,6 +554,12 @@ class PlayerControlsUiTest {
                 username = "Alice",
                 isReady = false,
                 users = listOf(RoomUser(name = "Alice", room = "AnimeNight", isReady = false)),
+                // Voice is offered, so a late room snapshot does not tear the mic back down.
+                yarmiplay = YarmiplayInfo(
+                    session = true,
+                    capabilities = YarmiplayCapabilities(voice = true),
+                    voice = VoiceDescriptor(),
+                ),
             )
         )
         forceVoiceConnected()
@@ -568,6 +577,10 @@ class PlayerControlsUiTest {
                 MobileTheme { Box(Modifier.size(360.dp, 800.dp)) { MobilePlayerScreen(app, nav) } }
             }
         }
+        settle()
+        // The first settings/room snapshot can arrive after the forced state and clear the mic.
+        // Let it land, then force the connected UI once that collector has gone quiet.
+        forceVoiceConnected()
         settle()
 
         val root = onRoot().fetchSemanticsNode().boundsInRoot
