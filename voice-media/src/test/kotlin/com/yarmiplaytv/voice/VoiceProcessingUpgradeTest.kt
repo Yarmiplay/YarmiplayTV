@@ -1,6 +1,7 @@
 package com.yarmiplaytv.voice
 
 import com.yarmiplaytv.syncplay.VoiceMediaParams
+import dev.onvoid.webrtc.media.audio.AudioProcessingConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -183,6 +184,21 @@ class VoiceProcessingUpgradeTest {
             deepFilterNetEnabled = false,
             spectralNsEnabled = true,
             dropGatedSilence = false,
+        )
+    }
+
+    @Test
+    fun `standalone mic test uses the lobby chain and noise suppression stays moderate`() {
+        assertTrue(VoiceProcessingChain.useLobbyCaptureChain(inSession = false, activeDiscord = false, micTest = false))
+        assertTrue(VoiceProcessingChain.useLobbyCaptureChain(inSession = true, activeDiscord = false, micTest = true))
+        assertTrue(VoiceProcessingChain.useLobbyCaptureChain(inSession = true, activeDiscord = true, micTest = false))
+        assertFalse(
+            "a Syncplay relay call keeps the spectral chain",
+            VoiceProcessingChain.useLobbyCaptureChain(inSession = true, activeDiscord = false, micTest = false),
+        )
+        assertEquals(
+            AudioProcessingConfig.NoiseSuppression.Level.MODERATE,
+            DesktopWebRtcApm.NOISE_SUPPRESSION_LEVEL,
         )
     }
 

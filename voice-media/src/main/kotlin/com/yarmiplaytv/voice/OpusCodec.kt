@@ -15,7 +15,8 @@ import kotlin.math.roundToInt
  * - Signal: [OpusSignal.OPUS_SIGNAL_VOICE]
  * - Complexity: 10 on desktop, 8–10 on Android scaled by CPU core count
  * - VBR: on (with constrained VBR)
- * - In-band FEC: on, with [packetLossPercent] fed from receiver stats
+ * - In-band FEC: on, but [packetLossPercent] stays 0 until a receiver actually reports loss.
+ *   A fake loss hint spends the 64 kbps budget on LBRR and thins a clean loopback.
  * - DTX: off (never drops frames into silence gaps)
  * - Bitrate: adapts dynamically to measured receiver packet loss
  * - Bitrate range [MIN_BITRATE]..[MAX_BITRATE] (24–128 kbps) and 1 or 2 channels, so a later
@@ -44,7 +45,7 @@ class OpusCodec(
         it.useInbandFEC = fec
         it.useDTX = dtx
         it.complexity = complexity.coerceIn(1, 10)
-        it.packetLossPercent = if (fec) INITIAL_FEC_LOSS_PERCENT else 0
+        it.packetLossPercent = 0
         it.signalType = OpusSignal.OPUS_SIGNAL_VOICE
         it.useVBR = true
         it.useConstrainedVBR = true
@@ -103,11 +104,9 @@ class OpusCodec(
         val clamped = lossPercent.coerceIn(0, 100)
         reportedLossPercent = clamped
         synchronized(encoder) {
-            encoder.packetLossPercent = when {
-                !fec -> 0
-                clamped == 0 -> MIN_FEC_LOSS_PERCENT
-                else -> clamped
-            }
+            // 0% measured loss must not keep LBRR armed. FEC stays enabled and engages
+            // only when this percent is above zero.
+            encoder.packetLossPercent = if (fec) clamped else 0
             encoder.bitrate = adaptBitrateForLoss(targetBitrate, clamped)
         }
     }
@@ -170,9 +169,12 @@ class OpusCodec(
         const val MAX_BITRATE = 128_000
         /** Opus plaintext that still fits a `yv1` packet (header + GCM tag). */
         const val MAX_PAYLOAD_BYTES = Yv1Packet.MAX_PACKET - Yv1Packet.HEADER_LEN - Yv1Packet.TAG_LEN
-        /** Baseline loss hint when FEC is enabled so SILK LBRR stays armed for sudden loss bursts. */
-        const val MIN_FEC_LOSS_PERCENT = 5
-        const val INITIAL_FEC_LOSS_PERCENT = 10
+        /**
+         * Loss hint before any receiver report, and the value kept when measured loss is 0.
+         * FEC stays switched on; these stay 0 so a clean mic test or LAN call is not pre-degraded.
+         */
+        const val MIN_FEC_LOSS_PERCENT = 0
+        const val INITIAL_FEC_LOSS_PERCENT = 0
 
         fun isAndroidRuntime(): Boolean {
             val vm = System.getProperty("java.vm.name").orEmpty()

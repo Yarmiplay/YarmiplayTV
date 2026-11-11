@@ -34,10 +34,12 @@ class VoicePipelinePolishTest {
         assertTrue(codec.inbandFec)
         assertFalse("DTX stays off so the receiver is not asked to conceal holes", codec.dtx)
         assertEquals(10, codec.complexity)
-        assertEquals(OpusCodec.INITIAL_FEC_LOSS_PERCENT, codec.packetLossPercent)
+        assertEquals(0, OpusCodec.INITIAL_FEC_LOSS_PERCENT)
+        assertEquals(0, OpusCodec.MIN_FEC_LOSS_PERCENT)
+        assertEquals(0, codec.packetLossPercent)
 
         codec.updatePacketLoss(0)
-        assertEquals(OpusCodec.MIN_FEC_LOSS_PERCENT, codec.packetLossPercent)
+        assertEquals("a clean line must not spend bits on LBRR", 0, codec.packetLossPercent)
         assertEquals(64_000, codec.currentBitrate)
 
         codec.updatePacketLoss(20)

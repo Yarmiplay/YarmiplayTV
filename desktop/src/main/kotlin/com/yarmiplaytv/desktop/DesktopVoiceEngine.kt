@@ -232,6 +232,8 @@ class DesktopVoiceEngine : VoiceEngine {
                 disconnect()
             } else {
                 existing.setMicTest(false)
+                val chain = rebuildProcessingChain(logChain = false)
+                existing.setAgcStageActive(chain.webrtcAgcEnabled)
                 syncCapture(existing)
             }
         }
@@ -383,7 +385,16 @@ class DesktopVoiceEngine : VoiceEngine {
 
     private fun rebuildProcessingChain(logChain: Boolean): VoiceProcessingChain {
         synchronized(chainLock) {
-            val discord = if (session.get() != null) activeDiscord else true
+            val media = session.get()
+            val micTest = media?.isMicTestActive == true
+            // Standalone mic test used to fall through to the relay chain because
+            // activeDiscord is false. That turned the spectral Wiener suppressor on and
+            // made the loopback metallic. The test now uses the same lobby chain as a call.
+            val discord = VoiceProcessingChain.useLobbyCaptureChain(
+                inSession = media != null,
+                activeDiscord = activeDiscord,
+                micTest = micTest,
+            )
             if (discord) ensureWebRtcApm()
             if (aiNoiseSuppressionPref && discord && session.get() != null &&
                 deepFilterNet == null && dfnLoadFailedReason == null
@@ -400,7 +411,9 @@ class DesktopVoiceEngine : VoiceEngine {
             val chain = VoiceProcessingChain.build(
                 platform = VoiceChainPlatform.DESKTOP,
                 discordLobby = discord,
-                echoCancellation = echoCancellationPref,
+                // The mic-test speaker is a delayed copy of the mic. Feeding that into AEC3
+                // makes the residual suppressor carve the voice. Real calls still cancel echo.
+                echoCancellation = echoCancellationPref && !micTest,
                 autoGainControl = autoGainControlPref,
                 noiseSuppression = noiseSuppressionPref,
                 aiNoiseSuppression = aiNoiseSuppressionPref,
@@ -448,6 +461,7 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     private fun feedReverse(pcm: ShortArray, channels: Int) {
+        if (session.get()?.isMicTestActive == true) return
         val apm = webRtcApm ?: return
         if (!currentChain.webrtcAecEnabled || !apm.isAvailable || pcm.isEmpty()) return
         apm.processReverseFrame20ms(pcm, channels)

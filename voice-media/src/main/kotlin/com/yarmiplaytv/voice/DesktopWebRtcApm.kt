@@ -128,7 +128,9 @@ class DesktopWebRtcApm(
             }
 
             cfg.noiseSuppression.enabled = ns
-            cfg.noiseSuppression.level = AudioProcessingConfig.NoiseSuppression.Level.HIGH
+            // Moderate is WebRTC's own default. High (~18 dB) carves formants and is the
+            // metallic sound on the mic-test loopback and on a clean desktop call.
+            cfg.noiseSuppression.level = NOISE_SUPPRESSION_LEVEL
 
             instance.applyConfig(cfg)
             appliedAec = aec
@@ -224,6 +226,10 @@ class DesktopWebRtcApm(
 
     companion object {
         const val DEFAULT_STREAM_DELAY_MS = 40
+
+        /** Single noise-suppression strength. One NS stage; this is not stacked with DeepFilterNet. */
+        val NOISE_SUPPRESSION_LEVEL: AudioProcessingConfig.NoiseSuppression.Level =
+            AudioProcessingConfig.NoiseSuppression.Level.MODERATE
 
         private fun shortsToLeBytes(src: ShortArray, srcOffset: Int, count: Int, dst: ByteArray) {
             for (i in 0 until count) {

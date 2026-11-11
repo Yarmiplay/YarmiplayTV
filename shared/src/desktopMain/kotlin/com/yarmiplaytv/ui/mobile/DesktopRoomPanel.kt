@@ -3,7 +3,6 @@ package com.yarmiplaytv.ui.mobile
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -29,7 +28,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -74,19 +72,17 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.sync.FeedMessage
+import com.yarmiplaytv.ui.chat.ChatMessageText
+import com.yarmiplaytv.ui.chat.chatLineAnnotated
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
 import com.yarmiplaytv.ui.theme.AppColors
@@ -357,33 +353,21 @@ private fun DesktopChat(container: AppContainer, modifier: Modifier) {
 @Composable
 private fun ChatLine(msg: FeedMessage, onBlock: (() -> Unit)?) {
     val time = Instant.ofEpochMilli(msg.at).atZone(ZoneId.systemDefault()).format(timeFormat)
-    var menu by remember { mutableStateOf(false) }
-    Box {
-        Row(if (onBlock != null) Modifier.clickable { menu = true } else Modifier) {
-            Text(time, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(44.dp).padding(top = 2.dp))
-            Text(
-                buildAnnotatedString {
-                    if (msg.from != null) {
-                        withStyle(SpanStyle(color = AppColors.Accent, fontWeight = FontWeight.Bold)) { append(msg.from) }
-                        append(": ")
-                        append(msg.text)
-                    } else {
-                        withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(msg.text) }
-                    }
-                },
-                color = when {
-                    msg.isError -> AppColors.Error
-                    msg.from == null -> AppColors.TextDim
-                    else -> AppColors.Text
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        if (onBlock != null) {
-            DropdownMenu(menu, { menu = false }) {
-                DropdownMenuItem({ Text("Block ${msg.from} (hide their messages)") }, { menu = false; onBlock() })
-            }
-        }
+    val from = msg.from
+    Row(Modifier.fillMaxWidth()) {
+        Text(time, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(44.dp).padding(top = 2.dp))
+        ChatMessageText(
+            chatLineAnnotated(from, msg.text, AppColors.Accent, openLinks = true, italic = from == null),
+            Modifier.weight(1f),
+            color = when {
+                msg.isError -> AppColors.Error
+                from == null -> AppColors.TextDim
+                else -> AppColors.Text
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            blockLabel = if (onBlock != null && from != null) "Block $from" else null,
+            onBlock = onBlock,
+        )
     }
 }
 

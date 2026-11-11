@@ -88,7 +88,7 @@
   <releases>
     <release version="3.0.3" date="2026-11-11">
       <description>
-        <p>Desktop playback stays smooth: the player UI no longer rebuilds on every frame, video frames are read back without stalling the GPU, and the audio spectrum runs only for audio files, at a smaller size on weak machines.</p>
+        <p>Desktop playback stays smooth: the player UI no longer rebuilds on every frame, video frames are read back without stalling the GPU, and the audio spectrum runs only for audio files, at a smaller size on weak machines. Chat text can be selected and copied on desktop, and links in messages open in the browser. The mic test uses the same lobby voice chain as a call, without the relay noise filter or a fake packet-loss hint, so the voice stays natural.</p>
       </description>
     </release>
     <release version="3.0.2" date="2026-11-11">
