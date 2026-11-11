@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.0.3" date="2026-11-11">
+      <description>
+        <p>Desktop playback stays smooth. The app no longer rewrites its settings dozens of times a second while something is playing, on every device. Audio-only files still show the live spectrum; on a weak PC it is drawn smaller and it stops while the player is not on screen. Video frames are handed to the window without stalling the player.</p>
+      </description>
+    </release>
     <release version="3.0.2" date="2026-11-11">
       <description>
         <p>Audio-only files on Android phones, tablets and TV use the same live spectrum as desktop.</p>

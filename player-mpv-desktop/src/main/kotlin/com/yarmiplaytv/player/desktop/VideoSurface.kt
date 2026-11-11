@@ -2,6 +2,8 @@ package com.yarmiplaytv.player.desktop
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -15,7 +17,26 @@ import org.jetbrains.skia.SamplingMode
  */
 @Composable
 fun VideoSurface(renderer: VideoRenderer?, modifier: Modifier = Modifier) {
-    Canvas(modifier.onSizeChanged { renderer?.setSize(it.width, it.height) }) {
+    // Attach only once the view has a real size, so the first published frame isn't a 2×2 stand-in.
+    val shown = remember(renderer) { booleanArrayOf(false) }
+    DisposableEffect(renderer) {
+        onDispose {
+            if (shown[0]) {
+                shown[0] = false
+                renderer?.detach()
+            }
+        }
+    }
+    Canvas(
+        modifier.onSizeChanged {
+            val r = renderer ?: return@onSizeChanged
+            r.setSize(it.width, it.height)
+            if (!shown[0]) {
+                shown[0] = true
+                r.attach()
+            }
+        },
+    ) {
         val r = renderer ?: return@Canvas
         r.frameTick.longValue
         val frame = r.frames.acquire() ?: return@Canvas

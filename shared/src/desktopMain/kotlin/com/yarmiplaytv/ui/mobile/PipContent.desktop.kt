@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,6 +45,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.ui.player.collectPlayback
 import kotlinx.coroutines.delay
 import java.awt.Cursor
 import java.awt.MouseInfo
@@ -64,51 +66,13 @@ fun PipContent(
     onResize: (dx: Int, dy: Int) -> Unit,
 ) {
     val player = container.player
-    val state by player.state.collectAsState()
-    val nowPlaying by container.playlist.nowPlaying.collectAsState()
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
-    var position by remember { mutableDoubleStateOf(player.currentPosition()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            position = player.currentPosition()
-            delay(250)
-        }
-    }
     Box(Modifier.fillMaxSize().background(Color.Black).hoverable(hover).testTag("pip_window")) {
         Box(Modifier.fillMaxSize().moveAndDoubleClick(onMove, onBack)) {
             VideoSurface(player, Modifier.fillMaxSize())
         }
-        if (hovered) {
-            Row(
-                Modifier.fillMaxWidth().align(Alignment.TopCenter)
-                    .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(start = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(nowPlaying?.title.orEmpty(), color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                IconButton(onBack, Modifier.testTag("pip_back")) { Icon(Icons.Filled.OpenInFull, "Back to YarmiplayTV", tint = Color.White) }
-                IconButton(onClose, Modifier.testTag("pip_close")) { Icon(Icons.Filled.Close, "Close picture-in-picture", tint = Color.White) }
-            }
-            Surface(
-                onClick = { player.setPaused(!player.isPaused) },
-                shape = RoundedCornerShape(50),
-                color = Color.Black.copy(alpha = 0.5f),
-                modifier = Modifier.align(Alignment.Center).size(52.dp).testTag("pip_play_pause"),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, if (state.paused) "Play" else "Pause", tint = Color.White, modifier = Modifier.size(32.dp))
-                }
-            }
-            Column(
-                Modifier.fillMaxWidth().align(Alignment.BottomCenter)
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))).padding(horizontal = 10.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                val segments by container.skips.segments.collectAsState()
-                TvSeekBar(state, position, onInteract = {}, segments = segments) { player.seek(it) }
-                PlayerVolumeControl(onInteract = {})
-            }
-        }
+        if (hovered) PipHover(container, onBack, onClose)
         // Shown with or without the pointer over the window, above the seek bar's place.
         SkipSegmentButton(container, Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 72.dp))
         // Resizing: the window has no frame, so the corner does it.
@@ -116,6 +80,49 @@ fun PipContent(
             Modifier.align(Alignment.BottomEnd).size(18.dp).pointerHoverIcon(PointerIcon(Cursor(Cursor.SE_RESIZE_CURSOR)))
                 .screenDrag(onResize).testTag("pip_resize"),
         )
+    }
+}
+
+/** Title, transport and the seek bar. Composed only while the pointer is over the window, so the video does not recompose with them. */
+@Composable
+private fun BoxScope.PipHover(container: AppContainer, onBack: () -> Unit, onClose: () -> Unit) {
+    val player = container.player
+    val state = player.collectPlayback()
+    val nowPlaying by container.playlist.nowPlaying.collectAsState()
+    var position by remember { mutableDoubleStateOf(player.currentPosition()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            position = player.currentPosition()
+            delay(250)
+        }
+    }
+    Row(
+        Modifier.fillMaxWidth().align(Alignment.TopCenter)
+            .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(start = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(nowPlaying?.title.orEmpty(), color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        IconButton(onBack, Modifier.testTag("pip_back")) { Icon(Icons.Filled.OpenInFull, "Back to YarmiplayTV", tint = Color.White) }
+        IconButton(onClose, Modifier.testTag("pip_close")) { Icon(Icons.Filled.Close, "Close picture-in-picture", tint = Color.White) }
+    }
+    Surface(
+        onClick = { player.setPaused(!player.isPaused) },
+        shape = RoundedCornerShape(50),
+        color = Color.Black.copy(alpha = 0.5f),
+        modifier = Modifier.align(Alignment.Center).size(52.dp).testTag("pip_play_pause"),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, if (state.paused) "Play" else "Pause", tint = Color.White, modifier = Modifier.size(32.dp))
+        }
+    }
+    Column(
+        Modifier.fillMaxWidth().align(Alignment.BottomCenter)
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))).padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        val segments by container.skips.segments.collectAsState()
+        TvSeekBar(state, position, onInteract = {}, segments = segments) { player.seek(it) }
+        PlayerVolumeControl(onInteract = {})
     }
 }
 

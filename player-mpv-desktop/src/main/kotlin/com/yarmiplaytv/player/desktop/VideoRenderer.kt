@@ -63,8 +63,18 @@ abstract class VideoRenderer internal constructor(
     private var pendingUpdate = false
     private var pendingRedraw = false
     private var stopping = false
+    @Volatile private var closed = false
     private var width = 2
     private var height = 2
+    private var viewW = 2
+    private var viewH = 2
+    private var attachCount = 0
+    /** A GPU readback was started and its pixels are not copied yet. The render thread is the only writer. */
+    protected var readbackWaiting = false
+    protected var consumedFrame = false
+    private var budget: RenderBudget? = null
+    /** Called (off the render lock) when the first surface attaches and when the last one detaches. */
+    var onAttachedChanged: (Boolean) -> Unit = {}
     private val started = CountDownLatch(1)
     @Volatile private var startError: Throwable? = null
     private val thread = Thread(::run, threadName).apply { isDaemon = true }
@@ -82,12 +92,67 @@ abstract class VideoRenderer internal constructor(
 
     /**
      * Longest edge for the GL FBO / PBO readback. 0 = match the view exactly.
-     * Capping cuts PCIe/readback cost on mid-range GPUs when the window is 1440p/4K.
+     * [armBudget] may lower it when a copy of the frame can't keep up.
      */
     @Volatile var maxRenderEdge: Int = 1920
 
-    /** The video view's size in pixels (optionally capped by [maxRenderEdge]); mpv renders at this size. */
+    /**
+     * The video view's size in pixels. While nothing is attached the renderer keeps a 2×2 frame
+     * so playback can continue without copying a full picture off the GPU.
+     */
     fun setSize(width: Int, height: Int) = signal {
+        viewW = width.coerceAtLeast(2)
+        viewH = height.coerceAtLeast(2)
+        applyCapLocked()
+    }
+
+    /** A [VideoSurface] is on screen. Frames are published only while at least one is attached. */
+    fun attach() {
+        var became = false
+        signal {
+            if (++attachCount == 1) {
+                became = true
+                applyCapLocked()
+            }
+        }
+        if (became) onAttachedChanged(true)
+    }
+
+    /** The matching [VideoSurface] left the composition. */
+    fun detach() {
+        var lost = false
+        signal {
+            if (attachCount > 0 && --attachCount == 0) {
+                lost = true
+                applyCapLocked()
+            }
+        }
+        if (lost && !closed) onAttachedChanged(false)
+    }
+
+    /**
+     * Caps the readback at [ceiling] and steps it down when copies are slow.
+     * Call after [start], once the GL device name is known.
+     */
+    fun armBudget(ceiling: Int) {
+        val safe = ceiling.coerceAtLeast(2)
+        budget = RenderBudget(safe)
+        signal {
+            maxRenderEdge = safe
+            applyCapLocked()
+        }
+    }
+
+    private fun applyCapLocked() {
+        val (w, h) = if (attachCount <= 0) 2 to 2 else capped(viewW, viewH)
+        if (w != width || h != height) {
+            width = w
+            height = h
+            pendingRedraw = true
+        }
+    }
+
+    private fun capped(width: Int, height: Int): Pair<Int, Int> {
         var w = width.coerceAtLeast(2)
         var h = height.coerceAtLeast(2)
         val cap = maxRenderEdge
@@ -99,10 +164,15 @@ abstract class VideoRenderer internal constructor(
                 h = (h * scale).toInt().coerceAtLeast(2)
             }
         }
-        if (w != this.width || h != this.height) {
-            this.width = w
-            this.height = h
-            pendingRedraw = true
+        return w to h
+    }
+
+    /** A finished GPU copy took [ns]. May lower or raise [maxRenderEdge]. */
+    protected fun noteReadback(ns: Long) {
+        val next = budget?.observe(ns, System.nanoTime()) ?: return
+        signal {
+            maxRenderEdge = next
+            applyCapLocked()
         }
     }
 
@@ -163,40 +233,67 @@ abstract class VideoRenderer internal constructor(
         while (true) {
             var w: Int
             var h: Int
-            var redraw: Boolean
+            var redraw = false
+            var attached: Boolean
+            var finishOnly = false
             lock.withLock {
-                while (!pendingUpdate && !pendingRedraw && !stopping) wake.await()
+                while (!pendingUpdate && !pendingRedraw && !stopping && !readbackWaiting) wake.await()
                 if (stopping) return
-                pendingUpdate = false
-                redraw = pendingRedraw
-                pendingRedraw = false
+                if (readbackWaiting && !pendingUpdate && !pendingRedraw) {
+                    // The GPU copy of a still (or the gap before the next frame) finishes without a busy spin.
+                    wake.awaitNanos(2_000_000L)
+                    if (stopping) return
+                    finishOnly = readbackWaiting && !pendingUpdate && !pendingRedraw
+                }
+                if (!finishOnly) {
+                    pendingUpdate = false
+                    redraw = pendingRedraw
+                    pendingRedraw = false
+                }
                 w = width
                 h = height
+                attached = attachCount > 0
+            }
+            if (finishOnly) {
+                if (drainReadback()) notifyPresented()
+                continue
             }
             val flags = lib.mpv_render_context_update(ctx)
-            if (flags and LibMpv.RENDER_UPDATE_FRAME == 0L && !redraw) continue
-            val frame = frames.beginWrite(w, h)
-            frame.dueAt = render(ctx, frame)
-            frames.publish()
-            stats.frames.incrementAndGet()
-            frameTick.longValue++
-            lib.mpv_render_context_report_swap(ctx)
+            val due = flags and LibMpv.RENDER_UPDATE_FRAME != 0L || redraw
+            if (!due && !readbackWaiting) continue
+            if (produce(ctx, w, h, due, attached)) notifyPresented()
+            if (consumedFrame) lib.mpv_render_context_report_swap(ctx)
         }
     }
 
-    /** Creates whatever [render] needs, on the render thread. */
+    private fun notifyPresented() {
+        stats.frames.incrementAndGet()
+        frameTick.longValue++
+    }
+
+    /**
+     * Renders the current frame. Returns true when a frame was queued for the UI.
+     * Sets [consumedFrame] when mpv's frame was rendered (so the caller reports the swap).
+     * A detached renderer still renders, at 2×2, so audio and the clock keep moving, and does not publish it.
+     */
+    protected abstract fun produce(ctx: Pointer, width: Int, height: Int, frameDue: Boolean, attached: Boolean): Boolean
+
+    /** Renders into a tiny target and does not publish. Called when no [VideoSurface] is showing. */
+    protected abstract fun renderHidden(ctx: Pointer)
+
+    /** Copies a GPU readback that was left in flight, if it is ready. False when there is nothing new to show. */
+    protected open fun drainReadback(): Boolean = false
+
+    /** Creates whatever [produce] needs, on the render thread. */
     protected abstract fun setUp()
     /** Parameters for mpv_render_context_create. */
     protected abstract fun renderParams(): Pointer
-    /**
-     * Renders the current video frame into [frame]. Returns System.nanoTime() of when mpv's render call returned,
-     * which is when the frame was due (mpv blocks until then).
-     */
-    protected abstract fun render(ctx: Pointer, frame: VideoFrame): Long
     protected abstract fun tearDown()
 
     /** Stops the render thread and frees the render context; must happen before mpv_terminate_destroy. */
     override fun close() {
+        closed = true
+        onAttachedChanged = {}
         signal { stopping = true }
         if (thread.isAlive) thread.join(5_000)
         frames.clear()
@@ -253,6 +350,10 @@ abstract class VideoRenderer internal constructor(
 /**
  * mpv renders on the GPU (hardware decoding, scaling, colour conversion) into a framebuffer sized to the view;
  * the result is read back through a pixel buffer object and handed to Skia.
+ *
+ * The readback is not waited out on the render thread. `glReadPixels` into the PBO returns once the copy is
+ * queued; the fence is polled for a few milliseconds and, if the next frame is already due and the copy is
+ * still running, that frame is dropped instead of blocking mpv for up to a second.
  */
 internal class GlVideoRenderer(
     lib: LibMpv,
@@ -278,6 +379,8 @@ internal class GlVideoRenderer(
     private var pbo = 0
     private var targetWidth = 0
     private var targetHeight = 0
+    private var pendingFence = 0L
+    private var pendingSince = 0L
 
     override fun setUp() {
         val ctx = GlContext.create()
@@ -320,7 +423,48 @@ internal class GlVideoRenderer(
         targetHeight = height
     }
 
-    override fun render(ctx: Pointer, frame: VideoFrame): Long {
+    override fun produce(ctx: Pointer, width: Int, height: Int, frameDue: Boolean, attached: Boolean): Boolean {
+        consumedFrame = false
+        var published = false
+        if (readbackWaiting && frameDue) {
+            val age = System.nanoTime() - pendingSince
+            val wait = if (age > 20_000_000L) 2_000_000L else 8_000_000L
+            if (finishReadback(wait, abandonIfSlow = true)) published = true
+            if (readbackWaiting) dropPending()
+        } else if (readbackWaiting && finishReadback(0L, abandonIfSlow = false)) {
+            published = true
+        }
+        if (!frameDue) return published
+        if (!attached) {
+            renderHidden(ctx)
+            consumedFrame = true
+            return published
+        }
+        val frame = frames.beginWrite(width, height)
+        frame.dueAt = kick(ctx, frame)
+        consumedFrame = true
+        if (finishReadback(0L, abandonIfSlow = false)) published = true
+        return published
+    }
+
+    override fun drainReadback(): Boolean {
+        if (!readbackWaiting) return false
+        val age = System.nanoTime() - pendingSince
+        return finishReadback(0L, abandonIfSlow = age > 250_000_000L)
+    }
+
+    override fun renderHidden(ctx: Pointer) {
+        dropPending()
+        ensureTargets(2, 2)
+        fboParam.setInt(0, fbo)
+        fboParam.setInt(4, 2)
+        fboParam.setInt(8, 2)
+        fboParam.setInt(12, GL11.GL_RGBA8)
+        lib.mpv_render_context_render(ctx, renderParams)
+    }
+
+    /** Queues the GPU copy and returns when mpv's render call returned (when the frame was due). */
+    private fun kick(ctx: Pointer, frame: VideoFrame): Long {
         val w = frame.width
         val h = frame.height
         ensureTargets(w, h)
@@ -331,24 +475,75 @@ internal class GlVideoRenderer(
         val start = System.nanoTime()
         lib.mpv_render_context_render(ctx, renderParams)
         val rendered = System.nanoTime()
-
         GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, fbo)
         GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 4)
         GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, pbo)
         GL11.glReadPixels(0, 0, w, h, GL12.GL_BGRA, GL11.GL_UNSIGNED_BYTE, 0L)
-        val fence = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
-        GL32.glClientWaitSync(fence, GL32.GL_SYNC_FLUSH_COMMANDS_BIT, 1_000_000_000L)
-        GL32.glDeleteSync(fence)
-        val size = w.toLong() * h * 4
-        val pixels = GL30.glMapBufferRange(GL21.GL_PIXEL_PACK_BUFFER, 0, size, GL30.GL_MAP_READ_BIT)
-        if (pixels != null) MemoryUtil.memCopy(MemoryUtil.memAddress(pixels), frame.address, size)
-        GL15.glUnmapBuffer(GL21.GL_PIXEL_PACK_BUFFER)
+        if (pendingFence != 0L) GL32.glDeleteSync(pendingFence)
+        pendingFence = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
+        GL11.glFlush()
         GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, 0)
         GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, 0)
-        val done = System.nanoTime()
+        readbackWaiting = true
+        pendingSince = rendered
         stats.record(stats.renderTotal, stats.renderMax, rendered - start)
-        stats.record(stats.readbackTotal, stats.readbackMax, done - rendered)
         return rendered
+    }
+
+    /**
+     * Copies the in-flight readback when the fence has signaled.
+     * [abandonIfSlow] drops it instead (after waiting [waitNs]) so the next frame can be rendered.
+     */
+    private fun finishReadback(waitNs: Long, abandonIfSlow: Boolean): Boolean {
+        if (!readbackWaiting) return false
+        val status = GL32.glClientWaitSync(pendingFence, GL32.GL_SYNC_FLUSH_COMMANDS_BIT, waitNs)
+        val ready = status == GL32.GL_ALREADY_SIGNALED || status == GL32.GL_CONDITION_SATISFIED
+        if (!ready) {
+            if (abandonIfSlow) {
+                noteReadback(System.nanoTime() - pendingSince)
+                dropPending()
+            }
+            return false
+        }
+        val frame = frames.writingFrame()
+        if (frame == null) {
+            dropPending()
+            return false
+        }
+        val size = frame.width.toLong() * frame.height * 4
+        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, pbo)
+        val pixels = GL30.glMapBufferRange(GL21.GL_PIXEL_PACK_BUFFER, 0, size, GL30.GL_MAP_READ_BIT)
+        val copied = pixels != null
+        if (copied) MemoryUtil.memCopy(MemoryUtil.memAddress(pixels), frame.address, size)
+        GL15.glUnmapBuffer(GL21.GL_PIXEL_PACK_BUFFER)
+        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, 0)
+        val took = System.nanoTime() - pendingSince
+        clearFence()
+        readbackWaiting = false
+        stats.record(stats.readbackTotal, stats.readbackMax, took)
+        noteReadback(took)
+        if (!copied) {
+            frames.abandonWrite()
+            return false
+        }
+        frames.publish()
+        return true
+    }
+
+    private fun dropPending() {
+        if (pendingFence != 0L) {
+            GL32.glClientWaitSync(pendingFence, GL32.GL_SYNC_FLUSH_COMMANDS_BIT, 2_000_000L)
+            clearFence()
+        }
+        if (readbackWaiting) frames.abandonWrite()
+        readbackWaiting = false
+    }
+
+    private fun clearFence() {
+        if (pendingFence != 0L) {
+            GL32.glDeleteSync(pendingFence)
+            pendingFence = 0L
+        }
     }
 
     private fun deleteTargets() {
@@ -359,6 +554,7 @@ internal class GlVideoRenderer(
     }
 
     override fun tearDown() {
+        dropPending()
         context?.let {
             deleteTargets()
             it.destroy()
@@ -376,11 +572,27 @@ internal class SoftwareVideoRenderer(lib: LibMpv, mpv: Pointer) : VideoRenderer(
     private val size = Memory(8)
     private val stride = Memory(8)
 
+    private val hiddenPointer = Memory(64)
+    private val hiddenParams = params(
+        LibMpv.RENDER_PARAM_SW_SIZE to size,
+        LibMpv.RENDER_PARAM_SW_FORMAT to format,
+        LibMpv.RENDER_PARAM_SW_STRIDE to stride,
+        LibMpv.RENDER_PARAM_SW_POINTER to hiddenPointer,
+    )
+
     override fun setUp() = Unit
 
     override fun renderParams(): Pointer = params(LibMpv.RENDER_PARAM_API_TYPE to apiType)
 
-    override fun render(ctx: Pointer, frame: VideoFrame): Long {
+    override fun produce(ctx: Pointer, width: Int, height: Int, frameDue: Boolean, attached: Boolean): Boolean {
+        consumedFrame = false
+        if (!frameDue) return false
+        if (!attached) {
+            renderHidden(ctx)
+            consumedFrame = true
+            return false
+        }
+        val frame = frames.beginWrite(width, height)
         size.setInt(0, frame.width)
         size.setInt(4, frame.height)
         stride.setLong(0, frame.rowBytes.toLong())
@@ -396,7 +608,17 @@ internal class SoftwareVideoRenderer(lib: LibMpv, mpv: Pointer) : VideoRenderer(
         )
         val rendered = System.nanoTime()
         stats.record(stats.renderTotal, stats.renderMax, rendered - start)
-        return rendered
+        frame.dueAt = rendered
+        frames.publish()
+        consumedFrame = true
+        return true
+    }
+
+    override fun renderHidden(ctx: Pointer) {
+        size.setInt(0, 2)
+        size.setInt(4, 2)
+        stride.setLong(0, 8L)
+        lib.mpv_render_context_render(ctx, hiddenParams)
     }
 
     override fun tearDown() = Unit

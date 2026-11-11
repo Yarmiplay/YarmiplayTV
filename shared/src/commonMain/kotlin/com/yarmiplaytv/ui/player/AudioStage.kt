@@ -95,19 +95,22 @@ fun BoxScope.AudioStage(
         return
     }
     val motion = remember(state.url) { IdleSpectrum() }
-    var frame by remember(state.url) { mutableIntStateOf(0) }
-    val tick = frame
+    // Read only inside the draw lambda below, so the cover and the title are not recomposed every frame.
+    var redraw by remember(state.url) { mutableIntStateOf(0) }
     LaunchedEffect(state.paused, state.buffering) {
         if (state.paused || state.buffering) return@LaunchedEffect
         var last = 0L
+        var lastDraw = 0L
         while (isActive) {
             androidx.compose.runtime.withFrameNanos { now ->
+                if (lastDraw != 0L && now - lastDraw < 16_000_000L) return@withFrameNanos
+                lastDraw = now
                 val dt = if (last == 0L) 0.016f else ((now - last) / 1_000_000_000f).coerceIn(0f, 0.05f)
                 last = now
                 motion.phase += dt
-                val next = SpectrumMotion.approach(motion.levels, SpectrumMotion.idle(motion.phase), dt)
-                next.copyInto(motion.levels)
-                frame++
+                SpectrumMotion.idleInto(motion.target, motion.phase)
+                SpectrumMotion.approachInto(motion.levels, motion.target, dt)
+                redraw++
             }
         }
     }
@@ -121,9 +124,9 @@ fun BoxScope.AudioStage(
             ),
         )
         Canvas(Modifier.fillMaxSize()) {
-            // [tick] is read during composition, so a paused playback (no new tick) holds this frame.
-            val redraw = tick
-            if (redraw < 0) return@Canvas
+            // Read during draw, not composition: a new frame redraws the bars and leaves the rest of the stage.
+            val frame = redraw
+            if (frame < 0) return@Canvas
             val n = motion.levels.size
             val gap = size.width * 0.008f
             val barW = (size.width - gap * (n + 1)) / n
@@ -199,4 +202,5 @@ private fun CoverArt(bytes: ByteArray?, edge: Dp) {
 private class IdleSpectrum {
     var phase = 0f
     val levels = SpectrumMotion.idle(0f)
+    val target = FloatArray(SpectrumMotion.BARS)
 }

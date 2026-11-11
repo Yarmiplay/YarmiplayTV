@@ -37,6 +37,7 @@ import androidx.compose.material3.IconButtonDefaults
 import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.media.FileNames
 import com.yarmiplaytv.ui.player.AudioStage
+import com.yarmiplaytv.ui.player.collectPlayback
 import com.yarmiplaytv.playback.PlaybackAction
 import com.yarmiplaytv.playback.playbackAction
 import com.yarmiplaytv.player.SubtitleScale
@@ -151,11 +152,11 @@ private enum class PlayerSheet(val label: String, val icon: ImageVector) {
 @Composable
 fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     val player = container.player
-    val state by player.state.collectAsStateWithLifecycle()
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val state = player.collectPlayback(settings.playback.showPlaybackStats)
     val room by container.sync.room.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     val status by container.playlist.status.collectAsStateWithLifecycle()
-    val settings by container.settings.collectAsStateWithLifecycle()
     val step = settings.playback.seekStepSeconds.toDouble()
     val inRoom = room.status == ConnectionStatus.CONNECTED
 
@@ -313,7 +314,6 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                         )
 
                         val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
-                        val voiceLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
                         val speakingNames = remember(voiceUi, settings) { voiceUi.audibleSpeakingNames(settings) }
                         // Edge speaking list — only while someone is heard; nothing when idle.
                         VoiceSpeakingOverlay(
@@ -339,10 +339,10 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                     if (!isPortrait) {
                                         // Status cluster (room · ready · ping · compact mic); hides with HUD — no video Mic badge.
                                         RoomStatusChip(
+                                            container,
                                             room,
                                             playerStreamingLabel(container, controls, state.fileLoaded)?.takeIf { controls },
                                             micLive = voiceUi.micControlLive(),
-                                            micLevel = voiceLevel,
                                         )
                                     }
                                     if (pip.supported && state.fileLoaded) {
@@ -395,7 +395,6 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         inRoom = inRoom,
                                         ready = room.isReady == true,
                                         voiceUi = voiceUi,
-                                        voiceLevel = voiceLevel,
                                         onInteract = ::touch,
                                         onSheet = { openSheet(it); touch() },
                                         onMenus = { openMenus(); touch() },
@@ -570,13 +569,12 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                             )
                                         }
                                         // Mic beside Ready — full 48dp target (not crushed by the volume row).
-                                        val portraitLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
                                         PlayerMicButton(
+                                            container,
                                             portraitVoice,
                                             onToggle = { container.voice.toggleMic(); touch() },
                                             onVideo = false,
                                             showKeyboardShortcut = false,
-                                            level = portraitLevel,
                                         )
                                         PlayerVoiceMembershipButton(
                                             portraitVoice,
@@ -696,13 +694,12 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                                     onVideo = false,
                                                 )
                                             }
-                                            val controlsLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
                                             PlayerMicButton(
+                                                container,
                                                 portraitVoice,
                                                 onToggle = { container.voice.toggleMic(); touch() },
                                                 onVideo = false,
                                                 showKeyboardShortcut = false,
-                                                level = controlsLevel,
                                             )
                                             PlayerVoiceMembershipButton(
                                                 portraitVoice,
@@ -856,14 +853,13 @@ private fun BottomControls(
     inRoom: Boolean,
     ready: Boolean,
     voiceUi: VoiceUiState,
-    voiceLevel: Float = 0f,
     onInteract: () -> Unit,
     onSheet: (PlayerSheet) -> Unit,
     onMenus: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val state by container.player.state.collectAsStateWithLifecycle()
     val settings by container.settings.collectAsStateWithLifecycle()
+    val state = container.player.collectPlayback(settings.playback.showPlaybackStats)
     var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -898,11 +894,11 @@ private fun BottomControls(
             }
             // Beside Ready — same toggleMic() path as the Room tab (OPEN_MIC mute / TOGGLE latch).
             PlayerMicButton(
+                container,
                 voiceUi,
                 onToggle = { container.voice.toggleMic(); onInteract() },
                 onVideo = true,
                 showKeyboardShortcut = container.deviceKind == DeviceKind.DESKTOP,
-                level = voiceLevel,
             )
             PlayerVoiceMembershipButton(
                 voiceUi,
@@ -937,14 +933,15 @@ private fun BottomControls(
 /** Player Mic toggle beside Ready; visual state matches Room tab via [micControlLive]. */
 @Composable
 private fun PlayerMicButton(
+    container: AppContainer,
     ui: VoiceUiState,
     onToggle: () -> Unit,
     onVideo: Boolean,
     showKeyboardShortcut: Boolean = false,
-    level: Float = 0f,
     modifier: Modifier = Modifier,
 ) {
     if (!ui.showMicButton) return
+    val level by container.voice.captureLevel.collectAsStateWithLifecycle()
     val live = ui.micControlLive()
     val tint = when {
         live -> AppColors.Ready
@@ -1057,11 +1054,24 @@ private fun Chip(text: String, color: Color, modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun LiveMicRing(container: AppContainer) {
+    val level by container.voice.captureLevel.collectAsStateWithLifecycle()
+    com.yarmiplaytv.voice.MicActivityRing(
+        level = level,
+        active = true,
+        color = AppColors.Ready,
+        modifier = Modifier.padding(start = 8.dp),
+        size = 18.dp,
+        stroke = 1.5.dp,
+    )
+}
+
+@Composable
 private fun RoomStatusChip(
+    container: AppContainer,
     room: RoomState,
     streaming: String? = null,
     micLive: Boolean = false,
-    micLevel: Float = 0f,
 ) {
     when (room.status) {
         ConnectionStatus.CONNECTED -> {
@@ -1076,16 +1086,7 @@ private fun RoomStatusChip(
                     AppColors.Ready,
                     if (streaming != null) Modifier.widthIn(max = 420.dp).testTag("relay_streaming") else Modifier,
                 )
-                if (micLive) {
-                    com.yarmiplaytv.voice.MicActivityRing(
-                        level = micLevel,
-                        active = true,
-                        color = AppColors.Ready,
-                        modifier = Modifier.padding(start = 8.dp),
-                        size = 18.dp,
-                        stroke = 1.5.dp,
-                    )
-                }
+                if (micLive) LiveMicRing(container)
             }
         }
         ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> Chip("Connecting…", AppColors.NotReady)

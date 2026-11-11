@@ -169,7 +169,7 @@ internal sealed interface Overlay {
 @Composable
 fun PlayerScreen(container: AppContainer, nav: Navigator) {
     val player = container.player as SurfacePlayer
-    val state by player.state.collectAsStateWithLifecycle()
+    val state = player.collectPlayback()
     val tracks by player.tracks.collectAsStateWithLifecycle()
     val room by container.sync.room.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
@@ -192,7 +192,6 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
     val micFocus = remember { FocusRequester() }
     val panelFocus = remember { FocusRequester() }
     val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
-    val voiceLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
     val tabFocus = remember { PanelKind.entries.associateWith { FocusRequester() } }
     val focusManager = LocalFocusManager.current
     val panels = PanelKind.entries.filter { it != PanelKind.MAL || container.mal.client.configured }
@@ -464,7 +463,6 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                         controlsFocus = controlsFocus,
                         micFocus = micFocus,
                         voiceUi = voiceUi,
-                        voiceLevel = voiceLevel,
                         pip = pip,
                         onTogglePause = ::togglePause,
                         onSeek = ::seekBy,
@@ -472,12 +470,12 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                         onHome = { nav.popTo(Screen.Home) },
                         modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { tvControlsHeight = with(scaledDensity) { it.height.toDp() } },
                     )
-                    RoomChip(
+                    LiveRoomChip(
+                        container,
                         room,
                         playerStreamingLabel(container, controlsVisible = true, state.fileLoaded),
                         Modifier.align(Alignment.TopEnd).padding(32.dp),
                         micLive = voiceUi.micControlLive(),
-                        micLevel = voiceLevel,
                     )
                 }
 
@@ -728,7 +726,6 @@ private fun ControlsBar(
     controlsFocus: FocusRequester,
     micFocus: FocusRequester,
     voiceUi: com.yarmiplaytv.voice.VoiceUiState,
-    voiceLevel: Float = 0f,
     pip: PictureInPicture,
     onTogglePause: () -> Unit,
     onSeek: (Double) -> Unit,
@@ -737,7 +734,7 @@ private fun ControlsBar(
     onHome: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val state by container.player.state.collectAsStateWithLifecycle()
+    val state = container.player.collectPlayback()
     val room by container.sync.room.collectAsStateWithLifecycle()
     val inRoom = room.status == ConnectionStatus.CONNECTED
     // Re-read the extrapolated position a few times a second while visible.
@@ -806,7 +803,7 @@ private fun ControlsBar(
                 )
             }
             // Every remote can focus this and press OK — primary TV talk control (tap toggle).
-            TvMicButton(voiceUi, onToggle = { container.voice.toggleTalk() }, focusRequester = micFocus, onVideo = true, level = voiceLevel)
+            LiveTvMic(container, voiceUi, micFocus) { container.voice.toggleTalk() }
             if (voiceUi.showVoiceMembershipButton) {
                 val inVoice = voiceUi.voiceMembershipIsLeave
                 IconAction(
@@ -906,6 +903,33 @@ private fun PanelTabs(
             }
         }
     }
+}
+
+@Composable
+private fun LiveTvMic(
+    container: AppContainer,
+    voiceUi: com.yarmiplaytv.voice.VoiceUiState,
+    focusRequester: FocusRequester,
+    onToggle: () -> Unit,
+) {
+    val level by container.voice.captureLevel.collectAsStateWithLifecycle()
+    TvMicButton(voiceUi, onToggle = onToggle, focusRequester = focusRequester, onVideo = true, level = level)
+}
+
+@Composable
+private fun LiveRoomChip(
+    container: AppContainer,
+    room: com.yarmiplaytv.syncplay.RoomState,
+    streaming: String?,
+    modifier: Modifier = Modifier,
+    micLive: Boolean = false,
+) {
+    if (!micLive) {
+        RoomChip(room, streaming, modifier, micLive = false, micLevel = 0f)
+        return
+    }
+    val level by container.voice.captureLevel.collectAsStateWithLifecycle()
+    RoomChip(room, streaming, modifier, micLive = true, micLevel = level)
 }
 
 @Composable

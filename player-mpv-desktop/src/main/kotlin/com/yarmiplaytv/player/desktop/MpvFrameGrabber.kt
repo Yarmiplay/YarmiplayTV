@@ -31,6 +31,10 @@ object MpvFrameGrabber {
             { block -> MpvBackgroundLoad.tryRun(block) }
         }
         return run {
+            val thread = Thread.currentThread()
+            val previousPriority = thread.priority
+            thread.priority = Thread.MIN_PRIORITY
+            try {
             val outDir = Files.createTempDirectory("yarmiplaytv-frame").toFile()
             try {
                 val core = MpvCore(options(capped, outDir, start), logLevel = "no")
@@ -46,6 +50,9 @@ object MpvFrameGrabber {
                 true
             } finally {
                 outDir.deleteRecursively()
+            }
+            } finally {
+                thread.priority = previousPriority
             }
         } ?: false
     }

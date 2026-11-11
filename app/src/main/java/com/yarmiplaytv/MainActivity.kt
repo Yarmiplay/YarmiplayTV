@@ -36,6 +36,7 @@ import com.yarmiplaytv.voice.AndroidMicPermissions
 import com.yarmiplaytv.voice.TvVoiceKeys
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -115,12 +116,17 @@ class MainActivity : ComponentActivity() {
 
         if (hasPip && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             lifecycleScope.launch {
-                combine(container.settings, container.player.state) { settings, playerState ->
-                    settings.playback.pictureInPicture to playerState
-                }.collect { (pipEnabled, state) ->
-                    val isVideo = playbackShowsVideo(state)
+                combine(
+                    container.settings.map { it.playback.pictureInPicture }.distinctUntilChanged(),
+                    container.player.state.map { state ->
+                        Triple(state.displayAspect, state.paused, playbackShowsVideo(state))
+                    }.distinctUntilChanged(),
+                ) { pipEnabled, playback ->
+                    pipEnabled to playback
+                }.collect { (pipEnabled, playback) ->
+                    val (aspect, paused, isVideo) = playback
                     val auto = pipEnabled && isVideo
-                    val params = pipParams(this@MainActivity, state.displayAspect, state.paused, autoEnter = auto)
+                    val params = pipParams(this@MainActivity, aspect, paused, autoEnter = auto)
                     runCatching { setPictureInPictureParams(params) }
                 }
             }

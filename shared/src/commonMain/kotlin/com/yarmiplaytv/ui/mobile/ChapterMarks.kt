@@ -2,6 +2,7 @@ package com.yarmiplaytv.ui.mobile
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -78,7 +79,7 @@ private const val TIME_SLOP = 0.001
  */
 @Composable
 fun ChapterMarks(chapters: List<Chapter>, duration: Double, modifier: Modifier = Modifier) {
-    val boundaries = chapterBoundaries(chapters, duration)
+    val boundaries = remember(chapters, duration) { chapterBoundaries(chapters, duration) }
     if (boundaries.isEmpty() || !duration.isFinite() || duration <= 0.0) return
     Canvas(modifier.testTag("chapter_marks")) {
         val core = 2.dp.toPx().coerceAtLeast(2f)

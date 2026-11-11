@@ -35,6 +35,7 @@ class DesktopMpvPlayerTest {
         assumeTrue("test clip missing: $clip", clip.isFile)
         player = DesktopMpvPlayer()
         player.renderer.setSize(640, 360)
+        player.renderer.attach()
     }
 
     @After
@@ -79,6 +80,7 @@ class DesktopMpvPlayerTest {
             player.close()
             player = DesktopMpvPlayer(DesktopMpvOptions(render = mode))
             player.renderer.setSize(640, 360)
+            player.renderer.attach()
             loadAndAwait<PlayerEvent.FileLoaded>(pattern.toURI().toString())
             fun VideoFrame.luma(x: Int, y: Int) = data.bytes[y * rowBytes + x * 4 + 1].toInt() and 0xFF
             fun VideoFrame.corners() = "top-left ${luma(80, 45)}, top-right ${luma(560, 45)}, bottom-left ${luma(80, 315)}"
@@ -119,6 +121,7 @@ class DesktopMpvPlayerTest {
             player.close()
             player = DesktopMpvPlayer(DesktopMpvOptions(render = mode))
             player.renderer.setSize(640, 360)
+            player.renderer.attach()
             loadAndAwait<PlayerEvent.FileLoaded>(clip.toURI().toString())
             withTimeout(5_000) { while (player.renderer.frames.published == 0L || player.state.value.videoWidth == 0) delay(20) }
             val shot = File.createTempFile("yarmiplaytv-shot", ".jpg").apply { delete(); deleteOnExit() }
@@ -146,6 +149,7 @@ class DesktopMpvPlayerTest {
             assertEquals(locale, NumericLocale.current())
             player = DesktopMpvPlayer()
             player.renderer.setSize(640, 360)
+            player.renderer.attach()
             loadAndAwait<PlayerEvent.FileLoaded>(clip.toURI().toString())
             assertEquals("C", NumericLocale.current())
         } finally {

@@ -81,6 +81,22 @@ class VideoFrames(private val capacity: Int = 8) {
         return frame
     }
 
+    /** Render thread: the frame [beginWrite] handed out, still being filled. */
+    fun writingFrame(): VideoFrame? = synchronized(lock) { writing }
+
+    /**
+     * Render thread: the frame from [beginWrite] will not be shown.
+     * Used when a GPU readback is dropped so the next frame can start.
+     */
+    fun abandonWrite() {
+        synchronized(lock) {
+            val frame = writing ?: return
+            writing = null
+            frame.invalidateImage()
+            free.addLast(frame)
+        }
+    }
+
     /** Render thread: queues the frame from [beginWrite] for display. */
     fun publish() {
         synchronized(lock) {

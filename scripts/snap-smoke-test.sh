@@ -6,7 +6,10 @@
 set -euo pipefail
 
 snap=$1
-sudo snap install core24 gtk-common-themes gnome-46-2404 mesa-2404
+here=$(cd "$(dirname "$0")" && pwd)
+# The content snaps come from the store. One attempt dies when the store blips.
+sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true
+ATTEMPTS=4 DELAY=15 bash "$here/retry.sh" sudo snap install core24 gtk-common-themes gnome-46-2404 mesa-2404
 sudo snap install --dangerous "$snap"
 # Content connections only happen by themselves for snaps from the store.
 sudo snap connect yarmiplaytv:gnome-46-2404 gnome-46-2404
