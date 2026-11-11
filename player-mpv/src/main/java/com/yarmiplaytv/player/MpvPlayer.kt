@@ -54,8 +54,11 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     @Volatile private var coverGeneration = 0
     private var coverFor: String? = null
     private val visualizer = AudioVisualizerController()
+    private val signals = PlaybackSignals()
     private val vizLock = Any()
     private var latestTracks: List<Track> = emptyList()
+    /** False from load/stop until FILE_LOADED, so a stale track list cannot install the spectrum on the next file. */
+    @Volatile private var acceptVisualizer = false
     /** Bytes of the loaded libavfilter, or null when the file cannot be read. */
     private val filterLibrary: ByteArray? by lazy { readFilterLibrary() }
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -201,6 +204,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         userSeekedFlag = false
         lastSeekTarget = startPosition
         lastSeekAt = now
+        signals.reset()
         resetPresentation()
         _state.update { PlaybackState(url = url, paused = startPaused, position = startPosition) }
         _tracks.value = emptyList()
@@ -263,6 +267,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         lastSeekAt = now
         cachedPosition = target
         cachedPositionAt = now
+        signals.position(now, seeking = true)
         _state.update { it.copy(position = target, seeking = true) }
         mpv.command(arrayOf("seek", target.toString(), "absolute+exact"))
     }
@@ -422,7 +427,9 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
                 cachedSpeed = value
                 publishState { it.copy(speed = value) }
             }
-            "demuxer-cache-duration" -> publishState { it.copy(cacheSeconds = value) }
+            "demuxer-cache-duration" -> if (signals.cache(value, _state.value.buffering)) {
+                publishState { it.copy(cacheSeconds = value) }
+            }
         }
     }
 
@@ -449,7 +456,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         }
         cachedPosition = value
         cachedPositionAt = now
-        publishState { it.copy(position = value) }
+        if (signals.position(now)) publishState { it.copy(position = value) }
     }
 
     override fun eventProperty(property: String, value: Boolean) {
@@ -490,6 +497,8 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
                 cachedPositionAt = now
                 lastSeekTarget = position
                 lastSeekAt = now
+                acceptVisualizer = true
+                signals.reset()
                 publishState { it.copy(fileLoaded = true, duration = duration, position = position, eofReached = false) }
                 loadTracks()
                 currentUrl?.let { _events.tryEmit(PlayerEvent.FileLoaded(it, duration)) }
@@ -512,9 +521,16 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         }
     }
 
+    private var lastLogLine = ""
+    private var lastLogAt = 0L
+
     override fun logMessage(prefix: String, level: Int, text: String) {
         val line = text.trimEnd()
         if (level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_WARN) {
+            val now = SystemClock.elapsedRealtime()
+            if (line == lastLogLine && now - lastLogAt < 1_000L) return
+            lastLogLine = line
+            lastLogAt = now
             Log.w(TAG, "[$prefix] $line")
             _events.tryEmit(PlayerEvent.Log(prefix, level, line))
             if (prefix == "cplayer" && level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_ERROR) {
@@ -605,11 +621,13 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     }
 
     private fun refreshVisualizer() {
-        synchronized(vizLock) { commitVisualizer(visualizer.onTracks(latestTracks, canRender = surfaceAttached)) }
+        val tracks = if (acceptVisualizer) latestTracks else emptyList()
+        synchronized(vizLock) { commitVisualizer(visualizer.onTracks(tracks, canRender = acceptVisualizer && surfaceAttached)) }
     }
 
     /** Drops a graph from the previous file before the next one opens, and forgets its cover. */
     private fun resetPresentation() {
+        acceptVisualizer = false
         latestTracks = emptyList()
         coverGeneration++
         coverFor = null
@@ -626,9 +644,8 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
     private fun giveUpOnVisualizer() {
         synchronized(vizLock) {
-            visualizer.rejected()
-            visualizer.rejected()
-            if (visualizer.disarm()) mpv.setPropertyString("lavfi-complex", "")
+            visualizer.giveUp()
+            mpv.setPropertyString("lavfi-complex", "")
         }
         publishState { it.copy(audioVisualizer = false) }
     }

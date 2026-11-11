@@ -1,6 +1,7 @@
 import { FileSource, type ByteSource } from "./bytes";
 import { Demuxer, type StreamInfo } from "./demuxer";
 import { createLibAV, type LibAV } from "./libav";
+import { isMotionVideo } from "./spectrum";
 import { openVideoDecoding, type VideoDecoding } from "./video";
 
 /**
@@ -24,7 +25,7 @@ export class SeekFrames {
     const libav = await createLibAV();
     try {
       const demuxer = await Demuxer.open(libav, file instanceof Blob ? new FileSource(file) : file);
-      const stream = demuxer.streams.find((s) => s.kind === "video" && !["mjpeg", "png", "bmp"].includes(s.codec));
+      const stream = demuxer.streams.find((s) => isMotionVideo(s.kind, s.codec));
       if (!stream) {
         await demuxer.close();
         libav.terminate();

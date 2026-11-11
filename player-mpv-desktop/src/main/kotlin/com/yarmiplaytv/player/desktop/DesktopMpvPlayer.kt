@@ -2,6 +2,8 @@ package com.yarmiplaytv.player.desktop
 
 import com.yarmiplaytv.player.AudioOnly
 import com.yarmiplaytv.player.AudioVisualizerController
+import com.yarmiplaytv.player.PlaybackSignals
+import com.yarmiplaytv.player.VisualizerProfile
 import com.yarmiplaytv.player.commit
 import com.yarmiplaytv.player.Chapter
 import com.yarmiplaytv.player.EmbeddedMedia
@@ -94,9 +96,14 @@ class DesktopMpvPlayer(
     val muted: StateFlow<Boolean> = _muted.asStateFlow()
     private val _cover = MutableStateFlow<ByteArray?>(null)
     override val coverArt: StateFlow<ByteArray?> = _cover.asStateFlow()
-    private val visualizer = AudioVisualizerController()
+    private val visualizer = AudioVisualizerController(
+        if (effectiveOptions.lowEnd || renderer.isSoftwareRasterizer) VisualizerProfile.LIGHT else VisualizerProfile.STANDARD,
+    )
+    private val signals = PlaybackSignals()
     private val vizLock = Any()
     private var latestTracks: List<Track> = emptyList()
+    /** False from load/stop until FILE_LOADED, so a stale track list cannot install the spectrum on the next file. */
+    @Volatile private var acceptVisualizer = false
     @Volatile private var coverGeneration = 0
     private var coverFor: String? = null
 
@@ -156,6 +163,7 @@ class DesktopMpvPlayer(
         userSeekedFlag = false
         lastSeekTarget = startPosition
         lastSeekAt = now
+        signals.reset()
         resetPresentation()
         _state.update { PlaybackState(url = url, paused = startPaused, position = startPosition) }
         _tracks.value = emptyList()
@@ -208,6 +216,7 @@ class DesktopMpvPlayer(
         lastSeekAt = now
         cachedPosition = target
         cachedPositionAt = now
+        signals.position(now / 1_000_000, seeking = true)
         _state.update { it.copy(position = target, seeking = true) }
         core.command("seek", target.toString(), "absolute+exact")
     }
@@ -337,6 +346,8 @@ class DesktopMpvPlayer(
                 cachedPositionAt = now
                 lastSeekTarget = position
                 lastSeekAt = now
+                acceptVisualizer = true
+                signals.reset()
                 _state.update { it.copy(fileLoaded = true, duration = duration, position = position, eofReached = false) }
                 loadTracks()
                 currentUrl?.let { _events.tryEmit(PlayerEvent.FileLoaded(it, duration)) }
@@ -377,7 +388,9 @@ class DesktopMpvPlayer(
             }
             "volume" -> (value as? Double)?.let { _volume.value = it }
             "mute" -> (value as? Boolean)?.let { _muted.value = it }
-            "demuxer-cache-duration" -> (value as? Double)?.let { v -> _state.update { it.copy(cacheSeconds = v) } }
+            "demuxer-cache-duration" -> (value as? Double)?.let { v ->
+                if (signals.cache(v, _state.value.buffering)) _state.update { it.copy(cacheSeconds = v) }
+            }
             "pause" -> (value as? Boolean)?.let { v ->
                 if (v != cachedPaused) snapshotPosition()
                 cachedPaused = v
@@ -394,10 +407,16 @@ class DesktopMpvPlayer(
             "eof-reached" -> (value as? Boolean)?.let { v -> _state.update { it.copy(eofReached = v) } }
             "video-codec" -> if (!_state.value.audioOnly) _state.update { it.copy(videoCodec = value as? String) }
             "hwdec-current" -> if (!_state.value.audioOnly) _state.update { it.copy(hwdec = value as? String) }
-            "frame-drop-count" -> (value as? Long)?.let { v -> _state.update { it.copy(frameDrops = v) } }
-            "decoder-frame-drop-count" -> (value as? Long)?.let { v -> _state.update { it.copy(decoderFrameDrops = v) } }
+            "frame-drop-count" -> (value as? Long)?.let { v ->
+                if (v != _state.value.frameDrops) _state.update { it.copy(frameDrops = v) }
+            }
+            "decoder-frame-drop-count" -> (value as? Long)?.let { v ->
+                if (v != _state.value.decoderFrameDrops) _state.update { it.copy(decoderFrameDrops = v) }
+            }
             "avsync" -> (value as? Double)?.let { v ->
-                _state.update { it.copy(avSync = v, displayLatencyMs = compensator.appliedMs) }
+                if (signals.stats(System.nanoTime() / 1_000_000)) {
+                    _state.update { it.copy(avSync = v, displayLatencyMs = compensator.appliedMs) }
+                }
             }
         }
     }
@@ -425,12 +444,19 @@ class DesktopMpvPlayer(
         }
         cachedPosition = value
         cachedPositionAt = now
-        _state.update { it.copy(position = value) }
+        if (signals.position(now / 1_000_000)) _state.update { it.copy(position = value) }
     }
+
+    private var lastLogLine = ""
+    private var lastLogAt = 0L
 
     private fun onLog(event: MpvEvent.Log) {
         val level = logLevel(event.level)
         if (level > LOG_WARN) return
+        val now = System.nanoTime()
+        if (event.text == lastLogLine && now - lastLogAt < 1_000_000_000L) return
+        lastLogLine = event.text
+        lastLogAt = now
         System.err.println("mpv [${event.prefix}] ${event.level}: ${event.text}")
         _events.tryEmit(PlayerEvent.Log(event.prefix, level, event.text))
         if (event.prefix == "cplayer" && level <= LOG_ERROR) _events.tryEmit(PlayerEvent.EndFile(currentUrl, event.text))
@@ -446,29 +472,37 @@ class DesktopMpvPlayer(
 
     private fun giveUpOnVisualizer() {
         synchronized(vizLock) {
-            visualizer.rejected()
-            visualizer.rejected()
-            if (visualizer.disarm()) core.setString("lavfi-complex", "")
+            visualizer.giveUp()
+            core.setString("lavfi-complex", "")
         }
+        renderer.setVisualizerEdge(null)
         _state.update { it.copy(audioVisualizer = false) }
     }
 
     private fun commitVisualizer(command: VisualizerCommand) {
         val showing = visualizer.commit(command) { graph -> core.setString("lavfi-complex", graph) >= 0 }
-        if (showing != null) _state.update { it.copy(audioVisualizer = showing) }
+        if (showing != null) {
+            _state.update { it.copy(audioVisualizer = showing) }
+            // The spectrum picture is only profile.longEdge pixels. Reading back the whole window
+            // would upscale it on the GPU and copy that larger frame every tick.
+            renderer.setVisualizerEdge(if (showing) visualizer.profile.longEdge else null)
+        }
     }
 
     private fun refreshVisualizer() {
-        synchronized(vizLock) { commitVisualizer(visualizer.onTracks(latestTracks, canRender = true)) }
+        val tracks = if (acceptVisualizer) latestTracks else emptyList()
+        synchronized(vizLock) { commitVisualizer(visualizer.onTracks(tracks, canRender = acceptVisualizer)) }
     }
 
     /** Drops a graph from the previous file before the next one opens, and forgets its cover. */
     private fun resetPresentation() {
+        acceptVisualizer = false
         coverGeneration++
         coverFor = null
         _cover.value = null
         latestTracks = emptyList()
         synchronized(vizLock) { commitVisualizer(visualizer.onNewFile()) }
+        renderer.setVisualizerEdge(null)
     }
 
     private fun scheduleCover(url: String?) {

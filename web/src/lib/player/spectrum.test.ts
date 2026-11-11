@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approach, barsFromFrequency, idle } from "./spectrum";
+import { approach, barsFromFrequency, idle, isAttachedPicture, isMotionVideo, showSpectrum } from "./spectrum";
 
 describe("spectrum", () => {
   it("holds the frame when time does not move", () => {
@@ -18,6 +18,19 @@ describe("spectrum", () => {
     const bars = barsFromFrequency(freq, 8);
     expect(Math.max(...bars)).toBeGreaterThan(0.9);
     expect(bars.some((v) => v === 0)).toBe(true);
+  });
+
+  it("treats cover art as audio and a real video track as video", () => {
+    expect(isAttachedPicture("mjpeg")).toBe(true);
+    expect(isAttachedPicture("PNG")).toBe(true);
+    expect(isAttachedPicture("webp")).toBe(true);
+    expect(isMotionVideo("video", "mjpeg")).toBe(false);
+    expect(isMotionVideo("video", "h264")).toBe(true);
+    expect(isMotionVideo("audio", "aac")).toBe(false);
+    expect(showSpectrum(true, false, true)).toBe(true);
+    expect(showSpectrum(true, true, true)).toBe(false);
+    expect(showSpectrum(false, false, true)).toBe(false);
+    expect(showSpectrum(true, false, false)).toBe(false);
   });
 
   it("keeps the idle bars in range and moves them with the phase", () => {

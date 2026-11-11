@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.player.PlaybackState
 import kotlinx.coroutines.delay
 import java.awt.Cursor
 import java.awt.MouseInfo
@@ -68,13 +69,6 @@ fun PipContent(
     val nowPlaying by container.playlist.nowPlaying.collectAsState()
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
-    var position by remember { mutableDoubleStateOf(player.currentPosition()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            position = player.currentPosition()
-            delay(250)
-        }
-    }
     Box(Modifier.fillMaxSize().background(Color.Black).hoverable(hover).testTag("pip_window")) {
         Box(Modifier.fillMaxSize().moveAndDoubleClick(onMove, onBack)) {
             VideoSurface(player, Modifier.fillMaxSize())
@@ -104,8 +98,7 @@ fun PipContent(
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))).padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                val segments by container.skips.segments.collectAsState()
-                TvSeekBar(state, position, onInteract = {}, segments = segments) { player.seek(it) }
+                PipSeekBar(container, state)
                 PlayerVolumeControl(onInteract = {})
             }
         }
@@ -173,6 +166,20 @@ private fun Modifier.moveAndDoubleClick(onMove: (dx: Int, dy: Int) -> Unit, onDo
             }
         }
     }
+}
+
+/** Seek clock for the picture-in-picture window. Its 4 Hz poll stays off the video. */
+@Composable
+private fun PipSeekBar(container: AppContainer, state: PlaybackState) {
+    var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            position = container.player.currentPosition()
+            delay(250)
+        }
+    }
+    val segments by container.skips.segments.collectAsState()
+    TvSeekBar(state, position, onInteract = {}, segments = segments) { container.player.seek(it) }
 }
 
 private fun screenPointer(): Point? = runCatching { MouseInfo.getPointerInfo()?.location }.getOrNull()

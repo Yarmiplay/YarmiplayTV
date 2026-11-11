@@ -638,7 +638,9 @@ class DesktopVoiceEngine : VoiceEngine {
         val preferredId = inputDeviceId
         // Open the line on this worker thread so mute/unmute never blocks the UI on Java Sound.
         captureThread = thread(name = "voice-capture", isDaemon = true) {
-            runCatching { Thread.currentThread().priority = Thread.MAX_PRIORITY }
+            // Above normal so the mic buffer is read on time, and below maximum so DeepFilter
+            // cannot preempt the UI thread and the video render thread.
+            runCatching { Thread.currentThread().priority = Thread.NORM_PRIORITY + 1 }
             var id = preferredId
             if (id.isNullOrEmpty() && isWindows) {
                 val cap = WasapiAudio.openCapture()

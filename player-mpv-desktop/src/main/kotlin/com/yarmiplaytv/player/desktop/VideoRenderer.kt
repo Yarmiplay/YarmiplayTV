@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import com.sun.jna.Memory
 import com.sun.jna.Pointer
 import com.sun.jna.ptr.PointerByReference
+import com.yarmiplaytv.player.renderLongEdge
 import org.lwjgl.opengl.GL11
 import org.lwjgl.opengl.GL12
 import org.lwjgl.opengl.GL15
@@ -12,7 +13,9 @@ import org.lwjgl.opengl.GL21
 import org.lwjgl.opengl.GL30
 import org.lwjgl.opengl.GL32
 import org.lwjgl.system.MemoryUtil
+import java.awt.EventQueue
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -86,32 +89,99 @@ abstract class VideoRenderer internal constructor(
      */
     @Volatile var maxRenderEdge: Int = 1920
 
-    /** The video view's size in pixels (optionally capped by [maxRenderEdge]); mpv renders at this size. */
-    fun setSize(width: Int, height: Int) = signal {
-        var w = width.coerceAtLeast(2)
-        var h = height.coerceAtLeast(2)
-        val cap = maxRenderEdge
-        if (cap > 0) {
-            val long = maxOf(w, h)
-            if (long > cap) {
-                val scale = cap.toDouble() / long
-                w = (w * scale).toInt().coerceAtLeast(2)
-                h = (h * scale).toInt().coerceAtLeast(2)
+    private var viewWidth = 2
+    private var viewHeight = 2
+    /** 0 follows [maxRenderEdge]. Lowered when frames are late, raised again when they are on time. */
+    private var adaptiveEdge = 0
+    /** When the picture is the audio spectrum, don't read back more pixels than the graph produced. */
+    private var visualizerEdge: Int? = null
+    private var calmSamples = 0
+    private val framePosted = AtomicBoolean(false)
+
+    /**
+     * [edge] is the spectrum graph's long edge, or null while a real video is showing.
+     * The next frame is rendered at this cap.
+     */
+    fun setVisualizerEdge(edge: Int?) = signal {
+        if (visualizerEdge == edge) return@signal
+        visualizerEdge = edge
+        applyViewLocked()
+    }
+
+    /**
+     * Steps the video render size down when the hand-off stays late, and back up once it is comfortable.
+     * Ignored while the spectrum cap is on: those frames are already small and must not teach the video size.
+     */
+    fun adaptToHandoff(ms: Double) = signal {
+        if (visualizerEdge != null) return@signal
+        val ceiling = maxRenderEdge.let { if (it <= 0) 1920 else it }
+        val current = if (adaptiveEdge <= 0) ceiling else adaptiveEdge
+        if (ms > 28.0 && current > ADAPT_FLOOR) {
+            adaptiveEdge = maxOf(ADAPT_FLOOR, current * 4 / 5)
+            calmSamples = 0
+            applyViewLocked()
+        } else if (ms < 12.0 && current < ceiling) {
+            calmSamples++
+            if (calmSamples >= 8) {
+                adaptiveEdge = minOf(ceiling, maxOf(current + 160, current * 5 / 4))
+                calmSamples = 0
+                applyViewLocked()
             }
+        } else if (ms >= 12.0) {
+            calmSamples = 0
         }
-        if (w != this.width || h != this.height) {
-            this.width = w
-            this.height = h
+    }
+
+    /** The video view's size in pixels (capped for readback); mpv renders at this size. */
+    fun setSize(width: Int, height: Int) = signal {
+        viewWidth = width.coerceAtLeast(2)
+        viewHeight = height.coerceAtLeast(2)
+        applyViewLocked()
+    }
+
+    private fun applyViewLocked() {
+        val long = maxOf(viewWidth, viewHeight)
+        val cap = renderLongEdge(
+            viewLong = long,
+            configured = maxRenderEdge,
+            adaptive = if (adaptiveEdge <= 0) maxRenderEdge else adaptiveEdge,
+            visualizerEdge = visualizerEdge,
+        )
+        val scale = if (long > cap) cap.toDouble() / long else 1.0
+        val w = (viewWidth * scale).toInt().coerceAtLeast(2)
+        val h = (viewHeight * scale).toInt().coerceAtLeast(2)
+        if (w != width || h != height) {
+            width = w
+            height = h
             pendingRedraw = true
+        }
+    }
+
+    /** Asks the UI thread to draw, at most once until that draw is queued. Never writes Compose state from here. */
+    private fun requestDraw() {
+        if (!framePosted.compareAndSet(false, true)) return
+        try {
+            EventQueue.invokeLater {
+                framePosted.set(false)
+                frameTick.longValue++
+            }
+        } catch (_: Throwable) {
+            framePosted.set(false)
+            frameTick.longValue++
         }
     }
 
     fun requestRedraw() = signal { pendingRedraw = true }
 
     @Volatile private var handoffEmaNs = 0.0
+    /** How long the last readback spent waiting on the GPU. Pipeline depth is not included. */
+    @Volatile protected var copyWaitNs = 0L
 
     /** Recent average time from a frame being due to the UI drawing it, in ms; null before any frame. */
     fun recentHandoffMs(): Double? = handoffEmaNs.takeIf { it > 0 }?.let { it / 1e6 }
+
+    /** Time the last frame spent blocked on the GPU readback, in ms. Used to scale the picture, not the audio delay. */
+    fun recentCopyWaitMs(): Double = copyWaitNs / 1e6
 
     /** UI thread: called when a frame is drawn for the first time. */
     internal fun onPresented(frame: VideoFrame) {
@@ -179,7 +249,7 @@ abstract class VideoRenderer internal constructor(
             frame.dueAt = render(ctx, frame)
             frames.publish()
             stats.frames.incrementAndGet()
-            frameTick.longValue++
+            requestDraw()
             lib.mpv_render_context_report_swap(ctx)
         }
     }
@@ -204,6 +274,7 @@ abstract class VideoRenderer internal constructor(
 
     companion object {
         private const val SLOW_HANDOFF_NS = 12_000_000L
+        private const val ADAPT_FLOOR = 960
         private val SOFTWARE_RASTERIZERS = Regex("llvmpipe|softpipe|swrast|SwiftShader|Basic Render", RegexOption.IGNORE_CASE)
 
         /**
@@ -252,7 +323,8 @@ abstract class VideoRenderer internal constructor(
 
 /**
  * mpv renders on the GPU (hardware decoding, scaling, colour conversion) into a framebuffer sized to the view;
- * the result is read back through a pixel buffer object and handed to Skia.
+ * the result is read back through a ring of pixel buffer objects and handed to Skia.
+ * The GPU fills one buffer while the CPU maps an earlier one, so a frame does not wait on its own readback.
  */
 internal class GlVideoRenderer(
     lib: LibMpv,
@@ -275,9 +347,20 @@ internal class GlVideoRenderer(
 
     private var fbo = 0
     private var texture = 0
-    private var pbo = 0
     private var targetWidth = 0
     private var targetHeight = 0
+    private val readSlots = Array(3) { ReadSlot() }
+    private var writeIndex = 0
+    private var completedReads = 0
+
+    private class ReadSlot {
+        var pbo = 0
+        var fence = 0L
+        var dueAt = 0L
+        var width = 0
+        var height = 0
+        var filled = false
+    }
 
     override fun setUp() {
         val ctx = GlContext.create()
@@ -312,10 +395,6 @@ internal class GlVideoRenderer(
         GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D, texture, 0)
         check(GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER) == GL30.GL_FRAMEBUFFER_COMPLETE) { "Incomplete framebuffer" }
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0)
-        pbo = GL15.glGenBuffers()
-        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, pbo)
-        GL15.glBufferData(GL21.GL_PIXEL_PACK_BUFFER, width.toLong() * height * 4, GL15.GL_STREAM_READ)
-        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, 0)
         targetWidth = width
         targetHeight = height
     }
@@ -332,30 +411,90 @@ internal class GlVideoRenderer(
         lib.mpv_render_context_render(ctx, renderParams)
         val rendered = System.nanoTime()
 
-        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, fbo)
-        GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 4)
-        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, pbo)
-        GL11.glReadPixels(0, 0, w, h, GL12.GL_BGRA, GL11.GL_UNSIGNED_BYTE, 0L)
-        val fence = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
-        GL32.glClientWaitSync(fence, GL32.GL_SYNC_FLUSH_COMMANDS_BIT, 1_000_000_000L)
-        GL32.glDeleteSync(fence)
-        val size = w.toLong() * h * 4
-        val pixels = GL30.glMapBufferRange(GL21.GL_PIXEL_PACK_BUFFER, 0, size, GL30.GL_MAP_READ_BIT)
-        if (pixels != null) MemoryUtil.memCopy(MemoryUtil.memAddress(pixels), frame.address, size)
-        GL15.glUnmapBuffer(GL21.GL_PIXEL_PACK_BUFFER)
-        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, 0)
+        val written = readSlots[writeIndex]
+        queueRead(written, w, h, rendered)
+        val stale = readSlots.any { it.filled && it !== written && (it.width != w || it.height != h) }
+        if (stale) {
+            readSlots.forEach { if (it !== written) it.filled = false }
+            completedReads = 0
+        }
+        val lag = if (stale) 0 else when {
+            completedReads >= 2 -> 2
+            completedReads >= 1 -> 1
+            else -> 0
+        }
+        writeIndex = (writeIndex + 1) % readSlots.size
+        if (completedReads < 3) completedReads++
+        val read = readSlots[(writeIndex - 1 - lag + readSlots.size * 2) % readSlots.size]
+        val copied = copySlot(read, frame, if (lag == 0) 1_000_000_000L else 2_000_000L)
+        if (!copied) {
+            readSlots.forEach { if (it !== written) it.filled = false }
+            completedReads = 1
+            copySlot(written, frame, 1_000_000_000L)
+        }
         GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, 0)
         val done = System.nanoTime()
         stats.record(stats.renderTotal, stats.renderMax, rendered - start)
         stats.record(stats.readbackTotal, stats.readbackMax, done - rendered)
-        return rendered
+        return if (copied) read.dueAt else rendered
+    }
+
+    /** Starts an async read of the framebuffer into [slot]. The fence is waited on a later frame. */
+    private fun queueRead(slot: ReadSlot, width: Int, height: Int, dueAt: Long) {
+        if (slot.pbo == 0) slot.pbo = GL15.glGenBuffers()
+        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, fbo)
+        GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 4)
+        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, slot.pbo)
+        if (slot.width != width || slot.height != height) {
+            GL15.glBufferData(GL21.GL_PIXEL_PACK_BUFFER, width.toLong() * height * 4, GL15.GL_STREAM_READ)
+            slot.width = width
+            slot.height = height
+        }
+        GL11.glReadPixels(0, 0, width, height, GL12.GL_BGRA, GL11.GL_UNSIGNED_BYTE, 0L)
+        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, 0)
+        if (slot.fence != 0L) GL32.glDeleteSync(slot.fence)
+        slot.fence = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
+        slot.dueAt = dueAt
+        slot.filled = true
+    }
+
+    /** Copies [slot] into [frame] once its fence is signaled. False when the slot is the wrong size or unmapped. */
+    private fun copySlot(slot: ReadSlot, frame: VideoFrame, quickNs: Long): Boolean {
+        if (!slot.filled || slot.pbo == 0 || slot.width != frame.width || slot.height != frame.height) return false
+        if (slot.fence != 0L) {
+            val waitedFrom = System.nanoTime()
+            val status = GL32.glClientWaitSync(slot.fence, GL32.GL_SYNC_FLUSH_COMMANDS_BIT, quickNs)
+            if (status == GL32.GL_TIMEOUT_EXPIRED || status == GL32.GL_WAIT_FAILED) {
+                GL32.glClientWaitSync(slot.fence, GL32.GL_SYNC_FLUSH_COMMANDS_BIT, 1_000_000_000L)
+            }
+            copyWaitNs = System.nanoTime() - waitedFrom
+        } else {
+            copyWaitNs = 0L
+        }
+        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, slot.pbo)
+        val size = frame.width.toLong() * frame.height * 4
+        val pixels = GL30.glMapBufferRange(GL21.GL_PIXEL_PACK_BUFFER, 0, size, GL30.GL_MAP_READ_BIT)
+        if (pixels != null) MemoryUtil.memCopy(MemoryUtil.memAddress(pixels), frame.address, size)
+        GL15.glUnmapBuffer(GL21.GL_PIXEL_PACK_BUFFER)
+        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, 0)
+        return pixels != null
     }
 
     private fun deleteTargets() {
-        if (pbo != 0) GL15.glDeleteBuffers(pbo)
+        readSlots.forEach { slot ->
+            if (slot.fence != 0L) GL32.glDeleteSync(slot.fence)
+            if (slot.pbo != 0) GL15.glDeleteBuffers(slot.pbo)
+            slot.pbo = 0
+            slot.fence = 0L
+            slot.filled = false
+            slot.width = 0
+            slot.height = 0
+        }
+        writeIndex = 0
+        completedReads = 0
         if (fbo != 0) GL30.glDeleteFramebuffers(fbo)
         if (texture != 0) GL11.glDeleteTextures(texture)
-        pbo = 0; fbo = 0; texture = 0; targetWidth = 0; targetHeight = 0
+        fbo = 0; texture = 0; targetWidth = 0; targetHeight = 0
     }
 
     override fun tearDown() {

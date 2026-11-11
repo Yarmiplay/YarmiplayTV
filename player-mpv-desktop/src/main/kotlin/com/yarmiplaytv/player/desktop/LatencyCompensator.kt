@@ -47,6 +47,9 @@ class LatencyCompensator(
                     if (appliedMs != 0.0) apply(0.0, force = true)
                     continue
                 }
+                // The audio lines up with the picture on screen. The picture size follows only the GPU wait,
+                // so a two-frame readback pipeline does not get treated as a slow machine.
+                renderer.adaptToHandoff(renderer.recentCopyWaitMs())
                 val handoff = renderer.recentHandoffMs() ?: continue
                 val estimate = (handoff + 1000.0 / refreshRateHz().coerceIn(20.0, 500.0))
                     .coerceIn(0.0, MAX_COMPENSATION_MS)

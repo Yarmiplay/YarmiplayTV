@@ -83,6 +83,21 @@ sealed interface PlaylistStatus {
  * TV equivalent of the desktop client's media directories. While one entry plays, the next is looked up (and,
  * when only another viewer has it, its start fetched through the relay), so moving on starts at once.
  */
+/**
+ * When a playback position is worth writing to disk. The in-memory map updates every time;
+ * the file does not.
+ */
+internal object SeekDisk {
+    const val MIN_INTERVAL_MS = 5_000L
+    const val JUMP_SECONDS = 8.0
+
+    fun due(nowMs: Long, lastMs: Long, position: Double, lastPos: Double, sameFile: Boolean, force: Boolean): Boolean {
+        if (force || !sameFile) return true
+        if (lastPos.isNaN() || kotlin.math.abs(position - lastPos) >= JUMP_SECONDS) return true
+        return nowMs - lastMs >= MIN_INTERVAL_MS
+    }
+}
+
 class PlaylistController(
     private val scope: CoroutineScope,
     private val sync: SyncController,
@@ -127,9 +142,23 @@ class PlaylistController(
 
     fun getSeekPosition(fileName: String): Double = seekPositions[fileName.lowercase()] ?: 0.0
 
-    fun saveSeekPosition(fileName: String, position: Double) {
+    private var seekDiskKey: String? = null
+    private var seekDiskAt = 0L
+    private var seekDiskPos = Double.NaN
+
+    /**
+     * Remembers [position] immediately. The settings file is rewritten at most every few seconds,
+     * or at once for a seek or a pause: playback used to rewrite it on every position tick.
+     */
+    fun saveSeekPosition(fileName: String, position: Double, force: Boolean = false) {
         if (fileName.isBlank() || position <= 0.0) return
-        seekPositions[fileName.lowercase()] = position
+        val key = fileName.lowercase()
+        seekPositions[key] = position
+        val now = System.currentTimeMillis()
+        if (!SeekDisk.due(now, seekDiskAt, position, seekDiskPos, sameFile = seekDiskKey == key, force = force)) return
+        seekDiskKey = key
+        seekDiskAt = now
+        seekDiskPos = position
         settingsStore?.let { store ->
             scope.launch { store.saveSeekPosition(fileName, position) }
         }
@@ -166,11 +195,14 @@ class PlaylistController(
         scope.launch { sync.events.collect(::onSyncEvent) }
         scope.launch { player.events.collect(::onPlayerEvent) }
         scope.launch {
+            var wasPaused = true
             player.state.collect { st ->
+                val pauseEdge = st.paused && !wasPaused
+                wasPaused = st.paused
                 if (pending != null || !st.fileLoaded) return@collect
                 val name = _nowPlaying.value?.fileName
                 if (name != null && st.position > 1.0) {
-                    saveSeekPosition(name, st.position)
+                    saveSeekPosition(name, st.position, force = pauseEdge)
                 }
             }
         }

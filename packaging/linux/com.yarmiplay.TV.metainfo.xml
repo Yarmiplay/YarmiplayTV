@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.0.3" date="2026-11-11">
+      <description>
+        <p>Desktop playback stays smooth: the player UI no longer rebuilds on every frame, video frames are read back without stalling the GPU, and the audio spectrum runs only for audio files, at a smaller size on weak machines.</p>
+      </description>
+    </release>
     <release version="3.0.2" date="2026-11-11">
       <description>
         <p>Audio-only files on Android phones, tablets and TV use the same live spectrum as desktop.</p>
