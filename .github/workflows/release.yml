@@ -584,8 +584,9 @@ jobs:
           bash scripts/release-deb.sh
           cp deb/*.deb yarmiplaytv.deb
 
-      - uses: snapcore/action-build@v1
+      - name: Build the snap
         id: build
+        run: bash scripts/snap-build.sh
 
       - name: Install the snap and play a clip
         run: bash scripts/snap-smoke-test.sh "${{ steps.build.outputs.snap }}"
