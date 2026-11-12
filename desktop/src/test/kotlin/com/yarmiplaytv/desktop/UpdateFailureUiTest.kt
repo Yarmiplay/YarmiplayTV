@@ -123,8 +123,17 @@ class UpdateFailureUiTest {
         val lifecycle = object : LifecycleOwner {
             override val lifecycle = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
         }
+        val memoryClipboard = object : androidx.compose.ui.platform.ClipboardManager {
+            private var clip: androidx.compose.ui.text.AnnotatedString? = null
+            override fun getText(): androidx.compose.ui.text.AnnotatedString? = clip
+            override fun setText(annotatedString: androidx.compose.ui.text.AnnotatedString) { clip = annotatedString }
+            override fun hasText(): Boolean = clip != null
+        }
         setContent {
-            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
+            CompositionLocalProvider(
+                LocalLifecycleOwner provides lifecycle,
+                androidx.compose.ui.platform.LocalClipboardManager provides memoryClipboard,
+            ) {
                 MobileTheme(appPalette(app)) {
                     Box(Modifier.size(720.dp, 280.dp)) { UpdateBanner(app) }
                 }

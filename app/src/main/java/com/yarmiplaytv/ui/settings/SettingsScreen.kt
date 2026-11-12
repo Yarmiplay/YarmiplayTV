@@ -2,6 +2,7 @@ package com.yarmiplaytv.ui.settings
 
 import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -11,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
@@ -49,6 +52,7 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.BuildConfig
 import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.data.PlaybackPrefs
+import com.yarmiplaytv.data.VoiceNoiseMode
 import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.UnpauseMode
 import com.yarmiplaytv.ui.components.ActionButton
@@ -200,25 +204,22 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         subtitle = "Join voice automatically when you enter a room that has it; off shows Join voice until you tap it",
                         modifier = Modifier.testTag("toggle_voice_auto_join"),
                     )
-                    ToggleRow(
-                        "Noise suppression",
-                        settings.voiceNoiseSuppression,
-                        { container.scope.launch { container.settingsStore.saveVoiceNoiseSuppression(!settings.voiceNoiseSuppression) } },
-                        subtitle = if (settings.voiceAiNoiseSuppression && voiceUi.aiFallbackNotice == null) {
-                            "AI noise suppression replaces the regular suppressor. Echo cancellation and gain each stay one stage. Applies live"
-                        } else {
-                            "One noise suppressor on the mic. Echo cancellation and gain control stay one stage each. Applies live"
-                        },
-                        modifier = Modifier.testTag("toggle_voice_noise_suppression"),
-                    )
-                    ToggleRow(
-                        "AI noise suppression",
-                        settings.voiceAiNoiseSuppression,
-                        { container.scope.launch { container.settingsStore.saveVoiceAiNoiseSuppression(!settings.voiceAiNoiseSuppression) } },
-                        subtitle = voiceUi.aiFallbackNotice
-                            ?: "DeepFilterNet3 neural noise suppression at 48 kHz; replaces standard platform NS when on",
-                        modifier = Modifier.testTag("toggle_voice_ai_noise_suppression"),
-                    )
+                    val noiseSubtitle = if (settings.voiceNoiseMode == VoiceNoiseMode.AI && voiceUi.aiFallbackNotice != null) {
+                        voiceUi.aiFallbackNotice!!
+                    } else {
+                        "One noise filter on the mic (replaces standard with AI when selected). Echo cancellation and gain control run once each"
+                    }
+                    TvDropdownRow(
+                        title = "Noise suppression",
+                        selected = settings.voiceNoiseMode,
+                        options = listOf(
+                            VoiceNoiseMode.OFF to "Off",
+                            VoiceNoiseMode.STANDARD to "Standard",
+                            VoiceNoiseMode.AI to "AI (DeepFilterNet)",
+                        ),
+                        modifier = Modifier.testTag("voice_noise_mode"),
+                        subtitle = noiseSubtitle,
+                    ) { mode -> container.scope.launch { container.settingsStore.saveVoiceNoiseMode(mode) } }
                     ToggleRow(
                         "Echo cancellation",
                         settings.voiceEchoCancellation,
@@ -233,18 +234,18 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         subtitle = "Normalize microphone loudness automatically",
                         modifier = Modifier.testTag("toggle_voice_agc"),
                     )
-                    val kbps = settings.voiceBitrate / 1000
-                    ValueRow(
-                        "Voice bitrate",
-                        if (settings.voiceBitrate == 64_000) "64 kbps (Default)" else "$kbps kbps",
-                        {
-                            val idx = bitratePresets.indexOf(settings.voiceBitrate)
-                            val next = bitratePresets[if (idx < 0) 1 else (idx + 1) % bitratePresets.size]
-                            container.scope.launch { container.settingsStore.saveVoiceBitrate(next) }
-                        },
-                        Modifier.testTag("voice_bitrate"),
-                        subtitle = "Lobby Opus encoder target (32–128 kbps); negotiates with the server relay cap",
-                    )
+                    TvDropdownRow(
+                        title = "Voice bitrate",
+                        selected = settings.voiceBitrate,
+                        options = listOf(
+                            32_000 to "32 kbps",
+                            64_000 to "64 kbps",
+                            96_000 to "96 kbps",
+                            128_000 to "128 kbps (Default)",
+                        ),
+                        modifier = Modifier.testTag("voice_bitrate"),
+                        subtitle = "Lobby Opus target bitrate (32–128 kbps); negotiates with the server relay cap",
+                    ) { bps -> container.scope.launch { container.settingsStore.saveVoiceBitrate(bps) } }
                     ToggleRow(
                         "Stereo voice",
                         settings.voiceStereo,
@@ -585,6 +586,41 @@ private fun TvVoiceDeviceRow(
         Modifier.testTag(testTag),
         subtitle = subtitle,
     )
+}
+
+@Composable
+private fun <T> TvDropdownRow(
+    title: String,
+    selected: T,
+    options: List<Pair<T, String>>,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    onSelect: (T) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = options.firstOrNull { it.first == selected }?.second ?: selected.toString()
+    Box(modifier) {
+        ValueRow(
+            title = title,
+            value = selectedLabel,
+            onClick = { expanded = true },
+            subtitle = subtitle,
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        onSelect(value)
+                    },
+                )
+            }
+        }
+    }
 }
 
 /** D-pad friendly gain steps (0–max); OK cycles. */

@@ -238,7 +238,8 @@ class DeepFilterNetProcessor(
         const val DF_ORDER = 5
         /** Bundled mobile DeepFilterNet3 is the low-latency export (`conv_lookahead = 0`). */
         const val CONV_LOOKAHEAD = 0
-        const val DEFAULT_ATTENUATION_LIMIT_DB = 50f
+        /** Noise reduction floor (~ -24 dB). Reduces background noise without muting speech onsets. */
+        const val DEFAULT_ATTENUATION_LIMIT_DB = 24f
         /** Official runtime leaves the optional post-filter off unless explicitly enabled. */
         const val DEFAULT_POST_FILTER_BETA = 0f
         /**
@@ -340,6 +341,11 @@ class OnnxDeepFilterBackend private constructor(
     private var attenLimLinear: Float? = null
     private var postFilterBeta: Float = 0f
     private var skipCounter = 0
+    private var noiseFloorRmsSq = -1f
+    private var speechHangover = 0
+    private var onsetAttackHops = 0
+    private val preRollHop = ShortArray(DeepFilterNetProcessor.HOP_SAMPLES)
+    private var preRollEnergy = 0f
 
     private val minDbThresh = -10f
     private val maxDbErbThresh = 30f
@@ -351,12 +357,8 @@ class OnnxDeepFilterBackend private constructor(
     }
 
     override fun setAttenuationLimitDb(db: Float) {
-        val lim = abs(db)
-        attenLimLinear = when {
-            lim >= 100f -> null
-            lim < 0.01f -> 1f
-            else -> 10f.pow(-lim / 20f)
-        }
+        val lim = abs(db).coerceIn(6f, 30f)
+        attenLimLinear = 10f.pow(-lim / 20f)
     }
 
     override fun setPostFilterBeta(beta: Float) {
@@ -372,13 +374,48 @@ class OnnxDeepFilterBackend private constructor(
             energy += v * v
         }
         val rmsSq = energy / hop
+
+        // Adaptive noise floor tracking + instant speech onset detection
+        if (noiseFloorRmsSq < 0f) {
+            noiseFloorRmsSq = rmsSq
+        } else if (rmsSq < noiseFloorRmsSq) {
+            noiseFloorRmsSq = noiseFloorRmsSq * 0.8f + rmsSq * 0.2f
+        } else {
+            noiseFloorRmsSq = noiseFloorRmsSq * 0.96f + rmsSq * 0.04f
+        }
+        val isSpeechOnset = (rmsSq > noiseFloorRmsSq * 3.5f && rmsSq > 4e-5f)
+        val wasSilent = speechHangover == 0
+        if (isSpeechOnset) {
+            speechHangover = 15 // 15 hops (150 ms) hangover to sustain speech across short pauses
+            if (wasSilent) {
+                onsetAttackHops = 3 // 3 hops (30 ms) instant onset attack window
+            }
+        } else if (speechHangover > 0) {
+            speechHangover--
+        }
+
+        val floor = attenLimLinear ?: 0.063f
         if (rmsSq < 1e-7f) {
             skipCounter++
         } else {
             skipCounter = 0
         }
-        if (skipCounter > 5) {
-            for (i in 0 until hop) pcm[offset + i] = 0
+        if (skipCounter > 5 && speechHangover == 0) {
+            // Background silence: reduce/attenuate, but NEVER fully mute (never write zeros).
+            // Keep STFT analysis continuous so speech onset does not hit cold memory.
+            rotateSpecHistory(rollingSpecXRe, rollingSpecXIm)
+            rotateSpecHistory(rollingSpecYRe, rollingSpecYIm)
+            frameAnalysis(hopInFloat, specRe, specIm)
+            System.arraycopy(specRe, 0, rollingSpecXRe[xLen - 1], 0, DeepFilterNetProcessor.FREQ_SIZE)
+            System.arraycopy(specIm, 0, rollingSpecXIm[xLen - 1], 0, DeepFilterNetProcessor.FREQ_SIZE)
+            System.arraycopy(specRe, 0, rollingSpecYRe[yLen - 1], 0, DeepFilterNetProcessor.FREQ_SIZE)
+            System.arraycopy(specIm, 0, rollingSpecYIm[yLen - 1], 0, DeepFilterNetProcessor.FREQ_SIZE)
+            for (i in 0 until hop) {
+                pcm[offset + i] = (pcm[offset + i] * floor).roundToInt()
+                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+            }
+            System.arraycopy(pcm, offset, preRollHop, 0, hop)
+            preRollEnergy = energy
             return -15f
         }
 
@@ -394,6 +431,8 @@ class OnnxDeepFilterBackend private constructor(
         System.arraycopy(specIm, 0, rollingSpecYIm[yLen - 1], 0, DeepFilterNetProcessor.FREQ_SIZE)
 
         if (attenLimLinear == 1f) {
+            System.arraycopy(pcm, offset, preRollHop, 0, hop)
+            preRollEnergy = energy
             return 35f
         }
 
@@ -429,6 +468,12 @@ class OnnxDeepFilterBackend private constructor(
                     val applyGainZeros: Boolean
                     val applyDf: Boolean
                     when {
+                        onsetAttackHops > 0 -> {
+                            // Instant opening for speech onset: do not let cold feature context mute word onsets
+                            applyGains = true
+                            applyGainZeros = false
+                            applyDf = false
+                        }
                         lsnr < minDbThresh -> {
                             applyGains = false
                             applyGainZeros = true
@@ -472,12 +517,20 @@ class OnnxDeepFilterBackend private constructor(
                             @Suppress("UNCHECKED_CAST")
                             val mArr = erbOut.get("m").get().value as Array<Array<Array<FloatArray>>>
                             val gains = mArr[0][0][lastIdx]
+                            val minGain = if (isSpeechOnset || speechHangover > 12) 0.7f else floor
+                            // Ensure gains never drop below the active floor so onset and voice are never cut
+                            for (g in gains.indices) {
+                                if (gains[g] < minGain) gains[g] = minGain
+                            }
                             applyInterpBandGain(yRe, yIm, gains)
                         }
                         skipCounter = 0
                     } else if (applyGainZeros) {
-                        yRe.fill(0f)
-                        yIm.fill(0f)
+                        // Reduce, but never fully mute (never fill with 0f)
+                        for (f in 0 until DeepFilterNetProcessor.FREQ_SIZE) {
+                            yRe[f] *= floor
+                            yIm[f] *= floor
+                        }
                         skipCounter = 0
                     } else {
                         skipCounter++
@@ -533,12 +586,29 @@ class OnnxDeepFilterBackend private constructor(
 
         // Frame synthesis (ISTFT + overlap-add).
         frameSynthesis(enhSpecRe, enhSpecIm, hopOutFloat)
-        for (i in 0 until hop) {
-            val clamped = hopOutFloat[i].coerceIn(-1f, 1f)
-            pcm[offset + i] = (clamped * 32767f).roundToInt()
-                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-                .toShort()
+        if (onsetAttackHops > 0) {
+            onsetAttackHops--
+            // Instant onset look-back blend: preserve raw onset phonemes with unity gain while neural taps fill
+            val rawWeight = (onsetAttackHops + 1) / 5f
+            for (i in 0 until hop) {
+                val rawVal = hopInFloat[i] * 32767f
+                val filteredVal = (hopOutFloat[i].coerceIn(-1f, 1f) * 32767f)
+                val blended = (rawVal * rawWeight + filteredVal * (1f - rawWeight)).roundToInt()
+                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                    .toShort()
+                pcm[offset + i] = blended
+            }
+        } else {
+            for (i in 0 until hop) {
+                val clamped = hopOutFloat[i].coerceIn(-1f, 1f)
+                pcm[offset + i] = (clamped * 32767f).roundToInt()
+                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                    .toShort()
+            }
         }
+
+        System.arraycopy(pcm, offset, preRollHop, 0, hop)
+        preRollEnergy = energy
         return lsnr
     }
 

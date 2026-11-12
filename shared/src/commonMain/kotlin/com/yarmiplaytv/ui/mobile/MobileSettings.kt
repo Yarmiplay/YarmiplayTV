@@ -73,6 +73,7 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.data.PlaybackPrefs
+import com.yarmiplaytv.data.VoiceNoiseMode
 import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.UnpauseMode
 import com.yarmiplaytv.ui.nav.Navigator
@@ -373,23 +374,22 @@ private fun VoiceSettings(container: AppContainer) {
         settings.voiceAutoJoin,
         Modifier.testTag("toggle_voice_auto_join"),
     ) { container.scope.launch { container.settingsStore.saveVoiceAutoJoin(it) } }
-    SettingsToggle(
-        "Noise suppression",
-        if (settings.voiceAiNoiseSuppression && voiceUi.aiFallbackNotice == null) {
-            "AI noise suppression replaces the regular suppressor. Echo cancellation and gain each stay one stage. Applies live"
-        } else {
-            "One noise suppressor on the mic. Echo cancellation and gain control stay one stage each. Applies live"
-        },
-        settings.voiceNoiseSuppression,
-        Modifier.testTag("toggle_voice_noise_suppression"),
-    ) { container.scope.launch { container.settingsStore.saveVoiceNoiseSuppression(it) } }
-    SettingsToggle(
-        "AI noise suppression",
-        voiceUi.aiFallbackNotice
-            ?: "DeepFilterNet3 neural noise suppression at 48 kHz; replaces standard WebRTC/platform noise suppression when on",
-        settings.voiceAiNoiseSuppression,
-        Modifier.testTag("toggle_voice_ai_noise_suppression"),
-    ) { container.scope.launch { container.settingsStore.saveVoiceAiNoiseSuppression(it) } }
+    val noiseSubtitle = if (settings.voiceNoiseMode == VoiceNoiseMode.AI && voiceUi.aiFallbackNotice != null) {
+        voiceUi.aiFallbackNotice!!
+    } else {
+        "One noise filter on the mic (replaces standard with AI when selected). Echo cancellation and gain each stay one stage"
+    }
+    SettingsDropdownPicker(
+        title = "Noise suppression",
+        subtitle = noiseSubtitle,
+        selected = settings.voiceNoiseMode,
+        options = listOf(
+            VoiceNoiseMode.OFF to "Off",
+            VoiceNoiseMode.STANDARD to "Standard",
+            VoiceNoiseMode.AI to "AI (DeepFilterNet)",
+        ),
+        testTag = "voice_noise_mode",
+    ) { container.scope.launch { container.settingsStore.saveVoiceNoiseMode(it) } }
     SettingsToggle(
         "Echo cancellation",
         "Prevent speaker playback from echoing back into your mic (WebRTC AEC3 on desktop, platform AEC on Android)",
@@ -402,16 +402,18 @@ private fun VoiceSettings(container: AppContainer) {
         settings.voiceAgc,
         Modifier.testTag("toggle_voice_agc"),
     ) { container.scope.launch { container.settingsStore.saveVoiceAgc(it) } }
-    val kbps = settings.voiceBitrate / 1000
-    ValueSetting(
-        "Voice bitrate",
-        if (settings.voiceBitrate == 64_000) "64 kbps (Default) · negotiates with server cap" else "$kbps kbps · negotiates with server cap",
-        Modifier.testTag("voice_bitrate"),
-    ) {
-        val idx = bitratePresets.indexOf(settings.voiceBitrate)
-        val next = bitratePresets[if (idx < 0) 1 else (idx + 1) % bitratePresets.size]
-        container.scope.launch { container.settingsStore.saveVoiceBitrate(next) }
-    }
+    SettingsDropdownPicker(
+        title = "Voice bitrate",
+        subtitle = "Lobby Opus target bitrate · negotiates with server cap",
+        selected = settings.voiceBitrate,
+        options = listOf(
+            32_000 to "32 kbps",
+            64_000 to "64 kbps",
+            96_000 to "96 kbps",
+            128_000 to "128 kbps (Default)",
+        ),
+        testTag = "voice_bitrate",
+    ) { container.scope.launch { container.settingsStore.saveVoiceBitrate(it) } }
     SettingsToggle(
         "Stereo voice",
         "Encode and play lobby voice in 48 kHz stereo (falls back to mono on legacy relays or older clients)",
@@ -592,6 +594,56 @@ private fun VoiceDevicePicker(
                         onSelect(device.id)
                     },
                     modifier = Modifier.testTag("${testTag}_${device.id.ifEmpty { "default" }}"),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun <T> SettingsDropdownPicker(
+    title: String,
+    subtitle: String,
+    selected: T,
+    options: List<Pair<T, String>>,
+    testTag: String,
+    onSelect: (T) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    val selectedLabel = options.firstOrNull { it.first == selected }?.second ?: selected.toString()
+    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { open = true }
+                .padding(vertical = 8.dp)
+                .testTag(testTag),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                if (subtitle.isNotEmpty()) {
+                    Text(subtitle, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                }
+                Text(
+                    selectedLabel,
+                    color = AppColors.Accent,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 2.dp).testTag("${testTag}_value"),
+                )
+            }
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = AppColors.TextDim)
+        }
+        DropdownMenu(open, { open = false }) {
+            options.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        open = false
+                        onSelect(value)
+                    },
+                    modifier = Modifier.testTag("${testTag}_${value.toString().lowercase()}"),
                 )
             }
         }

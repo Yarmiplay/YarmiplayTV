@@ -122,8 +122,9 @@ class DesktopWebRtcApm(
             if (agc) {
                 cfg.gainControllerDigital.adaptiveDigital.headroomDb = 5f
                 cfg.gainControllerDigital.adaptiveDigital.maxGainDb = 30f
-                cfg.gainControllerDigital.adaptiveDigital.initialGainDb = 8f
-                cfg.gainControllerDigital.adaptiveDigital.maxGainChangeDbPerSecond = 3f
+                cfg.gainControllerDigital.adaptiveDigital.initialGainDb = 12f
+                // Fast response to speech onset (30 dB/s adaptation rather than sluggish 3 dB/s)
+                cfg.gainControllerDigital.adaptiveDigital.maxGainChangeDbPerSecond = 30f
                 cfg.gainControllerDigital.adaptiveDigital.maxOutputNoiseLevelDbfs = -50f
             }
 

@@ -42,6 +42,17 @@ import kotlinx.serialization.json.Json
  */
 enum class VoiceTalkMode { OPEN_MIC, PUSH_TO_TALK, TOGGLE }
 
+/**
+ * Capture noise suppression mode for lobby voice.
+ * Exactly one filter runs at a time: [OFF], standard platform/WebRTC ([STANDARD]),
+ * or neural [AI] via DeepFilterNet3 (default).
+ */
+enum class VoiceNoiseMode(val label: String) {
+    OFF("Off"),
+    STANDARD("Standard"),
+    AI("AI (DeepFilterNet)"),
+}
+
 /** Local-only mute and volume for one Syncplay username's voice. */
 @Serializable
 data class VoicePeerPrefs(
@@ -255,10 +266,15 @@ data class AppSettings(
      */
     val voiceAutoJoin: Boolean = true,
     /**
+     * Noise suppression mode for voice capture ([VoiceNoiseMode.OFF], [VoiceNoiseMode.STANDARD],
+     * or [VoiceNoiseMode.AI] DeepFilterNet3, default AI).
+     */
+    val voiceNoiseMode: VoiceNoiseMode = VoiceNoiseMode.AI,
+    /**
      * Capture noise suppression (default on): WebRTC/platform NS on lobby voice (or spectral NS on
      * legacy relay). Mutually exclusive with [voiceAiNoiseSuppression] when AI NS is active.
      */
-    val voiceNoiseSuppression: Boolean = true,
+    val voiceNoiseSuppression: Boolean = voiceNoiseMode != VoiceNoiseMode.OFF,
     /**
      * Capture echo cancellation (default on): WebRTC AEC3 with playback reference on desktop,
      * Android platform AcousticEchoCanceler on Android/TV.
@@ -270,20 +286,20 @@ data class AppSettings(
      */
     val voiceAgc: Boolean = true,
     /**
-     * Client-side AI noise suppression via DeepFilterNet3 (default off). When on, replaces
+     * Client-side AI noise suppression via DeepFilterNet3 (default on). When on, replaces
      * WebRTC/platform noise suppression (mutually exclusive); AEC and AGC stay governed by their own toggles.
      */
-    val voiceAiNoiseSuppression: Boolean = false,
+    val voiceAiNoiseSuppression: Boolean = voiceNoiseMode == VoiceNoiseMode.AI,
     /**
-     * Preferred Opus bitrate for lobby voice in bps (32_000..128_000, default 64_000).
+     * Preferred Opus bitrate for lobby voice in bps (32_000..128_000, default 128_000).
      * Clamps/negotiates against the server relay cap on connect.
      */
-    val voiceBitrate: Int = 64_000,
+    val voiceBitrate: Int = 128_000,
     /**
-     * Optional stereo voice mode for the lobby voice path (default off = mono).
+     * Optional stereo voice mode for the lobby voice path (default on = stereo).
      * Falls back cleanly to mono on the legacy relay or with older clients.
      */
-    val voiceStereo: Boolean = false,
+    val voiceStereo: Boolean = true,
     /**
      * When on (default), mute the mic when playback starts or resumes.
      * Independent of [voiceAutoUnmuteWhenPaused].
@@ -424,6 +440,7 @@ class SettingsStore(
         val chatOnVideo = booleanPreferencesKey("chat_on_video")
         val voiceChat = booleanPreferencesKey("voice_chat")
         val voiceAutoJoin = booleanPreferencesKey("voice_auto_join")
+        val voiceNoiseMode = stringPreferencesKey("voice_noise_mode")
         val voiceNoiseSuppression = booleanPreferencesKey("voice_noise_suppression")
         val voiceEchoCancellation = booleanPreferencesKey("voice_echo_cancellation")
         val voiceAgc = booleanPreferencesKey("voice_agc")
@@ -589,12 +606,42 @@ class SettingsStore(
             chatOnVideo = p[Keys.chatOnVideo] ?: false,
             voiceChat = p[Keys.voiceChat] ?: true,
             voiceAutoJoin = p[Keys.voiceAutoJoin] ?: true,
-            voiceNoiseSuppression = p[Keys.voiceNoiseSuppression] ?: true,
+            voiceNoiseMode = run {
+                val savedMode = p[Keys.voiceNoiseMode]?.let { runCatching { VoiceNoiseMode.valueOf(it) }.getOrNull() }
+                if (savedMode != null) return@run savedMode
+                val savedAi = p[Keys.voiceAiNoiseSuppression]
+                val savedNs = p[Keys.voiceNoiseSuppression]
+                when {
+                    savedAi == true -> VoiceNoiseMode.AI
+                    savedNs == false -> VoiceNoiseMode.OFF
+                    savedNs == true -> VoiceNoiseMode.STANDARD
+                    else -> VoiceNoiseMode.AI
+                }
+            },
+            voiceNoiseSuppression = run {
+                val savedMode = p[Keys.voiceNoiseMode]?.let { runCatching { VoiceNoiseMode.valueOf(it) }.getOrNull() }
+                if (savedMode != null) savedMode != VoiceNoiseMode.OFF
+                else {
+                    val savedNs = p[Keys.voiceNoiseSuppression]
+                    val savedAi = p[Keys.voiceAiNoiseSuppression]
+                    if (savedNs == false) false else true
+                }
+            },
             voiceEchoCancellation = p[Keys.voiceEchoCancellation] ?: true,
             voiceAgc = p[Keys.voiceAgc] ?: true,
-            voiceAiNoiseSuppression = p[Keys.voiceAiNoiseSuppression] ?: false,
-            voiceBitrate = (p[Keys.voiceBitrate] ?: 64_000).coerceIn(24_000, 128_000),
-            voiceStereo = p[Keys.voiceStereo] ?: false,
+            voiceAiNoiseSuppression = run {
+                val savedMode = p[Keys.voiceNoiseMode]?.let { runCatching { VoiceNoiseMode.valueOf(it) }.getOrNull() }
+                if (savedMode != null) savedMode == VoiceNoiseMode.AI
+                else {
+                    val savedAi = p[Keys.voiceAiNoiseSuppression]
+                    val savedNs = p[Keys.voiceNoiseSuppression]
+                    if (savedAi != null) savedAi
+                    else if (savedNs == false || savedNs == true) false
+                    else true
+                }
+            },
+            voiceBitrate = (p[Keys.voiceBitrate] ?: 128_000).coerceIn(24_000, 128_000),
+            voiceStereo = p[Keys.voiceStereo] ?: true,
             voiceAutoMuteWhenPlaying = p[Keys.voiceAutoMuteWhenPlaying] ?: true,
             voiceAutoUnmuteWhenPaused = p[Keys.voiceAutoUnmuteWhenPaused] ?: true,
             voiceTalkMode = p[Keys.voiceTalkMode]?.let { runCatching { VoiceTalkMode.valueOf(it) }.getOrNull() } ?: VoiceTalkMode.OPEN_MIC,
@@ -855,13 +902,29 @@ class SettingsStore(
 
     suspend fun saveVoiceAutoJoin(on: Boolean) = dataStore.edit { it[Keys.voiceAutoJoin] = on }
 
-    suspend fun saveVoiceNoiseSuppression(on: Boolean) = dataStore.edit { it[Keys.voiceNoiseSuppression] = on }
+    suspend fun saveVoiceNoiseMode(mode: VoiceNoiseMode) = dataStore.edit {
+        it[Keys.voiceNoiseMode] = mode.name
+        it[Keys.voiceNoiseSuppression] = mode != VoiceNoiseMode.OFF
+        it[Keys.voiceAiNoiseSuppression] = mode == VoiceNoiseMode.AI
+    }
+
+    suspend fun saveVoiceNoiseSuppression(on: Boolean) = dataStore.edit {
+        val next = if (on) VoiceNoiseMode.STANDARD else VoiceNoiseMode.OFF
+        it[Keys.voiceNoiseMode] = next.name
+        it[Keys.voiceNoiseSuppression] = on
+        it[Keys.voiceAiNoiseSuppression] = false
+    }
 
     suspend fun saveVoiceEchoCancellation(on: Boolean) = dataStore.edit { it[Keys.voiceEchoCancellation] = on }
 
     suspend fun saveVoiceAgc(on: Boolean) = dataStore.edit { it[Keys.voiceAgc] = on }
 
-    suspend fun saveVoiceAiNoiseSuppression(on: Boolean) = dataStore.edit { it[Keys.voiceAiNoiseSuppression] = on }
+    suspend fun saveVoiceAiNoiseSuppression(on: Boolean) = dataStore.edit {
+        val next = if (on) VoiceNoiseMode.AI else VoiceNoiseMode.STANDARD
+        it[Keys.voiceNoiseMode] = next.name
+        it[Keys.voiceNoiseSuppression] = true
+        it[Keys.voiceAiNoiseSuppression] = on
+    }
 
     suspend fun saveVoiceBitrate(bitrateBps: Int) = dataStore.edit {
         it[Keys.voiceBitrate] = bitrateBps.coerceIn(24_000, 128_000)

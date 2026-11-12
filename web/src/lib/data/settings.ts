@@ -159,7 +159,11 @@ export function load(): Settings {
     chatOnVideo: bool("chat_on_video", false),
     voiceChat: bool("voice_chat", true),
     voiceAutoJoin: bool("voice_auto_join", true),
-    voiceNoiseSuppression: bool("voice_noise_suppression", true),
+    voiceNoiseSuppression: (() => {
+      const mode = read("voice_noise_mode");
+      if (mode) return mode !== "OFF";
+      return bool("voice_noise_suppression", true);
+    })(),
     voiceAutoMuteWhenPlaying: bool("voice_auto_mute_when_playing", true),
     voiceAutoUnmuteWhenPaused: bool("voice_auto_unmute_when_paused", true),
     voiceInputDeviceId: text("voice_input_device", ""),
@@ -217,6 +221,7 @@ export function save(settings: Settings) {
   write("voice_chat", String(settings.voiceChat));
   write("voice_auto_join", String(settings.voiceAutoJoin));
   write("voice_noise_suppression", String(settings.voiceNoiseSuppression));
+  write("voice_noise_mode", settings.voiceNoiseSuppression ? "STANDARD" : "OFF");
   write("voice_auto_mute_when_playing", String(settings.voiceAutoMuteWhenPlaying));
   write("voice_auto_unmute_when_paused", String(settings.voiceAutoUnmuteWhenPaused));
   write("voice_input_device", settings.voiceInputDeviceId);

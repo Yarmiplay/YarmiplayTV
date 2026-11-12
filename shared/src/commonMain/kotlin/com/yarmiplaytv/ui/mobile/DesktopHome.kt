@@ -102,6 +102,7 @@ private val PosterWidth = 240.dp
 @Composable
 fun DesktopHomeScreen(container: AppContainer, nav: Navigator) {
     val room by container.sync.room.collectAsStateWithLifecycle()
+    val settings by container.settings.collectAsStateWithLifecycle()
     val source by container.mediaSource.collectAsStateWithLifecycle()
     val jellyfin by container.jellyfinServers.collectAsStateWithLifecycle()
     val plex by container.plexServers.collectAsStateWithLifecycle()
@@ -191,7 +192,7 @@ fun DesktopHomeScreen(container: AppContainer, nav: Navigator) {
                             )
                             ConnectionStatus.DISCONNECTED -> Triple(
                                 "Join a Syncplay room",
-                                container.settings.value.savedRooms.firstOrNull()?.let { "Rejoin ${savedRoomLabel(it)} on ${it.host}" }
+                                settings.savedRooms.firstOrNull()?.let { "Rejoin ${savedRoomLabel(it)} on ${it.host}" }
                                     ?: "Watch in sync with friends",
                                 AppColors.TextDim,
                             )

@@ -10,9 +10,9 @@ class DiscordVoiceProfileTest {
     @Test
     fun `discord lobby encodes at Discord voice rate and the relay keeps the seat cap`() {
         val discord = params(provider = "discord-lobby", maxBitrate = 32_000, clockRate = 16_000, channels = 2)
-        assertEquals(64_000, VoiceMediaSession.opusBitrate(discord))
+        assertEquals(128_000, VoiceMediaSession.opusBitrate(discord))
         assertEquals(48_000, VoiceMediaSession.opusClock(discord))
-        assertEquals(1, VoiceMediaSession.opusChannels(discord))
+        assertEquals(2, VoiceMediaSession.opusChannels(discord))
         assertEquals(32.768, VoiceMediaSession.DISCORD_VAD_RMS, 0.05)
 
         val relay = params(provider = "yv1", maxBitrate = 32_000, clockRate = 48_000, channels = 1)

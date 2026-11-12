@@ -61,9 +61,9 @@ class DesktopVoiceEngine : VoiceEngine {
     @Volatile private var noiseSuppressionPref = true
     @Volatile private var echoCancellationPref = true
     @Volatile private var autoGainControlPref = true
-    @Volatile private var aiNoiseSuppressionPref = false
-    @Volatile private var preferredBitrateBps = VoiceMediaSession.DISCORD_BITRATE
-    @Volatile private var preferredStereoMode = false
+    @Volatile private var aiNoiseSuppressionPref = true
+    @Volatile private var preferredBitrateBps = VoiceMediaSession.MAX_VOICE_BITRATE
+    @Volatile private var preferredStereoMode = true
     private val chainLock = Any()
     private var webRtcApm: DesktopWebRtcApm? = null
     private var deepFilterNet: DeepFilterNetProcessor? = null
@@ -71,6 +71,7 @@ class DesktopVoiceEngine : VoiceEngine {
     @Volatile private var currentChain: VoiceProcessingChain = VoiceProcessingChain.build(
         platform = VoiceChainPlatform.DESKTOP,
         discordLobby = true,
+        aiNoiseSuppression = true,
     )
     override var onDeviceLost: ((input: Boolean) -> Unit)? = null
 

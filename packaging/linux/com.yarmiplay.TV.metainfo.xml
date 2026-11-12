@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.0.5" date="2026-11-12">
+      <description>
+        <p>Voice settings: default 128 kbps bitrate dropdown, stereo on by default, unified noise suppression dropdown (Off, Standard, AI DeepFilterNet), and instant word-onset pickup.</p>
+      </description>
+    </release>
     <release version="3.0.4" date="2026-11-12">
       <description>
         <p>Modern segmented tab bar for Room, Playlist, Chat, and MAL with animated pill selection, crisp vector icons, and optically centered unread badges.</p>

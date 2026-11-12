@@ -75,9 +75,9 @@ class AndroidVoiceEngine(
     @Volatile private var noiseSuppressionPref = true
     @Volatile private var echoCancellationPref = true
     @Volatile private var autoGainControlPref = true
-    @Volatile private var aiNoiseSuppressionPref = false
-    @Volatile private var preferredBitrateBps = VoiceMediaSession.DISCORD_BITRATE
-    @Volatile private var preferredStereoMode = false
+    @Volatile private var aiNoiseSuppressionPref = true
+    @Volatile private var preferredBitrateBps = VoiceMediaSession.MAX_VOICE_BITRATE
+    @Volatile private var preferredStereoMode = true
 
     private val chainLock = Any()
     private var deepFilterNet: DeepFilterNetProcessor? = null
@@ -87,7 +87,7 @@ class AndroidVoiceEngine(
         echoCancellation = true,
         autoGainControl = true,
         noiseSuppression = true,
-        aiNoiseSuppression = false,
+        aiNoiseSuppression = true,
         deepFilterNetAvailable = true,
         discordLobby = true,
     )
