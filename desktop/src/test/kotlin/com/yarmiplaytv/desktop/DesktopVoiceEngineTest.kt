@@ -51,7 +51,7 @@ class DesktopVoiceEngineTest {
         assertTrue(cfg.automaticGainControl)
         assertFalse(cfg.noiseCancellation)
         assertEquals(DiscordAudioMode.PUSH_TO_TALK, cfg.audioMode)
-        assertEquals(64_000, cfg.bitrate)
+        assertEquals(128_000, cfg.bitrate)
         assertEquals(50f, cfg.participantVolumePercent["c4"]!!, 0.01f)
         engine.setNoiseSuppression(true)
 
@@ -68,14 +68,24 @@ class DesktopVoiceEngineTest {
         engine.setSelfMuted(true)
         assertFalse(engine.capturingSpeech())
 
-        // Verify v3.0.0 desktop processing chain toggles and single-stage mutual exclusion.
+        // Verify v3.0.5 desktop processing chain defaults to DeepFilterNet3 AI noise suppression.
         val defaultChain = engine.activeProcessingChain()
         assertEquals(AecBackend.WEBRTC, defaultChain.aec)
         assertEquals(AgcBackend.WEBRTC, defaultChain.agc)
-        assertEquals(NsBackend.WEBRTC, defaultChain.ns)
-        assertEquals("voice chain: AEC=webrtc AGC=webrtc NS=webrtc", defaultChain.logLine())
+        assertEquals(NsBackend.DEEPFILTERNET, defaultChain.ns)
+        assertEquals("voice chain: AEC=webrtc AGC=webrtc NS=deepfilternet", defaultChain.logLine())
 
-        // Enabling AI noise suppression switches NS to DeepFilterNet3 and disables WebRTC NS.
+        // Disabling AI noise suppression switches NS to standard WebRTC NS.
+        engine.setAiNoiseSuppression(false)
+        val standardChain = engine.activeProcessingChain()
+        assertEquals(AecBackend.WEBRTC, standardChain.aec)
+        assertEquals(AgcBackend.WEBRTC, standardChain.agc)
+        assertEquals(NsBackend.WEBRTC, standardChain.ns)
+        assertTrue(standardChain.webrtcNsEnabled)
+        assertFalse(standardChain.deepFilterNetEnabled)
+        assertEquals("voice chain: AEC=webrtc AGC=webrtc NS=webrtc", standardChain.logLine())
+
+        // Re-enabling AI noise suppression switches back to DeepFilterNet3.
         engine.setAiNoiseSuppression(true)
         val aiChain = engine.activeProcessingChain()
         assertEquals(AecBackend.WEBRTC, aiChain.aec)
@@ -112,10 +122,14 @@ class DesktopVoiceEngineTest {
             assertTrue(chain.discordLobby)
             assertFalse(chain.spectralNsEnabled)
             assertFalse(chain.dropGatedSilence)
-            assertEquals(NsBackend.WEBRTC, chain.ns)
+            assertEquals(NsBackend.DEEPFILTERNET, chain.ns)
             assertEquals(AecBackend.NONE, chain.aec)
             assertEquals(AgcBackend.WEBRTC, chain.agc)
             assertTrue(engine.isMicTestActive())
+
+            engine.setAiNoiseSuppression(false)
+            val standardChain = engine.activeProcessingChain()
+            assertEquals(NsBackend.WEBRTC, standardChain.ns)
         } finally {
             engine.setMicTest(false)
             engine.disconnect()

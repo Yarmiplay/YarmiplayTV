@@ -39,8 +39,8 @@ object DiscordSdkAudio {
     const val CHANNELS = 1
     const val STEREO_CHANNELS = 2
     const val FRAME_MS = 20
-    /** Discord's default voice Opus bitrate (64 kbps); configurable up to [MAX_BITRATE] (128 kbps). */
-    const val BITRATE = 64_000
+    /** Discord's default voice Opus bitrate (maximum supported = 128 kbps). */
+    const val BITRATE = 128_000
     const val MIN_BITRATE = 24_000
     const val MAX_BITRATE = 128_000
     val BITRATE_OPTIONS_BPS: List<Int> = listOf(32_000, 64_000, 96_000, 128_000)
@@ -166,8 +166,8 @@ data class DiscordAudioConfig(
     val echoCancellation: Boolean = true,
     /** [Client::SetAutomaticGainControl]. Default on, independent of [noiseSuppression] and [aiNoiseSuppression]. */
     val automaticGainControl: Boolean = true,
-    /** Client-side AI noise suppression via DeepFilterNet3 (replaces WebRTC/platform NS when on). */
-    val aiNoiseSuppression: Boolean = false,
+    /** Client-side AI noise suppression via DeepFilterNet3 (replaces WebRTC/platform NS when on). Default on. */
+    val aiNoiseSuppression: Boolean = true,
     /** Effective proprietary Krisp state. Always false in this build. */
     val noiseCancellation: Boolean = false,
     /** What the caller asked for on [DiscordVoiceEngine.setNoiseCancellation]. Recorded so tests can see the refusal. */
@@ -177,9 +177,9 @@ data class DiscordAudioConfig(
     val vadAutomatic: Boolean = true,
     val vadThresholdDb: Float = DiscordSdkAudio.VAD_THRESHOLD_DEFAULT_DB,
     val sampleRate: Int = DiscordSdkAudio.SAMPLE_RATE,
-    val channels: Int = DiscordSdkAudio.CHANNELS,
+    val channels: Int = DiscordSdkAudio.STEREO_CHANNELS,
     val frameMs: Int = DiscordSdkAudio.FRAME_MS,
-    val bitrate: Int = DiscordSdkAudio.BITRATE,
+    val bitrate: Int = DiscordSdkAudio.MAX_BITRATE,
 ) {
     fun transmits(wantTransmit: Boolean): Boolean =
         DiscordSdkAudio.transmits(selfMute, selfDeaf, wantTransmit)

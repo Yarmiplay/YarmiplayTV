@@ -399,7 +399,7 @@ class VoiceProcessingUpgradeTest {
             provider = "discord-lobby",
             maxBitrate = 32_000, // Server default when unconfigured
         )
-        assertEquals(64_000, VoiceMediaSession.opusBitrate(discordDefault))
+        assertEquals(128_000, VoiceMediaSession.opusBitrate(discordDefault))
         assertEquals(96_000, VoiceMediaSession.opusBitrate(discordDefault, 96_000))
         assertEquals(128_000, VoiceMediaSession.opusBitrate(discordDefault, 128_000))
         assertEquals(128_000, VoiceMediaSession.opusBitrate(discordDefault, 256_000))

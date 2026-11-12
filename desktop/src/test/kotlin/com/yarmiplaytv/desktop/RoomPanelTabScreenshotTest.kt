@@ -66,7 +66,7 @@ class RoomPanelTabScreenshotTest {
         app = AppContainer(
             settingsStore = desktopSettingsStore(tmp.root, storeScope),
             deviceName = "test",
-            appVersion = "3.0.4",
+            appVersion = "3.0.5",
             createPlayer = { IdlePlayer() },
             createLocalLibrary = { s, scope, folders -> FileLocalLibrary(s, scope, folders, watchForChanges = false) },
             malClientId = "test-client",
