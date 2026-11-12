@@ -3,6 +3,7 @@ package com.yarmiplaytv.desktop
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.CompositionLocalProvider
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toAwtImage
@@ -95,6 +96,7 @@ class HomeUiTest {
             createLocalLibrary = { s, scope, folders -> FileLocalLibrary(s, scope, folders, watchForChanges = false) },
             malClientId = "test",
         ).also { it.deviceKind = DeviceKind.DESKTOP }
+        runBlocking { app.settings.first { it.savedRooms.isNotEmpty() } }
     }
 
     @After
@@ -114,7 +116,10 @@ class HomeUiTest {
                 MobileTheme(appPalette(app)) { Box(Modifier.size(width.dp, height.dp)) { MobileRoot(app, DeviceKind.DESKTOP) } }
             }
         }
-        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("home").fetchSemanticsNodes().isNotEmpty() }
+        waitUntil(timeoutMillis = 5_000) {
+            onAllNodesWithTag("home").fetchSemanticsNodes().isNotEmpty() &&
+                app.settings.value.savedRooms.isNotEmpty()
+        }
         waitForIdle()
     }
 
@@ -271,7 +276,10 @@ class HomeUiTest {
         onNodeWithTag("card_room").performClick()
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("connect").fetchSemanticsNodes().isNotEmpty() }
         onNodeWithTag("tab_Home").performClick()
-        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("home").fetchSemanticsNodes().isNotEmpty() }
+        waitUntil(timeoutMillis = 5_000) {
+            onAllNodesWithTag("home").fetchSemanticsNodes().isNotEmpty() &&
+                app.settings.value.savedRooms.isNotEmpty()
+        }
         onNodeWithTag("card_local").performClick()
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("local_list").fetchSemanticsNodes().isNotEmpty() }
         onNodeWithTag("tab_Home").performClick()
