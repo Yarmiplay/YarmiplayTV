@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.0.6" date="2026-11-12">
+      <description>
+        <p>Voice chat: smart auto-connect waits for someone else to enter an empty room before connecting to voice, with a settings toggle.</p>
+      </description>
+    </release>
     <release version="3.0.5" date="2026-11-12">
       <description>
         <p>Voice settings: default 128 kbps bitrate dropdown, stereo on by default, unified noise suppression dropdown (Off, Standard, AI DeepFilterNet), and instant word-onset pickup.</p>

@@ -79,6 +79,8 @@ data class VoiceUiState(
      * Room UI offers a button that opens the app's permission settings.
      */
     val showMicPermissionSettings: Boolean = false,
+    /** True while waiting for someone else to enter an empty room before auto-connecting voice. */
+    val waitingForOthers: Boolean = false,
 ) {
     val showUi: Boolean get() = available && enabledByClient
     val listenOnly: Boolean get() = showUi && capture == VoiceCaptureKind.NONE

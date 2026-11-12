@@ -266,6 +266,12 @@ data class AppSettings(
      */
     val voiceAutoJoin: Boolean = true,
     /**
+     * When on (default), entering a room that was empty before joining doesn't connect voice
+     * until someone else connects to the room. When off, voice connects immediately even if
+     * the room is empty.
+     */
+    val voiceWaitToJoinEmptyRoom: Boolean = true,
+    /**
      * Noise suppression mode for voice capture ([VoiceNoiseMode.OFF], [VoiceNoiseMode.STANDARD],
      * or [VoiceNoiseMode.AI] DeepFilterNet3, default AI).
      */
@@ -440,6 +446,7 @@ class SettingsStore(
         val chatOnVideo = booleanPreferencesKey("chat_on_video")
         val voiceChat = booleanPreferencesKey("voice_chat")
         val voiceAutoJoin = booleanPreferencesKey("voice_auto_join")
+        val voiceWaitToJoinEmptyRoom = booleanPreferencesKey("voice_wait_to_join_empty_room")
         val voiceNoiseMode = stringPreferencesKey("voice_noise_mode")
         val voiceNoiseSuppression = booleanPreferencesKey("voice_noise_suppression")
         val voiceEchoCancellation = booleanPreferencesKey("voice_echo_cancellation")
@@ -606,6 +613,7 @@ class SettingsStore(
             chatOnVideo = p[Keys.chatOnVideo] ?: false,
             voiceChat = p[Keys.voiceChat] ?: true,
             voiceAutoJoin = p[Keys.voiceAutoJoin] ?: true,
+            voiceWaitToJoinEmptyRoom = p[Keys.voiceWaitToJoinEmptyRoom] ?: true,
             voiceNoiseMode = run {
                 val savedMode = p[Keys.voiceNoiseMode]?.let { runCatching { VoiceNoiseMode.valueOf(it) }.getOrNull() }
                 if (savedMode != null) return@run savedMode
@@ -901,6 +909,8 @@ class SettingsStore(
     suspend fun saveVoiceChat(on: Boolean) = dataStore.edit { it[Keys.voiceChat] = on }
 
     suspend fun saveVoiceAutoJoin(on: Boolean) = dataStore.edit { it[Keys.voiceAutoJoin] = on }
+
+    suspend fun saveVoiceWaitToJoinEmptyRoom(on: Boolean) = dataStore.edit { it[Keys.voiceWaitToJoinEmptyRoom] = on }
 
     suspend fun saveVoiceNoiseMode(mode: VoiceNoiseMode) = dataStore.edit {
         it[Keys.voiceNoiseMode] = mode.name

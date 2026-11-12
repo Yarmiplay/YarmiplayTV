@@ -204,6 +204,13 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         subtitle = "Join voice automatically when you enter a room that has it; off shows Join voice until you tap it",
                         modifier = Modifier.testTag("toggle_voice_auto_join"),
                     )
+                    ToggleRow(
+                        "Wait for others",
+                        settings.voiceWaitToJoinEmptyRoom,
+                        { container.scope.launch { container.settingsStore.saveVoiceWaitToJoinEmptyRoom(!settings.voiceWaitToJoinEmptyRoom) } },
+                        subtitle = "In an empty room, wait until someone else joins before connecting to voice",
+                        modifier = Modifier.testTag("toggle_voice_wait_to_join_empty_room"),
+                    )
                     val noiseSubtitle = if (settings.voiceNoiseMode == VoiceNoiseMode.AI && voiceUi.aiFallbackNotice != null) {
                         voiceUi.aiFallbackNotice!!
                     } else {

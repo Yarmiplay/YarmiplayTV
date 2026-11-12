@@ -7,6 +7,7 @@ import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.RoomState
+import com.yarmiplaytv.syncplay.RoomUser
 import com.yarmiplaytv.syncplay.VoiceDescriptor
 import com.yarmiplaytv.syncplay.YarmiplayCapabilities
 import com.yarmiplaytv.syncplay.YarmiplayInfo
@@ -197,6 +198,73 @@ class VoiceControllerTest {
             store.saveVoiceAutoUnmuteWhenPaused(true)
         }
         awaitTrue("auto-mute on") { runBlocking { store.current().voiceAutoMuteWhenPlaying } }
+    }
+
+    @Test
+    fun `voiceWaitToJoinEmptyRoom defaults on and persists`() {
+        runBlocking {
+            assertTrue(store.current().voiceWaitToJoinEmptyRoom)
+            store.saveVoiceWaitToJoinEmptyRoom(false)
+        }
+        awaitTrue("wait off") { runBlocking { !store.current().voiceWaitToJoinEmptyRoom } }
+        runBlocking { store.saveVoiceWaitToJoinEmptyRoom(true) }
+        awaitTrue("wait on") { runBlocking { store.current().voiceWaitToJoinEmptyRoom } }
+    }
+
+    @Test
+    fun `joining empty room waits for others and does not connect voice`() {
+        onMain { sync.setTestRoom(roomWithVoice()) }
+        awaitTrue("ui shown") { voice.ui.value.showUi }
+        awaitTrue("waiting for others") { voice.ui.value.waitingForOthers }
+        assertEquals(VoiceConnection.OFF, voice.ui.value.connection)
+        assertEquals("Room is empty — voice will connect when someone joins", voice.ui.value.statusLine)
+    }
+
+    @Test
+    fun `when someone else connects to empty room voice auto-connects`() {
+        onMain { sync.setTestRoom(roomWithVoice()) }
+        awaitTrue("waiting for others") { voice.ui.value.waitingForOthers }
+        assertEquals(VoiceConnection.OFF, voice.ui.value.connection)
+
+        // Peer joins the room
+        onMain {
+            sync.setTestRoom(
+                roomWithVoice().copy(
+                    users = listOf(
+                        RoomUser("ana", "lounge"),
+                        RoomUser("bob", "lounge"),
+                    ),
+                ),
+            )
+        }
+        awaitTrue("auto-connects when peer joins") { voice.ui.value.connection == VoiceConnection.CONNECTING }
+        assertFalse(voice.ui.value.waitingForOthers)
+    }
+
+    @Test
+    fun `joining room that already has someone connects voice regularly`() {
+        onMain {
+            sync.setTestRoom(
+                roomWithVoice().copy(
+                    users = listOf(
+                        RoomUser("ana", "lounge"),
+                        RoomUser("bob", "lounge"),
+                    ),
+                ),
+            )
+        }
+        awaitTrue("voice ui shown") { voice.ui.value.showUi }
+        awaitTrue("connects regularly") { voice.ui.value.connection == VoiceConnection.CONNECTING }
+        assertFalse(voice.ui.value.waitingForOthers)
+    }
+
+    @Test
+    fun `when waitToJoinEmptyRoom is off joining empty room connects regularly`() {
+        runBlocking { store.saveVoiceWaitToJoinEmptyRoom(false) }
+        awaitTrue("setting applied") { runBlocking { !store.current().voiceWaitToJoinEmptyRoom } }
+        onMain { sync.setTestRoom(roomWithVoice()) }
+        awaitTrue("connects regularly to empty room") { voice.ui.value.connection == VoiceConnection.CONNECTING }
+        assertFalse(voice.ui.value.waitingForOthers)
     }
 }
 

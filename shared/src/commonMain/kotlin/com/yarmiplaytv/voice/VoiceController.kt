@@ -7,7 +7,9 @@ import com.yarmiplaytv.data.VoicePeerPrefs
 import com.yarmiplaytv.data.VoiceTalkMode
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.sync.SyncController
+import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.SyncplayEvent
+import com.yarmiplaytv.syncplay.VoiceDescriptor
 import com.yarmiplaytv.syncplay.VoiceClosedReason
 import com.yarmiplaytv.syncplay.VoiceMediaParams
 import com.yarmiplaytv.syncplay.VoicePeer
@@ -69,6 +71,10 @@ class VoiceController(
     private var lastFailAtMs = 0L
     /** After [leave], stay out of voice until [join] (reconcile must not auto-rejoin). */
     private var leftByUser = false
+    /** True while waiting for someone else to connect to an empty room before auto-joining voice. */
+    private var waitingForOthers = false
+    /** Current room name to track when we switch rooms. */
+    private var currentRoom: String? = null
     /**
      * True only when [voiceAutoMuteWhenPlaying] muted the mic for us. Auto-unmute on pause
      * restores only in that case — never overrides a mute the user set themselves.
@@ -133,32 +139,39 @@ class VoiceController(
                 val yp = it.yarmiplay
                 val disabledMsg = yp.voiceDisabledMessage
                 val lacks = yp.session && !yp.voiceAvailable && disabledMsg == null
-                Triple(
-                    yp.voiceAvailable,
-                    yp.voice,
-                    disabledMsg to lacks,
+                RoomVoiceReconcileState(
+                    room = it.room,
+                    hasOthers = it.others.isNotEmpty(),
+                    voiceAvailable = yp.voiceAvailable,
+                    descriptor = yp.voice,
+                    disabledMsg = disabledMsg,
+                    serverLacksVoice = lacks,
                 )
             }.distinctUntilChanged(),
             settings.map {
-                VoiceReconcileKeys(it.voiceChat, effectiveTalkMode(it), it.voiceTvMicHintShown, it.voiceAutoJoin)
+                VoiceReconcileKeys(
+                    it.voiceChat,
+                    effectiveTalkMode(it),
+                    it.voiceTvMicHintShown,
+                    it.voiceAutoJoin,
+                    it.voiceWaitToJoinEmptyRoom,
+                )
             }.distinctUntilChanged(),
-        ) { (available, descriptor, flags), keys ->
-            Triple(available, descriptor to keys, flags)
-        }.onEach { (available, descAndKeys, flags) ->
-            val (descriptor, keys) = descAndKeys
-            val (disabledMsg, sessionWithoutVoice) = flags
+        ) { roomState, keys ->
+            roomState to keys
+        }.onEach { (roomState, keys) ->
             _ui.update {
                 val next = it.copy(
-                    available = available,
+                    available = roomState.voiceAvailable,
                     enabledByClient = keys.voiceChat,
-                    serverLacksVoice = sessionWithoutVoice,
-                    voiceDisabledOnServer = disabledMsg != null,
-                    voiceDisabledMessage = disabledMsg,
+                    serverLacksVoice = roomState.serverLacksVoice,
+                    voiceDisabledOnServer = roomState.disabledMsg != null,
+                    voiceDisabledMessage = roomState.disabledMsg,
                     talkMode = keys.talkMode,
-                    descriptor = descriptor,
+                    descriptor = roomState.descriptor,
                     statusLine = when {
-                        disabledMsg != null && keys.voiceChat -> disabledMsg
-                        sessionWithoutVoice && keys.voiceChat -> it.statusLine
+                        roomState.disabledMsg != null && keys.voiceChat -> roomState.disabledMsg
+                        roomState.serverLacksVoice && keys.voiceChat -> it.statusLine
                         else -> it.statusLine
                     },
                 )
@@ -508,6 +521,10 @@ class VoiceController(
         scope.launch { settingsStore.saveVoiceAutoJoin(on) }
     }
 
+    fun setWaitToJoinEmptyRoom(on: Boolean) {
+        scope.launch { settingsStore.saveVoiceWaitToJoinEmptyRoom(on) }
+    }
+
     fun setPeerMuted(username: String, muted: Boolean) {
         scope.launch {
             val cur = settingsStore.current().voicePeerPrefs[username] ?: VoicePeerPrefs()
@@ -526,6 +543,7 @@ class VoiceController(
 
     fun leave() {
         leftByUser = true
+        waitingForOthers = false
         retryJob?.cancel()
         sync.client?.leaveVoice()
         tearDown(VoiceConnection.OFF, "Left voice")
@@ -539,6 +557,7 @@ class VoiceController(
         val room = sync.room.value
         if (!room.yarmiplay.voiceAvailable || !settings.value.voiceChat) return
         leftByUser = false
+        waitingForOthers = false
         lastFailAtMs = 0L
         startJoin()
     }
@@ -569,10 +588,22 @@ class VoiceController(
 
     private fun reconcileSession() {
         val room = sync.room.value
+        val roomName = room.room
+        val inRoom = room.status == ConnectionStatus.CONNECTED && roomName.isNotEmpty()
+        if (!inRoom) {
+            currentRoom = null
+            waitingForOthers = false
+        } else if (roomName != currentRoom) {
+            currentRoom = roomName
+            leftByUser = false
+            waitingForOthers = false
+        }
+
         val want = room.yarmiplay.voiceAvailable && settings.value.voiceChat
         val state = _ui.value
         if (!want) {
             leftByUser = false
+            waitingForOthers = false
             if (state.connection != VoiceConnection.OFF) {
                 sync.client?.leaveVoice()
                 tearDown(VoiceConnection.OFF, null)
@@ -581,14 +612,32 @@ class VoiceController(
         }
         if (awaitingReplace || leftByUser) return
         if (state.connection == VoiceConnection.OFF || state.connection == VoiceConnection.FAILED) {
-            if (settings.value.voiceAutoJoin) {
+            val autoJoin = settings.value.voiceAutoJoin
+            val waitEmpty = settings.value.voiceWaitToJoinEmptyRoom
+            val hasOthers = room.others.isNotEmpty()
+
+            if (!autoJoin) {
+                waitingForOthers = false
+                if (state.statusLine == null || state.connection == VoiceConnection.OFF) {
+                    // Auto-join off: stay out and show Join voice (mic stays hidden).
+                    _ui.update {
+                        it.copy(
+                            connection = VoiceConnection.OFF,
+                            waitingForOthers = false,
+                            statusLine = it.statusLine ?: "Not in voice — tap Join voice to talk",
+                        )
+                    }
+                }
+            } else if (hasOthers || !waitEmpty) {
+                waitingForOthers = false
                 startJoin()
-            } else if (state.statusLine == null || state.connection == VoiceConnection.OFF) {
-                // Auto-join off: stay out and show Join voice (mic stays hidden).
+            } else {
+                waitingForOthers = true
                 _ui.update {
                     it.copy(
                         connection = VoiceConnection.OFF,
-                        statusLine = it.statusLine ?: "Not in voice — tap Join voice to talk",
+                        waitingForOthers = true,
+                        statusLine = "Room is empty — voice will connect when someone joins",
                     )
                 }
             }
@@ -596,8 +645,8 @@ class VoiceController(
     }
 
     private fun startJoin() {
-        val client = sync.client ?: return
         val desc = sync.room.value.yarmiplay.voice ?: return
+        val client = sync.client
         val now = System.currentTimeMillis()
         if (now - lastFailAtMs < 10_000L && _ui.value.connection == VoiceConnection.FAILED) return
         connectJob?.cancel()
@@ -607,6 +656,7 @@ class VoiceController(
             _ui.update {
                 it.copy(
                     connection = VoiceConnection.CONNECTING,
+                    waitingForOthers = false,
                     statusLine = "Connecting voice…",
                     talkLatched = false,
                     talking = false,
@@ -621,7 +671,7 @@ class VoiceController(
                     statusLine = statusFor(capture, latched = false, effectiveTalkMode(settings.value)),
                 )
             }
-            client.joinVoice(version = desc.version, mux = desc.usesSyncplayMux)
+            client?.joinVoice(version = desc.version, mux = desc.usesSyncplayMux)
         }
     }
 
@@ -640,7 +690,11 @@ class VoiceController(
             is SyncplayEvent.VoicePeersChanged -> onPeers(event.peers)
             // Speaking overlay uses locally heard PCM (polled); ignore protocol speaking flags for UI.
             is SyncplayEvent.VoiceActivity -> Unit
-            is SyncplayEvent.Disconnected, SyncplayEvent.SessionEnded -> tearDown(VoiceConnection.OFF, null)
+            is SyncplayEvent.Disconnected, SyncplayEvent.SessionEnded -> {
+                currentRoom = null
+                waitingForOthers = false
+                tearDown(VoiceConnection.OFF, null)
+            }
             else -> Unit
         }
     }
@@ -664,9 +718,9 @@ class VoiceController(
             VoiceClosedReason.ROOM -> {
                 leftByUser = false
                 tearDown(VoiceConnection.OFF, null)
-                // Retry immediately in the new Syncplay room if we still want voice.
+                // Reconcile immediately in the new Syncplay room if we still want voice.
                 if (sync.room.value.yarmiplay.voiceAvailable && settings.value.voiceChat) {
-                    startJoin()
+                    reconcileSession()
                 }
             }
             VoiceClosedReason.FULL -> {
@@ -881,6 +935,7 @@ class VoiceController(
         lastPeers = emptyList()
         pttHeld = false
         talkLatched = false
+        waitingForOthers = false
         _ui.update {
             it.copy(
                 connection = connection,
@@ -890,6 +945,7 @@ class VoiceController(
                 receivingNames = emptyList(),
                 talking = false,
                 talkLatched = false,
+                waitingForOthers = false,
                 showMicHint = false,
                 showMicPermissionSettings = false,
                 statusLine = status,
@@ -898,9 +954,19 @@ class VoiceController(
     }
 }
 
+private data class RoomVoiceReconcileState(
+    val room: String,
+    val hasOthers: Boolean,
+    val voiceAvailable: Boolean,
+    val descriptor: VoiceDescriptor?,
+    val disabledMsg: String?,
+    val serverLacksVoice: Boolean,
+)
+
 private data class VoiceReconcileKeys(
     val voiceChat: Boolean,
     val talkMode: VoiceTalkMode,
     val hintShown: Boolean,
     val autoJoin: Boolean,
+    val waitToJoinEmptyRoom: Boolean,
 )

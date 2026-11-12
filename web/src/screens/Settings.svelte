@@ -192,6 +192,14 @@
               />
               Auto-join voice<br /><span class="dim small">Join voice automatically when you enter a room that has it; off shows Join voice until you tap it</span>
             </label>
+            <label class="switch" data-testid="toggle_voice_wait_to_join_empty_room">
+              <input
+                type="checkbox"
+                checked={s.voiceWaitToJoinEmptyRoom}
+                onchange={(e) => set((x) => ({ ...x, voiceWaitToJoinEmptyRoom: (e.target as HTMLInputElement).checked }))}
+              />
+              Wait for others<br /><span class="dim small">In an empty room, wait until someone else joins before connecting to voice</span>
+            </label>
             <label class="switch" data-testid="toggle_voice_noise_suppression">
               <input
                 type="checkbox"

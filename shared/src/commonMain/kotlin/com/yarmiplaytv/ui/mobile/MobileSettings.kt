@@ -374,6 +374,12 @@ private fun VoiceSettings(container: AppContainer) {
         settings.voiceAutoJoin,
         Modifier.testTag("toggle_voice_auto_join"),
     ) { container.scope.launch { container.settingsStore.saveVoiceAutoJoin(it) } }
+    SettingsToggle(
+        "Wait for others",
+        "In an empty room, wait until someone else joins before connecting to voice",
+        settings.voiceWaitToJoinEmptyRoom,
+        Modifier.testTag("toggle_voice_wait_to_join_empty_room"),
+    ) { container.scope.launch { container.settingsStore.saveVoiceWaitToJoinEmptyRoom(it) } }
     val noiseSubtitle = if (settings.voiceNoiseMode == VoiceNoiseMode.AI && voiceUi.aiFallbackNotice != null) {
         voiceUi.aiFallbackNotice!!
     } else {

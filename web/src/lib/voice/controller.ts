@@ -46,6 +46,7 @@ export class VoiceController {
   private readonly engine = new WebVoiceEngine();
   private enabled = true;
   private autoJoin = true;
+  private waitToJoinEmptyRoom = true;
   private autoMuteWhenPlaying = true;
   private autoUnmuteWhenPaused = true;
   /** True only when auto-mute muted us — auto-unmute never overrides a manual mute. */
@@ -94,6 +95,11 @@ export class VoiceController {
 
   setAutoJoin(on: boolean) {
     this.autoJoin = on;
+    this.reconcile();
+  }
+
+  setWaitToJoinEmptyRoom(on: boolean) {
+    this.waitToJoinEmptyRoom = on;
     this.reconcile();
   }
 
@@ -257,7 +263,8 @@ export class VoiceController {
       return;
     }
     if (this.ui.value.connected || this.ui.value.connecting) return;
-    if (this.autoJoin) {
+    const hasOthers = (c?.state.users.filter((u) => u.name !== c.state.username).length ?? 0) > 0;
+    if (this.autoJoin && (hasOthers || !this.waitToJoinEmptyRoom)) {
       this.ui.update((u) => ({
         ...u,
         connecting: true,
@@ -266,6 +273,15 @@ export class VoiceController {
         showMic: false,
       }));
       c?.joinVoice();
+    } else if (this.autoJoin && this.waitToJoinEmptyRoom) {
+      this.ui.update((u) => ({
+        ...u,
+        connected: false,
+        connecting: false,
+        membershipIsLeave: false,
+        showMic: false,
+        status: "Room is empty — voice will connect when someone joins",
+      }));
     } else {
       this.ui.update((u) => ({
         ...u,

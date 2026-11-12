@@ -79,6 +79,8 @@ export interface Settings {
   voiceChat: boolean;
   /** Join voice automatically when entering a room that has it (default on). */
   voiceAutoJoin: boolean;
+  /** In an empty room, wait until someone else joins before connecting to voice (default on). */
+  voiceWaitToJoinEmptyRoom: boolean;
   /** Capture noise suppression via getUserMedia (default on). */
   voiceNoiseSuppression: boolean;
   /** Mute mic when playback starts/resumes (default on). */
@@ -159,6 +161,7 @@ export function load(): Settings {
     chatOnVideo: bool("chat_on_video", false),
     voiceChat: bool("voice_chat", true),
     voiceAutoJoin: bool("voice_auto_join", true),
+    voiceWaitToJoinEmptyRoom: bool("voice_wait_to_join_empty_room", true),
     voiceNoiseSuppression: (() => {
       const mode = read("voice_noise_mode");
       if (mode) return mode !== "OFF";
@@ -220,6 +223,7 @@ export function save(settings: Settings) {
   write("chat_on_video", String(settings.chatOnVideo));
   write("voice_chat", String(settings.voiceChat));
   write("voice_auto_join", String(settings.voiceAutoJoin));
+  write("voice_wait_to_join_empty_room", String(settings.voiceWaitToJoinEmptyRoom));
   write("voice_noise_suppression", String(settings.voiceNoiseSuppression));
   write("voice_noise_mode", settings.voiceNoiseSuppression ? "STANDARD" : "OFF");
   write("voice_auto_mute_when_playing", String(settings.voiceAutoMuteWhenPlaying));
