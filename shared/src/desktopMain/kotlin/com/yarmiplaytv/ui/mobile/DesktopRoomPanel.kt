@@ -1,20 +1,31 @@
 package com.yarmiplaytv.ui.mobile
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,19 +34,22 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -63,6 +77,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.AlignmentLine
 import androidx.compose.ui.layout.FirstBaseline
@@ -75,6 +91,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -100,7 +119,7 @@ object DesktopRoomPanel {
     /** Session width of the docked panel (drag the left edge to resize). */
     var widthDp by mutableFloatStateOf(PANEL_WIDTH_DEFAULT)
     /** Chat messages from others that arrived while the chat tab wasn't showing. */
-    internal var unread by mutableIntStateOf(0)
+    var unread by mutableIntStateOf(0)
     internal var chatFocusRequests by mutableIntStateOf(0)
     /** Sent messages, oldest first, for Up/Down in the chat box. */
     internal val sentHistory = mutableStateListOf<String>()
@@ -130,46 +149,231 @@ internal const val PANEL_WIDTH_MIN = 300f
 internal const val PANEL_WIDTH_MAX = 640f
 
 /**
- * New messages beside the Chat tab's name: a count in the theme's accent, level with the name. A circle for one or two
- * digits ("99+" a pill as tall), with the digits in its middle both ways.
+ * New messages beside the Chat tab's name: an optically centered count in the theme's accent.
+ * A circle for 1-digit, pill for 2-digit and 99+, with tabular figures, centered alignment,
+ * and no extra line-height offset.
  */
 @Composable
-private fun UnreadCount(count: Int) {
+private fun UnreadCount(count: Int, isSelected: Boolean = false) {
     val text = if (count > 99) "99+" else "$count"
-    val round = text.length <= 2
+    val singleDigit = text.length == 1
+    val badgeBg = if (isSelected) AppColors.Surface else AppColors.Accent
+    val badgeFg = if (isSelected) AppColors.Accent else AppColors.OnAccent
     Box(
-        Modifier.height(BADGE_SIZE).then(if (round) Modifier.width(BADGE_SIZE) else Modifier.widthIn(min = BADGE_SIZE))
-            .clip(RoundedCornerShape(50)).background(AppColors.Accent)
-            .then(if (round) Modifier else Modifier.padding(horizontal = 5.dp))
-            .semantics(mergeDescendants = true) { contentDescription = if (count == 1) "1 new message" else "$count new messages" },
+        modifier = Modifier
+            .height(BADGE_SIZE)
+            .then(
+                if (singleDigit) Modifier.width(BADGE_SIZE)
+                else Modifier.widthIn(min = BADGE_SIZE)
+            )
+            .clip(CircleShape)
+            .background(badgeBg)
+            .then(
+                if (!singleDigit) Modifier.padding(horizontal = if (text.length == 2) 4.dp else 5.dp)
+                else Modifier
+            )
+            .semantics(mergeDescendants = true) {
+                contentDescription = if (count == 1) "1 new message" else "$count new messages"
+            },
         contentAlignment = Alignment.Center,
     ) {
+        @Suppress("DEPRECATION")
         Text(
-            text,
-            Modifier.digitsCentered(BADGE_FONT_SIZE),
-            color = AppColors.OnAccent,
-            style = TextStyle(fontSize = BADGE_FONT_SIZE, fontWeight = FontWeight.Bold),
+            text = text,
+            color = badgeFg,
+            style = TextStyle(
+                fontSize = BADGE_FONT_SIZE,
+                lineHeight = BADGE_FONT_SIZE,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                fontFeatureSettings = "tnum",
+                lineHeightStyle = LineHeightStyle(
+                    alignment = LineHeightStyle.Alignment.Center,
+                    trim = LineHeightStyle.Trim.Both,
+                ),
+            ),
             maxLines = 1,
+            softWrap = false,
         )
     }
 }
 
+private val BADGE_FONT_SIZE = 10.sp
+private val BADGE_SIZE = 18.dp
+private val TAB_BAR_HEIGHT = 38.dp
+private val ROW_HEIGHT = 40.dp
+
 /**
- * Moves the text so its digits, which stand on the baseline about 0.7 em tall, have their middle where the middle of
- * its box was: a font's line box has room for accents above and descenders below, which would leave them off-centre.
+ * Modern segmented/pill tab bar for the side panel (Room, Playlist, Chat, MAL).
+ * Highlight pill animates smoothly between tabs, vector icons next to each label,
+ * hover states, hand cursor on desktop, and proportional sizing so labels never wrap or truncate.
  */
-private fun Modifier.digitsCentered(fontSize: TextUnit) = layout { measurable, constraints ->
-    val text = measurable.measure(constraints)
-    val baseline = text[FirstBaseline]
-    val shift = if (baseline == AlignmentLine.Unspecified) 0 else (text.height / 2f + DIGIT_HEIGHT_EM / 2 * fontSize.toPx() - baseline).roundToInt()
-    layout(text.width, text.height) { text.place(0, shift) }
+@Composable
+fun SegmentedTabBar(
+    selectedTab: RoomPanelTab,
+    onTabSelected: (RoomPanelTab) -> Unit,
+    unreadCount: Int,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .height(TAB_BAR_HEIGHT)
+            .clip(RoundedCornerShape(10.dp))
+            .background(AppColors.Background)
+            .border(1.dp, AppColors.SurfaceHigh.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+            .padding(3.dp),
+    ) {
+        val totalWidth = maxWidth
+        val hasUnread = unreadCount > 0
+        val weights = if (hasUnread) {
+            floatArrayOf(1.0f, 1.35f, 1.35f, 0.9f)
+        } else {
+            floatArrayOf(1.05f, 1.45f, 1.05f, 0.95f)
+        }
+        val totalWeight = weights.sum()
+
+        val tabWidths = RoomPanelTab.entries.mapIndexed { index, _ ->
+            totalWidth * (weights[index] / totalWeight)
+        }
+
+        val tabOffsets = buildList {
+            var current = 0.dp
+            for (w in tabWidths) {
+                add(current)
+                current += w
+            }
+        }
+
+        val selectedIndex = selectedTab.ordinal
+        val targetOffset = tabOffsets[selectedIndex]
+        val targetWidth = tabWidths[selectedIndex]
+
+        val animatedOffset by animateDpAsState(
+            targetValue = targetOffset,
+            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+            label = "tab_pill_offset",
+        )
+        val animatedWidth by animateDpAsState(
+            targetValue = targetWidth,
+            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+            label = "tab_pill_width",
+        )
+
+        // Pill highlight indicator
+        Box(
+            modifier = Modifier
+                .offset(x = animatedOffset)
+                .width(animatedWidth)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(7.dp))
+                .background(AppColors.Accent),
+        )
+
+        // Tabs
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RoomPanelTab.entries.forEachIndexed { index, tab ->
+                val isSelected = tab == selectedTab
+                val tabWidth = tabWidths[index]
+
+                SegmentedTabItem(
+                    tab = tab,
+                    isSelected = isSelected,
+                    unreadCount = if (tab == RoomPanelTab.CHAT) unreadCount else 0,
+                    onClick = { onTabSelected(tab) },
+                    modifier = Modifier.width(tabWidth).fillMaxHeight(),
+                )
+            }
+        }
+    }
 }
 
-private const val DIGIT_HEIGHT_EM = 0.7f
-private val BADGE_FONT_SIZE = 11.sp
-private val BADGE_SIZE = 20.dp
-private val TAB_HEIGHT = 48.dp
-private val ROW_HEIGHT = 40.dp
+@Composable
+private fun SegmentedTabItem(
+    tab: RoomPanelTab,
+    isSelected: Boolean,
+    unreadCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val contentColor by animateColorAsState(
+        targetValue = when {
+            isSelected -> AppColors.OnAccent
+            isHovered || isFocused -> AppColors.Text
+            else -> AppColors.TextDim
+        },
+        animationSpec = tween(durationMillis = 150),
+        label = "tab_content_color",
+    )
+
+    val icon: ImageVector = when (tab) {
+        RoomPanelTab.ROOM -> Icons.Filled.Groups
+        RoomPanelTab.PLAYLIST -> Icons.AutoMirrored.Filled.PlaylistPlay
+        RoomPanelTab.CHAT -> Icons.Filled.Forum
+        RoomPanelTab.MAL -> Icons.Filled.Bookmarks
+    }
+
+    Box(
+        modifier = modifier
+            .testTag("panel_tab_${tab.name}")
+            .clip(RoundedCornerShape(7.dp))
+            .then(
+                if (!isSelected && isHovered) {
+                    Modifier.background(AppColors.SurfaceHigh.copy(alpha = 0.45f))
+                } else if (!isSelected && isFocused) {
+                    Modifier.background(AppColors.SurfaceHigh.copy(alpha = 0.35f))
+                        .border(1.dp, AppColors.Accent.copy(alpha = 0.8f), RoundedCornerShape(7.dp))
+                } else {
+                    Modifier
+                }
+            )
+            .hoverable(interactionSource)
+            .focusable(interactionSource = interactionSource)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(15.dp),
+                tint = contentColor,
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = tab.label,
+                style = TextStyle(
+                    fontSize = 12.sp,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                    letterSpacing = 0.sp,
+                ),
+                color = contentColor,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Visible,
+            )
+            if (tab == RoomPanelTab.CHAT && unreadCount > 0) {
+                Spacer(Modifier.width(4.dp))
+                UnreadCount(unreadCount, isSelected = isSelected)
+            }
+        }
+    }
+}
 
 @Composable
 actual fun RoomSidePanel(container: AppContainer) {
@@ -217,23 +421,32 @@ actual fun RoomSidePanel(container: AppContainer) {
         ) {
             SurfaceInk {
             Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TabRow(selectedTabIndex = panel.tab.ordinal, containerColor = AppColors.Surface, modifier = Modifier.weight(1f)) {
-                        RoomPanelTab.entries.forEach { tab ->
-                            // Less side padding than a text tab's, so the Chat tab's count fits beside its name at full size.
-                            Tab(selected = panel.tab == tab, onClick = { panel.tab = tab }, modifier = Modifier.testTag("panel_tab_${tab.name}")) {
-                                Row(
-                                    Modifier.height(TAB_HEIGHT).padding(horizontal = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    Text(tab.label, style = MaterialTheme.typography.titleSmall, maxLines = 1)
-                                    if (tab == RoomPanelTab.CHAT && panel.unread > 0) UnreadCount(panel.unread)
-                                }
-                            }
-                        }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    SegmentedTabBar(
+                        selectedTab = panel.tab,
+                        onTabSelected = { panel.tab = it },
+                        unreadCount = panel.unread,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = { panel.open = false },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .pointerHoverIcon(PointerIcon.Hand),
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Close the panel",
+                            modifier = Modifier.size(18.dp),
+                            tint = AppColors.TextDim,
+                        )
                     }
-                    IconButton({ panel.open = false }) { Icon(Icons.Filled.Close, "Close the panel") }
                 }
                 when (panel.tab) {
                     RoomPanelTab.ROOM -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
