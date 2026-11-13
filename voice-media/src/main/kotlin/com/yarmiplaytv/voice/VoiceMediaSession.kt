@@ -47,7 +47,7 @@ class VoiceMediaSession(
      */
     @Volatile private var agcStageActive = false
     private var preferredBitrate = MAX_VOICE_BITRATE
-    private var preferredStereo = true
+    private var preferredStereo = false
     private var connectedSeat: VoiceMediaParams? = null
     private var speechThreshold = LEGACY_SPEECH_RMS
     private var inputGain = 1f
@@ -210,10 +210,9 @@ class VoiceMediaSession(
         discordCapture = true
         noise.setHardGate(false)
         speechThreshold = DISCORD_VAD_RMS
-        val channels = if (preferredStereo) DISCORD_STEREO_CHANNELS else DISCORD_CHANNELS
-        val opus = OpusCodec(preferredBitrate, fec = true, dtx = false, DISCORD_CLOCK, channels)
+        val opus = OpusCodec(preferredBitrate, fec = true, dtx = false, DISCORD_CLOCK, DISCORD_CHANNELS)
         codec = opus
-        loopbackCodec = OpusCodec(preferredBitrate, fec = true, dtx = false, DISCORD_CLOCK, channels)
+        loopbackCodec = OpusCodec(preferredBitrate, fec = true, dtx = false, DISCORD_CLOCK, DISCORD_CHANNELS)
         loopbackLimiter.reset()
         preOpus.clear()
         noise.reset()
@@ -230,8 +229,7 @@ class VoiceMediaSession(
     fun setMicTest(active: Boolean) {
         val was = micTest.getAndSet(active)
         if (active && !was) {
-            val channels = if (preferredStereo) DISCORD_STEREO_CHANNELS else DISCORD_CHANNELS
-            val opus = codec ?: OpusCodec(preferredBitrate, fec = true, dtx = false, DISCORD_CLOCK, channels).also {
+            val opus = codec ?: OpusCodec(preferredBitrate, fec = true, dtx = false, DISCORD_CLOCK, DISCORD_CHANNELS).also {
                 codec = it
             }
             loopbackCodec = OpusCodec(opus.baseBitrate, fec = true, dtx = false, opus.sampleRate, opus.channels)
@@ -528,15 +526,12 @@ class VoiceMediaSession(
         val source = if (useDiscordChain) applyInputGain(pcm) else pcm
         if (useDiscordChain) {
             val pre = VoicePcm.rms(source)
-            val prevPickup = pickupRms.get()
-            // Fast attack on onset so meter/pickup opens instantly, smooth decay on release
-            pickupRms.set(if (pre > prevPickup) pre else prevPickup * 0.7 + pre * 0.3)
+            pickupRms.set(pickupRms.get() * 0.55 + pre * 0.45)
         }
         val cleaned = noise.process(source)
         val rms = VoicePcm.rms(cleaned)
         val prev = captureRms.get()
-        // Fast attack on speech onset, smooth decay on release
-        captureRms.set(if (rms > prev) rms else prev * 0.7 + rms * 0.3)
+        captureRms.set(prev * 0.55 + rms * 0.45)
         if (!useDiscordChain) pickupRms.set(captureRms.get())
         if (testing) {
             val meterRms = maxOf(pickupRms.get(), captureRms.get())
@@ -603,21 +598,7 @@ class VoiceMediaSession(
         }
         synchronized(mixBuf) {
             if (!mixReady.getAndSet(false)) return 0
-            if (out.size * 2 == mixBuf.size) {
-                for (i in out.indices) {
-                    val l = mixBuf[i * 2].toInt()
-                    val r = mixBuf[i * 2 + 1].toInt()
-                    out[i] = ((l + r) / 2).toShort()
-                }
-            } else if (out.size == mixBuf.size * 2) {
-                for (i in mixBuf.indices) {
-                    val s = mixBuf[i]
-                    out[i * 2] = s
-                    out[i * 2 + 1] = s
-                }
-            } else {
-                System.arraycopy(mixBuf, 0, out, 0, n)
-            }
+            System.arraycopy(mixBuf, 0, out, 0, n)
             mixBuf.fill(0)
         }
         return n
@@ -779,7 +760,7 @@ class VoiceMediaSession(
         /** Discord [Call::SetVADThreshold] automatic default, −60 dBFS on PCM16. */
         val DISCORD_VAD_RMS: Double = 32768.0 * Math.pow(10.0, -60.0 / 20.0)
 
-        const val DISCORD_BITRATE = 128_000
+        const val DISCORD_BITRATE = 64_000
         const val DISCORD_CLOCK = 48_000
         const val DISCORD_CHANNELS = 1
         const val DISCORD_STEREO_CHANNELS = 2
@@ -819,7 +800,7 @@ class VoiceMediaSession(
             if (seat.isDiscordLobby) DISCORD_CLOCK else seat.clockRate
 
         fun opusChannels(seat: VoiceMediaParams): Int =
-            opusChannels(seat, preferredStereo = true)
+            opusChannels(seat, preferredStereo = false)
 
         /**
          * Discord lobby uses stereo when requested and the negotiated bitrate is at least 32 kbps.

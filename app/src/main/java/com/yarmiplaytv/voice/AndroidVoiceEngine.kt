@@ -77,7 +77,7 @@ class AndroidVoiceEngine(
     @Volatile private var autoGainControlPref = true
     @Volatile private var aiNoiseSuppressionPref = true
     @Volatile private var preferredBitrateBps = VoiceMediaSession.MAX_VOICE_BITRATE
-    @Volatile private var preferredStereoMode = true
+    @Volatile private var preferredStereoMode = false
 
     private val chainLock = Any()
     private var deepFilterNet: DeepFilterNetProcessor? = null

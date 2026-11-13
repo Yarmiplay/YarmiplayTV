@@ -105,7 +105,7 @@ class DiscordSdkAudioTest {
         assertEquals(-30f, cfg.vadThresholdDb, 0.01f)
         assertEquals(DiscordAudioMode.PUSH_TO_TALK, cfg.audioMode)
         assertEquals(48_000, cfg.sampleRate)
-        assertEquals(2, cfg.channels)
+        assertEquals(1, cfg.channels)
         assertEquals(20, cfg.frameMs)
         assertEquals(128_000, cfg.bitrate)
 

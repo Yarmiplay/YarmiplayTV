@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.0.7" date="2026-11-13">
+      <description>
+        <p>Voice chat audio quality: restore clear voice processing pipeline, resolve audio stuttering, clipping, volume pumping, and playback buffer truncation.</p>
+      </description>
+    </release>
     <release version="3.0.6" date="2026-11-12">
       <description>
         <p>Voice chat: smart auto-connect waits for someone else to enter an empty room before connecting to voice, with a settings toggle.</p>
