@@ -105,6 +105,7 @@ class DesktopVoiceEngineTest {
         assertEquals("voice chain: AEC=none AGC=none NS=deepfilternet", dfnOnlyChain.logLine())
 
         // Higher quality options: bitrate up to 128 kbps and stereo.
+        assertEquals(1, engine.discordAudioConfig().channels)
         engine.setPreferredBitrate(128_000)
         engine.setPreferredStereo(true)
         assertEquals(128_000, engine.discordAudioConfig().bitrate)

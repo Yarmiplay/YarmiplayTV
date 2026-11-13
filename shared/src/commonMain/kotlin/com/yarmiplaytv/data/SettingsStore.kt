@@ -302,10 +302,10 @@ data class AppSettings(
      */
     val voiceBitrate: Int = 128_000,
     /**
-     * Optional stereo voice mode for the lobby voice path (default on = stereo).
+     * Optional stereo voice mode for the lobby voice path (default off = mono).
      * Falls back cleanly to mono on the legacy relay or with older clients.
      */
-    val voiceStereo: Boolean = true,
+    val voiceStereo: Boolean = false,
     /**
      * When on (default), mute the mic when playback starts or resumes.
      * Independent of [voiceAutoUnmuteWhenPaused].
@@ -649,7 +649,7 @@ class SettingsStore(
                 }
             },
             voiceBitrate = (p[Keys.voiceBitrate] ?: 128_000).coerceIn(24_000, 128_000),
-            voiceStereo = p[Keys.voiceStereo] ?: true,
+            voiceStereo = p[Keys.voiceStereo] ?: false,
             voiceAutoMuteWhenPlaying = p[Keys.voiceAutoMuteWhenPlaying] ?: true,
             voiceAutoUnmuteWhenPaused = p[Keys.voiceAutoUnmuteWhenPaused] ?: true,
             voiceTalkMode = p[Keys.voiceTalkMode]?.let { runCatching { VoiceTalkMode.valueOf(it) }.getOrNull() } ?: VoiceTalkMode.OPEN_MIC,

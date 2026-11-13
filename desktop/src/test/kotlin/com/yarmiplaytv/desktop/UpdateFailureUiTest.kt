@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -115,7 +116,7 @@ class UpdateFailureUiTest {
         onNodeWithText("Couldn't check for updates: the download page answered HTTP 503").assertIsDisplayed()
         onNodeWithTag("update_error_copy").assertIsDisplayed().performClick()
         onNodeWithText("Not now").performClick()
-        waitForIdle()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag("update_problem").fetchSemanticsNodes().isEmpty() }
         onNodeWithTag("update_problem").assertDoesNotExist()
     }
 

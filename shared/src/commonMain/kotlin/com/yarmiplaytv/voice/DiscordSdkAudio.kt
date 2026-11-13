@@ -177,7 +177,7 @@ data class DiscordAudioConfig(
     val vadAutomatic: Boolean = true,
     val vadThresholdDb: Float = DiscordSdkAudio.VAD_THRESHOLD_DEFAULT_DB,
     val sampleRate: Int = DiscordSdkAudio.SAMPLE_RATE,
-    val channels: Int = DiscordSdkAudio.STEREO_CHANNELS,
+    val channels: Int = DiscordSdkAudio.CHANNELS,
     val frameMs: Int = DiscordSdkAudio.FRAME_MS,
     val bitrate: Int = DiscordSdkAudio.MAX_BITRATE,
 ) {
