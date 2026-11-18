@@ -31,7 +31,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,22 +46,21 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.player.PlaybackState
 import kotlinx.coroutines.delay
 import java.awt.Cursor
-import java.awt.MouseInfo
-import java.awt.Point
-import kotlin.math.abs
 
 /**
  * The desktop's picture-in-picture window: the video, and on hover the title, play/pause, seeking, the volume, the
  * way back to the app and closing. Dragging the video moves the window ([onMove]); double-clicking it goes back to
- * the app ([onBack]); the corner grip resizes it ([onResize], the window keeps the video's shape).
+ * the app ([onBack]); the corner grip resizes it ([onResize], the window keeps the video's shape). Both drags report
+ * the pointer at the press and the pointer now, each with the monitor it is on, so the window can follow in one
+ * coordinate space when the monitors differ. See [PipDrag].
  */
 @Composable
 fun PipContent(
     container: AppContainer,
     onBack: () -> Unit,
     onClose: () -> Unit,
-    onMove: (dx: Int, dy: Int) -> Unit,
-    onResize: (dx: Int, dy: Int) -> Unit,
+    onMove: (start: PipScreenPointer, current: PipScreenPointer) -> Unit,
+    onResize: (start: PipScreenPointer, current: PipScreenPointer) -> Unit,
 ) {
     val player = container.player
     val state by player.state.collectAsState()
@@ -112,17 +110,22 @@ fun PipContent(
     }
 }
 
-/** Follows the pointer in screen coordinates (window coordinates move with the window being dragged). */
-private fun Modifier.screenDrag(onDrag: (dx: Int, dy: Int) -> Unit): Modifier = pointerInput(Unit) {
+/**
+ * Follows the pointer in screen coordinates. Window-local coordinates move with the window being dragged, and a
+ * delta of the raw screen point jumps when the pointer crosses onto a monitor with a different scale ([PipDrag]).
+ * [onDrag] gets the pointer from the press and the pointer now; the same press instance is passed for the gesture.
+ */
+private fun Modifier.screenDrag(onDrag: (start: PipScreenPointer, current: PipScreenPointer) -> Unit): Modifier = pointerInput(Unit) {
     awaitEachGesture {
         awaitFirstDown().consume()
-        var last = screenPointer()
+        val start = PipDrag.systemPointer()
+        var last: PipScreenPointer? = null
         while (true) {
             val event = awaitPointerEvent()
             event.changes.forEach { it.consume() }
-            val now = screenPointer()
-            if (now != null && last != null && (now.x != last.x || now.y != last.y)) {
-                onDrag(now.x - last.x, now.y - last.y)
+            val now = PipDrag.systemPointer()
+            if (start != null && now != null && now != last) {
+                onDrag(start, now)
                 last = now
             }
             if (event.changes.none { it.pressed }) break
@@ -131,15 +134,18 @@ private fun Modifier.screenDrag(onDrag: (dx: Int, dy: Int) -> Unit): Modifier = 
 }
 
 /** Dragging moves the window; a double-click calls [onDoubleClick]. */
-private fun Modifier.moveAndDoubleClick(onMove: (dx: Int, dy: Int) -> Unit, onDoubleClick: () -> Unit): Modifier = pointerInput(Unit) {
+private fun Modifier.moveAndDoubleClick(
+    onMove: (start: PipScreenPointer, current: PipScreenPointer) -> Unit,
+    onDoubleClick: () -> Unit,
+): Modifier = pointerInput(Unit) {
     var lastClick = 0L
     awaitEachGesture {
         val down = awaitFirstDown()
         down.consume()
-        val startScreen = screenPointer()
-        var lastScreen = startScreen
+        val startScreen = PipDrag.systemPointer()
         val startPos = down.position
         var dragged = false
+        var last: PipScreenPointer? = null
         while (true) {
             val event = awaitPointerEvent()
             event.changes.forEach { it.consume() }
@@ -147,12 +153,10 @@ private fun Modifier.moveAndDoubleClick(onMove: (dx: Int, dy: Int) -> Unit, onDo
             if (!dragged && change != null && (change.position - startPos).getDistance() > viewConfiguration.touchSlop) {
                 dragged = true
             }
-            val nowScreen = screenPointer()
-            if (dragged && nowScreen != null && lastScreen != null) {
-                if (nowScreen.x != lastScreen.x || nowScreen.y != lastScreen.y) {
-                    onMove(nowScreen.x - lastScreen.x, nowScreen.y - lastScreen.y)
-                    lastScreen = nowScreen
-                }
+            val nowScreen = PipDrag.systemPointer()
+            if (dragged && startScreen != null && nowScreen != null && nowScreen != last) {
+                onMove(startScreen, nowScreen)
+                last = nowScreen
             }
             if (event.changes.none { it.pressed }) break
         }
@@ -181,5 +185,3 @@ private fun PipSeekBar(container: AppContainer, state: PlaybackState) {
     val segments by container.skips.segments.collectAsState()
     TvSeekBar(state, position, onInteract = {}, segments = segments) { container.player.seek(it) }
 }
-
-private fun screenPointer(): Point? = runCatching { MouseInfo.getPointerInfo()?.location }.getOrNull()

@@ -24,6 +24,9 @@ import com.yarmiplaytv.playback.playbackAction
 import com.yarmiplaytv.ui.mobile.MobileTheme
 import com.yarmiplaytv.ui.mobile.appPalette
 import com.yarmiplaytv.ui.mobile.PipContent
+import com.yarmiplaytv.ui.mobile.PipDrag
+import com.yarmiplaytv.ui.mobile.PipMonitor
+import com.yarmiplaytv.ui.mobile.PipScreenPointer
 import com.yarmiplaytv.ui.mobile.appLogoPainter
 import java.awt.GraphicsEnvironment
 import java.awt.Point
@@ -52,6 +55,8 @@ internal fun PipWindow(
     val aspect by container.player.state.collectAsState()
     val initial = remember { PipPlacement.bounds(PipPlacement.workArea(near, remembered), aspect.displayAspect, remembered) }
     val state = rememberWindowState(position = WindowPosition(initial.x.dp, initial.y.dp), size = DpSize(initial.width.dp, initial.height.dp))
+    val scaleSpace = remember { PipDrag.scaleSpace(System.getProperty("os.name").orEmpty()) }
+    val drag = remember { PipWindowDrag() }
     Window(
         onCloseRequest = onClose,
         state = state,
@@ -87,10 +92,45 @@ internal fun PipWindow(
                 container,
                 onBack = { keepBounds(); onBack() },
                 onClose = { keepBounds(); onClose() },
-                onMove = { dx, dy -> awt.setLocation(awt.x + dx, awt.y + dy) },
-                onResize = { dx, dy ->
-                    val width = PipPlacement.resizedWidth(awt.width, dx, dy, PipPlacement.ratio(container.player.state.value.displayAspect))
-                    awt.setSize(width, (width / PipPlacement.ratio(container.player.state.value.displayAspect)).roundToInt())
+                onMove = { start, current ->
+                    val monitor = awt.graphicsConfiguration?.let { PipDrag.monitorOf(it) } ?: return@PipContent
+                    if (drag.moveStart !== start) {
+                        drag.moveStart = start
+                        drag.moveAnchor = PipDrag.moveAnchor(start, awt.x, awt.y, awt.width, awt.height, monitor, scaleSpace)
+                    }
+                    val anchor = drag.moveAnchor ?: return@PipContent
+                    if (current == start) return@PipContent
+                    placePip(awt, PipDrag.moved(anchor, current, PipDrag.systemMonitors(), scaleSpace))
+                },
+                onResize = { start, current ->
+                    val monitor = awt.graphicsConfiguration?.let { PipDrag.monitorOf(it) } ?: return@PipContent
+                    if (drag.resizeStart !== start) {
+                        drag.resizeStart = start
+                        drag.resizeAnchor = PipResizeAnchor(
+                            deviceX = PipDrag.toDeviceX(awt.x, monitor, scaleSpace),
+                            deviceY = PipDrag.toDeviceY(awt.y, monitor, scaleSpace),
+                            userWidth = awt.width,
+                            monitor = monitor,
+                        )
+                    }
+                    val anchor = drag.resizeAnchor ?: return@PipContent
+                    if (current == start) return@PipContent
+                    val ratio = PipPlacement.ratio(container.player.state.value.displayAspect)
+                    val (dx, dy) = PipDrag.userDelta(start, current, anchor.monitor.scaleX, anchor.monitor.scaleY, scaleSpace)
+                    val width = PipPlacement.resizedWidth(anchor.userWidth, dx, dy, ratio)
+                    val height = (width / ratio).roundToInt().coerceAtLeast(1)
+                    placePip(
+                        awt,
+                        PipDrag.resizedBounds(
+                            anchor.deviceX,
+                            anchor.deviceY,
+                            width,
+                            height,
+                            anchor.monitor,
+                            PipDrag.systemMonitors(),
+                            scaleSpace,
+                        ),
+                    )
                 },
             )
         }
@@ -130,6 +170,34 @@ private fun pipKey(
         return true
     }
     return container.playback.perform(action)
+}
+
+/** One press. The start pointer is the same instance for every sample of that gesture, which tells a new press apart. */
+private class PipWindowDrag {
+    var moveStart: PipScreenPointer? = null
+    var moveAnchor: PipDrag.MoveAnchor? = null
+    var resizeStart: PipScreenPointer? = null
+    var resizeAnchor: PipResizeAnchor? = null
+}
+
+private data class PipResizeAnchor(
+    val deviceX: Int,
+    val deviceY: Int,
+    val userWidth: Int,
+    val monitor: PipMonitor,
+)
+
+/**
+ * Moves when only the place changed, and sets the size in the same call when the user-pixel size has to change
+ * (the device-pixel size is held while the window crosses onto a different scale). A position-only drag does not
+ * send a resize, so the video surface is left alone.
+ */
+private fun placePip(window: AwtWindow, bounds: PipDrag.Bounds) {
+    if (window.width != bounds.width || window.height != bounds.height) {
+        window.setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
+    } else if (window.x != bounds.x || window.y != bounds.y) {
+        window.setLocation(bounds.x, bounds.y)
+    }
 }
 
 internal object PipPlacement {

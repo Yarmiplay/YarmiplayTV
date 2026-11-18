@@ -357,7 +357,6 @@ class PlayerControlsUiTest {
     fun `the picture-in-picture window plays, pauses, goes back and closes`() = runComposeUiTest {
         var back = 0
         var closed = 0
-        val moves = mutableListOf<Pair<Int, Int>>()
         player.state.value = player.state.value.copy(paused = true)
         val lifecycle = object : LifecycleOwner {
             override val lifecycle = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
@@ -367,7 +366,7 @@ class PlayerControlsUiTest {
             CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
                 MobileTheme {
                     Box(Modifier.size(400.dp, 225.dp)) {
-                        PipContent(app, onBack = { back++ }, onClose = { closed++ }, onMove = { dx, dy -> moves += dx to dy }, onResize = { _, _ -> })
+                        PipContent(app, onBack = { back++ }, onClose = { closed++ }, onMove = { _, _ -> }, onResize = { _, _ -> })
                     }
                 }
             }
