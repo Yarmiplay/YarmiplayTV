@@ -40,6 +40,8 @@ import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.local.SeekFrames
 import com.yarmiplaytv.player.Chapter
 import com.yarmiplaytv.player.PlaybackState
+import com.yarmiplaytv.relay.RelayStatus
+import com.yarmiplaytv.screenshot.FolderScreenshotStore
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.syncplay.RoomUser
@@ -199,13 +201,13 @@ class PlayerControlsUiTest {
     fun `the volume control shows the level, mutes and sets the volume`() = runComposeUiTest {
         player.state.value = player.state.value.copy(paused = true)
         showPlayer()
-        onNodeWithTag("volume_label").assertTextEquals("80%")
+        assertPercentReadsAcross("80%")
         screenshot("player_controls")
 
         onNodeWithTag("volume_mute").performMouseInput { click() }
         settle()
         assertTrue(volume.muted.value)
-        onNodeWithTag("volume_label").assertTextEquals("Muted")
+        assertPercentReadsAcross("Muted")
         onNodeWithTag("volume_mute").assertContentDescriptionEquals("Unmute (M)")
         onNodeWithTag("volume_mute").performMouseInput { click() }
         settle()
@@ -214,7 +216,7 @@ class PlayerControlsUiTest {
         onNodeWithTag("volume_slider").performSemanticsAction(SemanticsActions.SetProgress) { it(65f) }
         settle()
         assertEquals(65.0, volume.volume.value, 0.0)
-        onNodeWithTag("volume_label").assertTextEquals("65%")
+        assertPercentReadsAcross("65%")
     }
 
     @Test
@@ -582,6 +584,7 @@ class PlayerControlsUiTest {
         val root = onRoot().fetchSemanticsNode().boundsInRoot
         val menus = onNodeWithTag("player_menus").fetchSemanticsNode().boundsInRoot
         val volume = onNodeWithTag("volume_slider").fetchSemanticsNode().boundsInRoot
+        assertPercentReadsAcross("80%")
         assertTrue("Menus fully on-screen horizontally", menus.left >= root.left - 0.5f && menus.right <= root.right + 0.5f)
         assertTrue("Menus fully on-screen vertically", menus.top >= root.top - 0.5f && menus.bottom <= root.bottom + 0.5f)
         assertTrue("Menus touch target at least 48dp", menus.height >= 48f * densityDpi - 1f)
@@ -656,9 +659,125 @@ class PlayerControlsUiTest {
         }
         settle()
         onNodeWithTag("player_menus").assertExists()
+        assertPercentReadsAcross("80%")
         onNodeWithTag("player_menus").performMouseInput { click() }
         settle()
         onNodeWithTag("player_sheet").assertExists()
+    }
+
+    @Test
+    fun `portrait volume percent stays on one line beside save, screenshot and menu`() = runComposeUiTest {
+        val store = app.settingsStore
+        runBlocking { app.scope.coroutineContext.job.cancelAndJoin() }
+        val pictures = File(tmp.root, "pictures").apply { mkdirs() }
+        app = AppContainer(
+            settingsStore = store,
+            deviceName = "test",
+            appVersion = "test",
+            createPlayer = { player },
+            createLocalLibrary = { s, scope, folders -> FileLocalLibrary(s, scope, folders, watchForChanges = false) },
+            cacheDir = tmp.root,
+            screenshotStore = FolderScreenshotStore(File(tmp.root, "scratch").apply { mkdirs() }, { pictures }),
+            seekFrames = frames,
+        ).also { it.deviceKind = DeviceKind.PHONE }
+        player.state.value = PlaybackState(fileLoaded = true, duration = 600.0, paused = true)
+        app.sync.setTestRoom(
+            RoomState(
+                status = ConnectionStatus.CONNECTED,
+                room = "yarmiplay",
+                username = "Yarmiplay",
+                isReady = true,
+                users = listOf(RoomUser(name = "Yarmiplay", room = "yarmiplay", isReady = true)),
+            ),
+        )
+        @Suppress("UNCHECKED_CAST")
+        val status = app.relay!!.javaClass.getDeclaredField("_status").apply { isAccessible = true }
+            .get(app.relay) as MutableStateFlow<RelayStatus?>
+        status.value = RelayStatus(
+            fileName = "episode.mkv",
+            seeders = emptyList(),
+            downloading = false,
+            haveBytes = 1,
+            size = 1,
+            bytesPerSecond = null,
+            etaSeconds = null,
+            waitingToPlay = false,
+            complete = true,
+            error = null,
+        )
+
+        val lifecycle = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
+        }
+        val nav = Navigator(mutableStateListOf(Screen.Home, Screen.Player))
+        mainClock.autoAdvance = false
+        var density = 1f
+        setContent {
+            density = LocalDensity.current.density
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
+                // The width that crushed "13%" once mute, save, screenshot and menu shared the row.
+                MobileTheme { Box(Modifier.size(360.dp, 800.dp)) { MobilePlayerScreen(app, nav) } }
+            }
+        }
+        settle()
+
+        onNodeWithTag("relay_save").assertExists()
+        onNodeWithTag("screenshot").assertExists()
+        onNodeWithTag("player_menus").assertExists()
+        listOf(0.0 to "0%", 13.0 to "13%", 100.0 to "100%", 130.0 to "130%").forEach { (level, text) ->
+            volume.muted.value = false
+            volume.volume.value = level
+            settle()
+            assertPortraitVolumeRow(density, text)
+        }
+        volume.muted.value = true
+        settle()
+        assertPortraitVolumeRow(density, "Muted")
+    }
+
+    /** The screenshot's row: percent on one line, slider still draggable, icons in order and on screen. */
+    private fun ComposeUiTest.assertPortraitVolumeRow(density: Float, text: String) {
+        assertPercentReadsAcross(text)
+        val label = onNodeWithTag("volume_label").fetchSemanticsNode().boundsInRoot
+        val slider = onNodeWithTag("volume_slider").fetchSemanticsNode().boundsInRoot
+        val mute = onNodeWithTag("volume_mute").fetchSemanticsNode().boundsInRoot
+        val save = onNodeWithTag("relay_save").fetchSemanticsNode().boundsInRoot
+        val shot = onNodeWithTag("screenshot").fetchSemanticsNode().boundsInRoot
+        val menus = onNodeWithTag("player_menus").fetchSemanticsNode().boundsInRoot
+        val root = onRoot().fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "\"$text\" is fully on screen (label $label, root $root)",
+            label.left >= root.left - 0.5f && label.right <= root.right + 0.5f,
+        )
+        assertTrue(
+            "mute, slider, \"$text\", save stay in order without overlapping",
+            slider.left >= mute.right - 1f && label.left >= slider.right - 1f && label.right <= save.left + 1f,
+        )
+        assertTrue("slider stays usable for \"$text\" (${slider.width}px)", slider.width >= 32f * density)
+        assertTrue(
+            "save, screenshot and menu stay in order and on screen",
+            save.right <= shot.left + 1f && shot.right <= menus.left + 1f && menus.right <= root.right + 0.5f,
+        )
+        // Mute and save use the default icon button; screenshot and menu set 48dp. Keep each at its own target.
+        listOf("mute" to mute, "save" to save).forEach { (name, box) ->
+            assertTrue("$name keeps a 40dp target (${box.width}x${box.height})", box.width >= 40f * density - 1f && box.height >= 40f * density - 1f)
+        }
+        listOf("screenshot" to shot, "menu" to menus).forEach { (name, box) ->
+            assertEquals("$name stays 48dp tall", 48f * density, box.height, 1.5f)
+            assertEquals("$name stays 48dp wide", 48f * density, box.width, 1.5f)
+        }
+        val centers = listOf(mute, slider, label, save, shot, menus).map { (it.top + it.bottom) / 2f }
+        assertTrue("volume row stays on one line", centers.max() - centers.min() < 24f * density)
+    }
+
+    private fun ComposeUiTest.assertPercentReadsAcross(text: String) {
+        onNodeWithTag("volume_label").assertTextEquals(text)
+        val label = onNodeWithTag("volume_label").fetchSemanticsNode().boundsInRoot
+        val mute = onNodeWithTag("volume_mute").fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "\"$text\" stays on one horizontal line (w=${label.width}, h=${label.height}, mute=${mute.height})",
+            label.height <= mute.height / 2f + 2f && label.width > label.height,
+        )
     }
 
     @Test
