@@ -58,6 +58,11 @@ data class NowPlaying(
     val copies: List<ServerCopy> = emptyList(),
     /** Which episode of which show this is, from the server or the file name; null for movies and unknown files. */
     val episode: EpisodeInfo? = null,
+    /**
+     * A file the server is still writing: the player's duration only covers what exists so far, so the room hears
+     * [durationHint] instead, and positions in it aren't remembered (its timeline is new each time it is written).
+     */
+    val growing: Boolean = false,
 )
 
 /** The episode a file is, from its name (and folder, e.g. "Show/Season 2"), for files no server describes. */
@@ -200,7 +205,7 @@ class PlaylistController(
                 val pauseEdge = st.paused && !wasPaused
                 wasPaused = st.paused
                 if (pending != null || !st.fileLoaded) return@collect
-                val name = _nowPlaying.value?.fileName
+                val name = _nowPlaying.value?.takeUnless { it.growing }?.fileName
                 if (name != null && st.position > 1.0) {
                     saveSeekPosition(name, st.position, force = pauseEdge)
                 }
@@ -257,7 +262,7 @@ class PlaylistController(
     private fun isOutdatedByRelay(fileName: String, sizeBytes: Long): Boolean {
         if (sizeBytes <= 0) return false
         val relayed = findRelay(fileName) ?: return false
-        return relayed.size > sizeBytes
+        return relayed.comparableSize > sizeBytes
     }
 
     private fun onSyncEvent(event: SyncplayEvent) {
@@ -282,9 +287,9 @@ class PlaylistController(
                 val p = pending ?: return
                 if (p.media.url != event.url) return
                 pending = null
-                val duration = event.duration.takeIf { it > 0 } ?: p.media.durationHint
+                val duration = if (p.media.growing) p.media.durationHint else event.duration.takeIf { it > 0 } ?: p.media.durationHint
                 _status.value = PlaylistStatus.Idle
-                val savedPos = getSeekPosition(p.media.fileName)
+                val savedPos = if (p.media.growing) 0.0 else getSeekPosition(p.media.fileName)
                 sync.reportFile(FileInfo(p.media.fileName, duration, p.media.sizeBytes), p.resetPosition, savedPos)
                 if (savedPos > 0.0 && (!sync.isActive || p.resetPosition || player.currentPosition() == 0.0)) {
                     player.seek(savedPos)
@@ -473,7 +478,12 @@ class PlaylistController(
                 Logger.i(TAG, "Resolved '$filename' via the room's file relay (${found.file.sources} source(s))")
                 val url = relay?.open(found.file) ?: "relay://${found.file.id}/${found.file.name}"
                 val name = found.file.name
-                load(NowPlaying(name, name, found.file.size, found.file.duration, url, episode = episodeFromFile(name)), resetPosition, fromRoom = true)
+                val growing = found.file.media != null
+                load(
+                    NowPlaying(name, name, found.file.size, found.file.duration, url, episode = episodeFromFile(name), growing = growing),
+                    resetPosition,
+                    fromRoom = true,
+                )
             }
             is RoomLocation.Missing -> {
                 // Something else was picked meanwhile (e.g. a manual pick while the player looked again).
@@ -507,7 +517,7 @@ class PlaylistController(
         _nowPlaying.value = media
         _status.value = PlaylistStatus.Loading(media.fileName)
         sync.reportLoading()
-        val savedPos = getSeekPosition(media.fileName)
+        val savedPos = if (media.growing) 0.0 else getSeekPosition(media.fileName)
         val remembered = sidecarsForUrl.remove(media.url).orEmpty()
         synchronized(queuedSubs) {
             queuedSubs.clear()

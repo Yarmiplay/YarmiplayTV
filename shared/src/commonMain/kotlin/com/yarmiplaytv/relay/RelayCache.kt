@@ -28,15 +28,19 @@ class RelayCache(
         dir.mkdirs()
     }
 
-    /** The cached copy of the file with [key] and [size], created empty if needed. */
+    /**
+     * The cached copy of the file with [key] and [size], created empty if needed. [partialBlocks] also counts the
+     * written start of blocks still arriving, for files whose last block is only ever partly written (see
+     * [CachedFile.notePartial]).
+     */
     @Synchronized
-    fun open(key: String, size: Long): CachedFile {
-        files[key]?.takeIf { it.size == size }?.let {
+    fun open(key: String, size: Long, partialBlocks: Boolean = false): CachedFile {
+        files[key]?.takeIf { it.size == size && it.partialBlocks == partialBlocks }?.let {
             it.lastUsed = now()
             return it
         }
         files.remove(key)?.delete()
-        val file = CachedFile(File(dir, "${safe(key)}.part"), size, now())
+        val file = CachedFile(File(dir, "${safe(key)}.part"), size, now(), partialBlocks)
         files[key] = file
         return file
     }
@@ -85,10 +89,22 @@ class RelayCache(
     }
 }
 
-/** One relayed file in the cache: a sparse file and which of its blocks are complete. */
-class CachedFile internal constructor(private val file: File, val size: Long, val created: Long) {
+/**
+ * One relayed file in the cache: a sparse file and which of its blocks are complete. With [partialBlocks] it also
+ * keeps how much of each incomplete block is written from its start, so bytes at the end of a file that is still
+ * growing can be read before their block fills.
+ */
+class CachedFile internal constructor(
+    private val file: File,
+    val size: Long,
+    val created: Long,
+    val partialBlocks: Boolean = false,
+) {
     private val raf = RandomAccessFile(file, "rw")
     private val blocks = BitSet()
+    /** Bytes written from the start of blocks not yet complete ([partialBlocks] only). */
+    private val partial = HashMap<Int, Long>()
+    private val partialAnnounced = HashMap<Int, Long>()
     private val blockCount = ((size + RelayCache.BLOCK - 1) / RelayCache.BLOCK).toInt()
     @Volatile var lastUsed: Long = created
     @Volatile private var deleted = false
@@ -125,9 +141,44 @@ class CachedFile internal constructor(private val file: File, val size: Long, va
     fun availableFrom(offset: Long): Long {
         if (offset >= size) return 0
         val start = blockOf(offset)
-        if (!blocks[start]) return 0
+        if (!blocks[start]) return (blockStart(start) + partialOf(start) - offset).coerceAtLeast(0)
         val end = blocks.nextClearBit(start).coerceAtMost(blockCount)
-        return minOf(size, blockStart(end)) - offset
+        val whole = minOf(size, blockStart(end)) - offset
+        return if (end < blockCount) whole + partialOf(end) else whole
+    }
+
+    /** How much of block [index] is written from its start while it isn't complete ([partialBlocks] only, else 0). */
+    @Synchronized
+    fun partialOf(index: Int): Long = if (blocks[index]) 0 else partial[index] ?: 0
+
+    /**
+     * Records that block [index] holds [bytes] from its start ([partialBlocks] only). Readers hear about it every
+     * [PARTIAL_STEP] bytes, not on every write.
+     */
+    @Synchronized
+    fun notePartial(index: Int, bytes: Long) {
+        if (!partialBlocks || deleted || index !in 0 until blockCount || blocks[index]) return
+        val have = bytes.coerceAtMost(blockLength(index))
+        if (have <= (partial[index] ?: 0)) return
+        partial[index] = have
+        if (have - (partialAnnounced[index] ?: 0) >= PARTIAL_STEP) {
+            partialAnnounced[index] = have
+            _version.value++
+        }
+    }
+
+    /** Readers waiting at the end of a growing file hear about everything written so far (the last write may be small). */
+    @Synchronized
+    fun announcePartial() {
+        if (!partialBlocks || deleted) return
+        var changed = false
+        for ((i, have) in partial) {
+            if ((partialAnnounced[i] ?: 0) < have) {
+                partialAnnounced[i] = have
+                changed = true
+            }
+        }
+        if (changed) _version.value++
     }
 
     /** Writes [length] bytes of [data] at [offset]; blocks count only once [markComplete]d. */
@@ -143,6 +194,8 @@ class CachedFile internal constructor(private val file: File, val size: Long, va
     fun markComplete(index: Int) {
         if (deleted || index !in 0 until blockCount || blocks[index]) return
         blocks.set(index)
+        partial.remove(index)
+        partialAnnounced.remove(index)
         _version.value++
     }
 
@@ -177,5 +230,7 @@ class CachedFile internal constructor(private val file: File, val size: Long, va
 
     private companion object {
         const val COPY_BUFFER = 256 * 1024
+        /** How much a partial block grows between wake-ups of the readers waiting on it. */
+        const val PARTIAL_STEP = 128L * 1024
     }
 }

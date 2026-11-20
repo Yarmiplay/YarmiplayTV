@@ -213,6 +213,32 @@ class YarmiplayClientTest {
     }
 
     @Test
+    fun `growing media is read only from servers that announce it`() {
+        val c = client()
+        transport.receive(hello(marker))
+        transport.receive(session())
+        eventually("session") { c.state.value.yarmiplay.session }
+        val list = """{"Yarmiplay":{"files":[{"id":"g1","name":"Recording","size":10737418240,"duration":0,"quickHash":"t1","sources":1,"cachedBytes":5000000,"rate":0,"media":{"growing":true,"live":true,"contentType":"video/mp2t","length":5000000}}]}}"""
+
+        // A server without the capability: the extra field means nothing, the file is an ordinary one.
+        transport.receive(list)
+        eventually("files") { c.state.value.yarmiplay.relayFiles.size == 1 }
+        assertFalse(c.state.value.yarmiplay.capabilities.growingFiles)
+        assertNull(c.state.value.yarmiplay.relayFiles.single().media)
+
+        transport.receive("""{"Yarmiplay":{"capabilities":{"fileRelay":true,"jellyfin":false,"https":false,"growingFiles":true}}}""")
+        eventually("capability") { c.state.value.yarmiplay.capabilities.growingFiles }
+        transport.receive(list.replace("\"length\":5000000", "\"length\":6000000"))
+        eventually("growing file") { c.state.value.yarmiplay.relayFiles.singleOrNull()?.media != null }
+        assertEquals(GrowingMedia(growing = true, live = true, contentType = "video/mp2t", length = 6_000_000), c.state.value.yarmiplay.relayFiles.single().media)
+
+        // Finished: same entry, no longer growing.
+        transport.receive("""{"Yarmiplay":{"files":[{"id":"g1","name":"Recording","size":10737418240,"duration":0,"quickHash":"t1","sources":1,"cachedBytes":7000000,"rate":0,"media":{"growing":false,"live":true,"contentType":"video/mp2t","length":7000000}}]}}""")
+        eventually("finished") { c.state.value.yarmiplay.relayFiles.single().media?.growing == false }
+        assertEquals(7_000_000L, c.state.value.yarmiplay.relayFiles.single().media?.length)
+    }
+
+    @Test
     fun `jellyfin sharing is parsed and authorize goes out only while shared`() {
         val c = client()
         transport.receive(hello(marker))

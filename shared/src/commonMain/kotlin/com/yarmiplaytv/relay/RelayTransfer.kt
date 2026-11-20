@@ -28,6 +28,9 @@ data class RelaySource(val session: YarmiplaySession, val fileId: String)
  * Fetches one relayed file into its [cache] copy. In stream mode it keeps [READ_AHEAD] after the player's read
  * position filled (asking the server for `mode=stream`); with [download] on it also fetches every missing block
  * in the background (`mode=download`). Before the file plays, [prefetch] fills the parts a player reads first.
+ *
+ * A [growing] file only has its first [GrowingSnapshot.length] bytes: nothing past them is asked for, the end waits
+ * for the server to write more, and [size] is only the fixed bound that names the file.
  */
 class RelayTransfer(
     val key: String,
@@ -36,6 +39,7 @@ class RelayTransfer(
     val cache: CachedFile,
     private val http: OkHttpClient,
     private val scope: CoroutineScope,
+    val growing: GrowingIndex? = null,
     private val source: () -> RelaySource?,
 ) {
     /** Where the player reads; the stream loop fills ahead of it. */
@@ -155,6 +159,7 @@ class RelayTransfer(
     }
 
     private suspend fun streamLoop() {
+        if (growing != null) return growingLoop(growing)
         var failures = 0
         while (currentCoroutineContext().isActive && !cache.isDeleted) {
             val pos = focus()
@@ -177,6 +182,45 @@ class RelayTransfer(
         }
         downloading = false
     }
+
+    /**
+     * [streamLoop] for a growing file: the read-ahead window first, then the rest of what exists, never past its
+     * length. At the end it waits for the server to write more; requests that reach past the end are held open by
+     * the server and fill as the file grows.
+     */
+    private suspend fun growingLoop(index: GrowingIndex) {
+        var failures = 0
+        while (currentCoroutineContext().isActive && !cache.isDeleted) {
+            val snap = index.state.value
+            val pos = focus()
+            val from = cache.blockOf(pos)
+            val first = missingBelow(from, snap.length) ?: missingBelow(0, snap.length)
+            if (first == null) {
+                if (!snap.growing) break
+                // Everything written so far is here: wait until the file grows (the room's list and the index tell).
+                withTimeoutOrNull(GROWTH_WAIT_MS) { index.state.first { it.length > snap.length || !it.growing } }
+                continue
+            }
+            val limit = pos + READ_AHEAD
+            val inWindow = first >= from && cache.blockStart(first) < limit
+            val end = if (inWindow) {
+                runEnd(first, cache.blockOf(minOf(limit, size - 1)) + 1)
+            } else {
+                runEnd(first, first + MAX_REQUEST_BLOCKS)
+            }
+            val mode = if (inWindow && !downloading) "stream" else "download"
+            val ok = fetch(first, end, mode) {
+                if (inWindow) !wanted(first, end) else urgentMissing()?.let { it != cache.firstMissing(first) } == true
+            }
+            failures = if (ok) 0 else failures + 1
+            if (!ok) delay(minOf(5_000L, 500L * failures))
+        }
+        downloading = false
+    }
+
+    /** The first block at or after [index] not yet here whose missing bytes start before [length]. */
+    private fun missingBelow(index: Int, length: Long): Int? =
+        cache.firstMissing(index)?.takeIf { cache.blockStart(it) + cache.partialOf(it) < length }
 
     /** The first missing block within [READ_AHEAD] of [focus], if any. */
     private fun urgentMissing(): Int? {
@@ -223,7 +267,8 @@ class RelayTransfer(
             fail("No viewer is sharing this file right now")
             return false
         }
-        val start = cache.blockStart(first)
+        // A growing file's block at its end may be partly here already: ask for the rest of it.
+        val start = cache.blockStart(first) + if (growing != null) cache.partialOf(first) else 0
         val last = minOf(size, cache.blockStart(end)) - 1
         val t0 = System.nanoTime()
         val request = Request.Builder()
@@ -233,8 +278,11 @@ class RelayTransfer(
             .build()
         val call = http.newCall(request)
         val cancelOnStop = currentCoroutineContext().job.invokeOnCompletion { call.cancel() }
+        var pos = start
         try {
             call.await().use { response ->
+                // Not written yet: the loop waits for the file to grow. Not an error worth showing.
+                if (growing != null && response.code == 416) return false
                 if (response.code != 206 && response.code != 200) {
                     fail(
                         when (response.code) {
@@ -250,7 +298,7 @@ class RelayTransfer(
                 val body = response.body ?: return false
                 val stream = body.byteStream()
                 val buffer = ByteArray(BUFFER)
-                var pos = if (response.code == 200) 0L else start
+                pos = if (response.code == 200) 0L else start
                 var block = cache.blockOf(pos)
                 while (pos <= last) {
                     val t0 = System.nanoTime()
@@ -263,6 +311,7 @@ class RelayTransfer(
                         cache.markComplete(block)
                         block++
                     }
+                    if (growing != null) cache.notePartial(block, pos - cache.blockStart(block))
                     if (cache.isDeleted || abandon()) {
                         Logger.i(TAG, "Left $mode of $name at $pos (${elapsedMs(t0)} ms): the player moved")
                         return true
@@ -274,6 +323,10 @@ class RelayTransfer(
                 if (ok) {
                     lastError = null
                     Logger.i(TAG, "Got $mode bytes=$start-$last of $name in ${elapsedMs(t0)} ms")
+                } else if (growing != null && pos > start) {
+                    // The server sends a growing file's end as it is written and stops at its end for now.
+                    lastError = null
+                    return true
                 } else {
                     fail("The Syncplay server sent too little", "$mode of $name ended at $pos of bytes=$start-$last")
                 }
@@ -282,11 +335,14 @@ class RelayTransfer(
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
+            // A growing file's request held open at its end can end with an error after the bytes it brought.
+            if (growing != null && pos > start) return true
             if (currentCoroutineContext().isActive) {
                 fail("Lost the connection to the Syncplay server", "$mode bytes=$start-$last of $name failed: $e")
             }
             return false
         } finally {
+            if (growing != null) cache.announcePartial()
             cancelOnStop.dispose()
         }
     }
@@ -308,5 +364,7 @@ class RelayTransfer(
         const val WINDOW_MS = 15_000L
         private const val MIN_BUSY_NANOS = 3_000_000_000L
         private const val MAX_PREFETCH_FAILURES = 3
+        /** How long the end of a growing file waits before looking at its length again. */
+        private const val GROWTH_WAIT_MS = 2_000L
     }
 }

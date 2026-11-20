@@ -914,7 +914,8 @@ class SyncplayClient(
         if ("tls" in message) updateExt { it.copy(tls = ServerTlsFormat.parse(message["tls"])) }
         rememberLanAddresses()
         (message["files"] as? JsonArray)?.let { files ->
-            if (state.value.yarmiplay.capabilities.fileRelay) updateExt { it.copy(relayFiles = files.mapNotNull(::parseRelayFile)) }
+            val caps = state.value.yarmiplay.capabilities
+            if (caps.fileRelay) updateExt { it.copy(relayFiles = files.mapNotNull { f -> parseRelayFile(f, caps.growingFiles) }) }
         }
         refreshSession()
         if (!wasRelayOn && state.value.yarmiplay.capabilities.fileRelay) offerSent = null
@@ -1458,6 +1459,7 @@ class SyncplayClient(
                 roomSettings = o.bool("roomSettings"),
                 voice = o.bool("voice"),
                 voiceDisabled = o.bool("voiceDisabled"),
+                growingFiles = o.bool("growingFiles"),
             )
         }
 
@@ -1514,7 +1516,8 @@ class SyncplayClient(
             addresses = (o["addresses"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }.orEmpty(),
         )
 
-        internal fun parseRelayFile(element: JsonElement): RelayFile? {
+        /** One entry of the relay's `files` list; [growingFiles] is the server's capability, without which `media` is ignored. */
+        internal fun parseRelayFile(element: JsonElement, growingFiles: Boolean = false): RelayFile? {
             val o = element as? JsonObject ?: return null
             val id = o.str("id")?.takeIf { it.isNotEmpty() } ?: return null
             val name = o.str("name")?.takeIf { it.isNotEmpty() } ?: return null
@@ -1527,6 +1530,17 @@ class SyncplayClient(
                 sources = o.long("sources").toInt(),
                 cachedBytes = o.long("cachedBytes"),
                 rate = o.long("rate"),
+                media = if (growingFiles) parseGrowingMedia(o["media"]) else null,
+            )
+        }
+
+        internal fun parseGrowingMedia(element: JsonElement?): GrowingMedia? {
+            val o = element as? JsonObject ?: return null
+            return GrowingMedia(
+                growing = o.bool("growing"),
+                live = o.bool("live"),
+                contentType = o.str("contentType")?.takeIf { it.isNotBlank() } ?: "application/octet-stream",
+                length = o.long("length").coerceAtLeast(0),
             )
         }
 

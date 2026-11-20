@@ -19,6 +19,10 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Serves relayed files to the player from 127.0.0.1, so it can seek in them like any HTTP file while the bytes
  * come from the [RelayCache], waiting for blocks still on their way. Paths carry a random key per file.
+ *
+ * A growing file ([RelayTransfer.growing]) is served as an HLS event playlist (`index.m3u8`) whose segments are byte
+ * ranges of the file (`media.<ext>`): the player then starts, seeks and waits at the end of what exists the way it
+ * does in any growing stream, instead of looking for the end of a file that isn't there yet.
  */
 class RelayProxy(private val scope: CoroutineScope) {
     private val routes = ConcurrentHashMap<String, RelayTransfer>()
@@ -31,6 +35,7 @@ class RelayProxy(private val scope: CoroutineScope) {
         val socket = server ?: start()
         val key = routes.entries.firstOrNull { it.value === transfer }?.key
             ?: ByteArray(16).also(random::nextBytes).joinToString("") { "%02x".format(it) }.also { routes[it] = transfer }
+        if (transfer.growing != null) return "http://$HOST:${socket.localPort}/relay/$key/$PLAYLIST"
         val name = URLEncoder.encode(transfer.name, "UTF-8").replace("+", "%20")
         return "http://$HOST:${socket.localPort}/relay/$key/$name"
     }
@@ -88,27 +93,26 @@ class RelayProxy(private val scope: CoroutineScope) {
             val parts = requestLine.split(' ')
             val out = socket.getOutputStream()
             if (parts.size < 2 || (parts[0] != "GET" && parts[0] != "HEAD")) return respond(out, 405, "Method Not Allowed")
-            val key = parts[1].removePrefix("/relay/").substringBefore('/')
+            val path = parts[1].removePrefix("/relay/")
+            val key = path.substringBefore('/')
             val transfer = routes[key] ?: return respond(out, 404, "Not Found")
-            val size = transfer.size
-            val isLive = transfer.name.startsWith("🔴 Live:") || transfer.name.startsWith("Live:")
+            val growing = transfer.growing
+            if (growing != null && path.substringAfter('/', "").substringBefore('?') == PLAYLIST) {
+                return servePlaylist(out, parts[0] == "HEAD", growing)
+            }
+            // A growing file is only as long as what is written so far.
+            val size = growing?.state?.value?.length ?: transfer.size
             val range = parseRange(headers["range"], size)
                 ?: return respond(out, 416, "Range Not Satisfiable", "Content-Range: bytes */$size\r\n")
             val (start, end) = range
             val partial = headers["range"] != null
 
-            // For live streams: if the player probes the tail (e.g. seeking end timestamps in 10GB virtual file),
-            // immediately return 416 rather than stalling the demuxer for 90 seconds.
-            if (isLive && start > 0 && transfer.cache.availableFrom(start) == 0L) {
-                return respond(out, 416, "Range Not Satisfiable", "Content-Range: bytes */$size\r\n")
-            }
-
             what = "${parts[0]} ${headers["range"] ?: "(no range)"} of ${transfer.name}"
             Logger.d(TAG, "$what: serving $start-$end of $size")
             val head = buildString {
                 append(if (partial) "HTTP/1.1 206 Partial Content\r\n" else "HTTP/1.1 200 OK\r\n")
-                append("Content-Type: ${contentType(transfer.name)}\r\n")
-                if (!isLive) append("Accept-Ranges: bytes\r\n")
+                append("Content-Type: ${growing?.contentType ?: contentType(transfer.name)}\r\n")
+                append("Accept-Ranges: bytes\r\n")
                 append("Content-Length: ${end - start + 1}\r\n")
                 if (partial) append("Content-Range: bytes $start-$end/$size\r\n")
                 append("Connection: close\r\n\r\n")
@@ -116,7 +120,7 @@ class RelayProxy(private val scope: CoroutineScope) {
             out.write(head.toByteArray(Charsets.US_ASCII))
             if (parts[0] == "HEAD") return out.flush()
             val reader = transfer.openReader(start)
-            val waitMs = if (isLive) 5_000L else WAIT_MS
+            val waitMs = WAIT_MS
             try {
                 val buffer = ByteArray(BUFFER)
                 var pos = start
@@ -148,6 +152,21 @@ class RelayProxy(private val scope: CoroutineScope) {
         }
     }
 
+    /**
+     * The growing file's segments so far as an HLS event playlist. The first request waits for a segment (a player
+     * can't open an empty playlist); later ones (the player reloads it while the file grows) ask the server for new ones.
+     */
+    private suspend fun servePlaylist(out: OutputStream, head: Boolean, index: GrowingIndex) {
+        val snap = if (index.state.value.segments.isEmpty()) index.awaitFirstSegment(FIRST_SEGMENT_WAIT_MS) else index.refresh()
+        if (snap.segments.isEmpty()) return respond(out, 503, "Service Unavailable")
+        val body = GrowingPlaylist.render(snap, "$MEDIA.${GrowingPlaylist.extension(index.contentType)}").toByteArray(Charsets.UTF_8)
+        val headers = "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.apple.mpegurl\r\nContent-Length: ${body.size}\r\n" +
+            "Cache-Control: no-store\r\nConnection: close\r\n\r\n"
+        out.write(headers.toByteArray(Charsets.US_ASCII))
+        if (!head) out.write(body)
+        out.flush()
+    }
+
     private fun respond(out: OutputStream, code: Int, reason: String, extra: String = "") {
         out.write("HTTP/1.1 $code $reason\r\n${extra}Content-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
         out.flush()
@@ -171,6 +190,11 @@ class RelayProxy(private val scope: CoroutineScope) {
         private const val BUFFER = 256 * 1024
         /** Longer than the server's own 60 s, so its error reaches us first. */
         private const val WAIT_MS = 90_000L
+        /** A growing file's playlist and the file it points into. */
+        const val PLAYLIST = "index.m3u8"
+        private const val MEDIA = "media"
+        /** How long the first playlist request waits for the server to list a segment. */
+        private const val FIRST_SEGMENT_WAIT_MS = 30_000L
 
         /** `[start, end]` for a single `bytes=` range (or the whole file without one); null when unsatisfiable. */
         fun parseRange(header: String?, size: Long): Pair<Long, Long>? {
@@ -188,7 +212,6 @@ class RelayProxy(private val scope: CoroutineScope) {
         }
 
         private fun contentType(name: String): String {
-            if (name.startsWith("🔴 Live:") || name.startsWith("Live:")) return "video/mp2t"
             return when (name.substringAfterLast('.', "").lowercase()) {
                 "mp4", "m4v" -> "video/mp4"
                 "mkv" -> "video/x-matroska"

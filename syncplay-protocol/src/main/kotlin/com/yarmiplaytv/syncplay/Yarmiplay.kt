@@ -91,6 +91,11 @@ data class YarmiplayCapabilities(
      * Older servers omit it; clients treat absent as false.
      */
     val voiceDisabled: Boolean = false,
+    /**
+     * The relay lists files the server is still writing ([RelayFile.media]) and serves a segment index for them
+     * (`/yarmiplay/files/<id>/segments`). Servers without it never list such files.
+     */
+    val growingFiles: Boolean = false,
 ) {
     /** Vanilla mode: the host switched every extension off, and the session token is revoked. */
     val allOff: Boolean get() = !fileRelay && !jellyfin && !https
@@ -266,10 +271,34 @@ data class RelayFile(
     val cachedBytes: Long,
     /** Bytes per second the server currently receives from seeders for this file. */
     val rate: Long,
+    /** Set when the server is still writing the file (or wrote it while it was being played); null for normal files. */
+    val media: GrowingMedia? = null,
 ) {
     /** Whether all of the file can be read: someone seeds it, or the server has every byte. */
     val readable: Boolean get() = sources > 0 || (size > 0 && cachedBytes >= size)
+
+    /**
+     * The size to weigh against other copies of the same name: a growing file's [size] is only a bound, so it never
+     * counts as a larger (more complete) copy.
+     */
+    val comparableSize: Long get() = if (media != null) 0 else size
 }
+
+/**
+ * A relay file whose bytes are still being written on the server, such as a live recording or a download in
+ * progress. Only its first [length] bytes exist; [RelayFile.size] is a fixed upper bound that identifies the file,
+ * never its length. Where each stretch of its timeline starts comes from its segment index.
+ */
+data class GrowingMedia(
+    /** Still being written; false once the server finished it, and [length] is final. */
+    val growing: Boolean,
+    /** Open-ended: no end is known while it grows, and [RelayFile.duration] is 0. */
+    val live: Boolean,
+    /** MIME type of the bytes, e.g. `video/mp2t`. */
+    val contentType: String,
+    /** Bytes written from offset 0 so far. */
+    val length: Long,
+)
 
 /** A local file this device can serve to the room. */
 data class RelayOffer(val name: String, val size: Long, val duration: Double, val quickHash: String)

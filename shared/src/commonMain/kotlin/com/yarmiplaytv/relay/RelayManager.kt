@@ -47,6 +47,10 @@ data class RelayStatus(
     val error: String?,
     /** A copy is being saved: the whole file downloads, then it's written where the user picked. */
     val saving: Boolean = false,
+    /** The server is still writing the file ([com.yarmiplaytv.syncplay.GrowingMedia]): it streams, and its end grows. */
+    val growing: Boolean = false,
+    /** Growing with no known end: a live recording. */
+    val live: Boolean = false,
 ) {
     /** Share of the file already in the cache, for the download bar. */
     val fraction: Float
@@ -76,6 +80,7 @@ data class RelayStatus(
             val via = seeders.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "via $it" }
             return when {
                 complete -> via?.let { "Relayed $it" } ?: "Relayed"
+                live -> "Live"
                 downloading -> buildString {
                     append(via?.let { "Downloading $it" } ?: "Downloading")
                     append(" · ${(haveBytes * 100 / size.coerceAtLeast(1))}%")
@@ -203,6 +208,15 @@ class RelayManager(
         scope.launch {
             sync.events.collect { if (it is SyncplayEvent.SessionEnded) current?.let { t -> t.stop(); update() } }
         }
+        // A growing file's length (and whether it still grows) comes with each new list.
+        scope.launch {
+            files.collect { list ->
+                for (entry in list) {
+                    val media = entry.media ?: continue
+                    transfers["${entry.quickHash}-${entry.size}"]?.growing?.update(media)
+                }
+            }
+        }
         scope.launch {
             while (isActive) {
                 delay(TICK_MS)
@@ -245,11 +259,13 @@ class RelayManager(
         if (transfer === current || transfer === prefetching) return
         prefetching?.stopPrefetch()
         prefetching = transfer
-        val isLive = entry.name.startsWith("🔴 Live:") || entry.name.startsWith("Live:")
-        val head = RelayPolicy.prefetchBytes(entry.size, entry.duration)
-        val ranges = if (isLive) {
-            listOf(0L until head)
+        val media = entry.media
+        val ranges = if (media != null) {
+            // Only the start of what exists (in whole blocks): a growing file has no end to read an index from.
+            val head = RelayPolicy.prefetchBytes(media.length, 0.0)
+            listOf(0L until head / RelayCache.BLOCK * RelayCache.BLOCK)
         } else {
+            val head = RelayPolicy.prefetchBytes(entry.size, entry.duration)
             val tail = maxOf(head, entry.size - RelayPolicy.PREFETCH_TAIL)
             listOf(0L until head, tail until entry.size)
         }
@@ -260,8 +276,15 @@ class RelayManager(
 
     private suspend fun transferFor(entry: RelayFile): RelayTransfer {
         val key = "${entry.quickHash}-${entry.size}"
-        return transfers[key]?.takeIf { !it.cache.isDeleted } ?: withContext(Dispatchers.IO) {
-            RelayTransfer(key, entry.name, entry.size, cache.open(key, entry.size), http, scope) { sourceFor(entry.quickHash, entry.size) }
+        val media = entry.media
+        transfers[key]?.takeIf { !it.cache.isDeleted && (it.growing != null) == (media != null) }?.let { t ->
+            media?.let { t.growing?.update(it) }
+            return t
+        }
+        return withContext(Dispatchers.IO) {
+            val source = { sourceFor(entry.quickHash, entry.size) }
+            val index = media?.let { GrowingIndex(it, http, source) }
+            RelayTransfer(key, entry.name, entry.size, cache.open(key, entry.size, partialBlocks = media != null), http, scope, index, source)
         }.also { transfers[key] = it }
     }
 
@@ -291,6 +314,11 @@ class RelayManager(
         val t = current?.takeIf { currentEntry?.name == fileName } ?: run {
             scope.launch(Dispatchers.IO) { runCatching { target.discard() } }
             sync.postLocal("Couldn't save $fileName: it stopped playing", isError = true)
+            return
+        }
+        if (t.growing != null) {
+            scope.launch(Dispatchers.IO) { runCatching { target.discard() } }
+            sync.postLocal("Couldn't save $fileName: the server is still writing it", isError = true)
             return
         }
         saveJob?.cancel()
@@ -369,6 +397,15 @@ class RelayManager(
         val entry = currentEntry ?: return
         val room = sync.room.value
         if (notReadyByUs && room.isReady == true) notReadyByUs = false
+        if (t.growing != null) {
+            // Its size is only a bound and its end grows: nothing to decide from throughput. The player waits at the
+            // end of what exists like it does in any growing stream.
+            readyAgain()
+            val keep = setOfNotNull(t.key, prefetching?.key)
+            scope.launch(Dispatchers.IO) { cache.trim(keep) }
+            update()
+            return
+        }
         val duration = entry.duration.takeIf { it > 0 } ?: player.duration
         val own = t.rate()
         if (t.cache.complete) {
@@ -412,6 +449,25 @@ class RelayManager(
         val entry = currentEntry ?: return
         val room = sync.room.value
         val rate = t.rate() ?: listRate(t)
+        val growing = t.growing?.state?.value
+        if (growing != null) {
+            val have = t.cache.availableFrom(0).coerceAtMost(growing.length)
+            _status.value = RelayStatus(
+                fileName = entry.name,
+                seeders = emptyList(),
+                downloading = false,
+                haveBytes = have,
+                size = growing.length,
+                bytesPerSecond = rate,
+                etaSeconds = null,
+                waitingToPlay = false,
+                complete = growing.final && have >= growing.length,
+                error = t.lastError,
+                growing = growing.growing,
+                live = growing.live && growing.growing,
+            )
+            return
+        }
         val have = t.cache.cachedBytes
         _status.value = RelayStatus(
             fileName = entry.name,

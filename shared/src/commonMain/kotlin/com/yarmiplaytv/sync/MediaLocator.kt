@@ -59,7 +59,7 @@ class MediaLocator(
         val localMatch = local.resolve(fileName)
         if (localMatch != null) {
             val localSize = localMatch.file.sizeBytes
-            val incompleteVsRelay = relayed != null && localSize > 0 && relayed.size > localSize
+            val incompleteVsRelay = relayed != null && localSize > 0 && relayed.comparableSize > localSize
             val untrusted = localMatch.file.uri in untrustedLocalUris
             // Prefer a complete peer relay over a short/broken local file — never fall through to a server.
             if ((untrusted || incompleteVsRelay) &&

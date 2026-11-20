@@ -156,7 +156,7 @@ class RelayOffers(
                 val file = LocalMatcher.find(available, entry)?.file ?: continue
                 if (file.sizeBytes <= 0) continue
                 val largerInRoom = users.any { u -> u.file?.let { Filenames.same(it.name, name) && it.size > file.sizeBytes } == true } ||
-                    relayFiles.any { Filenames.same(it.name, name) && it.size > file.sizeBytes }
+                    relayFiles.any { Filenames.same(it.name, name) && it.comparableSize > file.sizeBytes }
                 if (largerInRoom) continue
                 val quickHash = hash(file) ?: continue
                 val duration = reported?.takeIf { it.first == name || it.first == file.name }?.second?.takeIf { it > 0 }
