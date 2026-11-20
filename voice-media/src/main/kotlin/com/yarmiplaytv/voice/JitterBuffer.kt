@@ -21,14 +21,26 @@ data class JitterFrame(
 )
 
 /**
- * Per-sender adaptive jitter buffer (~20–100 ms) with:
- * - Opus in-band FEC decoding of packet `N+1` when packet `N` is lost
- * - Opus PLC + pitch-synchronous waveform extrapolation fallback on gaps
- * - Underrun wait handling so packets delayed by 30–80 ms jitter are played when they arrive
- *   instead of being skipped as "late"
- * - Pitch-synchronous WSOLA time-compression (accelerate) when queue depth exceeds target,
- *   keeping mouth-to-ear latency low without clicks or robotic artifacts
- * - Receiver loss and inter-arrival jitter telemetry for Opus encoder adaptation
+ * Per-sender adaptive jitter buffer (NetEq-style, mono PCM of [frameSamples] per 20 ms tick).
+ *
+ * - **Expand, don't skip.** When the queue runs dry the expected packet may still be in flight
+ *   (voice rides a TCP connection, so a late packet is the normal case and a lost one is rare).
+ *   The buffer plays Opus PLC — the codec's own pitch/LPC concealment, which fades naturally —
+ *   and holds the sequence number, so the late packet still decodes when it lands. Opus decodes
+ *   a real packet after PLC without a seam, so nothing is skipped and nothing buzzes.
+ * - **Real losses** (a newer packet is already queued) use in-band FEC from packet `N+1`,
+ *   falling back to Opus PLC.
+ * - **Latency control.** A queue deeper than the adaptive target is drained with pitch-aligned
+ *   WSOLA time compression, preferring quiet frames so speech is not sped up audibly. A large
+ *   backlog (after a TCP stall) accelerates every tick until it is back near target.
+ * - **Adaptive target** from RFC 3550 inter-arrival jitter and underrun pressure, between
+ *   [minFrames] and [maxFrames] (40–160 ms by default), stepping back down after clean runs.
+ * - **Talk-spurt resync.** A sender that paused (mute, push-to-talk) resumes with the next
+ *   sequence number after a long hold; the buffer re-anchors and briefly re-buffers to target
+ *   instead of discarding the new spurt as "late".
+ *
+ * Every sample — decoded, concealed or time-compressed — flows through one per-sender FIFO,
+ * so output is always continuous and in order.
  *
  * Senders that stop delivering packets are pruned after [maxConcealment] consecutive concealed
  * ticks so leave/rejoin watch parties do not keep running Opus PLC forever.
@@ -36,7 +48,7 @@ data class JitterFrame(
 class VoiceJitterBuffer(
     private val frameSamples: Int = VoicePcm.frameSamples,
     private val minFrames: Int = 2, // 40 ms default minimum
-    private val maxFrames: Int = 5, // 100 ms default maximum
+    private val maxFrames: Int = 8, // 160 ms default maximum
     /** Drop a primed peer after this many PLC/FEC ticks with an empty queue (~1.5 s at 20 ms). */
     private val maxConcealment: Int = 75,
 ) {
@@ -49,14 +61,16 @@ class VoiceJitterBuffer(
         val missing = AtomicInteger(0)
         /** Consecutive concealed polls since the last real packet. */
         var concealRun = 0
-        /** How many concealment frames were already emitted while waiting on an empty queue. */
+        /** PLC frames emitted while holding [nextSeq] on an empty queue (expand). */
         var underrunConcealed = 0
         /**
-         * True after a jitter hold expired and the expected packet was declared lost.
-         * Further empty polls then advance the sequence and call Opus PLC every tick.
-         * A held packet that is merely late does not set this, so the decoder stays in sync.
+         * True after a hold ran past [maxFrames] and the stream is treated as stopped. Further
+         * empty polls advance the sequence; the next packet re-anchors the stream.
          */
         var inLossBurst = false
+        /** Ticks left to wait for the queue to refill to target after a resync. */
+        var rebufferTicks = 0
+        var playedReal = false
         /** Logical 20 ms tick counter incremented on each [poll] and wall-clock arrival tracking. */
         var pollTick: Long = 0L
         var lastPushTick: Long = -1L
@@ -77,26 +91,15 @@ class VoiceJitterBuffer(
         var windowReceived: Int = 0
         var windowLost: Int = 0
 
-        /** Leftover pitch-aligned PCM samples from WSOLA time-compression. */
+        /** Decoded PCM not yet played (time compression can leave a partial frame here). */
         var pcmFifo = ShortArray(0)
-        /** Recent output history (2 frames = 40 ms) for boundary de-clicking and pitch-synchronous PLC. */
-        val history = ShortArray(frameSamples * 2)
-        var historyFilled = 0
         var lastSample: Short = 0
+        /** RMS of the last frame decoded from a real packet (hole detection). */
         var lastRealRms: Double = 0.0
-        var wasConcealed: Boolean = false
-
-        fun appendHistory(frame: ShortArray) {
-            if (frame.isEmpty()) return
-            val n = min(frame.size, history.size)
-            val keep = history.size - n
-            if (keep > 0) {
-                System.arraycopy(history, history.size - keep, history, 0, keep)
-            }
-            System.arraycopy(frame, frame.size - n, history, keep, n)
-            historyFilled = min(history.size, historyFilled + n)
-            lastSample = frame.last()
-        }
+        /** The last 40 ms of real (non-concealed) audio played, newest at the end (pitch fill source). */
+        val lastOut = ShortArray(frameSamples * 2)
+        /** True after a pitch fill: the next real frame is ramped in from the last sample. */
+        var discontinuity = false
 
         fun pushFifo(samples: ShortArray) {
             if (samples.isEmpty()) return
@@ -106,8 +109,14 @@ class VoiceJitterBuffer(
             pcmFifo = next
         }
 
-        fun popFifoFrame(): ShortArray? {
-            if (pcmFifo.size < frameSamples) return null
+        /** Exactly one [frameSamples] frame; zero-pads if a short decode left the FIFO thin. */
+        fun popFifoFrame(): ShortArray {
+            if (pcmFifo.size < frameSamples) {
+                val out = ShortArray(frameSamples)
+                System.arraycopy(pcmFifo, 0, out, 0, pcmFifo.size)
+                pcmFifo = ShortArray(0)
+                return out
+            }
             val out = pcmFifo.copyOfRange(0, frameSamples)
             pcmFifo = pcmFifo.copyOfRange(frameSamples, pcmFifo.size)
             return out
@@ -150,6 +159,9 @@ class VoiceJitterBuffer(
         if (active.isEmpty()) return minFrames
         return active.maxOf { synchronized(it) { it.target } }
     }
+
+    /** Packets currently queued for [sender] (0 when unknown). */
+    fun queuedFrames(sender: Long): Int = peers[sender]?.let { synchronized(it) { it.packets.size } } ?: 0
 
     /** Estimated inter-arrival jitter in milliseconds across active peers. */
     fun jitterMs(sender: Long? = null): Double {
@@ -203,8 +215,11 @@ class VoiceJitterBuffer(
                             ((nowNano - slot.lastWallNano) / 20_000_000.0).coerceIn(0.0, 10.0)
                         else -> seqDelta.toDouble()
                     }
-                    val transitDiff = abs(arrivalFrames - seqDelta.toDouble())
-                    slot.jitterFrames += (transitDiff - slot.jitterFrames) / 8.0
+                    // A talk-spurt gap is not jitter: only count arrivals within a few frames.
+                    if (arrivalFrames < 12.0) {
+                        val transitDiff = abs(arrivalFrames - seqDelta.toDouble())
+                        slot.jitterFrames += (transitDiff - slot.jitterFrames) / 16.0
+                    }
                 }
             }
             slot.lastPushSeq = sequence
@@ -214,15 +229,23 @@ class VoiceJitterBuffer(
 
             val next = slot.nextSeq
             if (next != null && sequence < next) {
-                // Packet arrived after playout already passed its sequence number.
-                if (sequence >= next - maxFrames * 2) {
-                    slot.late.incrementAndGet()
-                    slot.cleanRun = 0
+                if (slot.inLossBurst && slot.packets.isEmpty()) {
+                    // The sender paused and resumed: re-anchor instead of discarding the spurt.
+                    resync(slot, sequence)
+                } else {
+                    // Packet arrived after playout already passed its sequence number.
+                    if (sequence >= next - maxFrames * 2) {
+                        slot.late.incrementAndGet()
+                        slot.cleanRun = 0
+                    }
+                    return
                 }
-                return
+            } else if (next != null && slot.inLossBurst && slot.packets.isEmpty() && sequence - next > maxFrames * 4) {
+                // Far ahead after a long silence (sender restarted its counter upward): re-anchor.
+                resync(slot, sequence)
             }
-            if (slot.packets.size >= 32) {
-                // Overrun: drop oldest.
+            if (slot.packets.size >= 64) {
+                // Hard overrun: drop oldest.
                 slot.packets.pollFirstEntry()
             }
             slot.packets[sequence] = opus.copyOf()
@@ -234,11 +257,18 @@ class VoiceJitterBuffer(
         }
     }
 
+    private fun resync(slot: PeerSlot, sequence: Int) {
+        slot.nextSeq = sequence
+        slot.inLossBurst = false
+        slot.underrunConcealed = 0
+        slot.rebufferTicks = slot.target
+    }
+
     /**
-     * Decode the next frame for [sender] into PCM (or FEC/PLC). Returns null if not primed yet,
-     * or if the peer was pruned for prolonged silence.
-     * [decode] should decode an Opus packet; [plc] generates concealment; [fec] tries FEC from the
-     * next packet when the expected one is missing.
+     * Produce the next 20 ms frame for [sender]. Returns null if not primed yet, or if the peer
+     * was pruned for prolonged silence.
+     * [decode] decodes an Opus packet; [plc] runs Opus packet-loss concealment; [fec] decodes
+     * the in-band FEC copy of the missing frame carried by the following packet.
      */
     fun poll(
         sender: Long,
@@ -251,19 +281,7 @@ class VoiceJitterBuffer(
             if (!slot.primed) return null
             slot.pollTick++
             if (slot.accelerateCooldown > 0) slot.accelerateCooldown--
-
-            // Adapt target buffer depth from measured jitter and late/underrun pressure.
-            val jitterTarget = ceil(slot.jitterFrames + 1.15).toInt().coerceIn(minFrames, maxFrames)
-            if (slot.late.get() >= 2) {
-                slot.target = min(maxFrames, max(slot.target + 1, jitterTarget))
-                slot.late.set(0)
-                slot.cleanRun = 0
-            } else if (jitterTarget > slot.target) {
-                slot.target = jitterTarget
-            } else if (slot.cleanRun >= 25 && slot.target > max(minFrames, jitterTarget)) {
-                slot.target = max(minFrames, slot.target - 1)
-                slot.cleanRun = 0
-            }
+            adaptTarget(slot)
 
             var next = slot.nextSeq ?: slot.packets.firstKey().also { slot.nextSeq = it }
             // Prune any stale entries older than next.
@@ -271,19 +289,26 @@ class VoiceJitterBuffer(
                 slot.packets.headMap(next, false).clear()
             }
 
-            // If we previously time-stretched while waiting on an empty queue, and the next
-            // available packet is ahead of `next`, those held sequences are lost. Advance the
-            // Opus decoder with PLC (discarding the samples — stretch audio already played)
-            // so the late-but-newer packet decodes in sequence.
+            // After a resync, let the queue refill to target before playing the new spurt so the
+            // first jitter blip of a sentence does not immediately underrun.
+            if (slot.rebufferTicks > 0) {
+                if (slot.packets.size < slot.target) {
+                    slot.rebufferTicks--
+                    return conceal(slot, plc)
+                }
+                slot.rebufferTicks = 0
+            }
+
+            // Expand already covered the time slots of the sequences we were holding for. If the
+            // next available packet is ahead of `next`, those held sequences were lost: skip them
+            // (the Opus decoder already advanced through PLC) instead of adding more delay.
             if (slot.underrunConcealed > 0 && slot.packets.isNotEmpty()) {
                 val firstAvail = slot.packets.firstKey()
                 if (firstAvail > next) {
                     val skipped = min(firstAvail - next, slot.underrunConcealed)
-                    repeat(skipped) { plc() }
                     slot.recordLost(skipped)
                     next += skipped
                     slot.nextSeq = next
-                    slot.underrunConcealed -= skipped
                 }
             }
 
@@ -292,39 +317,32 @@ class VoiceJitterBuffer(
                 slot.concealRun = 0
                 slot.underrunConcealed = 0
                 slot.inLossBurst = false
+                slot.playedReal = true
                 slot.recordReceived(1)
                 slot.cleanRun++
                 val pcm1 = decode(packet) ?: silence()
                 slot.lastRealRms = VoicePcm.rms(pcm1)
+                slot.nextSeq = next + 1
 
-                // Check if latency has built up above target and we can WSOLA-accelerate with next+1.
-                val canAccelerate = slot.packets.size > slot.target &&
+                // Latency above target: compress two packets into one tick with WSOLA.
+                val excess = slot.packets.size - slot.target
+                val canAccelerate = excess > 0 &&
                     slot.accelerateCooldown == 0 &&
-                    slot.packets.containsKey(next + 1)
+                    slot.packets.containsKey(next + 1) &&
+                    (excess >= 2 || VoicePcm.rms(pcm1) < QUIET_RMS)
                 if (canAccelerate) {
-                    val packet2 = slot.packets.remove(next + 1)
-                    if (packet2 != null) {
-                        slot.nextSeq = next + 2
-                        slot.recordReceived(1)
-                        val pcm2 = decode(packet2) ?: silence()
-                        slot.lastRealRms = VoicePcm.rms(pcm2)
-                        slot.accelerateCooldown = 3
-                        slot.acceleratedCount++
-                        val combined = combineWithFifo(slot, pcm1, pcm2)
-                        val out = smoothBoundaryIfRecovered(slot, combined)
-                        slot.wasConcealed = false
-                        slot.appendHistory(out)
-                        return JitterFrame(out, concealed = false, accelerated = true)
-                    }
+                    val packet2 = slot.packets.remove(next + 1)!!
+                    slot.nextSeq = next + 2
+                    slot.recordReceived(1)
+                    val pcm2 = decode(packet2) ?: silence()
+                    // Far behind (e.g. a TCP stall delivered a burst): drain every tick.
+                    slot.accelerateCooldown = if (excess >= 4) 0 else 2
+                    slot.acceleratedCount++
+                    return emit(slot, combineWithFifo(slot, pcm1, pcm2), concealed = false, accelerated = true)
                 }
 
-                slot.nextSeq = next + 1
                 slot.pushFifo(pcm1)
-                val popped = slot.popFifoFrame() ?: pcm1
-                val out = smoothBoundaryIfRecovered(slot, popped)
-                slot.wasConcealed = false
-                slot.appendHistory(out)
-                return JitterFrame(out, concealed = false)
+                return emit(slot, slot.popFifoFrame(), concealed = false)
             }
 
             // `next` is not in `slot.packets`.
@@ -334,60 +352,140 @@ class VoiceJitterBuffer(
                 return null
             }
 
-            val hasNewerPacket = slot.packets.isNotEmpty()
-            if (hasNewerPacket) {
+            if (slot.packets.isNotEmpty()) {
                 // Genuine gap (packet `next` was lost; a newer one is already queued).
                 // FEC from packet N+1 recovers N without consuming N+1. PLC is the fallback.
                 slot.inLossBurst = false
                 slot.nextSeq = next + 1
                 slot.underrunConcealed = 0
                 slot.recordLost(1)
+                // One decoder call per gap: a FEC decode that finds no LBRR copy has already run
+                // the codec's PLC internally, and a second PLC on top comes out silent.
                 val following = slot.packets[next + 1]
-                if (following != null) {
-                    val fecPcm = fec(following)
-                    if (fecPcm != null && isUsableConcealment(slot, fecPcm)) {
-                        slot.fecRecoveredCount++
-                        val out = smoothConcealedFrame(slot, fecPcm)
-                        slot.wasConcealed = true
-                        slot.appendHistory(out)
-                        return JitterFrame(out, concealed = true)
-                    }
+                val pcm = if (following != null) {
+                    slot.fecRecoveredCount++
+                    fec(following) ?: plc()
+                } else {
+                    slot.plcCount++
+                    plc()
                 }
-                slot.plcCount++
-                val plcPcm = plc()
-                val out = buildConcealedFrame(slot, plcPcm)
-                slot.wasConcealed = true
-                slot.appendHistory(out)
-                return JitterFrame(out, concealed = true)
+                return emitConcealment(slot, pcm)
             }
 
-            // Queue is empty. The packet may still be in flight (30–80 ms jitter) or gone.
-            // Hold `nextSeq` and time-stretch history WITHOUT calling Opus PLC, so a late
-            // packet still decodes against a matching decoder state. After [maxFrames] of
-            // that hold, declare a loss burst and PLC every tick until audio returns.
+            // Queue is empty. The packet may still be in flight or the sender stopped.
+            // Expand with Opus PLC while holding `nextSeq`, so a late packet still plays.
             slot.cleanRun = 0
             if (!slot.inLossBurst) {
                 slot.underrunConcealed++
-                if (slot.underrunConcealed == 1 && slot.historyFilled > 0) {
+                if (slot.underrunConcealed == 1 && slot.playedReal) {
                     slot.late.incrementAndGet()
                 }
-                if (slot.underrunConcealed <= maxFrames) {
-                    val out = timeStretchHold(slot)
-                    slot.wasConcealed = true
-                    slot.appendHistory(out)
-                    return JitterFrame(out, concealed = true)
+                if (slot.underrunConcealed > maxFrames) {
+                    slot.inLossBurst = true
+                    slot.underrunConcealed = 0
                 }
-                slot.inLossBurst = true
-                slot.underrunConcealed = 0
             }
-            slot.nextSeq = next + 1
-            slot.recordLost(1)
-            slot.plcCount++
-            val plcPcm = plc()
-            val out = buildConcealedFrame(slot, plcPcm)
-            slot.wasConcealed = true
-            slot.appendHistory(out)
-            return JitterFrame(out, concealed = true)
+            if (slot.inLossBurst) {
+                // The stream stopped (mute, push-to-talk). Not counted as loss: that figure
+                // drives the Opus encoder's bitrate and FEC, and a pause must not degrade them.
+                slot.nextSeq = next + 1
+            }
+            return conceal(slot, plc)
+        }
+    }
+
+    private fun conceal(slot: PeerSlot, plc: () -> ShortArray?): JitterFrame {
+        slot.plcCount++
+        return emitConcealment(slot, plc())
+    }
+
+    /**
+     * Queue a concealment frame. Opus PLC/FEC is used as-is unless it came out near-silent in the
+     * middle of speech (no LBRR copy, or a second loss in a row — Concentus fades consecutive PLC
+     * very fast); then up to [MAX_PITCH_FILL_TICKS] concealed ticks extend the last real pitch
+     * period with a fade instead of opening a hole.
+     */
+    private fun emitConcealment(slot: PeerSlot, codecPcm: ShortArray?): JitterFrame {
+        val pcm = codecPcm?.takeIf { it.size >= frameSamples } ?: silence()
+        val holeInSpeech = slot.lastRealRms >= 250.0 &&
+            slot.concealRun <= MAX_PITCH_FILL_TICKS &&
+            VoicePcm.rms(pcm) < max(60.0, slot.lastRealRms * 0.1)
+        val chosen = if (holeInSpeech) pitchFill(slot) ?: pcm else pcm
+        slot.pushFifo(chosen)
+        val out = slot.popFifoFrame()
+        slot.discontinuity = holeInSpeech
+        return emit(slot, out, concealed = true)
+    }
+
+    private fun emit(slot: PeerSlot, frame: ShortArray, concealed: Boolean, accelerated: Boolean = false): JitterFrame {
+        if (!concealed && slot.discontinuity) {
+            // The decoder's state did not produce the frame just played; ease into real audio.
+            rampFrom(slot.lastSample.toInt(), frame)
+            slot.discontinuity = false
+        }
+        if (frame.isNotEmpty()) slot.lastSample = frame.last()
+        if (frame.isNotEmpty() && !concealed) {
+            val keep = min(frame.size, slot.lastOut.size)
+            System.arraycopy(slot.lastOut, keep, slot.lastOut, 0, slot.lastOut.size - keep)
+            System.arraycopy(frame, frame.size - keep, slot.lastOut, slot.lastOut.size - keep, keep)
+        }
+        return JitterFrame(frame, concealed = concealed, accelerated = accelerated)
+    }
+
+    /** Repeat the newest pitch period of the last real audio, fading 0.85 → 0.4 over one frame. */
+    private fun pitchFill(slot: PeerSlot): ShortArray? {
+        val hist = slot.lastOut
+        val minPeriod = frameSamples / 20 // 2.5 ms (400 Hz)
+        val maxPeriod = min(hist.size / 2, frameSamples * 3 / 4) // 15 ms (~66 Hz)
+        if (maxPeriod <= minPeriod) return null
+        val ref = minPeriod * 2
+        val tailStart = hist.size - ref
+        var bestP = 0
+        var bestCorr = Double.NEGATIVE_INFINITY
+        var p = minPeriod
+        while (p <= maxPeriod) {
+            val corr = normalizedCorrelation(hist, tailStart - p, tailStart, ref, step = 2)
+            if (corr > bestCorr) {
+                bestCorr = corr
+                bestP = p
+            }
+            p += 2
+        }
+        if (bestP == 0 || VoicePcm.rms(hist) < 60.0) return null
+        val out = ShortArray(frameSamples)
+        val base = hist.size - bestP
+        val runGain = Math.pow(0.7, (slot.concealRun - 1).coerceAtLeast(0).toDouble())
+        for (i in 0 until frameSamples) {
+            val g = (0.85 - 0.45 * i / frameSamples) * runGain
+            out[i] = (hist[base + (i % bestP)] * g).roundToInt()
+                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+        }
+        rampFrom(slot.lastSample.toInt(), out)
+        return out
+    }
+
+    private fun rampFrom(prev: Int, frame: ShortArray) {
+        if (frame.isEmpty() || abs(frame[0] - prev) <= 64) return
+        val ramp = min(RAMP_SAMPLES, frame.size)
+        for (i in 0 until ramp) {
+            val w = 0.5 * (1.0 - cos(PI * (i + 1) / (ramp + 1)))
+            frame[i] = (prev * (1.0 - w) + frame[i] * w).roundToInt()
+                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+        }
+    }
+
+    private fun adaptTarget(slot: PeerSlot) {
+        // Adapt target buffer depth from measured jitter and late/underrun pressure.
+        val jitterTarget = ceil(slot.jitterFrames * 2.0 + 1.0).toInt().coerceIn(minFrames, maxFrames)
+        if (slot.late.get() >= 2) {
+            slot.target = min(maxFrames, max(slot.target + 1, jitterTarget))
+            slot.late.set(0)
+            slot.cleanRun = 0
+        } else if (jitterTarget > slot.target) {
+            slot.target = jitterTarget
+        } else if (slot.cleanRun >= TARGET_STEP_DOWN_TICKS && slot.target > max(minFrames, jitterTarget)) {
+            slot.target = max(minFrames, slot.target - 1)
+            slot.cleanRun = 0
         }
     }
 
@@ -413,13 +511,11 @@ class VoiceJitterBuffer(
         System.arraycopy(pcm2, 0, concat, pos, pcm2.size)
 
         if (totalLen < frameSamples * 2) {
-            val compressed = wsolaCompressTwoFrames(pcm1, pcm2)
-            return compressed
+            slot.pushFifo(concat)
+            return slot.popFifoFrame()
         }
-
-        val compressed = wsolaCompressBuffer(concat)
-        slot.pushFifo(compressed)
-        return slot.popFifoFrame() ?: compressed.copyOf(frameSamples)
+        slot.pushFifo(wsolaCompressBuffer(concat))
+        return slot.popFifoFrame()
     }
 
     private fun wsolaCompressBuffer(concat: ShortArray): ShortArray {
@@ -427,13 +523,7 @@ class VoiceJitterBuffer(
         val overlap = frameSamples / 4 // 240 samples (5 ms)
         val minShift = (frameSamples * 3) / 4 // 720 samples (15 ms)
         val maxShift = min(frameSamples, concat.size - headKeep - overlap - 1)
-        if (maxShift <= minShift) {
-            return wsolaCompressTwoFrames(
-                concat.copyOfRange(0, frameSamples),
-                concat.copyOfRange(concat.size - frameSamples, concat.size),
-            )
-        }
-
+        if (maxShift <= minShift) return concat
         val bestShift = findBestCorrelationShift(concat, headKeep, overlap, minShift, maxShift)
         val outLen = concat.size - bestShift
         val out = ShortArray(outLen)
@@ -452,24 +542,6 @@ class VoiceJitterBuffer(
         if (tailLen > 0) {
             System.arraycopy(concat, tailSrc, out, tailDst, tailLen)
         }
-        return out
-    }
-
-    private fun wsolaCompressTwoFrames(frame1: ShortArray, frame2: ShortArray): ShortArray {
-        val n = frameSamples
-        val out = ShortArray(n)
-        val keep = n / 4
-        val overlap = n - keep * 2
-        System.arraycopy(frame1, 0, out, 0, keep)
-        for (i in 0 until overlap) {
-            val w = 0.5 * (1.0 - cos(PI * i / overlap.coerceAtLeast(1)))
-            val a = frame1[keep + i].toDouble()
-            val b = frame2[keep + i].toDouble()
-            out[keep + i] = (a * (1.0 - w) + b * w).roundToInt()
-                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-                .toShort()
-        }
-        System.arraycopy(frame2, n - keep, out, n - keep, keep)
         return out
     }
 
@@ -525,114 +597,16 @@ class VoiceJitterBuffer(
         return if (denom < 1e-6) 0.0 else dot / denom
     }
 
-    private fun isUsableConcealment(slot: PeerSlot, candidate: ShortArray): Boolean {
-        if (candidate.size < frameSamples) return false
-        if (slot.lastRealRms > 250.0) {
-            val rms = VoicePcm.rms(candidate)
-            // A near-silent FEC/PLC frame during voiced speech is a gap. Prefer pitch extrapolation.
-            if (rms < max(120.0, slot.lastRealRms * 0.22)) return false
-        }
-        return true
-    }
-
-    /**
-     * Build a concealed 20 ms frame from [plcPcm] (or pitch-synchronous WSOLA extrapolation
-     * of [PeerSlot.history] when [plcPcm] is empty/silent during active speech).
-     */
-    private fun buildConcealedFrame(slot: PeerSlot, plcPcm: ShortArray?): ShortArray {
-        if (plcPcm != null && plcPcm.size == frameSamples && isUsableConcealment(slot, plcPcm)) {
-            return smoothConcealedFrame(slot, plcPcm)
-        }
-        if (slot.historyFilled >= frameSamples / 4 && slot.lastRealRms > 80.0 && slot.concealRun <= 8) {
-            return smoothConcealedFrame(slot, extrapolatePitchPeriod(slot))
-        }
-        return plcPcm?.takeIf { it.size == frameSamples } ?: silence()
-    }
-
-    /**
-     * One concealed 20 ms frame by repeating the newest pitch period in [PeerSlot.history].
-     * History is right-aligned (newest sample at the end of the array).
-     */
-    private fun timeStretchHold(slot: PeerSlot): ShortArray {
-        if (slot.historyFilled >= frameSamples / 4 && slot.lastRealRms > 40.0) {
-            return smoothConcealedFrame(slot, extrapolatePitchPeriod(slot))
-        }
-        return silence()
-    }
-
-    /**
-     * Extrapolate one [frameSamples] frame by repeating the detected fundamental pitch period
-     * from [PeerSlot.history] with gentle decay so a missing packet during voiced speech has
-     * no metallic click or sudden dropout.
-     */
-    private fun extrapolatePitchPeriod(slot: PeerSlot): ShortArray {
-        val hist = slot.history
-        val n = slot.historyFilled.coerceAtMost(hist.size)
-        val minPeriod = max(40, frameSamples / 20) // ~1000 Hz max pitch
-        val maxPeriod = min(n / 2, (frameSamples * 3) / 4) // ~66 Hz min pitch
-        val period = if (maxPeriod > minPeriod) {
-            // Newest samples sit at the end of [hist].
-            val tailStart = hist.size - minPeriod
-            var bestP = (minPeriod + maxPeriod) / 2
-            var bestCorr = Double.NEGATIVE_INFINITY
-            var p = minPeriod
-            while (p <= maxPeriod) {
-                val corr = normalizedCorrelation(hist, tailStart - p, tailStart, minPeriod, step = 2)
-                if (corr > bestCorr) {
-                    bestCorr = corr
-                    bestP = p
-                }
-                p += 2
-            }
-            bestP
-        } else {
-            min(n, frameSamples).coerceAtLeast(1)
-        }
-
-        val decay = (0.92 - (slot.concealRun - 1) * 0.08).coerceIn(0.35, 0.92)
-        val out = ShortArray(frameSamples)
-        val srcBase = hist.size - period
-        for (i in 0 until frameSamples) {
-            val sample = hist[srcBase + (i % period)]
-            out[i] = (sample * decay).roundToInt()
-                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-                .toShort()
-        }
-        // A trough can lock the correlator onto a near-silent period. Repeat the last
-        // real frame instead of opening a hole.
-        if (slot.lastRealRms > 200.0 && VoicePcm.rms(out) < slot.lastRealRms * 0.35) {
-            val n = min(frameSamples, n).coerceAtLeast(1)
-            val origin = hist.size - n
-            for (i in 0 until frameSamples) {
-                val sample = hist[origin + (i % n)]
-                out[i] = (sample * decay).roundToInt()
-                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-                    .toShort()
-            }
-        }
-        return out
-    }
-
-    private fun smoothConcealedFrame(slot: PeerSlot, frame: ShortArray): ShortArray {
-        if (slot.historyFilled == 0 || frame.isEmpty()) return frame
-        val prev = slot.lastSample.toInt()
-        val first = frame[0].toInt()
-        if (abs(first - prev) <= 64) return frame
-        val out = frame.copyOf()
-        val ramp = min(32, out.size)
-        for (i in 0 until ramp) {
-            val w = 0.5 * (1.0 - cos(PI * (i + 1) / (ramp + 1)))
-            out[i] = (prev * (1.0 - w) + out[i] * w).roundToInt()
-                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-                .toShort()
-        }
-        return out
-    }
-
-    private fun smoothBoundaryIfRecovered(slot: PeerSlot, frame: ShortArray): ShortArray {
-        if (!slot.wasConcealed || slot.historyFilled == 0 || frame.isEmpty()) return frame
-        return smoothConcealedFrame(slot, frame)
-    }
-
     private fun silence() = ShortArray(frameSamples)
+
+    private companion object {
+        /** Frames below this RMS (~−45 dBFS) are compressed first: pauses absorb the speed-up. */
+        const val QUIET_RMS = 180.0
+        /** Clean ticks before the target steps down one frame (~2 s). */
+        const val TARGET_STEP_DOWN_TICKS = 100
+        /** ~0.7 ms raised-cosine ease used at a synthetic/real seam. */
+        const val RAMP_SAMPLES = 32
+        /** Pitch fill covers at most 80 ms of a hole, each tick 30% quieter, then silence. */
+        const val MAX_PITCH_FILL_TICKS = 4
+    }
 }

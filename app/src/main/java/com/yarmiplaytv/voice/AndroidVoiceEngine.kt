@@ -65,7 +65,8 @@ class AndroidVoiceEngine(
     private val discordEngine = DiscordVoiceEngine(scope)
     @Volatile private var activeDiscord = false
     private var captureJob: Job? = null
-    private var playbackJob: Job? = null
+    /** Device-clocked playout thread: renders 20 ms, then blocks in [AudioTrack.write]. */
+    @Volatile private var playoutThread: Thread? = null
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var frameSamples: Int = 960
@@ -159,7 +160,7 @@ class AndroidVoiceEngine(
         } else {
             activeDiscord = false
         }
-        val media = VoiceMediaSession(scope) { _, pcm -> writePlayback(pcm) }
+        val media = VoiceMediaSession(scope)
         media.setPreferredBitrate(preferredBitrateBps)
         media.setPreferredStereo(preferredStereoMode)
         if (!media.connect(params)) {
@@ -197,8 +198,7 @@ class AndroidVoiceEngine(
             discordEngine.disconnect()
             activeDiscord = false
         }
-        playbackJob?.cancel()
-        playbackJob = null
+        stopPlayout()
         session.getAndSet(null)?.disconnect()
         stopCapture()
         synchronized(chainLock) {
@@ -280,7 +280,7 @@ class AndroidVoiceEngine(
                 syncCapture(existing)
                 return
             }
-            val media = VoiceMediaSession(scope) { _, pcm -> writePlayback(pcm) }
+            val media = VoiceMediaSession(scope)
             media.startStandaloneMicTest()
             media.setInputGain(inputGainForSession())
             media.setOutputGain(if (activeDiscord) discordEngine.outputAmplitude() else outputGain)
@@ -805,6 +805,7 @@ class AndroidVoiceEngine(
     }
 
     private fun startPlayback(frameSamples: Int, channels: Int = 1) {
+        stopPlayout()
         runCatching { audioTrack?.pause(); audioTrack?.flush(); audioTrack?.release() }
         audioTrack = null
         val sampleRate = 48_000
@@ -835,10 +836,15 @@ class AndroidVoiceEngine(
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                     .build(),
             )
-            // ~200 ms (10 × 20 ms frames) so paced jitter-buffer output does not underrun.
+            // ~200 ms of capacity; the effective size starts near 60 ms (below) and only grows
+            // if this device actually underruns.
             .setBufferSizeInBytes(maxOf(minBuf * 4, frameSamples * chCount * 2 * 10))
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
+        val minFrames = minBuf / (2 * chCount)
+        runCatching {
+            track.bufferSizeInFrames = maxOf(minFrames, frameSamples * PLAYOUT_START_FRAMES)
+        }
         if (!preferOutputDevice(track) && !preferredOutputId.isNullOrEmpty()) {
             preferredOutputId = null
             if (activeDiscord) discordEngine.setOutputDeviceId(null)
@@ -846,11 +852,57 @@ class AndroidVoiceEngine(
         }
         audioTrack = track
         track.play()
+        startPlayout(track, frameSamples, chCount)
     }
 
-    private fun writePlayback(pcm: ShortArray) {
-        val track = audioTrack ?: return
-        runCatching { track.write(pcm, 0, pcm.size) }
+    /**
+     * The speaker's clock drives playout: render 20 ms (silence when nobody talks), then block in
+     * [AudioTrack.write] until the track has room. The track stays at a steady fill, so a late
+     * wake-up eats slack instead of starving the speaker. When the device does underrun, the
+     * effective buffer grows one frame (Oboe-style latency tuning) up to its capacity.
+     */
+    private fun startPlayout(track: AudioTrack, frameSamples: Int, channels: Int) {
+        stopPlayout()
+        val t = Thread({
+            runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO) }
+            val self = Thread.currentThread()
+            val buf = ShortArray(frameSamples * channels)
+            var underruns = runCatching { track.underrunCount }.getOrDefault(0)
+            var ticks = 0
+            try {
+                while (!self.isInterrupted && playoutThread === self) {
+                    val media = session.get()
+                    if (media == null) buf.fill(0) else media.renderPlayback(buf)
+                    val wrote = runCatching { track.write(buf, 0, buf.size) }.getOrDefault(-1)
+                    if (wrote < 0) {
+                        Thread.sleep(20)
+                        continue
+                    }
+                    if (++ticks % 25 == 0) {
+                        val now = runCatching { track.underrunCount }.getOrDefault(underruns)
+                        if (now > underruns) {
+                            underruns = now
+                            runCatching {
+                                val grown = minOf(track.bufferCapacityInFrames, track.bufferSizeInFrames + frameSamples)
+                                track.bufferSizeInFrames = grown
+                                android.util.Log.i(TAG, "playout underrun: buffer now ${grown * 1000 / 48_000} ms")
+                            }
+                        }
+                    }
+                }
+            } catch (_: InterruptedException) {
+            }
+        }, "voice-playout")
+        t.isDaemon = true
+        playoutThread = t
+        t.start()
+    }
+
+    private fun stopPlayout() {
+        val t = playoutThread ?: return
+        playoutThread = null
+        t.interrupt()
+        if (t !== Thread.currentThread()) runCatching { t.join(500) }
     }
 
     private fun applyPreferredInput(): Boolean {
@@ -980,6 +1032,8 @@ class AndroidVoiceEngine(
 
     companion object {
         private const val TAG = "AndroidVoice"
+        /** Initial effective playout buffer in 20 ms frames (60 ms), grown only on underrun. */
+        private const val PLAYOUT_START_FRAMES = 3
 
         private val HEADSET_INPUT_TYPES: Set<Int> = buildSet {
             add(AudioDeviceInfo.TYPE_WIRED_HEADSET)

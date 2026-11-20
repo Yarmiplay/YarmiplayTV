@@ -53,7 +53,8 @@ class DesktopVoiceEngine : VoiceEngine {
     @Volatile private var wasapiPlaybackFailed = false
     private var inputDeviceId: String? = null
     private var outputDeviceId: String? = null
-    private var playbackJob: Job? = null
+    /** Device-clocked playout thread: renders 20 ms, then blocks on the speaker write. */
+    @Volatile private var playoutThread: Thread? = null
     private var watchJob: Job? = null
     private var frameSamples: Int = 960
     @Volatile private var inputGain: Float = 1f
@@ -140,8 +141,7 @@ class DesktopVoiceEngine : VoiceEngine {
         }
         watchJob?.cancel()
         watchJob = null
-        playbackJob?.cancel()
-        playbackJob = null
+        stopMixPump()
         session.getAndSet(null)?.disconnect()
         stopCapture()
         closePlaybackLine()
@@ -341,13 +341,8 @@ class DesktopVoiceEngine : VoiceEngine {
         val media = session.get() ?: return
         val before = media.activeChannels
         media.setPreferredStereo(stereo)
-        if (media.activeChannels != before) {
-            openPlayback()
-            playbackJob?.cancel()
-            startMixPump(media)
-            stopCapture()
-            syncCapture(media)
-        }
+        // Opus stays mono; only the speaker layout changes, so reopen the output line alone.
+        if (media.activeChannels != before) openPlayback()
     }
 
     private fun ensureDeepFilterNetLocked(): DeepFilterNetProcessor? {
@@ -541,9 +536,9 @@ class DesktopVoiceEngine : VoiceEngine {
         wasapiPlaybackFailed = false
         // Default device on Windows: open WASAPI on the playback thread (same COM apartment).
         // A chosen device, or any non-Windows host, stays on Java Sound (CoreAudio / PipeWire / DirectSound).
-        val stereo = (session.get()?.activeChannels ?: 1) > 1
-        // WASAPI shared render in this build is mono. Stereo stays on Java Sound.
-        preferWasapiPlayback = !stereo && outputDeviceId.isNullOrEmpty() && isWindows
+        // WASAPI shared render takes the mono mix and fills every channel of the device's mix
+        // format, so it serves stereo too.
+        preferWasapiPlayback = outputDeviceId.isNullOrEmpty() && isWindows
         if (preferWasapiPlayback) return
         openJavaSoundPlayback()
     }
@@ -577,17 +572,40 @@ class DesktopVoiceEngine : VoiceEngine {
     }
 
     private fun startMixPump(media: VoiceMediaSession) {
-        var out = ShortArray(media.frameSamples)
-        var bytes = ByteArray(out.size * 2)
-        var loggedFormat = false
-        var resamplerRate = VoicePcm.SAMPLE_RATE
+        stopMixPump()
+        val t = Thread({ playoutLoop(media) }, "voice-playout").apply {
+            isDaemon = true
+            // Mostly blocked on the device; when it wakes it must render before the buffer drains.
+            priority = Thread.MAX_PRIORITY
+        }
+        playoutThread = t
+        t.start()
+    }
+
+    private fun stopMixPump() {
+        val t = playoutThread ?: return
+        playoutThread = null
+        t.interrupt()
+        if (t !== Thread.currentThread()) runCatching { t.join(500) }
+    }
+
+    /**
+     * The speaker's clock drives playout: render one 20 ms frame (silence when nobody talks),
+     * hand it to AEC as the far-end reference, then block until the device has room. The output
+     * buffer therefore stays at a steady depth and the jitter buffers advance at exactly the
+     * rate the hardware consumes audio.
+     */
+    private fun playoutLoop(media: VoiceMediaSession) {
+        val self = Thread.currentThread()
+        val mono = ShortArray(media.frameSamples)
+        var bytes = ByteArray(0)
         var resampler: StreamingResampler? = null
-        playbackJob = scope.launch(Dispatchers.IO) {
-            while (isActive && session.get() === media) {
-                val channels = media.activeChannels.coerceIn(1, 2)
-                val need = media.frameSamples * channels
-                if (out.size != need) out = ShortArray(need)
+        var resamplerRate = VoicePcm.SAMPLE_RATE
+        var loggedLine: SourceDataLine? = null
+        try {
+            while (!self.isInterrupted && playoutThread === self && session.get() === media) {
                 if (preferWasapiPlayback && wasapiRender == null && !wasapiPlaybackFailed) {
+                    // COM objects live on this thread, so WASAPI is opened here.
                     wasapiRender = WasapiAudio.openRender()
                     if (wasapiRender == null) {
                         wasapiPlaybackFailed = true
@@ -598,53 +616,50 @@ class DesktopVoiceEngine : VoiceEngine {
                         println("DesktopVoice playback backend=WASAPI shared rate=${wasapiRender?.sampleRate}")
                     }
                 }
-                val n = media.pollMixedPcm(out)
-                if (n <= 0) {
-                    delay(3)
-                    continue
-                }
-                val inputPcm = if (n == out.size) out else out.copyOf(n)
-                feedReverse(inputPcm, channels)
+                media.renderPlayback(mono)
+                feedReverse(mono, 1)
+
                 val render = wasapiRender
-                if (channels == 1 && render != null) {
-                    runCatching { render.writeMono48k(inputPcm) }
+                if (render != null) {
+                    if (!render.writeMono48kBlocking(mono)) Thread.sleep(5)
                     continue
                 }
                 val line = playbackLine
-                if (n > 0 && line != null) {
-                    val lineRate = line.format.sampleRate.roundToInt().takeIf { it > 0 } ?: VoicePcm.SAMPLE_RATE
-                    if (lineRate != resamplerRate) {
-                        resamplerRate = lineRate
-                        resampler = if (lineRate == VoicePcm.SAMPLE_RATE) {
-                            null
-                        } else {
-                            StreamingResampler(VoicePcm.SAMPLE_RATE, lineRate)
-                        }
-                    }
-                    val playPcm = if (channels > 1) inputPcm else (resampler?.push(inputPcm) ?: inputPcm)
-                    if (playPcm.isNotEmpty()) {
-                        if (!loggedFormat) {
-                            loggedFormat = true
-                            println(
-                                "DesktopVoice playback format=PCM16LE rate=$lineRate ch=$channels " +
-                                    "frameSamples=${playPcm.size} bytesPerFrame=${playPcm.size * 2} " +
-                                    "firstRemoteRms=${media.lastRemoteRms}",
-                            )
-                        }
-                        if (bytes.size < playPcm.size * 2) {
-                            bytes = ByteArray(playPcm.size * 2)
-                        }
-                        for (i in playPcm.indices) {
-                            val s = playPcm[i].toInt()
-                            bytes[i * 2] = (s and 0xff).toByte()
-                            bytes[i * 2 + 1] = (s shr 8).toByte()
-                        }
-                        runCatching { line.write(bytes, 0, playPcm.size * 2) }
-                    }
-                } else {
-                    delay(3)
+                if (line == null) {
+                    // No output device: keep the jitter buffers moving in real time.
+                    Thread.sleep(20)
+                    continue
                 }
+                val lineRate = line.format.sampleRate.roundToInt().takeIf { it > 0 } ?: VoicePcm.SAMPLE_RATE
+                val lineChannels = line.format.channels.coerceIn(1, 2)
+                if (lineRate != resamplerRate) {
+                    resamplerRate = lineRate
+                    resampler = if (lineRate == VoicePcm.SAMPLE_RATE) null else StreamingResampler(VoicePcm.SAMPLE_RATE, lineRate)
+                }
+                val atRate = resampler?.push(mono) ?: mono
+                if (atRate.isEmpty()) continue
+                if (loggedLine !== line) {
+                    loggedLine = line
+                    println(
+                        "DesktopVoice playback format=PCM16LE rate=$lineRate ch=$lineChannels " +
+                            "bufferBytes=${line.bufferSize} frameSamples=${atRate.size}",
+                    )
+                }
+                val need = atRate.size * lineChannels * 2
+                if (bytes.size < need) bytes = ByteArray(need)
+                var o = 0
+                for (s in atRate) {
+                    val v = s.toInt()
+                    repeat(lineChannels) {
+                        bytes[o++] = (v and 0xff).toByte()
+                        bytes[o++] = (v shr 8).toByte()
+                    }
+                }
+                // Blocks until the line has room: this is the pacing.
+                val wrote = runCatching { line.write(bytes, 0, need) }.getOrDefault(-1)
+                if (wrote <= 0) Thread.sleep(5)
             }
+        } catch (_: InterruptedException) {
         }
     }
 

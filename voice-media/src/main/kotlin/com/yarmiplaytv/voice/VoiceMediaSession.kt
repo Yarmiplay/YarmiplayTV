@@ -8,8 +8,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -18,14 +16,23 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
- * Shared encode/decode + `yv1` transport. Platforms feed PCM via [offerCapturePcm] and mix
- * remote PCM from [pollMixedPcm] (or [onRemotePcm] if set).
+ * Shared encode/decode + `yv1` transport. Platforms feed PCM via [offerCapturePcm].
+ *
+ * Playout is **device-clocked**: the platform's audio thread calls [renderPlayback] each time the
+ * output device has room for another 20 ms, and blocks on the device write. The jitter buffers
+ * therefore advance at exactly the speaker's rate — no second timer drifting against the sound
+ * card, no single-slot hand-off that drops or repeats frames. When [onRemotePcm] is set (tests,
+ * headless use) a 20 ms timer drives the same tick instead.
  *
  * Capture path: single [VoiceNoiseSuppressor] stage (unless platform WebRTC NS is active) + Opus.
  * Auto-gain is one stage: platform or WebRTC AGC when [setAgcStageActive] is true. Otherwise
  * Discord capture uses one fixed makeup ([VoicePcm.FIXED_CAPTURE_MAKEUP]), not a second AGC.
- * Receive path: per-sender [VoiceJitterBuffer] + per-sender [OpusCodec] decoder, float participant
- * summing without 1/N division, and a single final look-ahead soft [VoiceLimiter] (~-1 dBFS ceiling).
+ * Microphones are mono, so Opus always encodes and decodes one channel (a stereo packet from an
+ * older client is down-mixed by the decoder). "Stereo" only sets the output layout: the mono
+ * mix is duplicated to both speakers.
+ * Receive path: per-sender [VoiceJitterBuffer] + per-sender mono [OpusCodec] decoder, float
+ * participant summing without 1/N division, and a single final look-ahead soft [VoiceLimiter]
+ * (~-1 dBFS ceiling).
  */
 class VoiceMediaSession(
     private val scope: CoroutineScope,
@@ -48,6 +55,8 @@ class VoiceMediaSession(
     @Volatile private var agcStageActive = false
     private var preferredBitrate = MAX_VOICE_BITRATE
     private var preferredStereo = false
+    /** Speaker layout for the mono mix: 2 duplicates it into interleaved stereo. */
+    @Volatile private var outputChannels = DISCORD_CHANNELS
     private var connectedSeat: VoiceMediaParams? = null
     private var speechThreshold = LEGACY_SPEECH_RMS
     private var inputGain = 1f
@@ -55,7 +64,6 @@ class VoiceMediaSession(
     private val peerMuted = ConcurrentHashMap<Long, Boolean>()
     private val peerVolume = ConcurrentHashMap<Long, Float>()
     private val peerDecoders = ConcurrentHashMap<Long, OpusCodec>()
-    private val lock = Mutex()
     private var codec: OpusCodec? = null
     private var loopbackCodec: OpusCodec? = null
     private var transport: Yv1Transport? = null
@@ -65,8 +73,12 @@ class VoiceMediaSession(
     private var playbackJob: Job? = null
     /** Bounded so a stalled ingest path cannot retain unbounded Opus copies. */
     private var inbound = boundedInbound()
-    private var mixBuf = ShortArray(960)
-    private val mixReady = AtomicBoolean(false)
+    /** Mic-test loopback frames (capture clock) waiting for the playout thread (device clock). */
+    private val loopbackQueue = ArrayDeque<ShortArray>()
+    private var loopbackPrimed = false
+    /** Serialises playout ticks (render thread or timer) so decoders are never shared. */
+    private val renderLock = Any()
+    private var renderMix = FloatArray(960)
     private val receivedFrames = AtomicBoolean(false)
     private val sentFramesCount = AtomicInteger(0)
     private val loopbackDecodedCount = AtomicInteger(0)
@@ -86,7 +98,8 @@ class VoiceMediaSession(
 
     val frameSamples: Int get() = codec?.frameSamples ?: 960
     val activeBitrate: Int get() = codec?.effectiveBitrate ?: preferredBitrate
-    val activeChannels: Int get() = codec?.channels ?: DISCORD_CHANNELS
+    /** Output (speaker) channel count for [renderPlayback]; Opus itself is always mono. */
+    val activeChannels: Int get() = outputChannels
     val running: Boolean get() = transport != null || wsTransport != null || muxTransport != null || standaloneLoopback.get()
     val usingTcp: Boolean get() = transport?.usingTcp == true
     /** True when media is on Syncplay mux or the Syncplay-port `/yarmiplay/voice` WebSocket. */
@@ -177,23 +190,24 @@ class VoiceMediaSession(
     fun isPreferredStereo(): Boolean = preferredStereo
 
     /**
-     * Applies the lobby bitrate immediately. A channel-count change replaces the codec; the
-     * Syncplay relay stays inside its existing cap and channel count.
+     * Applies the lobby bitrate immediately. Stereo only changes the speaker layout, so the
+     * encoder is never rebuilt mid-call. The Syncplay relay stays inside its existing cap.
      */
     private fun applyEncoderPreferences() {
-        val seat = connectedSeat ?: return
-        val current = codec ?: return
-        val bitrate = opusBitrate(seat, preferredBitrate)
-        val channels = opusChannels(seat, preferredStereo, bitrate)
-        if (current.channels == channels) {
-            current.setBitrate(bitrate)
-            loopbackCodec?.setBitrate(bitrate)
+        val seat = connectedSeat
+        if (seat == null) {
+            if (standaloneLoopback.get()) {
+                outputChannels = if (preferredStereo) DISCORD_STEREO_CHANNELS else DISCORD_CHANNELS
+                codec?.setBitrate(preferredBitrate)
+                loopbackCodec?.setBitrate(preferredBitrate)
+            }
             return
         }
-        codec = OpusCodec(bitrate, fec = seat.fec, dtx = false, opusClock(seat), channels)
-        loopbackCodec = OpusCodec(bitrate, fec = seat.fec, dtx = false, opusClock(seat), channels)
-        preOpus.clear()
-        synchronized(mixBuf) { mixBuf.fill(0) }
+        val current = codec ?: return
+        val bitrate = opusBitrate(seat, preferredBitrate)
+        outputChannels = opusChannels(seat, preferredStereo, bitrate)
+        current.setBitrate(bitrate)
+        loopbackCodec?.setBitrate(bitrate)
     }
 
     /** Feed measured receiver packet-loss percentage (`0..100`) to the Opus encoder. */
@@ -210,9 +224,11 @@ class VoiceMediaSession(
         discordCapture = true
         noise.setHardGate(false)
         speechThreshold = DISCORD_VAD_RMS
-        val opus = OpusCodec(preferredBitrate, fec = true, dtx = false, DISCORD_CLOCK, DISCORD_CHANNELS)
+        outputChannels = if (preferredStereo) DISCORD_STEREO_CHANNELS else DISCORD_CHANNELS
+        val opus = OpusCodec(preferredBitrate, fec = true, dtx = false, DISCORD_CLOCK, OPUS_CHANNELS)
         codec = opus
-        loopbackCodec = OpusCodec(preferredBitrate, fec = true, dtx = false, DISCORD_CLOCK, DISCORD_CHANNELS)
+        loopbackCodec = OpusCodec(preferredBitrate, fec = true, dtx = false, DISCORD_CLOCK, OPUS_CHANNELS)
+        clearLoopback()
         loopbackLimiter.reset()
         preOpus.clear()
         noise.reset()
@@ -229,10 +245,12 @@ class VoiceMediaSession(
     fun setMicTest(active: Boolean) {
         val was = micTest.getAndSet(active)
         if (active && !was) {
-            val opus = codec ?: OpusCodec(preferredBitrate, fec = true, dtx = false, DISCORD_CLOCK, DISCORD_CHANNELS).also {
+            val opus = codec ?: OpusCodec(preferredBitrate, fec = true, dtx = false, DISCORD_CLOCK, OPUS_CHANNELS).also {
                 codec = it
+                outputChannels = if (preferredStereo) DISCORD_STEREO_CHANNELS else DISCORD_CHANNELS
             }
             loopbackCodec = OpusCodec(opus.baseBitrate, fec = true, dtx = false, opus.sampleRate, opus.channels)
+            clearLoopback()
             loopbackLimiter.reset()
             loopbackRms.set(0.0)
             preOpus.clear()
@@ -240,6 +258,7 @@ class VoiceMediaSession(
             noise.setHardGate(false)
         } else if (!active && was) {
             loopbackRms.set(0.0)
+            clearLoopback()
             preOpus.clear()
             noise.flushPending()
             noise.setHardGate(!discordCapture)
@@ -269,13 +288,16 @@ class VoiceMediaSession(
         speechThreshold = if (discord) DISCORD_VAD_RMS else LEGACY_SPEECH_RMS
         val bitrate = opusBitrate(seat, preferredBitrate)
         val clock = opusClock(seat)
-        val channels = opusChannels(seat, preferredStereo, bitrate)
+        outputChannels = opusChannels(seat, preferredStereo, bitrate)
+        clearLoopback()
         // DTX stays off. Silence gating on the relayed path is the noise suppressor; Discord
         // capture sends continuous 20 ms frames so the far end is not asked to conceal holes.
-        val opus = OpusCodec(bitrate, fec = seat.fec, dtx = false, clock, channels)
+        // One Opus channel: the microphone is mono, so a stereo stream would only spend half the
+        // bitrate on an identical copy.
+        val opus = OpusCodec(bitrate, fec = seat.fec, dtx = false, clock, OPUS_CHANNELS)
         codec = opus
         connectedSeat = seat
-        loopbackCodec = OpusCodec(bitrate, fec = seat.fec, dtx = false, clock, channels)
+        loopbackCodec = OpusCodec(bitrate, fec = seat.fec, dtx = false, clock, OPUS_CHANNELS)
         inbound = boundedInbound()
         val frames = inbound
         val onAudio: (Long, ByteArray, Int, Int) -> Unit =
@@ -288,7 +310,7 @@ class VoiceMediaSession(
             if (mux.start()) {
                 muxTransport = mux
                 decodeJob = scope.launch { ingestLoop(frames) }
-                playbackJob = scope.launch { playbackLoop() }
+                playbackJob = startTimerPlayout()
                 return true
             }
             mux.close()
@@ -317,7 +339,7 @@ class VoiceMediaSession(
             if (ws.start()) {
                 wsTransport = ws
                 decodeJob = scope.launch { ingestLoop(frames) }
-                playbackJob = scope.launch { playbackLoop() }
+                playbackJob = startTimerPlayout()
                 return true
             }
             ws.close()
@@ -359,7 +381,7 @@ class VoiceMediaSession(
         }
         transport = t
         decodeJob = scope.launch { ingestLoop(frames) }
-        playbackJob = scope.launch { playbackLoop() }
+        playbackJob = startTimerPlayout()
         return true
     }
 
@@ -400,10 +422,8 @@ class VoiceMediaSession(
         loopbackLimiter.reset()
         preOpus.clear()
         noise.reset()
-        synchronized(mixBuf) {
-            mixBuf.fill(0)
-            mixReady.set(false)
-        }
+        outputChannels = DISCORD_CHANNELS
+        clearLoopback()
     }
 
     fun setTransmitting(on: Boolean) {
@@ -563,13 +583,14 @@ class VoiceMediaSession(
                 val outRms = VoicePcm.rms(limited)
                 loopbackRms.set(loopbackRms.get() * 0.45 + outRms * 0.55)
                 loopbackDecodedCount.incrementAndGet()
-                onRemotePcm?.invoke(0L, limited)
-                if (onRemotePcm == null) {
-                    synchronized(mixBuf) {
-                        if (mixBuf.size < limited.size) mixBuf = ShortArray(limited.size)
-                        val n = minOf(mixBuf.size, limited.size)
-                        System.arraycopy(limited, 0, mixBuf, 0, n)
-                        mixReady.set(true)
+                val callback = onRemotePcm
+                if (callback != null) {
+                    callback(0L, upmix(limited, outputChannels))
+                } else {
+                    synchronized(loopbackQueue) {
+                        loopbackQueue.addLast(limited)
+                        // Capture and speaker clocks differ: keep at most ~80 ms queued.
+                        while (loopbackQueue.size > LOOPBACK_MAX_FRAMES) loopbackQueue.removeFirst()
                     }
                 }
                 continue
@@ -583,25 +604,88 @@ class VoiceMediaSession(
     }
 
     /**
-     * Poll the next 20 ms mixed + limited PCM frame for desktop playback.
-     * Returns 0 if no new frame has been mixed since the previous poll so callers do not
-     * stuff the hardware output buffer with silence.
+     * Device-clocked playout: fill [out] with the next 20 ms the speaker should play and return
+     * true when it holds remote (or mic-test) audio. Always fills [out] — silence when nobody is
+     * talking — so the caller can keep the output device streaming at its own pace and simply
+     * block on the device write. [out] is either `frameSamples` (mono) or `frameSamples * 2`
+     * (interleaved stereo, the mono mix duplicated).
+     *
+     * Call from exactly one audio thread.
+     */
+    fun renderPlayback(out: ShortArray): Boolean {
+        val channels = if (out.size >= frameSamples * 2) 2 else 1
+        if (micTest.get()) {
+            val frame = pollLoopback()
+            // Keep remote jitter buffers moving so ending the test does not play a backlog.
+            if (connectedSeat != null) mixTick()
+            if (frame == null) {
+                out.fill(0)
+                return false
+            }
+            writeLayout(frame, out, channels)
+            return true
+        }
+        val mono = mixTick()
+        if (mono == null || deaf.get()) {
+            out.fill(0)
+            return false
+        }
+        writeLayout(mono, out, channels)
+        return true
+    }
+
+    /**
+     * Mic-test loopback only (tests / headless callers): copies the next queued loopback frame
+     * into [out] and returns its length, or 0 when nothing is queued. Remote voice is played
+     * with [renderPlayback].
      */
     fun pollMixedPcm(out: ShortArray): Int {
-        val n = minOf(out.size, mixBuf.size)
-        if (deaf.get() && !micTest.get()) {
-            synchronized(mixBuf) {
-                mixBuf.fill(0)
-                mixReady.set(false)
+        if (!micTest.get()) return 0
+        val frame = pollLoopback(prebuffer = false) ?: return 0
+        val channels = if (out.size >= frameSamples * 2) 2 else 1
+        writeLayout(frame, out, channels)
+        return minOf(out.size, frame.size * channels)
+    }
+
+    private fun pollLoopback(prebuffer: Boolean = true): ShortArray? = synchronized(loopbackQueue) {
+        if (prebuffer && !loopbackPrimed) {
+            // Start a little behind the capture clock so its jitter does not starve the speaker.
+            if (loopbackQueue.size < LOOPBACK_PREBUFFER_FRAMES) return null
+            loopbackPrimed = true
+        }
+        val frame = loopbackQueue.removeFirstOrNull()
+        if (frame == null) loopbackPrimed = false
+        frame
+    }
+
+    private fun clearLoopback() {
+        synchronized(loopbackQueue) {
+            loopbackQueue.clear()
+            loopbackPrimed = false
+        }
+    }
+
+    private fun writeLayout(mono: ShortArray, out: ShortArray, channels: Int) {
+        if (channels == 2) {
+            val n = minOf(mono.size, out.size / 2)
+            for (i in 0 until n) {
+                val s = mono[i]
+                out[i * 2] = s
+                out[i * 2 + 1] = s
             }
-            return 0
+            if (n * 2 < out.size) out.fill(0, n * 2, out.size)
+        } else {
+            val n = minOf(mono.size, out.size)
+            System.arraycopy(mono, 0, out, 0, n)
+            if (n < out.size) out.fill(0, n, out.size)
         }
-        synchronized(mixBuf) {
-            if (!mixReady.getAndSet(false)) return 0
-            System.arraycopy(mixBuf, 0, out, 0, n)
-            mixBuf.fill(0)
-        }
-        return n
+    }
+
+    private fun upmix(mono: ShortArray, channels: Int): ShortArray {
+        if (channels < 2) return mono
+        val out = ShortArray(mono.size * 2)
+        writeLayout(mono, out, 2)
+        return out
     }
 
     private fun applyInputGain(pcm: ShortArray): ShortArray {
@@ -629,125 +713,113 @@ class VoiceMediaSession(
             )
         }
 
-    private suspend fun playbackLoop() {
-        // Pace at 20 ms using a monotonic schedule so AudioTrack / desktop lines see a steady stream.
-        var floatMix = FloatArray(960)
-        var lossFeedbackTick = 0
-        var nextDeadlineNs = System.nanoTime()
-        while (scope.isActive) {
-            val now = System.nanoTime()
-            if (now > nextDeadlineNs + 40_000_000L) {
-                nextDeadlineNs = now
-            }
-            nextDeadlineNs += 20_000_000L
-
-            val senders = jitter.primedSenders()
-            if (senders.isEmpty()) {
-                audibleSenders.set(emptySet())
-                delay(4)
-                nextDeadlineNs = System.nanoTime()
-                continue
-            }
-
-            val opus = codec ?: run {
-                delay(20)
-                continue
-            }
-            val mixSamples = opus.frameSamples * opus.channels
-            if (floatMix.size != mixSamples) floatMix = FloatArray(mixSamples)
-
-            if (++lossFeedbackTick >= 10) {
-                lossFeedbackTick = 0
-                opus.updatePacketLoss(jitter.lossPercent())
-            }
-
-            if (deaf.get()) {
-                // Keep the jitter buffer moving so undeafen is not a backlog, but play nothing.
-                audibleSenders.set(emptySet())
-                lastRms.set(0.0)
-                for (sender in senders) {
-                    val frame = jitter.poll(sender, decode = { null }, plc = { null }, fec = { null })
-                    if (frame == null) {
-                        peerMuted.remove(sender)
-                        peerVolume.remove(sender)
-                        peerDecoders.remove(sender)
+    /**
+     * Headless / test playout: a 20 ms monotonic timer drives [mixTick] and hands each frame to
+     * [onRemotePcm]. Real devices use [renderPlayback] from their audio thread instead.
+     */
+    private fun startTimerPlayout(): Job? {
+        val callback = onRemotePcm ?: return null
+        return scope.launch {
+            var nextDeadlineNs = System.nanoTime()
+            while (isActive) {
+                val now = System.nanoTime()
+                if (now > nextDeadlineNs + 40_000_000L) nextDeadlineNs = now
+                nextDeadlineNs += 20_000_000L
+                if (!micTest.get()) {
+                    val mono = mixTick()
+                    if (mono != null && !deaf.get()) {
+                        callback(lastSender.get().takeUnless { it == Long.MIN_VALUE } ?: 0L, upmix(mono, outputChannels))
                     }
                 }
                 val sleepMs = ((nextDeadlineNs - System.nanoTime()) / 1_000_000L).coerceIn(1L, 20L)
                 delay(sleepMs)
+            }
+        }
+    }
+
+    /**
+     * One 20 ms playout tick: advance every primed sender's jitter buffer, decode, sum in float
+     * and limit. Returns the mono mix, or null when nobody is primed (or while deafened, when the
+     * buffers still advance so undeafen does not replay a backlog).
+     */
+    private fun mixTick(): ShortArray? = synchronized(renderLock) {
+        val senders = jitter.primedSenders()
+        if (senders.isEmpty()) {
+            audibleSenders.set(emptySet())
+            return null
+        }
+        val opus = codec ?: return null
+        val mixSamples = opus.frameSamples
+        if (renderMix.size != mixSamples) renderMix = FloatArray(mixSamples)
+        val floatMix = renderMix
+
+        if (++lossFeedbackTick >= 10) {
+            lossFeedbackTick = 0
+            opus.updatePacketLoss(jitter.lossPercent())
+        }
+
+        if (deaf.get()) {
+            audibleSenders.set(emptySet())
+            lastRms.set(0.0)
+            for (sender in senders) {
+                val frame = jitter.poll(sender, decode = { null }, plc = { null }, fec = { null })
+                if (frame == null) forgetPeer(sender)
+            }
+            return null
+        }
+
+        val heard = LinkedHashSet<Long>()
+        floatMix.fill(0f)
+        var activeContributors = 0
+
+        for (sender in senders) {
+            val peerCodec = decoderFor(sender, opus)
+            // A locally muted peer is still decoded (and discarded) so its decoder state stays
+            // continuous: unmuting mid-sentence must not start from a stale Opus state.
+            val frame = jitter.poll(
+                sender,
+                decode = { peerCodec.decode(it) },
+                plc = { peerCodec.decodePlc() },
+                fec = { peerCodec.decodeFec(it) },
+            )
+            if (frame == null) {
+                forgetPeer(sender)
                 continue
             }
-
-            val heard = LinkedHashSet<Long>()
-            floatMix.fill(0f)
-            var activeContributors = 0
-            var activeSender = Long.MIN_VALUE
-
-            for (sender in senders) {
-                if (peerMuted[sender] == true) {
-                    // Still advance/prune so a muted leaver slot does not linger forever.
-                    if (jitter.poll(sender, decode = { null }, plc = { null }, fec = { null }) == null) {
-                        peerMuted.remove(sender)
-                        peerVolume.remove(sender)
-                        peerDecoders.remove(sender)
-                    }
-                    continue
-                }
-                val peerCodec = decoderFor(sender, opus)
-                val frame = jitter.poll(
-                    sender,
-                    decode = { peerCodec.decode(it) },
-                    plc = { peerCodec.decodePlc() },
-                    fec = { peerCodec.decodeFec(it) },
-                )
-                if (frame == null) {
-                    peerMuted.remove(sender)
-                    peerVolume.remove(sender)
-                    peerDecoders.remove(sender)
-                    continue
-                }
-                val pcm = frame.pcm
-                lastSender.set(sender)
-                activeSender = sender
-                val vol = peerVolume.getOrDefault(sender, 1f) * outputGain
-                var sumSq = 0.0
-                if (vol > 0f) {
-                    for (s in pcm) {
-                        val v = s.toDouble() * vol
-                        sumSq += v * v
-                    }
-                }
-                val senderRms = sqrt(sumSq / pcm.size.coerceAtLeast(1))
-                // Speaking UI: only real packets with energy count — PLC/silence drops the name this tick.
-                if (!frame.concealed && senderRms >= AUDIBLE_RMS) heard += sender
-                // Sum participant in float without dividing by participant count.
-                limiter.accumulateFloat(floatMix, pcm, vol)
-                activeContributors++
-            }
-
-            audibleSenders.set(heard)
-            if (activeContributors > 0 && !micTest.get()) {
-                // Single final look-ahead soft limiter (~-1 dBFS ceiling) on the summed float mix.
-                val mixed = limiter.limitToPcm16(floatMix, mixSamples)
-                val mixRms = VoicePcm.rms(mixed)
-                lastRms.set(mixRms)
-                receivedFrames.set(true)
-                onRemotePcm?.invoke(activeSender, mixed)
-                if (onRemotePcm == null) {
-                    lock.withLock {
-                        synchronized(mixBuf) {
-                            if (mixBuf.size < mixed.size) mixBuf = ShortArray(mixed.size)
-                            val n = minOf(mixBuf.size, mixed.size)
-                            System.arraycopy(mixed, 0, mixBuf, 0, n)
-                            mixReady.set(true)
-                        }
-                    }
+            if (peerMuted[sender] == true) continue
+            val pcm = frame.pcm
+            lastSender.set(sender)
+            val vol = peerVolume.getOrDefault(sender, 1f) * outputGain
+            var sumSq = 0.0
+            if (vol > 0f) {
+                for (s in pcm) {
+                    val v = s.toDouble() * vol
+                    sumSq += v * v
                 }
             }
-
-            val sleepMs = ((nextDeadlineNs - System.nanoTime()) / 1_000_000L).coerceIn(1L, 20L)
-            delay(sleepMs)
+            val senderRms = sqrt(sumSq / pcm.size.coerceAtLeast(1))
+            // Speaking UI: only real packets with energy count — PLC/silence drops the name this tick.
+            if (!frame.concealed && senderRms >= AUDIBLE_RMS) heard += sender
+            // Sum participant in float without dividing by participant count.
+            limiter.accumulateFloat(floatMix, pcm, vol)
+            activeContributors++
         }
+
+        audibleSenders.set(heard)
+        if (activeContributors == 0) return null
+        // Single final look-ahead soft limiter (~-1 dBFS ceiling) on the summed float mix.
+        val mixed = limiter.limitToPcm16(floatMix, mixSamples)
+        lastRms.set(VoicePcm.rms(mixed))
+        receivedFrames.set(true)
+        return mixed
+    }
+
+    private var lossFeedbackTick = 0
+
+    private fun forgetPeer(sender: Long) {
+        peerMuted.remove(sender)
+        peerVolume.remove(sender)
+        peerDecoders.remove(sender)
     }
 
     companion object {
@@ -764,6 +836,11 @@ class VoiceMediaSession(
         const val DISCORD_CLOCK = 48_000
         const val DISCORD_CHANNELS = 1
         const val DISCORD_STEREO_CHANNELS = 2
+        /** Opus is always mono: microphones are mono, the speaker layout is chosen at playout. */
+        const val OPUS_CHANNELS = 1
+        /** Mic-test loopback: start after 40 ms queued, never hold more than 80 ms. */
+        private const val LOOPBACK_PREBUFFER_FRAMES = 2
+        private const val LOOPBACK_MAX_FRAMES = 4
         const val MIN_VOICE_BITRATE = 24_000
         const val MAX_VOICE_BITRATE = 128_000
         const val LEGACY_MAX_BITRATE = 64_000

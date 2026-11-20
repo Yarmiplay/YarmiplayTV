@@ -18,16 +18,22 @@ data class JvmAudioDevice(val id: String, val label: String)
  * - Prefers 48 kHz mono PCM16 so devices that support 48 kHz run with zero resampling.
  * - Falls back to 44.1 kHz / 32 kHz / 96 kHz / 16 kHz when hardware is locked to a non-48 kHz clock
  *   (caller resamples once via [StreamingResampler]).
- * - Requests a 2-frame (~40 ms) hardware buffer for low mouth-to-ear latency, falling back to
- *   4 frames (~80 ms) or the driver default if a device rejects small buffers.
+ * - Requests a 2-frame (~40 ms) capture buffer and a 3-frame (~60 ms) playback buffer, falling
+ *   back to 4 / 6 frames or the driver default if a device rejects small buffers.
  */
 object JvmVoiceDevices {
     val pcm48Mono: AudioFormat = AudioFormat(48_000f, 16, 1, true, false)
     val preferredRates: IntArray = intArrayOf(48_000, 44_100, 32_000, 96_000, 16_000)
 
-    /** Target low-latency line buffer in 20 ms frame multiples (2 frames = 40 ms). */
+    /** Target low-latency capture line buffer in 20 ms frame multiples (2 frames = 40 ms). */
     const val LOW_LATENCY_BUFFER_FRAMES = 2
     const val FALLBACK_BUFFER_FRAMES = 4
+    /**
+     * Playback line buffer (3 frames = 60 ms). The playout thread keeps it full and blocks on
+     * write, so this is both the output latency and the slack against a late thread wake-up.
+     */
+    const val PLAYBACK_BUFFER_FRAMES = 3
+    const val PLAYBACK_FALLBACK_BUFFER_FRAMES = 6
 
     fun formatForRate(sampleRate: Int, channels: Int = 1): AudioFormat =
         AudioFormat(sampleRate.toFloat(), 16, channels, true, false)
@@ -64,8 +70,8 @@ object JvmVoiceDevices {
             val format = formatForRate(rate, ch)
             val frameBytes = frameSamplesAtRate(rate, frameSamples) * 2 * ch
             val buffers = intArrayOf(
-                frameBytes * LOW_LATENCY_BUFFER_FRAMES,
-                frameBytes * FALLBACK_BUFFER_FRAMES,
+                frameBytes * if (target) LOW_LATENCY_BUFFER_FRAMES else PLAYBACK_BUFFER_FRAMES,
+                frameBytes * if (target) FALLBACK_BUFFER_FRAMES else PLAYBACK_FALLBACK_BUFFER_FRAMES,
                 0, // driver default
             )
             for (bufBytes in buffers) {

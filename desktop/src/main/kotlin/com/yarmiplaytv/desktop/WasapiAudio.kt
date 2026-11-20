@@ -45,7 +45,7 @@ internal object WasapiAudio {
             client = activateAudioClient(device) ?: return null
             format = mixFormat(client) ?: return null
             val info = parseFormat(format) ?: return null
-            if (!initializeShared(client, format, info.sampleRate)) return null
+            if (!initializeShared(client, format, info.sampleRate, render)) return null
             val bufferFrames = IntByReference()
             if (hr(client, SLOT_GET_BUFFER_SIZE, bufferFrames) < 0 || bufferFrames.value <= 0) return null
             val serviceIid = guid(if (render) IID_RENDER else IID_CAPTURE)
@@ -72,12 +72,15 @@ internal object WasapiAudio {
         }
     }
 
-    private fun initializeShared(client: Pointer, format: Pointer, sampleRate: Int): Boolean {
+    private fun initializeShared(client: Pointer, format: Pointer, sampleRate: Int, render: Boolean): Boolean {
         val def = Memory(8)
         val min = Memory(8)
         val periodHr = hr(client, SLOT_GET_DEVICE_PERIOD, def, min)
         val defaultPeriod = if (periodHr >= 0) def.getLong(0).coerceAtLeast(0L) else 200_000L
-        var duration = maxOf(200_000L, defaultPeriod * 2)
+        // Render gets 100 ms of capacity; the writer keeps it ~60 ms full ([WasapiRender]), so a
+        // late wake-up of the playout thread drains slack instead of underrunning the speaker.
+        val floor = if (render) RENDER_BUFFER_HNS else 200_000L
+        var duration = maxOf(floor, defaultPeriod * 2)
         var result = hr(client, SLOT_INITIALIZE, 0, 0, duration, 0L, format, Pointer.NULL)
         if (result == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED) {
             val frames = IntByReference()
@@ -126,6 +129,47 @@ internal class WasapiRender(
         writeFrames(dest, mono, frames)
         if (hr(render, 4, frames, 0) < 0) return
         pending = if (frames < mono.size) capPending(mono.copyOfRange(frames, mono.size)) else ShortArray(0)
+    }
+
+    /**
+     * Device-clocked write: waits until the endpoint buffer has room for all of [pcm] below the
+     * [RENDER_TARGET_MS] fill level, then writes it. Returns false when the stream is gone.
+     */
+    @Synchronized
+    fun writeMono48kBlocking(pcm: ShortArray): Boolean {
+        if (released.get()) return false
+        if (pcm.isEmpty()) return true
+        val atDevice = resampler?.push(pcm) ?: pcm
+        val targetFill = minOf(bufferFrames, format.sampleRate * RENDER_TARGET_MS / 1000)
+        var offset = 0
+        val padding = IntByReference()
+        while (offset < atDevice.size) {
+            if (released.get()) return false
+            if (hr(client, SLOT_GET_CURRENT_PADDING, padding) < 0) return false
+            val room = targetFill - padding.value
+            val remaining = atDevice.size - offset
+            if (room < minOf(remaining, format.sampleRate / 200)) {
+                // Sleep about as long as it takes the device to free the space we need.
+                val waitFrames = minOf(remaining, format.sampleRate / 100) - room.coerceAtLeast(0)
+                val waitMs = (waitFrames * 1000L / format.sampleRate).coerceIn(1L, 10L)
+                try {
+                    Thread.sleep(waitMs)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return false
+                }
+                continue
+            }
+            val frames = minOf(room, remaining)
+            val data = PointerByReference()
+            if (hr(render, 3, frames, data) < 0) return false
+            val dest = data.value ?: return false
+            val chunk = if (offset == 0 && frames == atDevice.size) atDevice else atDevice.copyOfRange(offset, offset + frames)
+            writeFrames(dest, chunk, frames)
+            if (hr(render, 4, frames, 0) < 0) return false
+            offset += frames
+        }
+        return true
     }
 
     private fun capPending(samples: ShortArray): ShortArray {
@@ -278,6 +322,10 @@ private fun parseFormat(format: Pointer): WasapiMixFormat? {
     return null
 }
 
+/** Render endpoint capacity: 100 ms in 100 ns units. */
+private const val RENDER_BUFFER_HNS = 1_000_000L
+/** Steady-state render fill: deep enough to ride out a 40 ms scheduling hiccup. */
+private const val RENDER_TARGET_MS = 60
 private const val SLOT_INITIALIZE = 3
 private const val SLOT_GET_BUFFER_SIZE = 4
 private const val SLOT_GET_CURRENT_PADDING = 6

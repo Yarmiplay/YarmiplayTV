@@ -81,7 +81,7 @@ class VoicePipelinePolishTest {
     }
 
     @Test
-    fun jitterHoldPlaysALatePacketWithoutCallingPlc() {
+    fun jitterHoldExpandsWithOpusPlcAndStillPlaysTheLatePacket() {
         val jb = VoiceJitterBuffer(frameSamples = 960, minFrames = 2, maxFrames = 5)
         var decoded = 0
         var plc = 0
@@ -92,19 +92,58 @@ class VoicePipelinePolishTest {
             val played = jb.poll(1L, decode = { decoded++; loud() }, plc = { plc++; loud() }, fec = { null })
             assertFalse(played!!.concealed)
         }
-        // 80 ms of waiting (4 ticks) for seq 2. Opus PLC must not run while the packet can still arrive.
+        // 80 ms of waiting (4 ticks) for seq 2: the codec's own PLC fills the time (expand),
+        // but the sequence is held so the packet is not written off.
         repeat(4) {
             val held = jb.poll(1L, decode = { decoded++; loud() }, plc = { plc++; loud() }, fec = { null })
             assertTrue(held!!.concealed)
         }
-        assertEquals(0, plc)
+        assertEquals(4, plc)
         assertEquals(2, decoded)
         jb.push(1L, 2, byteArrayOf(3))
         val late = jb.poll(1L, decode = { decoded++; loud() }, plc = { plc++; loud() }, fec = { null })
         assertNotNull(late)
         assertFalse("late packet should play, not be skipped", late!!.concealed)
         assertEquals(3, decoded)
-        assertEquals(0, plc)
+        assertEquals(4, plc)
+    }
+
+    @Test
+    fun pausedSenderResumesInsteadOfBeingDroppedAsLate() {
+        val jb = VoiceJitterBuffer(frameSamples = 960, minFrames = 2, maxFrames = 4)
+        val loud = { ShortArray(960) { 3_000 } }
+        jb.push(1L, 0, byteArrayOf(1))
+        jb.push(1L, 1, byteArrayOf(2))
+        repeat(2) { jb.poll(1L, decode = { loud() }, plc = { ShortArray(960) }, fec = { null }) }
+        // Push-to-talk released for ~400 ms: the buffer gives up holding and advances.
+        repeat(20) { jb.poll(1L, decode = { loud() }, plc = { ShortArray(960) }, fec = { null }) }
+        // The sender resumes with the very next sequence number.
+        for (seq in 2..5) jb.push(1L, seq, byteArrayOf(seq.toByte()))
+        var real = 0
+        repeat(8) {
+            val f = jb.poll(1L, decode = { loud() }, plc = { ShortArray(960) }, fec = { null })
+            if (f != null && !f.concealed) real++
+        }
+        assertEquals("all four resumed packets must play", 4, real)
+    }
+
+    @Test
+    fun stereoPacketsFromOlderClientsDecodeToContinuousMonoFrames() {
+        // 3.0.x clients send stereo Opus. The receiver decodes mono, so every jitter tick is a
+        // whole 20 ms frame — no half-frames and no growing backlog.
+        val tx = OpusCodec(128_000, channels = 2)
+        val rx = OpusCodec(128_000, channels = 1)
+        val pcm = voiced(30, hz = 160.0)
+        val jb = VoiceJitterBuffer()
+        var frames = 0
+        for (i in 0 until 30) {
+            jb.push(3L, i, tx.encode(VoicePcm.monoToStereo(pcm, i * 960, 960))!!)
+            val f = jb.poll(3L, { rx.decode(it) }, { rx.decodePlc() }, { rx.decodeFec(it) }) ?: continue
+            assertEquals(960, f.pcm.size)
+            if (frames >= 2) assertTrue("frame $frames went quiet", VoicePcm.rms(f.pcm) > 400)
+            frames++
+        }
+        assertTrue(frames >= 20)
     }
 
     @Test

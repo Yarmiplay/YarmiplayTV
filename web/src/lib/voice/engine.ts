@@ -1,5 +1,17 @@
 import { listInputDevices, listOutputDevices } from "./devices";
+import workletUrl from "./voice-worklet.ts?worker&url";
 import { decodeKeyBase64, open, parseTokenHex, seal, YV1 } from "./yv1";
+
+/**
+ * Opus bitrate for this seat. A Discord-lobby seat at the server's unconfigured 32 kbps default
+ * gets Discord's own 64 kbps voice default; an explicit server cap is honoured.
+ */
+export function webVoiceBitrate(seat: Pick<VoiceJoinedSeat, "provider" | "maxBitrate">): number {
+  const cap = seat.maxBitrate ?? 32_000;
+  const lobby = (seat.provider ?? "discord-lobby").toLowerCase() === "discord-lobby";
+  const wanted = lobby && cap === 32_000 ? 64_000 : cap;
+  return Math.min(128_000, Math.max(6_000, wanted));
+}
 
 export type VoiceJoinedSeat = {
   host: string;
@@ -34,6 +46,10 @@ export type VoiceAudioDevice = {
  * Browser voice media: preferred Syncplay-mux binary frames on `/yarmiplay/ws`, with
  * legacy fallback to `/yarmiplay/voice?t=<token>`. AES-GCM `yv1` + Opus via WebCodecs.
  * Mic list via `enumerateDevices`; speaker via `setSinkId` where the browser supports it.
+ *
+ * Capture and playout run in AudioWorklets (`voice-worklet.ts`): the mic is cut into exact 20 ms
+ * frames, and decoded talkers are queued per sender and pulled out by the sound card's clock,
+ * so bursty arrivals play back evenly instead of each packet starting "now".
  */
 export class WebVoiceEngine {
   private ws: WebSocket | null = null;
@@ -52,6 +68,12 @@ export class WebVoiceEngine {
   private encoder: AudioEncoder | null = null;
   private readonly decoders = new Map<string, AudioDecoder>();
   private playCtx: AudioContext | null = null;
+  private playNode: AudioWorkletNode | null = null;
+  private playReady: Promise<AudioWorkletNode | null> | null = null;
+  /** Packets are decrypted asynchronously; this chain keeps them in arrival order. */
+  private rx: Promise<void> = Promise.resolve();
+  private readonly decodeTs = new Map<string, number>();
+  private captureFrames = 0;
   private peerGain = new Map<string, { muted: boolean; volume: number }>();
   private outputGain = 1;
   private inputGain = 1;
@@ -78,11 +100,11 @@ export class WebVoiceEngine {
     this.token = token;
     this.key = key;
     this.closed = false;
-    this.maxBitrate = seat.maxBitrate ?? 32_000;
+    this.maxBitrate = webVoiceBitrate(seat);
     try {
       if (seat.mux) {
         this.mux = seat.mux;
-        this.mux.setOnPacket((packet) => void this.onPacket(new Uint8Array(packet)));
+        this.mux.setOnPacket((packet) => this.onPacket(new Uint8Array(packet)));
         // Keepalives optional on mux; still useful against idle proxies.
         this.keepaliveTimer = setInterval(() => void this.sendKeepalive(), 5000);
         this.listenDeviceChanges();
@@ -125,7 +147,16 @@ export class WebVoiceEngine {
       }
     }
     this.decoders.clear();
+    this.decodeTs.clear();
     this.peerGain.clear();
+    this.rx = Promise.resolve();
+    try {
+      this.playNode?.disconnect();
+    } catch {
+      /* ignore */
+    }
+    this.playNode = null;
+    this.playReady = null;
     try {
       void this.playCtx?.close();
     } catch {
@@ -340,19 +371,23 @@ export class WebVoiceEngine {
       };
       ws.onmessage = (ev) => {
         if (typeof ev.data === "string") return;
-        void this.onPacket(new Uint8Array(ev.data as ArrayBuffer));
+        this.onPacket(new Uint8Array(ev.data as ArrayBuffer));
       };
     });
   }
 
-  private async onPacket(raw: Uint8Array) {
+  private onPacket(raw: Uint8Array) {
+    this.rx = this.rx.then(() => this.handlePacket(raw)).catch(() => undefined);
+  }
+
+  private async handlePacket(raw: Uint8Array) {
     if (!this.key) return;
     const opened = await open(this.key, raw);
     if (!opened || opened.type !== YV1.TYPE_AUDIO || opened.plain.length === 0) return;
     const senderKey = `c${opened.sender.toString()}`;
     const pref = this.peerGain.get(senderKey);
     if (pref?.muted) return;
-    await this.playOpus(senderKey, opened.plain, (pref?.volume ?? 1) * this.outputGain);
+    await this.playOpus(senderKey, opened.plain);
   }
 
   private async sendPacket(type: number, plain: Uint8Array) {
@@ -414,9 +449,10 @@ export class WebVoiceEngine {
       }
     }
     this.captureStream = stream;
-    const ctx = new AudioContext({ sampleRate: 48000 });
+    const ctx = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
     this.captureCtx = ctx;
     const source = ctx.createMediaStreamSource(stream);
+    this.captureFrames = 0;
     const encoder = new AudioEncoder({
       output: (chunk) => {
         if (!this.transmitting || this.selfMuted) return;
@@ -429,59 +465,89 @@ export class WebVoiceEngine {
         /* ignore encode errors */
       },
     });
-    encoder.configure({
+    const config: AudioEncoderConfig & { opus?: Record<string, unknown>; bitrateMode?: string } = {
       codec: "opus",
       sampleRate: 48000,
       numberOfChannels: 1,
-      bitrate: Math.min(128_000, Math.max(6_000, bitrate)),
-    });
+      bitrate,
+      bitrateMode: "variable",
+      // 20 ms packets with in-band FEC, matching the native clients.
+      opus: { format: "opus", frameDuration: 20_000, complexity: 10, useinbandfec: true, usedtx: false },
+    };
+    encoder.configure(config as AudioEncoderConfig);
     this.encoder = encoder;
 
-    // 20 ms frames via ScriptProcessor (widely available); AudioWorklet would be nicer later.
-    const proc = ctx.createScriptProcessor(960, 1, 1);
-    proc.onaudioprocess = (ev) => {
-      if (!this.encoder || this.encoder.state !== "configured") return;
-      if (!this.transmitting || this.selfMuted) {
-        this.captureRms = 0;
-        this.reportSpeaking(false);
-        return;
-      }
-      const input = ev.inputBuffer.getChannelData(0);
-      const interleaved = new Float32Array(input.length);
-      let sum = 0;
-      for (let i = 0; i < input.length; i++) {
-        const s = Math.max(-1, Math.min(1, input[i] * this.inputGain));
-        interleaved[i] = s;
-        sum += s * s;
-      }
-      const rms = Math.sqrt(sum / Math.max(1, input.length));
-      this.captureRms = this.captureRms * 0.55 + rms * 0.45;
-      // Instant clear when this frame is near silence — no hangover for voiceActivity.
-      this.reportSpeaking(rms > 0.02);
-      try {
-        this.encoder.encode(
-          new AudioData({
-            format: "f32",
-            sampleRate: 48000,
-            numberOfFrames: interleaved.length,
-            numberOfChannels: 1,
-            timestamp: 0,
-            data: interleaved,
-          }),
-        );
-      } catch {
-        /* ignore */
-      }
-    };
-    source.connect(proc);
-    proc.connect(ctx.destination); // required for some browsers; muted via gain 0
+    const onFrame = (input: Float32Array) => this.encodeFrame(input);
+    let node: AudioWorkletNode | ScriptProcessorNode;
+    try {
+      await ctx.audioWorklet.addModule(workletUrl);
+      const worklet = new AudioWorkletNode(ctx, "voice-capture", {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        channelCount: 1,
+        channelCountMode: "explicit",
+      });
+      worklet.port.onmessage = (ev: MessageEvent<Float32Array>) => onFrame(ev.data);
+      node = worklet;
+    } catch {
+      // No AudioWorklet: ScriptProcessor needs a power-of-two size, so re-cut 1024 into 960.
+      const proc = ctx.createScriptProcessor(1024, 1, 1);
+      let pending = new Float32Array(0);
+      proc.onaudioprocess = (ev) => {
+        const input = ev.inputBuffer.getChannelData(0);
+        const joined = new Float32Array(pending.length + input.length);
+        joined.set(pending);
+        joined.set(input, pending.length);
+        let off = 0;
+        while (joined.length - off >= 960) {
+          onFrame(joined.slice(off, off + 960));
+          off += 960;
+        }
+        pending = joined.slice(off);
+      };
+      node = proc;
+    }
+    // Some browsers only pull a node that reaches the destination; route it through a muted gain.
     const mute = ctx.createGain();
     mute.gain.value = 0;
-    proc.disconnect();
-    source.connect(proc);
-    proc.connect(mute);
+    source.connect(node);
+    node.connect(mute);
     mute.connect(ctx.destination);
-    this.captureNode = proc;
+    this.captureNode = node;
+  }
+
+  private encodeFrame(input: Float32Array) {
+    if (!this.encoder || this.encoder.state !== "configured") return;
+    if (!this.transmitting || this.selfMuted) {
+      this.captureRms = 0;
+      this.reportSpeaking(false);
+      return;
+    }
+    const frame = new Float32Array(input.length);
+    let sum = 0;
+    for (let i = 0; i < input.length; i++) {
+      const v = Math.max(-1, Math.min(1, input[i] * this.inputGain));
+      frame[i] = v;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / Math.max(1, input.length));
+    this.captureRms = this.captureRms * 0.55 + rms * 0.45;
+    // Instant clear when this frame is near silence — no hangover for voiceActivity.
+    this.reportSpeaking(rms > 0.02);
+    try {
+      this.encoder.encode(
+        new AudioData({
+          format: "f32",
+          sampleRate: 48000,
+          numberOfFrames: frame.length,
+          numberOfChannels: 1,
+          timestamp: this.captureFrames++ * 20_000,
+          data: frame,
+        }),
+      );
+    } catch {
+      /* ignore */
+    }
   }
 
   private stopCapture() {
@@ -507,57 +573,78 @@ export class WebVoiceEngine {
     this.captureCtx = null;
   }
 
-  private async playOpus(senderKey: string, opus: Uint8Array, gain: number) {
+  /** The playout worklet, created on first use. Null if the browser has no AudioWorklet. */
+  private ensurePlayout(): Promise<AudioWorkletNode | null> {
+    if (this.playReady) return this.playReady;
+    const ctx = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
+    this.playCtx = ctx;
+    void this.applyOutputSink();
+    this.playReady = ctx.audioWorklet
+      .addModule(workletUrl)
+      .then(() => {
+        if (this.playCtx !== ctx) return null;
+        const node = new AudioWorkletNode(ctx, "voice-playout", { numberOfInputs: 0, outputChannelCount: [2] });
+        node.connect(ctx.destination);
+        this.playNode = node;
+        return node;
+      })
+      .catch(() => null);
+    return this.playReady;
+  }
+
+  private async playOpus(senderKey: string, opus: Uint8Array) {
     if (typeof AudioDecoder === "undefined") return;
-    if (!this.playCtx) {
-      this.playCtx = new AudioContext({ sampleRate: 48000 });
-      void this.applyOutputSink();
-    }
+    const node = await this.ensurePlayout();
+    if (!node) return;
+    if (this.playCtx?.state === "suspended") void this.playCtx.resume();
     let decoder = this.decoders.get(senderKey);
     if (!decoder) {
-      const ctx = this.playCtx;
       decoder = new AudioDecoder({
         output: (audio) => {
           const frames = audio.numberOfFrames;
           const data = new Float32Array(frames);
-          audio.copyTo(data, { planeIndex: 0 });
+          try {
+            audio.copyTo(data, { planeIndex: 0, format: "f32-planar" });
+          } catch {
+            audio.copyTo(data, { planeIndex: 0 });
+          }
           audio.close();
+          const g = this.currentGain(senderKey);
           let sum = 0;
-          for (let i = 0; i < frames; i++) sum += data[i] * data[i];
+          for (let i = 0; i < frames; i++) {
+            data[i] *= g;
+            sum += data[i] * data[i];
+          }
           const rms = Math.sqrt(sum / Math.max(1, frames));
           // Mark heard only while this packet has energy; expiry ≈ one frame so silence drops instantly.
-          if (rms >= 0.01 && gain > 0) {
+          if (rms >= 0.01 && g > 0) {
             this.audible.add(senderKey);
             this.audibleExpiry.set(senderKey, performance.now() + 25);
           } else {
             this.audible.delete(senderKey);
             this.audibleExpiry.delete(senderKey);
           }
-          const buffer = ctx.createBuffer(1, frames, 48000);
-          const channel = buffer.getChannelData(0);
-          for (let i = 0; i < frames; i++) channel[i] = data[i] * gain;
-          const src = ctx.createBufferSource();
-          src.buffer = buffer;
-          src.connect(ctx.destination);
-          src.start();
+          this.playNode?.port.postMessage({ type: "pcm", id: senderKey, data }, [data.buffer]);
         },
         error: () => {
-          /* ignore */
+          this.decoders.delete(senderKey);
         },
       });
       decoder.configure({ codec: "opus", sampleRate: 48000, numberOfChannels: 1 });
       this.decoders.set(senderKey, decoder);
     }
+    const ts = this.decodeTs.get(senderKey) ?? 0;
+    this.decodeTs.set(senderKey, ts + 20_000);
     try {
-      decoder.decode(
-        new EncodedAudioChunk({
-          type: "key",
-          timestamp: 0,
-          data: opus,
-        }),
-      );
+      decoder.decode(new EncodedAudioChunk({ type: "key", timestamp: ts, data: opus }));
     } catch {
       /* ignore */
     }
+  }
+
+  private currentGain(senderKey: string): number {
+    const pref = this.peerGain.get(senderKey);
+    if (pref?.muted) return 0;
+    return (pref?.volume ?? 1) * this.outputGain;
   }
 }
