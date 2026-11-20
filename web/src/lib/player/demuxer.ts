@@ -1,4 +1,4 @@
-import type { ByteSource } from "./bytes";
+import { isGrowing, type ByteSource } from "./bytes";
 import { seconds, type LavChapter, type LavPacket, type LavStream, type LibAV } from "./libav";
 
 export type StreamKind = "video" | "audio" | "subtitle" | "attachment" | "other";
@@ -95,10 +95,13 @@ export class Demuxer {
       typeof libav.AVFormatContext_duration === "function"
         ? seconds(await libav.AVFormatContext_duration(fmtCtx), await libav.AVFormatContext_durationhi(fmtCtx), 1, 1_000_000)
         : null;
-    const duration = playbackDuration(
-      raw.map((s) => s.duration),
-      formatDuration,
-    );
+    // A growing file's container can't know its length (FFmpeg guesses from the size, an upper bound): the index can.
+    const duration = isGrowing(source)
+      ? source.playableDuration()
+      : playbackDuration(
+          raw.map((s) => s.duration),
+          formatDuration,
+        );
     const startTime =
       seconds(await libav.AVFormatContext_start_time(fmtCtx), await libav.AVFormatContext_start_timehi(fmtCtx), 1, 1_000_000) ?? 0;
     const pkt = await libav.av_packet_alloc();
@@ -142,6 +145,17 @@ export class Demuxer {
 
   /** Moves reading to the keyframe at or before [time] seconds. */
   async seek(time: number): Promise<void> {
+    const source = this.source;
+    if (isGrowing(source)) {
+      // FFmpeg's own seek would look for the last timestamp at the end of the file, which isn't written yet. The
+      // segment holding [time] starts on a keyframe: read from its first byte; frames before [time] are dropped.
+      const { offset } = source.seekPoint(time - this.startTime);
+      const lo = offset % 0x100000000 | 0;
+      const hi = Math.floor(offset / 0x100000000);
+      const ret = await this.libav.av_seek_frame(this.fmtCtx, -1, lo, hi, this.libav.AVSEEK_FLAG_BYTE ?? 2);
+      if (ret < 0) throw new Error(`Couldn't seek (error ${ret})`);
+      return;
+    }
     // AV_TIME_BASE units, in 32-bit halves.
     const ts = Math.max(0, Math.round(time * 1_000_000));
     const lo = ts % 0x100000000 | 0;
@@ -152,6 +166,8 @@ export class Demuxer {
   }
 
   async close(): Promise<void> {
+    // A read waiting for bytes still to be written would hold FFmpeg (and the close behind it) until they come.
+    if (isGrowing(this.source)) this.source.abort();
     this.libav.onblockread = undefined;
     await this.libav.av_packet_free_js(this.pkt).catch(() => {});
     await this.libav.avformat_close_input_js(this.fmtCtx).catch(() => {});

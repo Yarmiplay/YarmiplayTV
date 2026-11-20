@@ -6,7 +6,7 @@ import { MediaLocator, fileNameOf, isPlayable, ownCopy, type EpisodeInfo, type M
 import * as FileNames from "../media/fileNames";
 import { preferredSidecar, rememberSeek, sidecarLanguage, type ExternalSubtitle } from "../media/seekThumbs";
 import { findRelayFile, openRelayFile, RelaySharing } from "../relay/relay";
-import type { RelayFile } from "../syncplay/yarmiplay";
+import { comparableSize, type RelayFile } from "../syncplay/yarmiplay";
 import { FileSource, HttpSource, type ByteSource } from "../player/bytes";
 import type { MediaPlayer } from "../player/mediaPlayer";
 import { Store } from "../store";
@@ -56,6 +56,11 @@ export interface NowPlaying {
   key: string;
   /** The duration the server gave, until the player knows its own. */
   durationHint: number;
+  /**
+   * Still being written where it is read from: the player's length grows as it plays, so the room is told
+   * [durationHint] (0 when it has no end yet) instead.
+   */
+  growing?: boolean;
   /** Server items that are this file (whichever copy is streamed); playback is reported to each. */
   copies: ServerCopy[];
   /** Which episode of which show this is, from the server or the file name; null for movies and unknown files. */
@@ -82,6 +87,10 @@ export function episodeFromFile(fileName: string, directory: string | null = nul
   if (!p) return null;
   return { seriesName: p.title, season: p.season, episode: p.episode, year: p.year, seriesKey: `file/${FileNames.normalize(p.title)}`, malId: null };
 }
+
+/** The length told to the room for [media]: the player's, except for growing media, whose length is the server's. */
+export const reportedDuration = (media: Pick<NowPlaying, "durationHint" | "growing">, playerDuration: number): number =>
+  media.growing ? media.durationHint : playerDuration || media.durationHint;
 
 /** A media server's stream as something to play. */
 export function playableNowPlaying(playable: PlayableMedia, copies: ServerCopy[] = ownCopy(playable)): NowPlaying {
@@ -333,7 +342,7 @@ export class RoomSession {
       const playing = this.nowPlaying.value;
       if (playing && !playing.key.startsWith("relay:") && !Filenames.isUrl(playing.fileName) && playing.size > 0) {
         const relayed = findRelayFile(state, playing.fileName);
-        if (relayed && relayed.size > playing.size) {
+        if (relayed && comparableSize(relayed) > playing.size) {
           for (const k of [...this.known.keys()]) {
             if (Filenames.same(k, playing.fileName)) this.known.delete(k);
           }
@@ -610,7 +619,7 @@ export class RoomSession {
     const relayedNow = findRelayFile(this.room.value, filename);
     if (knownEntry) {
       const [knownKey, known] = knownEntry;
-      if (relayedNow && known.size > 0 && relayedNow.size > known.size) {
+      if (relayedNow && known.size > 0 && comparableSize(relayedNow) > known.size) {
         this.known.delete(knownKey);
       } else {
         await this.load(known, resetPosition, true);
@@ -653,6 +662,7 @@ export class RoomSession {
             size: relayed.size,
             key: `relay:${relayed.id}`,
             durationHint: relayed.duration,
+            growing: relayed.media !== undefined,
             copies: [],
             episode: episodeFromFile(relayed.name),
             item: null,
@@ -706,7 +716,8 @@ export class RoomSession {
     if (!this.locator.hasServers && !this.library.hasFolders && !this.locator.hasRelay(name)) return;
     const prepared = this.prepared;
     const fresh = prepared && Filenames.same(prepared.fileName, name) && Date.now() - prepared.at < PREPARED_MAX_AGE_MS ? prepared : null;
-    const relaySize = findRelayFile(this.room.value, name)?.size ?? 0;
+    const relayedNext = findRelayFile(this.room.value, name);
+    const relaySize = relayedNext ? comparableSize(relayedNext) : 0;
     const freshSize =
       fresh?.location.kind === "local" ? fresh.location.file.size : fresh?.location.kind === "server" ? fresh.location.playable.sizeBytes : 0;
     // A relay entry can show up later (a viewer who has the file joins); found elsewhere it won't get better unless a larger relay copy arrived.
@@ -758,7 +769,8 @@ export class RoomSession {
     if (p && Filenames.same(p.fileName, filename)) {
       this.prepared = null;
       if (Date.now() - p.at < PREPARED_MAX_AGE_MS) {
-        const relaySize = findRelayFile(this.room.value, filename)?.size ?? 0;
+        const relayed = findRelayFile(this.room.value, filename);
+        const relaySize = relayed ? comparableSize(relayed) : 0;
         const preparedSize =
           p.location.kind === "local" ? p.location.file.size : p.location.kind === "server" ? p.location.playable.sizeBytes : 0;
         if (preparedSize <= 0 || relaySize <= preparedSize) return Promise.resolve(p.location);
@@ -772,7 +784,8 @@ export class RoomSession {
     this.nowPlaying.set(media);
     this.status.set({ kind: "loading", fileName: media.fileName });
     this.client?.fileLoading();
-    const savedPos = getSeekPosition(media.fileName);
+    // A growing file's timeline is new each time it is written: a position remembered from before means nothing.
+    const savedPos = media.growing ? 0 : getSeekPosition(media.fileName);
     try {
       const prefs = this.settings.playback;
       await this.player.load(await media.open(), {
@@ -791,7 +804,7 @@ export class RoomSession {
     void this.attachExtras(media, token);
     this.status.set({ kind: "idle" });
     this.schedulePrepare();
-    const file: FileInfo = { name: media.fileName, duration: this.player.duration || media.durationHint, size: media.size };
+    const file: FileInfo = { name: media.fileName, duration: reportedDuration(media, this.player.duration), size: media.size };
     this.reportedFile = file;
     this.client?.fileLoaded(file, resetPosition, savedPos);
     if (savedPos > 0 && (!this.isActive || resetPosition || this.player.position === 0)) {

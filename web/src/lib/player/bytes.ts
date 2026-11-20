@@ -12,6 +12,30 @@ export interface ByteSource {
   close(): void;
 }
 
+/**
+ * A file the server is still writing (or wrote as it went). Its [size] is only an upper bound: reads at the written end
+ * wait for more bytes, and the end of the file comes once [ended]. Seeking goes through its index of segments, because
+ * the container's own seeking would look for an end that isn't there yet.
+ */
+export interface GrowingByteSource extends ByteSource {
+  readonly growingSource: true;
+  /** The server finished writing it: what is indexed now is all there is. */
+  readonly ended: boolean;
+  /** Seconds the player shows as the length: what can be played so far, or the whole length when it's known. */
+  playableDuration(): number;
+  /** [seconds] from the start, moved back to the last indexed segment when it is past what can be played yet. */
+  clampSeconds(seconds: number): number;
+  /** Where to read from to show [seconds] from the start: the start of the segment holding it, and when that is. */
+  seekPoint(seconds: number): { offset: number; time: number };
+  /** [listener] runs whenever the index, the length or [ended] changed; returns the unsubscribe. */
+  onChange(listener: () => void): () => void;
+  /** Lets reads that wait for more bytes go, before the demuxer closes. */
+  abort(): void;
+}
+
+export const isGrowing = (source: ByteSource | null | undefined): source is GrowingByteSource =>
+  !!source && (source as Partial<GrowingByteSource>).growingSource === true;
+
 /** A file picked on this device: read straight from the disk, as slices. */
 export class FileSource implements ByteSource {
   constructor(readonly file: Blob & { name?: string }) {}

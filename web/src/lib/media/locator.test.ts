@@ -149,4 +149,12 @@ describe("MediaLocator", () => {
     const locator = new MediaLocator<{ id: string; size: number }>(local, () => [], (name) => (name === movie ? fullRelay : null));
     expect(await locator.locateForRoom(movie)).toEqual({ kind: "relay", file: fullRelay });
   });
+
+  it("a relay file still being written is never the larger copy: its size is only an upper bound", async () => {
+    const files: LocalFile[] = [{ name: movie, size: 10, modified: 0, directory: "", folder: "Movies", open: async () => new File([], movie) }];
+    const local: LocalFiles = { find: (name) => find(files, name) };
+    const growing = { id: "relay-growing", size: 10 * 1024 ** 3, media: { growing: true } };
+    const locator = new MediaLocator<typeof growing>(local, () => [], (name) => (name === movie ? growing : null));
+    expect((await locator.locateForRoom(movie)).kind).toBe("local");
+  });
 });

@@ -61,6 +61,8 @@ export interface LibAV {
   AVMEDIA_TYPE_SUBTITLE: number;
   AVMEDIA_TYPE_ATTACHMENT: number;
   AVSEEK_FLAG_BACKWARD: number;
+  /** Seek to a byte position instead of a time (FFmpeg's 2). */
+  AVSEEK_FLAG_BYTE?: number;
   AVERROR_EOF: number;
   EAGAIN: number;
   AV_PKT_FLAG_KEY: number;

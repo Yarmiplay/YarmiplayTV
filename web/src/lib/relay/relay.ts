@@ -1,11 +1,12 @@
 import type { LocalFile, LocalLibrary } from "../local/library";
 import { find } from "../local/library";
-import { HttpSource } from "../player/bytes";
+import { HttpSource, type ByteSource } from "../player/bytes";
 import type { RoomState, RoomUser, SyncplayClient } from "../syncplay/client";
 import { relayActive } from "../syncplay/client";
 import * as Filenames from "../syncplay/filenames";
 import type { FileInfo } from "../syncplay/models";
-import { isReadable, quickHash, Yarmiplay, type RelayFile, type RelayOffer, type UploadRequest, type YarmiplaySession } from "../syncplay/yarmiplay";
+import { comparableSize, isReadable, quickHash, Yarmiplay, type RelayFile, type RelayOffer, type UploadRequest, type YarmiplaySession } from "../syncplay/yarmiplay";
+import { GrowingSource } from "./growing";
 
 /**
  * YarmiplayServerTV's file relay for the browser (RelayOffers.kt, RelayUploader.kt and RelayManager.find): this
@@ -41,7 +42,7 @@ export async function offersFor(
     // Distrust our local file if another peer in the room has a strictly larger copy of the same file.
     const largerInRoom =
       users.some((u) => u.file && Filenames.same(u.file.name, name) && u.file.size > file.size) ||
-      relayFiles.some((r) => Filenames.same(r.name, name) && r.size > file.size);
+      relayFiles.some((r) => Filenames.same(r.name, name) && comparableSize(r) > file.size);
     if (largerInRoom) continue;
     const quickHash = await hash(file);
     if (!quickHash) continue;
@@ -71,13 +72,29 @@ export function findRelayFile(room: RoomState, fileName: string): RelayFile | nu
   return candidates.reduce<RelayFile | null>((best, f) => (!best || f.size > best.size ? f : best), null);
 }
 
-/** Opens a relay file for the player: Range requests with the session in a header. */
-export const openRelayFile = (session: YarmiplaySession, file: RelayFile) =>
-  HttpSource.open(`${session.baseUrl}/yarmiplay/files/${encodeURIComponent(file.id)}?mode=stream`, {
+/**
+ * Opens a relay file for the player: Range requests with the session in a header. A file the server is still writing
+ * ([RelayFile.media]) is read up to what is written, with its segment index for the length and for seeking.
+ */
+export const openRelayFile = (session: YarmiplaySession, file: RelayFile): Promise<ByteSource> => {
+  const url = `${session.baseUrl}/yarmiplay/files/${encodeURIComponent(file.id)}`;
+  if (file.media) {
+    return GrowingSource.open({
+      url: `${url}?mode=stream`,
+      segmentsUrl: `${url}/segments`,
+      headers: auth(session),
+      name: file.name,
+      size: file.size,
+      media: file.media,
+      duration: file.duration,
+    });
+  }
+  return HttpSource.open(`${url}?mode=stream`, {
     name: file.name,
     size: file.size,
     headers: auth(session),
   });
+};
 
 /** A link that downloads the whole relay file (the token in the query, as a plain link can't send headers). */
 export const downloadLink = (session: YarmiplaySession, file: RelayFile) =>

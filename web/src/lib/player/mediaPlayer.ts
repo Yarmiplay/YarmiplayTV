@@ -1,7 +1,7 @@
 import type { PlayerAdapter } from "../syncplay/models";
 import { AudioOutput, openAudioDecoding, openSoftwareAudio, type AudioDecoding, type PcmChunk } from "./audio";
 import { readEmbeddedTags } from "./embeddedTags";
-import type { ByteSource } from "./bytes";
+import { isGrowing, type ByteSource } from "./bytes";
 import { Demuxer, type Chapter, type StreamInfo, type TimedPacket } from "./demuxer";
 import { createLibAV, type LibAV } from "./libav";
 import { Renderer } from "./renderer";
@@ -132,6 +132,8 @@ export class MediaPlayer implements PlayerAdapter {
   private videoFallback = false;
   private switchingVideo = false;
   private _source: ByteSource | null = null;
+  /** Stops following a growing file's length. */
+  private stopFollowing: (() => void) | null = null;
   private generation = 0;
   private eof = false;
   /** File time of the file's start; positions shown count from here (MPEG-TS files start a second or so in). */
@@ -291,6 +293,14 @@ export class MediaPlayer implements PlayerAdapter {
         subtitleTrack: subtitle?.index ?? null,
         chapters: demuxer.chapters.map((c) => ({ ...c, start: c.start - this.origin, end: c.end - this.origin })),
       });
+      if (isGrowing(source)) {
+        // Its length grows as the server writes it (or becomes known once it's done).
+        this.stopFollowing = source.onChange(() => {
+          if (generation !== this.generation) return;
+          const duration = source.playableDuration();
+          if (duration !== this.state.duration) this.update({ duration });
+        });
+      }
       if (opts.start && opts.start > 0) this.seek(opts.start);
       if (!this.videoStream && this.audioStream) void this.readTags(source, generation);
       void this.pump(generation);
@@ -422,6 +432,8 @@ export class MediaPlayer implements PlayerAdapter {
   }
 
   private async teardown() {
+    this.stopFollowing?.();
+    this.stopFollowing = null;
     this.frames.splice(0).forEach((f) => f.close());
     this.heldVideo = [];
     this.seekTarget = null;
@@ -652,7 +664,17 @@ export class MediaPlayer implements PlayerAdapter {
   private async doSeek() {
     this.seekPending = false;
     this.heldVideo = [];
-    const target = this.seekTarget ?? 0;
+    let target = this.seekTarget ?? 0;
+    const source = this._source;
+    if (isGrowing(source)) {
+      // Past what is written yet: the newest segment instead, so playback goes on from there rather than waiting.
+      const shown = source.clampSeconds(target - this.origin);
+      if (shown < target - this.origin - 0.001) {
+        target = this.origin + shown;
+        this.seekTarget = target;
+        this.update({ position: shown });
+      }
+    }
     this.update({ buffering: true });
     this.frames.splice(0).forEach((f) => f.close());
     await this.video?.reset();
@@ -694,7 +716,10 @@ export class MediaPlayer implements PlayerAdapter {
 
     const atEnd = this.eof && this.frames.length === 0 && (this.output?.buffered ?? 0) < 0.05;
     // A missing length is 0. `now >= 0 - 0.25` would then pause at the first tick, before the clock moves.
-    const reachedEnd = this.state.duration > 0 && now - this.origin >= this.state.duration - 0.25;
+    const reachedEnd =
+      (this.state.duration > 0 && now - this.origin >= this.state.duration - 0.25) ||
+      // A file that grew ends where the server stopped writing it, whatever its segments' lengths add up to.
+      (isGrowing(this._source) && this._source.ended);
     if (atEnd && !this.state.paused && !this.state.ended && reachedEnd) {
       this.wallBase = this.origin + this.state.duration;
       this.update({ ended: true });

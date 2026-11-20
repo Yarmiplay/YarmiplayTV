@@ -233,6 +233,28 @@ describe("SyncplayClient", () => {
     expect(yarmiplaySent(t)).toHaveLength(before);
   });
 
+  it("a relay entry's growing media is read only when the server has growingFiles", async () => {
+    const c = client();
+    const t = await connect(c, hello({ marker }));
+    t.receive(session());
+    const entry =
+      `{"id":"g1","name":"Part 1","size":10737418240,"duration":0,"quickHash":"h","sources":1,"cachedBytes":5000000,"rate":0,` +
+      `"media":{"growing":true,"live":true,"contentType":"video/mp2t","length":5000000}}`;
+    t.receive(`{"Yarmiplay":{"files":[${entry}]}}`);
+    expect(c.state.yarmiplay.capabilities.growingFiles).toBe(false);
+    expect(c.state.yarmiplay.relayFiles[0]).not.toHaveProperty("media");
+
+    t.receive(`{"Yarmiplay":{"capabilities":{"fileRelay":true,"https":false,"jellyfin":false,"growingFiles":true}}}`);
+    expect(c.state.yarmiplay.capabilities.growingFiles).toBe(true);
+    t.receive(`{"Yarmiplay":{"files":[${entry}]}}`);
+    expect(c.state.yarmiplay.relayFiles[0].media).toEqual({ growing: true, live: true, contentType: "video/mp2t", length: 5000000 });
+
+    // The capability gone: the entry is a plain one again.
+    t.receive(`{"Yarmiplay":{"capabilities":{"fileRelay":true,"https":false,"jellyfin":false}}}`);
+    expect(c.state.yarmiplay.relayFiles[0]).not.toHaveProperty("media");
+    expect(c.state.yarmiplay.relayFiles[0].size).toBe(10737418240);
+  });
+
   it("relay lists, uploads, jellyfin answers and room settings arrive as state and events", async () => {
     const c = client();
     const t = await connect(c, hello({ marker }));

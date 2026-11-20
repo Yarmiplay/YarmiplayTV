@@ -11,6 +11,7 @@ import {
   fingerprint,
   isValidServerId,
   noCapabilities,
+  parseGrowingMedia,
   signedMessage,
   Yarmiplay,
   type Capabilities,
@@ -878,7 +879,7 @@ export class SyncplayClient {
       this.updateExt((e) => ({
         ...e,
         capabilities: caps,
-        relayFiles: caps.fileRelay ? e.relayFiles : [],
+        relayFiles: caps.fileRelay ? (caps.growingFiles ? e.relayFiles : e.relayFiles.map(withoutMedia)) : [],
         voice,
         // Vanilla mode revokes with capabilities alone; from then on the connection is plain Syncplay.
         serverKind: allOff(caps) && !("jellyfin" in message) && !("session" in message) ? "SYNCPLAY" : e.serverKind,
@@ -899,7 +900,8 @@ export class SyncplayClient {
     }
     this.rememberLanName();
     if (Array.isArray(message.files) && this._state.yarmiplay.capabilities.fileRelay) {
-      const relayFiles = message.files.map(parseRelayFile).filter((f): f is RelayFile => f !== null);
+      const growing = this._state.yarmiplay.capabilities.growingFiles;
+      const relayFiles = message.files.map((f) => parseRelayFile(f, growing)).filter((f): f is RelayFile => f !== null);
       this.updateExt((e) => ({ ...e, relayFiles }));
     }
     this.refreshSession();
@@ -1422,6 +1424,7 @@ export function parseCapabilities(element: unknown): Capabilities | null {
     mal: bool(element, "mal"),
     voice: bool(element, "voice"),
     voiceDisabled: bool(element, "voiceDisabled"),
+    growingFiles: bool(element, "growingFiles"),
   };
 }
 
@@ -1506,12 +1509,13 @@ const parseSharedJellyfin = (o: Json): SharedJellyfin => ({
   addresses: Array.isArray(o.addresses) ? o.addresses.filter((a): a is string => typeof a === "string") : [],
 });
 
-function parseRelayFile(element: unknown): RelayFile | null {
+/** A relay list entry. Its `media` is read only when the server has [Capabilities.growingFiles]. */
+export function parseRelayFile(element: unknown, growingFiles = false): RelayFile | null {
   if (!isObject(element)) return null;
   const id = str(element, "id");
   const name = str(element, "name");
   if (!id || !name) return null;
-  return {
+  const file: RelayFile = {
     id,
     name,
     size: num(element, "size"),
@@ -1521,7 +1525,17 @@ function parseRelayFile(element: unknown): RelayFile | null {
     cachedBytes: num(element, "cachedBytes"),
     rate: num(element, "rate"),
   };
+  const media = growingFiles ? parseGrowingMedia(element.media) : null;
+  if (media) file.media = media;
+  return file;
 }
+
+/** [file] as a server without [Capabilities.growingFiles] would have listed it. */
+const withoutMedia = (file: RelayFile): RelayFile => {
+  if (!file.media) return file;
+  const { media: _, ...rest } = file;
+  return rest;
+};
 
 function parseUpload(o: Json): UploadRequest | null {
   const id = str(o, "id");

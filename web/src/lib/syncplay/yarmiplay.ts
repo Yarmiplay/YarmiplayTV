@@ -70,6 +70,11 @@ export interface Capabilities {
   voice: boolean;
   /** Host turned voice off while extensions stay on (optional; prefer voice.enabled). */
   voiceDisabled: boolean;
+  /**
+   * The relay can list files that are still being written ([RelayFile.media]) and serves their segment index at
+   * `/yarmiplay/files/<id>/segments`. Without it [RelayFile.media] is ignored.
+   */
+  growingFiles: boolean;
 }
 
 export const noCapabilities = (): Capabilities => ({
@@ -83,6 +88,7 @@ export const noCapabilities = (): Capabilities => ({
   mal: false,
   voice: false,
   voiceDisabled: false,
+  growingFiles: false,
 });
 
 /**
@@ -191,10 +197,84 @@ export interface RelayFile {
   cachedBytes: number;
   /** Bytes per second the server currently receives from seeders for this file. */
   rate: number;
+  /**
+   * Set when the server is still writing the file (or wrote it that way), on servers with
+   * [Capabilities.growingFiles]. Its [size] is then only an upper bound: never read at or after [GrowingMedia.length].
+   */
+  media?: GrowingMedia;
+}
+
+/** A relay file the server writes as it goes: a broadcast it records, or a download it serves while downloading. */
+export interface GrowingMedia {
+  /** Still being written; false once the server finished it. */
+  growing: boolean;
+  /** Open-ended, with no known end. False for one that will end, whose [RelayFile.duration] is its length when known. */
+  live: boolean;
+  /** MIME type of the bytes. */
+  contentType: string;
+  /** Bytes written from the start so far; the final length once [growing] is false. */
+  length: number;
 }
 
 /** Whether all of the file can be read: someone seeds it, or the server has every byte. */
 export const isReadable = (f: RelayFile): boolean => f.sources > 0 || (f.size > 0 && f.cachedBytes >= f.size);
+
+/**
+ * The size to compare with other copies of the same name: a growing file's [RelayFile.size] is only an upper bound, so
+ * it is never "a larger copy" of anything.
+ */
+export const comparableSize = (f: RelayFile): number => (f.media ? 0 : f.size);
+
+/** `media` of a relay list entry; null when it is missing or malformed. */
+export function parseGrowingMedia(element: unknown): GrowingMedia | null {
+  if (typeof element !== "object" || element === null || Array.isArray(element)) return null;
+  const o = element as Record<string, unknown>;
+  const length = typeof o.length === "number" && Number.isFinite(o.length) ? Math.max(0, Math.trunc(o.length)) : 0;
+  return {
+    growing: o.growing === true,
+    live: o.live === true,
+    contentType: typeof o.contentType === "string" && o.contentType ? o.contentType : "application/octet-stream",
+    length,
+  };
+}
+
+/** One entry of a growing file's segment index: bytes `[offset, offset + length)` play for [duration] seconds. */
+export interface Segment {
+  offset: number;
+  length: number;
+  duration: number;
+}
+
+/** A page of `GET /yarmiplay/files/<id>/segments?from=K`: segments [from], [from] + 1… and the file's state. */
+export interface SegmentPage {
+  growing: boolean;
+  live: boolean;
+  length: number;
+  from: number;
+  segments: Segment[];
+}
+
+/** The segment endpoint's answer; null when it isn't one. Malformed entries end the list there. */
+export function parseSegmentPage(element: unknown): SegmentPage | null {
+  if (typeof element !== "object" || element === null || Array.isArray(element)) return null;
+  const o = element as Record<string, unknown>;
+  if (!Array.isArray(o.segments)) return null;
+  const segments: Segment[] = [];
+  for (const s of o.segments) {
+    if (!Array.isArray(s) || s.length < 3) break;
+    const [offset, length, duration] = s;
+    if (typeof offset !== "number" || typeof length !== "number" || typeof duration !== "number") break;
+    if (!(offset >= 0) || !(length > 0) || !(duration >= 0) || !Number.isFinite(duration)) break;
+    segments.push({ offset, length, duration });
+  }
+  return {
+    growing: o.growing === true,
+    live: o.live === true,
+    length: typeof o.length === "number" && Number.isFinite(o.length) ? Math.max(0, Math.trunc(o.length)) : 0,
+    from: typeof o.from === "number" && Number.isFinite(o.from) ? Math.max(0, Math.trunc(o.from)) : 0,
+    segments,
+  };
+}
 
 /** A local file this device can serve to the room. */
 export interface RelayOffer {

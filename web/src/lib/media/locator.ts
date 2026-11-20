@@ -26,9 +26,12 @@ export interface LocalFiles {
 /** Sizes match when both are known and equal, or when either is unknown. */
 const sameSize = (a: number, b: number) => a <= 0 || b <= 0 || a === b;
 
+/** A relay entry's size for comparing copies; 0 for one still being written, whose size is only an upper bound. */
 const sizeOf = (file: unknown): number =>
   typeof file === "object" && file !== null && "size" in file && typeof (file as { size: unknown }).size === "number"
-    ? (file as { size: number }).size
+    ? (file as { media?: unknown }).media
+      ? 0
+      : (file as { size: number }).size
     : 0;
 
 /**
