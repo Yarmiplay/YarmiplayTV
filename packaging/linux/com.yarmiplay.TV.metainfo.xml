@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.1.2" date="2026-11-21">
+      <description>
+        <p>Windows shows the app as YarmiplayTV again in lists such as Open with, instead of its tagline. Updating fixes it on PCs that kept the old name from an earlier version.</p>
+      </description>
+    </release>
     <release version="3.1.1" date="2026-11-20">
       <description>
         <p>Live streams and videos the server is still downloading play right away. The app follows their growing timeline, so you can join late, seek anywhere that has arrived, pause and resume, and keep up with the live edge, instead of a black screen. Works with servers that announce growing media; nothing changes on other servers.</p>

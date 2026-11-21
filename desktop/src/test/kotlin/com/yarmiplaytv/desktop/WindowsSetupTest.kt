@@ -157,8 +157,23 @@ class WindowsSetupTest {
         val removal = removalScript(desktop, start)
         assertTrue(removal.contains("Uninstall\\YarmiplayTV") || removal.contains("Uninstall\\\\YarmiplayTV") || removal.contains("YarmiplayTV"))
         assertFalse(removal.contains("Set-Link"))
+        assertTrue("uninstall drops the registered name", removal.contains("Applications\\YarmiplayTV.exe"))
         assertTrue(probeScript().contains("DisplayName"))
         assertTrue(probeScript().contains("YarmiplayTV.lnk"))
+    }
+
+    @Test
+    fun `installing names the app YarmiplayTV for Windows and drops the name it cached from an older build`() {
+        val exe = File("C:/Users/Sam/AppData/Local/YarmiplayTV/YarmiplayTV.exe")
+        val choices = SetupChoices(exe.parentFile, true, true, true, false)
+        val script = installScript(exe, exe.parentFile, "3.1.2", 10, choices, File("C:/d.lnk"), File("C:/s.lnk"))
+        assertTrue(script.contains("Applications\\YarmiplayTV.exe"))
+        assertTrue(script.contains("-Name FriendlyAppName -Value 'YarmiplayTV'"))
+        // Windows keys its cache by the exe's path with the value name after it.
+        assertTrue(script.contains(psQuoted("${exe.absolutePath}.FriendlyAppName")))
+        assertTrue(script.contains(psQuoted("${exe.absolutePath}.ApplicationCompany")))
+        assertTrue("a missing cache entry isn't an error", script.lines().filter { "MuiCache" in it }.all { "SilentlyContinue" in it })
+        assertFalse(script.contains("Syncplay servers"))
     }
 
     private fun slash(file: File) = file.path.replace('\\', '/')

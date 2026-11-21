@@ -406,7 +406,26 @@ internal fun installScript(
     linkLine(choices.desktopShortcut, desktopLnk, exe, dir)
     linkLine(choices.startMenuShortcut, startLnk, exe, dir)
     append(associationScript(exe.absolutePath, choices.videoFiles))
+    append(appNameScript(exe.absolutePath))
     append(uninstallKeyScript(exe.absolutePath, dir.absolutePath, version, sizeKb))
+}
+
+private const val APP_NAME_KEY = "HKCU:\\Software\\Classes\\Applications\\YarmiplayTV.exe"
+private const val NAME_CACHE_KEY = "HKCU:\\Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\Shell\\MuiCache"
+
+/**
+ * The name Windows shows for the app where it lists programs ("Open with", default apps), given outright. Windows
+ * otherwise takes the exe's description and caches it per path for good, so installs that once ran a build whose
+ * description was the app's tagline kept showing that: the cached name is dropped too, and Windows reads it again.
+ */
+internal fun appNameScript(exe: String): String = buildString {
+    appendLine("New-Item -Force -Path ${psQuoted(APP_NAME_KEY)} | Out-Null")
+    appendLine("Set-ItemProperty -LiteralPath ${psQuoted(APP_NAME_KEY)} -Name FriendlyAppName -Value 'YarmiplayTV'")
+    for (value in listOf("FriendlyAppName", "ApplicationCompany")) {
+        appendLine(
+            "Remove-ItemProperty -LiteralPath ${psQuoted(NAME_CACHE_KEY)} -Name ${psQuoted("$exe.$value")} -ErrorAction SilentlyContinue",
+        )
+    }
 }
 
 internal fun removalScript(desktopLnk: File, startLnk: File): String = buildString {
@@ -415,6 +434,7 @@ internal fun removalScript(desktopLnk: File, startLnk: File): String = buildStri
     appendLine("Remove-Item -LiteralPath ${psQuoted(desktopLnk.absolutePath)} -Force -ErrorAction SilentlyContinue")
     appendLine("Remove-Item -LiteralPath ${psQuoted(startLnk.absolutePath)} -Force -ErrorAction SilentlyContinue")
     append(associationScript("", enable = false))
+    appendLine("Remove-Item -LiteralPath ${psQuoted(APP_NAME_KEY)} -Recurse -Force -ErrorAction SilentlyContinue")
     appendLine(
         "Remove-Item -LiteralPath ${psQuoted("HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\YarmiplayTV")} -Recurse -Force -ErrorAction SilentlyContinue",
     )
