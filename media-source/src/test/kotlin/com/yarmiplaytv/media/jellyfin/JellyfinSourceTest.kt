@@ -329,6 +329,77 @@ class JellyfinSourceTest {
         }
     }
 
+    /** Request lines the plain-HTTP peer got over cleartext HTTP. */
+    private val plainHttpRequests = java.util.Collections.synchronizedList(mutableListOf<String>())
+    private val asked = java.util.Collections.synchronizedList(mutableListOf<Pair<String, Boolean>>())
+
+    private fun asking(answer: Boolean) = JellyfinClient(
+        ClientInfo(deviceName = "Test TV", deviceId = "dev1", version = "0.1"),
+        confirmPlainHttp = { server, signIn -> asked += server to signIn; answer },
+    )
+
+    @Test
+    fun signingInToAnHttpsAddressThatSpeaksHttpAsksBeforeSendingThePassword() {
+        plainHttpPeer { _, https ->
+            val err = runCatching { asking(false).login(https, "yarmi", "pw") }.exceptionOrNull()
+            assertTrue("got $err", err is MediaSourceException)
+            assertEquals("${https.removePrefix("https://")} didn't answer over HTTPS", err!!.message)
+            assertEquals(listOf(https to true), asked.toList())
+            assertTrue("$plainHttpRequests", plainHttpRequests.none { "Authenticate" in it })
+        }
+    }
+
+    @Test
+    fun signingInOverHttpOnceAllowed() {
+        plainHttpPeer { _, https ->
+            val session = asking(true).login(https, "yarmi", "pw")
+            assertEquals(https, session.serverUrl)
+            assertEquals(listOf(https to true), asked.toList())
+            assertTrue(plainHttpRequests.any { "AuthenticateByName" in it })
+        }
+    }
+
+    @Test
+    fun aSavedHttpsServerThatSpeaksHttpIsUnreachableWhenTheUserSaysNo() {
+        plainHttpPeer { _, https ->
+            val source = JellyfinSource(asking(false), JellyfinSession(https, "Benny", "srv", "u1", "yarmi", "tok"))
+            assertTrue(runCatching { source.libraries() }.isFailure)
+            assertEquals(listOf(https to false), asked.toList())
+            assertFalse(source.onPlainHttp)
+            // Only the public info was asked for over HTTP: never with the token.
+            assertTrue("$plainHttpRequests", plainHttpRequests.all { "/System/Info/Public" in it })
+        }
+    }
+
+    @Test
+    fun aSavedHttpsServerUsesHttpOnceAllowed() {
+        plainHttpPeer { http, https ->
+            val source = JellyfinSource(asking(true), JellyfinSession(https, "Benny", "srv", "u1", "yarmi", "tok"))
+            assertEquals(listOf("Movies"), source.libraries().map { it.name })
+            assertEquals(listOf(https to false), asked.toList())
+            assertTrue(source.onPlainHttp)
+            assertTrue(source.streamUrl("ep1", null).startsWith("$http/"))
+        }
+    }
+
+    @Test
+    fun anHttpServerTriedOverHttpsFirstFallsBackWithoutAsking() {
+        plainHttpPeer { http, _ ->
+            val session = JellyfinClient.migratePreferHttps(JellyfinSession(http, "Benny", "srv", "u1", "yarmi", "tok"))
+            val source = JellyfinSource(asking(false), session)
+            assertEquals(listOf("Movies"), source.libraries().map { it.name })
+            assertTrue(asked.isEmpty())
+        }
+    }
+
+    @Test
+    fun signingOutOfAnHttpsServerDoesNotSendItsTokenOverHttp() {
+        plainHttpPeer { _, https ->
+            asking(true).logout(JellyfinSession(https, "Benny", "srv", "u1", "yarmi", "tok"))
+            assertTrue("$plainHttpRequests", plainHttpRequests.none { "Logout" in it })
+        }
+    }
+
     /**
      * Opens a loopback port that answers TLS with a plain-HTTP reply (so JSSE raises
      * "Unsupported or unrecognized SSL message") and answers cleartext HTTP with a tiny Jellyfin API.
@@ -377,6 +448,7 @@ class JellyfinSourceTest {
             }
             input.reset()
             val requestLine = readHttpRequest(input)
+            plainHttpRequests += requestLine
             val path = requestLine.split(' ').getOrNull(1)?.substringBefore('?') ?: "/"
             val body = when (path) {
                 "/System/Info/Public" -> """{"ServerName":"Benny","Version":"10.11.6","Id":"srv"}"""

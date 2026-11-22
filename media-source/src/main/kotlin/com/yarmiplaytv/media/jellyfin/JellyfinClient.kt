@@ -71,6 +71,13 @@ class JellyfinClient(
     http: OkHttpClient? = null,
     /** Looks up server names; the app maps a Syncplay server's name to the address it reached it at. */
     dns: Dns = Dns.SYSTEM,
+    /**
+     * Asked before a server the user gave as `https://` ([server] is that URL) is used over plain `http://` after
+     * its HTTPS handshake looked like plain HTTP; [signIn] when a password or Quick Connect would go over it. False
+     * leaves the server unreachable. Servers given as `http://` that are only tried over HTTPS first
+     * ([JellyfinSession.preferHttps]) fall back without asking. The default allows it.
+     */
+    private val confirmPlainHttp: suspend (server: String, signIn: Boolean) -> Boolean = { _, _ -> true },
 ) {
     internal val http: OkHttpClient = http ?: OkHttpClient.Builder()
         .dns(dns)
@@ -113,13 +120,15 @@ class JellyfinClient(
 
     /**
      * A URL that answers right now: HTTPS first when [input] (or [preferHttps]) calls for it, then plain HTTP on
-     * the same host/port only after a plain-HTTP TLS handshake error. Does not decide what to persist — callers
-     * that sign in should keep the user's preferred scheme via [preferredServerUrl].
+     * the same host/port only after a plain-HTTP TLS handshake error — for an `https://` [input] only once
+     * [confirmPlainHttp] agreed (it's a sign-in). Does not decide what to persist — callers that sign in should keep
+     * the user's preferred scheme via [preferredServerUrl].
      */
     suspend fun resolveReachableUrl(input: String, preferHttps: Boolean = false): String {
         val normalized = resolveServerUrl(input)
+        val typedHttps = normalized.startsWith("https://", ignoreCase = true)
         val httpsFirst = when {
-            normalized.startsWith("https://", ignoreCase = true) -> normalized
+            typedHttps -> normalized
             preferHttps -> httpsUrl(normalized) ?: return normalized
             else -> return normalized
         }
@@ -130,11 +139,13 @@ class JellyfinClient(
             if (!isPlainHttpSslFailure(httpsErr)) throw httpsErr
             val http = plainHttpUrl(httpsFirst) ?: throw httpsErr
             try {
+                // Nothing secret goes in this request: whether HTTP answers at all decides if there's anything to ask.
                 publicInfo(http)
-                http
             } catch (httpErr: MediaSourceException) {
                 throw bothSchemesFailed(httpsFirst, httpsErr, http, httpErr)
             }
+            if (typedHttps && !confirmPlainHttp(httpsFirst, true)) throw notOverHttps(httpsFirst, httpsErr)
+            http
         }
     }
 
@@ -146,7 +157,8 @@ class JellyfinClient(
 
     /**
      * When [error] means the probe URL speaks plain HTTP, the same host over `http://` if it still validates.
-     * Returns that working base only — does not change what should be saved ([JellyfinSession.serverUrl]).
+     * Returns that working base only — does not change what should be saved ([JellyfinSession.serverUrl]). A
+     * session saved as `https://` goes over HTTP only once [confirmPlainHttp] agreed, before its token is sent.
      */
     suspend fun reachablePlainHttp(session: JellyfinSession, error: Throwable): String? {
         if (!isPlainHttpSslFailure(error)) return null
@@ -154,6 +166,10 @@ class JellyfinClient(
         val http = plainHttpUrl(probe) ?: plainHttpUrl(session.serverUrl) ?: run {
             session.serverUrl.takeIf { it.startsWith("http://", ignoreCase = true) }
         } ?: return null
+        if (session.serverUrl.trim().startsWith("https://", ignoreCase = true)) {
+            if (runCatching { publicInfo(http) }.isFailure) return null
+            if (!confirmPlainHttp(probe, false)) return null
+        }
         return http.takeIf { runCatching { validateAt(it, session.accessToken) }.getOrNull() == true }
     }
 
@@ -266,6 +282,15 @@ class JellyfinClient(
             return if (session.preferHttps) session else session.copy(preferHttps = true)
         }
 
+        /** The user chose not to use [httpsUrl]'s server over plain HTTP: it's as unreachable as before. */
+        fun notOverHttps(httpsUrl: String, httpsErr: Throwable): MediaSourceException {
+            val server = httpsUrl.toHttpUrlOrNull()?.let(::serverLabel) ?: httpsUrl
+            return MediaSourceException("$server didn't answer over HTTPS", cause = httpsErr)
+        }
+
+        /** How the server [url] is named to the user: its host, and the port when it isn't HTTPS's own. */
+        fun serverLabel(url: HttpUrl): String = if (url.port == 443) url.host else "${url.host}:${url.port}"
+
         fun bothSchemesFailed(httpsUrl: String, httpsErr: Throwable, httpUrl: String, httpErr: Throwable): MediaSourceException {
             val httpsWhy = httpsErr.message?.substringAfter("(", "")?.trimEnd(')')?.ifBlank { null }
                 ?: httpsErr.message ?: "HTTPS failed"
@@ -289,9 +314,14 @@ class JellyfinClient(
         if (e.httpCode == 401 || e.httpCode == 403) false else throw e
     }
 
-    suspend fun logout(session: JellyfinSession) {
+    /**
+     * Signs [session] out. Over plain HTTP as well only when [alsoPlainHttp]: by default for servers given as
+     * `http://`, never sending an `https://` server's token unencrypted unless it's already used over HTTP.
+     */
+    suspend fun logout(session: JellyfinSession, alsoPlainHttp: Boolean = !session.serverUrl.trim().startsWith("https://", ignoreCase = true)) {
         val url = preferredProbeUrl(session)
         runCatching { postRaw(url, session.accessToken, "Sessions/Logout", null) { } }
+        if (!alsoPlainHttp) return
         plainHttpUrl(url)?.let { http ->
             if (http != url) runCatching { postRaw(http, session.accessToken, "Sessions/Logout", null) { } }
         }

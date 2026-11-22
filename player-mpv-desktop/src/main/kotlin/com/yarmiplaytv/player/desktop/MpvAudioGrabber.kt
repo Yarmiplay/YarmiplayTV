@@ -1,5 +1,6 @@
 package com.yarmiplaytv.player.desktop
 
+import com.yarmiplaytv.player.StreamTls
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -19,7 +20,7 @@ object MpvAudioGrabber {
 
     /** How long the video at [path] (a file or a URL) is in seconds; null when mpv can't open it. */
     fun duration(path: String): Double? {
-        val core = MpvCore(probeOptions(), logLevel = "no")
+        val core = MpvCore(probeOptions() + tlsVerify(path), logLevel = "no")
         core.use {
             val loaded = CountDownLatch(1)
             core.startEvents { event -> if (event == MpvEvent.FileLoaded || event is MpvEvent.EndFile || event == MpvEvent.Shutdown) loaded.countDown() }
@@ -45,7 +46,7 @@ object MpvAudioGrabber {
     ): Boolean = MpvBackgroundLoad.runExclusive {
         val out = File.createTempFile("yarmiplaytv-sound", ".pcm")
         try {
-            val core = MpvCore(options(out, start, seconds, rate, languages), logLevel = "no")
+            val core = MpvCore(options(out, start, seconds, rate, languages) + tlsVerify(path), logLevel = "no")
             var ended: MpvEvent.EndFile? = null
             core.use {
                 val done = CountDownLatch(1)
@@ -109,6 +110,9 @@ object MpvAudioGrabber {
         "audio-display" to "no",
         "replaygain" to "no",
     )
+
+    /** A server's stream is read only with its certificate checked, as the player does ([StreamTls]). */
+    private fun tlsVerify(path: String) = mapOf("tls-verify" to if (StreamTls.verifies(path, path)) "yes" else "no")
 
     /** Opened and paused: with no track at all mpv would drop the file before saying how long it is. */
     private fun probeOptions() = mapOf(

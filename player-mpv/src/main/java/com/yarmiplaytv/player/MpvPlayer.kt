@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.io.File
 import java.io.FileOutputStream
+import java.security.KeyStore
+import java.security.cert.X509Certificate
 import kotlin.concurrent.thread
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -91,10 +93,22 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     private var openingLatest = false
     @Volatile private var openError: String? = null
     @Volatile private var pendingStartPaused = true
+    /**
+     * The system's trusted certificates for FFmpeg's mbedTLS, which has none of its own; written at start, and
+     * until then (or if that fails) streams aren't checked, as before.
+     */
+    @Volatile private var trustedCertificates: File? = null
+    /** Whether the file being opened checks its HTTPS certificate, and whether that check is why it didn't open. */
+    private val tls = TlsCheck(supported = { trustedCertificates != null })
+    /** The last [load]'s arguments, to open the file again unchecked when the trust store itself failed. */
+    @Volatile private var lastLoad: LoadRequest? = null
+
+    private data class LoadRequest(val url: String, val mediaTitle: String?, val startPaused: Boolean, val startPosition: Double)
 
     init {
         val configDir = File(appContext.filesDir, "mpv").apply { mkdirs() }
         val fontsDir = prepareFonts(configDir)
+        thread(isDaemon = true, name = "mpv-certificates") { trustedCertificates = writeTrustedCertificates(configDir) }
         with(mpv) {
             setOptionString("config", "yes")
             setOptionString("config-dir", configDir.path)
@@ -107,6 +121,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             setOptionString("hwdec-codecs", "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
             setOptionString("ao", "audiotrack,opensles")
             setOptionString("audio-set-media-role", "yes")
+            // load() turns it on per file, with the system's certificates (see trustedCertificates).
             setOptionString("tls-verify", "no")
             setOptionString("cache", "yes")
             setOptionString("demuxer-max-bytes", "${options.cacheMegabytes}MiB")
@@ -146,6 +161,22 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             observeProperty("video-params/aspect", MpvFormat.MPV_FORMAT_DOUBLE)
         }
     }
+
+    /**
+     * The certificates Android trusts (the system's and any the user added) as a PEM file for mpv's tls-ca-file;
+     * null when there are none or they can't be read.
+     */
+    private fun writeTrustedCertificates(configDir: File): File? = runCatching {
+        val store = KeyStore.getInstance("AndroidCAStore").apply { load(null) }
+        val certificates = store.aliases().toList().mapNotNull { store.getCertificate(it) as? X509Certificate }
+        val pem = TrustedCertificates.pem(certificates)
+        if (pem.isEmpty()) return@runCatching null
+        val target = File(configDir, "trusted-certificates.pem")
+        val temp = File(configDir, "trusted-certificates.pem.tmp")
+        temp.writeText(pem)
+        if (!temp.renameTo(target)) error("couldn't replace ${target.path}")
+        target
+    }.onFailure { Log.w(TAG, "Streams play without certificate checks: ${it.message}") }.getOrNull()
 
     /** libass needs at least one font file; copy a system font next to the config. */
     private fun prepareFonts(configDir: File): File {
@@ -216,6 +247,12 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         mpv.setPropertyString("start", if (startPosition > 0) startPosition.toString() else "none")
         openError = null
         val target = mpvTarget(url)
+        // Checked unless mpvTarget put an address in place of the name (the certificate is for the name). The
+        // certificate file is only given while checking, so a problem with it can't stop an unchecked stream.
+        val verify = tls.begin(url, target)
+        mpv.setPropertyString("tls-ca-file", if (verify) trustedCertificates?.path.orEmpty() else "")
+        mpv.setPropertyString("tls-verify", if (verify) "yes" else "no")
+        lastLoad = LoadRequest(url, mediaTitle, startPaused, startPosition)
         latestLoad = ++loadsIssued
         mpv.command(arrayOf("loadfile", target, "replace"))
     }
@@ -509,9 +546,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
                 openingLatest = false
                 // Ended before loading and not replaced or stopped since: opening failed. mpv often only
                 // logs the reason at verbose level (stream/ffmpeg), so the error-log path below misses it.
-                if (failedToOpen) {
-                    _events.tryEmit(PlayerEvent.EndFile(currentUrl, openError ?: "Couldn't open the file"))
-                }
+                if (failedToOpen) reportOpenFailure(currentUrl, openError ?: "Couldn't open the file")
             }
             MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
                 // The position was frozen while seeking; extrapolate from now, not from when the seek was issued.
@@ -521,11 +556,36 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         }
     }
 
+    /**
+     * mpv's log can say why a file didn't open a moment after END_FILE, so the reason is read a little later: a
+     * certificate that couldn't be verified names its host for the app to ask about.
+     */
+    private fun reportOpenFailure(url: String?, reason: String) {
+        val issued = loadsIssued
+        mainHandler.postDelayed({
+            val request = lastLoad
+            when {
+                // Another file (or the same one again) was loaded meanwhile: this failure is no longer news.
+                issued != loadsIssued -> Unit
+                tls.retryUnchecked() && request != null && request.url == url -> {
+                    Log.w(TAG, "The trusted certificates couldn't be loaded; opening without checking certificates")
+                    load(request.url, request.mediaTitle, request.startPaused, request.startPosition)
+                }
+                else -> {
+                    val host = tls.rejectedHost()
+                    val why = if (host != null) "$host's certificate can't be verified" else reason
+                    _events.tryEmit(PlayerEvent.EndFile(url, why, untrustedHost = host))
+                }
+            }
+        }, LOG_GRACE_MS)
+    }
+
     private var lastLogLine = ""
     private var lastLogAt = 0L
 
     override fun logMessage(prefix: String, level: Int, text: String) {
         val line = text.trimEnd()
+        tls.onLog(line)
         if (level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_WARN) {
             val now = SystemClock.elapsedRealtime()
             if (line == lastLogLine && now - lastLogAt < 1_000L) return
@@ -695,5 +755,6 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         private const val OSD_CLEAR_MS = 150L
         private const val SEEK_SETTLE_MS = 1_500L
         private const val UNINITIATED_JUMP_THRESHOLD = 1.0
+        private const val LOG_GRACE_MS = 250L
     }
 }

@@ -13,6 +13,7 @@ import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.PlayerEvent
 import com.yarmiplaytv.player.StreamRoutes
 import com.yarmiplaytv.player.SubtitleScale
+import com.yarmiplaytv.player.TlsCheck
 import com.yarmiplaytv.player.Track
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.player.VisualizerCommand
@@ -21,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -124,6 +126,12 @@ class DesktopMpvPlayer(
     private var filesStarted = 0
     private var openingLatest = false
     @Volatile private var openError: String? = null
+    /** Whether the file being opened checks its HTTPS certificate, and whether that check is why it didn't open. */
+    private val tls = TlsCheck()
+    /** The last [load]'s arguments, to open the file again unchecked when the trust store itself failed. */
+    @Volatile private var lastLoad: LoadRequest? = null
+
+    private data class LoadRequest(val url: String, val mediaTitle: String?, val startPaused: Boolean, val startPosition: Double)
 
     init {
         listOf(
@@ -174,6 +182,9 @@ class DesktopMpvPlayer(
         openError = null
         MpvBackgroundLoad.setPlayerActive(true)
         val target = mpvTarget(url)
+        // Checked unless mpvTarget put an address in place of the name (the certificate is for the name).
+        core.setString("tls-verify", if (tls.begin(url, target)) "yes" else "no")
+        lastLoad = LoadRequest(url, mediaTitle, startPaused, startPosition)
         latestLoad = ++loadsIssued
         core.command("loadfile", target, "replace")
     }
@@ -361,7 +372,7 @@ class DesktopMpvPlayer(
                     val reason = openError
                         ?: event.error.takeIf { it < 0 }?.let { "Couldn't open the file (${core.lib.mpv_error_string(it)})" }
                         ?: "Couldn't open the file"
-                    _events.tryEmit(PlayerEvent.EndFile(currentUrl, reason))
+                    reportOpenFailure(currentUrl, reason)
                 }
             }
             MpvEvent.PlaybackRestart -> {
@@ -447,10 +458,32 @@ class DesktopMpvPlayer(
         if (signals.position(now / 1_000_000)) _state.update { it.copy(position = value) }
     }
 
+    /**
+     * mpv's log can say why a file didn't open a moment after END_FILE, so the reason is read a little later: a
+     * certificate that couldn't be verified names its host for the app to ask about.
+     */
+    private fun reportOpenFailure(url: String?, reason: String) {
+        val issued = loadsIssued
+        scope.launch {
+            delay(LOG_GRACE_MS)
+            // Another file (or the same one again) was loaded meanwhile: this failure is no longer news.
+            if (issued != loadsIssued) return@launch
+            val request = lastLoad
+            if (tls.retryUnchecked() && request != null && request.url == url) {
+                System.err.println("mpv: the trusted certificates couldn't be loaded; opening without checking certificates")
+                load(request.url, request.mediaTitle, request.startPaused, request.startPosition)
+                return@launch
+            }
+            val host = tls.rejectedHost()
+            _events.tryEmit(PlayerEvent.EndFile(url, if (host != null) "$host's certificate can't be verified" else reason, untrustedHost = host))
+        }
+    }
+
     private var lastLogLine = ""
     private var lastLogAt = 0L
 
     private fun onLog(event: MpvEvent.Log) {
+        tls.onLog(event.text)
         val level = logLevel(event.level)
         if (level > LOG_WARN) return
         val now = System.nanoTime()
@@ -584,6 +617,7 @@ class DesktopMpvPlayer(
         const val MAX_VOLUME = 130.0
         private const val SEEK_SETTLE_NS = 1_500_000_000L
         private const val UNINITIATED_JUMP_THRESHOLD = 1.0
+        private const val LOG_GRACE_MS = 250L
 
         fun effective(options: DesktopMpvOptions): DesktopMpvOptions =
             if (options.lowEnd) {
@@ -602,7 +636,8 @@ class DesktopMpvPlayer(
         fun mpvOptions(options: DesktopMpvOptions): Map<String, String> = buildMap {
             put("hwdec", options.hwdec)
             put("hwdec-codecs", "h264,hevc,vp9,av1,mpeg2video,mpeg2")
-            put("tls-verify", "no")
+            // load() turns it off for a file whose name mpvTarget replaced with an address, or that the user plays anyway.
+            put("tls-verify", "yes")
             put("cache", "yes")
             put("demuxer-max-bytes", "${options.cacheMegabytes}MiB")
             put("demuxer-max-back-bytes", "${options.cacheMegabytes / 2}MiB")

@@ -19,6 +19,8 @@ class DesktopMpvOptionsTest {
         assertEquals("128MiB", normal["demuxer-max-bytes"])
         assertEquals("64MiB", low["demuxer-max-bytes"])
         assertEquals("4", low["vd-lavc-threads"])
+        // Certificates are checked unless load() turns it off for a file.
+        assertEquals("yes", normal["tls-verify"])
         assertEquals(1280, DesktopMpvPlayer.effective(DesktopMpvOptions(lowEnd = true)).maxRenderEdge)
     }
 }

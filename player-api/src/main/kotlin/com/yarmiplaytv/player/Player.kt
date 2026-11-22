@@ -169,7 +169,11 @@ data class Track(
 
 sealed interface PlayerEvent {
     data class FileLoaded(val url: String, val duration: Double) : PlayerEvent
-    data class EndFile(val url: String?, val error: String?) : PlayerEvent
+    /**
+     * The file ended or failed to open. [untrustedHost] is set when it failed because that host's HTTPS certificate
+     * couldn't be verified ([StreamTls]); playing it anyway means [StreamTls.allowUnverified] and loading it again.
+     */
+    data class EndFile(val url: String?, val error: String?, val untrustedHost: String? = null) : PlayerEvent
     data class Log(val prefix: String, val level: Int, val text: String) : PlayerEvent
     /** The demuxer jumped [from] -> [to] on its own without a seek command (e.g. across a hole in a partial file). */
     data class UninitiatedJump(val url: String?, val from: Double, val to: Double) : PlayerEvent

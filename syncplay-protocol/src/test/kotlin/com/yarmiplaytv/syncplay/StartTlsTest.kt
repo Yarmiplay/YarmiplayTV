@@ -24,14 +24,21 @@ class StartTlsTest {
         scope.cancel()
     }
 
-    private fun client(tlsError: Exception): SyncplayClient {
+    private val asked = Collections.synchronizedList(mutableListOf<String>())
+
+    private fun client(
+        tlsError: Exception = IllegalStateException("no TLS"),
+        useTls: Boolean = true,
+        plainText: Boolean? = null,
+    ): SyncplayClient {
         val clock = FakeClock()
         val c = SyncplayClient(
-            SyncplayConfig("yarmi.example", 8999, "ana", "movie night", useTls = true),
+            SyncplayConfig("yarmi.example", 8999, "ana", "movie night", useTls = useTls),
             FakePlayer(clock),
             parentScope = scope,
             clock = clock,
             transportFactory = { _, _, _ -> ScriptedTransport(tlsError).also { transports += it } },
+            confirmPlainText = { host, port -> asked += "$host:$port"; plainText ?: true },
         )
         c.events.onEach { events += it }.launchIn(scope)
         c.start()
@@ -67,6 +74,46 @@ class StartTlsTest {
         assertEquals(true, disconnected.willReconnect)
         eventually("another attempt") { transports.size >= 2 }
         assertEquals(ConnectionStatus.RECONNECTING, c.state.value.status)
+    }
+
+    private fun refuseStartTls() {
+        eventually("the STARTTLS request") { transports.lastOrNull()?.sent?.any { "startTLS" in it } == true }
+        transports.last().receive("""{"TLS":{"startTLS":"false"}}""")
+    }
+
+    @Test
+    fun `a server without TLS is asked about, and saying no stops without reconnecting or sending anything`() {
+        val c = client(plainText = false)
+        refuseStartTls()
+
+        val disconnected = eventuallyValue("the disconnect") { events.filterIsInstance<SyncplayEvent.Disconnected>().firstOrNull() }
+        assertEquals(false, disconnected.willReconnect)
+        assertEquals("Didn't connect without encryption to yarmi.example", disconnected.reason)
+        assertEquals(listOf("yarmi.example:8999"), asked.toList())
+        eventually("disconnected") { c.state.value.status == ConnectionStatus.DISCONNECTED }
+        Thread.sleep(1_500)
+        assertEquals("no reconnect", 1, transports.size)
+        assertTrue("no Hello in plain text", transports.single().sent.none { "Hello" in it })
+        assertTrue(transports.single().closed)
+    }
+
+    @Test
+    fun `saying yes goes on in plain text`() {
+        client(plainText = true)
+        refuseStartTls()
+
+        eventually("the Hello") { transports.single().sent.any { "Hello" in it } }
+        assertEquals(listOf("yarmi.example:8999"), asked.toList())
+        assertTrue(events.none { it is SyncplayEvent.Disconnected })
+    }
+
+    @Test
+    fun `with TLS off nothing is asked`() {
+        client(useTls = false, plainText = false)
+
+        eventually("the Hello") { transports.singleOrNull()?.sent?.any { "Hello" in it } == true }
+        assertTrue(transports.single().sent.none { "startTLS" in it })
+        assertTrue(asked.isEmpty())
     }
 
     private fun eventually(what: String, timeoutMs: Long = 4_000, condition: () -> Boolean) {
