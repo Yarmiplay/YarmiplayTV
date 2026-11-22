@@ -2,8 +2,8 @@ package com.yarmiplaytv.media
 
 import java.net.URLEncoder
 
-/** Subtitle files the player can add beside a video. `.idx` is VobSub and is only used with its `.sub`. */
-val SUBTITLE_EXTENSIONS = setOf("srt", "ass", "ssa", "vtt", "idx", "sub")
+/** Text subtitle files the player can add beside a video. */
+val SUBTITLE_EXTENSIONS = setOf("srt", "ass", "ssa", "vtt")
 
 private val TEXT_SUBTITLE_CODECS = setOf("srt", "ass", "ssa", "vtt", "subrip", "webvtt")
 
@@ -93,24 +93,6 @@ fun sidecarMatches(videoName: String, subtitleName: String): Boolean {
     val lang = stem.substringAfterLast('.', "")
     val base = stem.substringBeforeLast('.')
     return base == videoStem && lang.isNotEmpty() && lang.length <= 8 && lang.all { it.isLetter() }
-}
-
-/**
- * Sidecars beside [videoName]. A VobSub `.idx` is kept only when its `.sub` is there too (mpv reads the pair
- * from the index); a `.sub` without an index stays, because that is a text subtitle of its own.
- */
-fun matchingSidecarNames(videoName: String, candidates: Collection<String>): List<String> {
-    val matching = candidates.filter { sidecarMatches(videoName, it) }
-    val lower = matching.map { it.lowercase() }.toSet()
-    return matching.filter { name ->
-        val extension = name.substringAfterLast('.', "").lowercase()
-        val stem = name.substringBeforeLast('.').lowercase()
-        when (extension) {
-            "idx" -> "$stem.sub" in lower
-            "sub" -> "$stem.idx" !in lower
-            else -> true
-        }
-    }
 }
 
 /** The language tag in `Episode.en.srt`, or null when the file is just `Episode.srt`. */

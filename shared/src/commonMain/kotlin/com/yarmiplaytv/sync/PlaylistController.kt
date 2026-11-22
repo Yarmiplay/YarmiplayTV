@@ -30,7 +30,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -42,10 +41,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** What the player is (about to be) showing. */
@@ -114,7 +113,6 @@ class PlaylistController(
     private val locator: MediaLocator,
     private val relay: RelayManager? = null,
     private val settingsStore: SettingsStore? = null,
-    private val network: com.yarmiplaytv.network.NetworkLibrary? = null,
 ) {
     private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
     val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying.asStateFlow()
@@ -562,7 +560,6 @@ class PlaylistController(
             }
             return
         }
-        if (network != null && !media.url.startsWith("http://127.0.0.1:")) network.releasePlayback()
         _nowPlaying.value = media
         _status.value = PlaylistStatus.Loading(media.fileName)
         sync.reportLoading()
@@ -588,11 +585,11 @@ class PlaylistController(
     }
 
     /** Subtitles dropped together with the video at [url], selected when that file opens. */
-    fun rememberSidecars(url: String, subs: List<ExternalSubtitle>, select: Boolean = true) {
+    fun rememberSidecars(url: String, subs: List<ExternalSubtitle>) {
         if (subs.isEmpty()) return
         val list = sidecarsForUrl.getOrPut(url) { mutableListOf() }
         synchronized(list) { list += subs }
-        if (select) forceSelect += subs.map { it.url }
+        forceSelect += subs.map { it.url }
     }
 
     private fun rememberSeekOffer(media: NowPlaying) {
@@ -619,11 +616,7 @@ class PlaylistController(
     }
 
     private suspend fun discoverSubs(media: NowPlaying): List<ExternalSubtitle> {
-        val beside = withContext(Dispatchers.IO) {
-            runCatching { local.sidecarsBeside(media.url, media.fileName) }
-                .onFailure { Logger.w(TAG, "Cannot list subtitles beside ${media.fileName}", it) }
-                .getOrDefault(emptyList())
-        }
+        val beside = runCatching { local.sidecarsBeside(media.url, media.fileName) }.getOrDefault(emptyList())
         val item = media.itemId
         val key = media.copies.firstOrNull()?.sourceKey
         val remote = if (item != null && !key.isNullOrEmpty() && item != media.url) {
@@ -834,13 +827,7 @@ class PlaylistController(
      */
     fun playLocal(uri: String, inRoom: Boolean) {
         scope.launch {
-            val known = try {
-                remember(localPlayable(uri))
-            } catch (e: Exception) {
-                _status.value = PlaylistStatus.Failed(com.yarmiplaytv.network.NetworkUris.fileName(uri) ?: uri.substringAfterLast('/'), e.message ?: "Couldn't open this file")
-                _openPlayerRequests.value++
-                return@launch
-            }
+            val known = remember(localPlayable(uri))
             val client = sync.client
             if (inRoom && client != null && sync.isActive) {
                 client.playInRoom(known.playable.fileName)
@@ -872,22 +859,7 @@ class PlaylistController(
         }
     }
 
-    private suspend fun localPlayable(uri: String): PlayableMedia {
-        if (network != null && com.yarmiplaytv.network.NetworkUris.isNetwork(uri)) {
-            val opened = network.openForPlayback(uri)
-            if (opened.sidecars.isNotEmpty()) rememberSidecars(opened.playbackUrl, opened.sidecars, select = false)
-            return PlayableMedia(
-                itemId = uri,
-                url = opened.playbackUrl,
-                fileName = opened.fileName,
-                sizeBytes = opened.sizeBytes,
-                durationSeconds = 0.0,
-                title = opened.fileName,
-                episode = episodeFromFile(opened.fileName),
-            )
-        }
-        return local.describe(uri).also(local::rememberOpened).toPlayable()
-    }
+    private suspend fun localPlayable(uri: String): PlayableMedia = local.describe(uri).also(local::rememberOpened).toPlayable()
 
     private fun addFileNameToPlaylist(fileName: String) {
         if (sync.client == null) {

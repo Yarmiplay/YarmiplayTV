@@ -3,10 +3,7 @@ package com.yarmiplaytv.sync
 import com.yarmiplaytv.FakePlayer
 import com.yarmiplaytv.data.desktopSettingsStore
 import com.yarmiplaytv.local.FileLocalLibrary
-import com.yarmiplaytv.media.ExternalSubtitle
 import com.yarmiplaytv.media.MediaSource
-import com.yarmiplaytv.player.Track
-import com.yarmiplaytv.player.TrackType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.SupervisorJob
@@ -72,40 +69,6 @@ class SidecarAttachTest {
         val added = player.commands.first { it.first() == "sub-add" }
         assertTrue(added[1].contains("Episode.en.srt"))
         assertEquals("select", added[2])
-    }
-
-    @Test
-    fun aVobSubIndexIsAddedAndALoneIdxIsNot() {
-        val dir = tmp.newFolder("vob")
-        val video = File(dir, "Movie.mkv").apply { writeBytes(byteArrayOf(0)) }
-        File(dir, "Movie.idx").writeText("index")
-        File(dir, "Movie.sub").writeBytes(byteArrayOf(1, 2, 3))
-        val servers = MutableStateFlow<List<MediaSource>>(emptyList())
-        val playlist = PlaylistController(scope, SyncController(scope, player), player, MutableStateFlow(null), local, MediaLocator(local, servers))
-        onMain { playlist.playLocal(FileLocalLibrary.uriOf(video.toPath()), inRoom = false) }
-        awaitTrue("the file to open") { player.loaded != null }
-        onMain { player.finishLoading(10.0) }
-        awaitTrue("the index") { player.commands.any { it.firstOrNull() == "sub-add" && it.getOrNull(1)?.contains("Movie.idx") == true } }
-        assertTrue(player.commands.none { it.getOrNull(1)?.contains("Movie.sub") == true })
-    }
-
-    @Test
-    fun grantedFolderSidecarsAreAddedWithoutReplacingAnEmbeddedTrack() {
-        val video = File(tmp.newFolder("films"), "Movie.mkv").apply { writeBytes(byteArrayOf(0)) }
-        val servers = MutableStateFlow<List<MediaSource>>(emptyList())
-        val playlist = PlaylistController(scope, SyncController(scope, player), player, MutableStateFlow(null), local, MediaLocator(local, servers))
-        val uri = FileLocalLibrary.uriOf(video.toPath())
-        player.tracks.value = listOf(
-            Track(1, TrackType.SUBTITLE, "Embedded", "en", "ass", selected = true, isDefault = true, isExternal = false),
-        )
-        onMain {
-            playlist.rememberSidecars(uri, listOf(ExternalSubtitle("file:///subtitle.srt", "Movie.en", "en")), select = false)
-            playlist.playLocal(uri, inRoom = false)
-        }
-        awaitTrue("the file to open") { player.loaded == uri }
-        onMain { player.finishLoading(10.0) }
-        awaitTrue("the sidecar") { player.commands.any { it.firstOrNull() == "sub-add" } }
-        assertEquals("auto", player.commands.first { it.first() == "sub-add" }[2])
     }
 
     @Test
