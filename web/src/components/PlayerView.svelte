@@ -945,6 +945,14 @@
     align-items: center;
     justify-content: center;
   }
+  /* Whole actions move to the next line. A label never breaks mid-word. */
+  .sheet .row .button {
+    flex: 0 0 auto;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .small {
     font-size: 14px;
   }

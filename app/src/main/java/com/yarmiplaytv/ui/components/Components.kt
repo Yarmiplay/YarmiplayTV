@@ -127,6 +127,8 @@ fun ActionButton(
     tint: Color? = null,
     /** The background while not focused; focused, it's always the opaque tile with the accent border. */
     container: Color = if (primary) AppColors.Accent.copy(alpha = 0.25f) else AppColors.SurfaceHigh,
+    /** Keeps the label on one line. A button that is narrower than its label ends with an ellipsis. */
+    singleLine: Boolean = false,
 ) {
     TvTile(
         onClick = onClick,
@@ -142,7 +144,14 @@ fun ActionButton(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (icon != null) Icon(icon, contentDescription = null, tint = tint ?: LocalContentColor.current, modifier = Modifier.size(24.dp))
-            Text(text, style = MaterialTheme.typography.titleSmall, color = if (enabled) AppColors.Text else AppColors.TextDim)
+            Text(
+                text,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (enabled) AppColors.Text else AppColors.TextDim,
+                maxLines = if (singleLine) 1 else Int.MAX_VALUE,
+                softWrap = !singleLine,
+                overflow = if (singleLine) TextOverflow.Ellipsis else TextOverflow.Clip,
+            )
         }
     }
 }

@@ -107,7 +107,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.unit.Constraints
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
@@ -269,6 +271,11 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
         val fullscreenToggle = rememberFullscreenToggle(isPortrait)
         fullscreenHolder.value = fullscreenToggle
         FullscreenLandscape(pictureInPicture = pip.active, isPortrait = isPortrait)
+        // The portrait video is a short 16:9 strip. A status card centered in it covers the back
+        // button, fullscreen, and toasts, so a short strip shows the card in the middle of the screen.
+        val videoStrip = (maxWidth * 9f / 16f).coerceAtMost(maxHeight / 2)
+        val liftStatusCard = isPortrait && videoStrip < StatusCardMinStrip &&
+            (status is PlaylistStatus.NotFound || status is PlaylistStatus.Failed || status is PlaylistStatus.Untrusted)
 
         Layout(
             content = {
@@ -292,7 +299,9 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                             compact = isPortrait,
                         )
 
-                        CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom, compact = isPortrait)
+                        if (!liftStatusCard) {
+                            CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom, compact = isPortrait)
+                        }
                         RelayOnPlayer(container, state.fileLoaded, controls, isPortrait = isPortrait)
 
                         if (state.buffering && state.fileLoaded) {
@@ -777,6 +786,11 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                 }
             }
         }
+        if (liftStatusCard) {
+            PhonePortraitStatusCard {
+                CenterStatus(container, nav, status, nowPlaying == null, state.fileLoaded, inRoom, compact = true, onVideo = false)
+            }
+        }
     }
 
     sheet?.let { kind ->
@@ -1193,6 +1207,34 @@ private fun BoxScope.RelayOnPlayer(
     }
 }
 
+/** A 16:9 strip shorter than this can't show the status card clear of the top controls and toasts. */
+private val StatusCardMinStrip = 300.dp
+
+/**
+ * Phone portrait (and any similarly short strip) draws the missing-file card here, centered on the
+ * screen and kept below the video, instead of on top of the picture.
+ */
+@Composable
+private fun PhonePortraitStatusCard(content: @Composable () -> Unit) {
+    Layout(content = content, modifier = Modifier.fillMaxSize()) { measurables, constraints ->
+        val margin = 16.dp.roundToPx()
+        val card = measurables[0].measure(
+            Constraints(
+                maxWidth = (constraints.maxWidth - margin * 2).coerceAtLeast(0),
+                maxHeight = (constraints.maxHeight - margin).coerceAtLeast(0),
+            ),
+        )
+        val videoBottom = minOf(constraints.maxWidth * 9 / 16, constraints.maxHeight / 2)
+        val maxTop = (constraints.maxHeight - card.height).coerceAtLeast(0)
+        val centered = (constraints.maxHeight - card.height) / 2
+        val belowVideo = (videoBottom + 8.dp.roundToPx()).coerceAtMost(maxTop)
+        val y = centered.coerceAtLeast(belowVideo).coerceAtMost(maxTop)
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            card.placeRelative((constraints.maxWidth - card.width) / 2, y)
+        }
+    }
+}
+
 @Composable
 private fun CenterStatus(
     container: AppContainer,
@@ -1202,17 +1244,24 @@ private fun CenterStatus(
     fileLoaded: Boolean,
     inRoom: Boolean,
     compact: Boolean = false,
+    onVideo: Boolean = true,
 ) {
     val hideLoading = container.relay?.let { relay ->
         val relayStatus by relay.status.collectAsStateWithLifecycle()
         relayStatus.let { it != null && it.playbackHint(fileLoaded) != RelayHint.None }
     } == true
+    val mediaSource by container.mediaSource.collectAsStateWithLifecycle()
     val pickFile = rememberVideoPicker { uri -> container.playlist.resolveManuallyLocal(uri) }
     val playFile = rememberVideoPicker { uri -> container.playlist.playLocal(uri, inRoom) }
     val titleStyle = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge
     val innerPadding = if (compact) 14.dp else 20.dp
     val itemSpacing = if (compact) 6.dp else 8.dp
-    Box(Modifier.fillMaxSize().padding(if (compact) 12.dp else 24.dp), contentAlignment = Alignment.Center) {
+    val frame = if (onVideo) {
+        Modifier.fillMaxSize().padding(if (compact) 12.dp else 24.dp)
+    } else {
+        Modifier.fillMaxWidth().widthIn(max = 560.dp)
+    }
+    Box(frame, contentAlignment = Alignment.Center) {
         when (status) {
             is PlaylistStatus.Resolving -> StatusBox("Looking for the file…", status.fileName)
             is PlaylistStatus.Loading -> if (!fileLoaded && !hideLoading) StatusBox("Loading…", status.fileName)
@@ -1222,39 +1271,59 @@ private fun CenterStatus(
                     is PlaylistStatus.Failed -> status.fileName to status.reason
                     else -> "" to ""
                 }
-                Surface(color = AppColors.Surface.copy(alpha = 0.95f), contentColor = AppColors.OnSurface, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp).testTag("not_found")) {
+                Surface(
+                    color = AppColors.Surface.copy(alpha = 0.95f),
+                    contentColor = AppColors.OnSurface,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .widthIn(max = 560.dp)
+                        .then(if (onVideo) Modifier else Modifier.fillMaxWidth().holdClicks())
+                        .testTag("not_found"),
+                ) {
                     Column(Modifier.verticalScroll(rememberScrollState()).padding(innerPadding), verticalArrangement = Arrangement.spacedBy(itemSpacing)) {
                         Text(if (status is PlaylistStatus.NotFound) "Couldn't find this file" else "Couldn't play this file", style = titleStyle)
                         Text(file, style = MaterialTheme.typography.titleSmall, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
                         Text(reason, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = if (compact) 2 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 2.dp)) {
+                        StatusButtons(Modifier.padding(top = 2.dp)) {
                             if (status is PlaylistStatus.NotFound) {
-                                Button(pickFile, Modifier.testTag("pick_file")) { Text("Pick file") }
-                                if (container.mediaSource.value != null) {
-                                    FilledTonalButton({ nav.push(Screen.Search(pickFor = file)) }) { Text("Search servers") }
+                                Button(pickFile, Modifier.testTag("pick_file")) { ActionLabel("Pick file") }
+                                if (mediaSource != null) {
+                                    FilledTonalButton({ nav.push(Screen.Search(pickFor = file)) }, Modifier.testTag("search_servers")) {
+                                        ActionLabel("Search servers")
+                                    }
                                 }
                             }
-                            TextButton({ container.playlist.dismissStatus() }) { Text("Dismiss") }
+                            TextButton({ container.playlist.dismissStatus() }, Modifier.testTag("dismiss_status")) { ActionLabel("Dismiss") }
                         }
                     }
                 }
             }
             is PlaylistStatus.Untrusted -> {
-                Surface(color = AppColors.Surface.copy(alpha = 0.95f), contentColor = AppColors.OnSurface, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 560.dp).testTag("untrusted_url")) {
+                Surface(
+                    color = AppColors.Surface.copy(alpha = 0.95f),
+                    contentColor = AppColors.OnSurface,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .widthIn(max = 560.dp)
+                        .then(if (onVideo) Modifier else Modifier.fillMaxWidth().holdClicks())
+                        .testTag("untrusted_url"),
+                ) {
                     Column(Modifier.verticalScroll(rememberScrollState()).padding(innerPadding), verticalArrangement = Arrangement.spacedBy(itemSpacing)) {
                         Text("Open this link?", style = titleStyle)
                         Text(status.url, style = MaterialTheme.typography.titleSmall, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
                         Text("The room picked it, but it isn't on one of your trusted domains.", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 2.dp)) {
-                            Button({ container.playlist.playUntrusted() }) { Text("Open") }
+                        StatusButtons(Modifier.padding(top = 2.dp)) {
+                            Button({ container.playlist.playUntrusted() }, Modifier.testTag("open_link")) { ActionLabel("Open") }
                             status.domain?.let { domain ->
                                 FilledTonalButton({
                                     val s = container.settings.value
                                     container.scope.launch { container.settingsStore.saveTrustedDomains(s.trustedDomains + domain, s.onlySwitchToTrustedDomains) }
                                     container.playlist.playUntrusted()
-                                }) { Text("Always trust $domain", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                                }, Modifier.testTag("trust_domain")) {
+                                    Text("Always trust $domain", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                                }
                             }
-                            TextButton({ container.playlist.dismissStatus() }) { Text("Dismiss") }
+                            TextButton({ container.playlist.dismissStatus() }, Modifier.testTag("dismiss_status")) { ActionLabel("Dismiss") }
                         }
                     }
                 }
@@ -1268,12 +1337,72 @@ private fun CenterStatus(
                         style = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.onVideoLabel(),
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(playFile) { Text("Open a video") }
-                        FilledTonalButton({ nav.popTo(Screen.Home) }) { Text("Browse") }
+                    StatusButtons {
+                        Button(playFile, Modifier.testTag("open_video")) { ActionLabel("Open a video") }
+                        FilledTonalButton({ nav.popTo(Screen.Home) }, Modifier.testTag("browse")) { ActionLabel("Browse") }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ActionLabel(text: String) {
+    Text(text, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+}
+
+/**
+ * One row when the labels fit, otherwise a stack of equal-width buttons.
+ * Labels stay on one line either way, so a narrow phone never breaks "Dismiss" in half.
+ */
+@Composable
+private fun StatusButtons(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    SubcomposeLayout(modifier) { constraints ->
+        val spacing = 8.dp.roundToPx()
+        val measurables = subcompose(Unit, content)
+        if (measurables.isEmpty()) {
+            layout(0, 0) {}
+        } else {
+            val widths = measurables.map { it.maxIntrinsicWidth(constraints.maxHeight) }
+            val needed = widths.sum() + spacing * (widths.size - 1)
+            val stack = constraints.hasBoundedWidth && needed > constraints.maxWidth
+            val placeables = if (stack) {
+                val width = constraints.maxWidth
+                measurables.map { it.measure(Constraints(minWidth = width, maxWidth = width, maxHeight = constraints.maxHeight)) }
+            } else {
+                measurables.map { it.measure(Constraints(maxWidth = constraints.maxWidth, maxHeight = constraints.maxHeight)) }
+            }
+            if (stack) {
+                val height = placeables.sumOf { it.height } + spacing * (placeables.size - 1)
+                layout(constraints.maxWidth, height) {
+                    var y = 0
+                    placeables.forEach { placeable ->
+                        placeable.placeRelative(0, y)
+                        y += placeable.height + spacing
+                    }
+                }
+            } else {
+                val width = placeables.sumOf { it.width } + spacing * (placeables.size - 1)
+                val height = placeables.maxOf { it.height }
+                layout(width, height) {
+                    var x = 0
+                    placeables.forEach { placeable ->
+                        placeable.placeRelative(x, (height - placeable.height) / 2)
+                        x += placeable.width + spacing
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Clicks on the card stay on the card. The screen around it still reaches the video controls. */
+private fun Modifier.holdClicks(): Modifier = pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent()
+            event.changes.forEach { it.consume() }
         }
     }
 }
