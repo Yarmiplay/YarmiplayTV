@@ -5,6 +5,7 @@ import com.yarmiplaytv.data.AppSettings
 import com.yarmiplaytv.local.SeekFrames
 import com.yarmiplaytv.media.aniskip.AniSkipClient
 import com.yarmiplaytv.media.MediaSource
+import com.yarmiplaytv.media.Redact
 import com.yarmiplaytv.media.SkipSegment
 import com.yarmiplaytv.player.Chapter
 import com.yarmiplaytv.player.PlaybackState
@@ -138,7 +139,7 @@ class SkipService(
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        Logger.w(TAG, "No markers from ${source.displayName}: ${e.message}")
+                        Logger.w(TAG, "No markers from ${source.displayName}: ${Redact.tokens(e.message)}")
                         continue
                     }
                     if (marked.isEmpty()) continue
@@ -165,7 +166,7 @@ class SkipService(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Logger.w(TAG, "No skip times for ${info.seriesName} ${info.episode}: ${e.message}")
+                Logger.w(TAG, "No skip times for ${info.seriesName} ${info.episode}: ${Redact.tokens(e.message)}")
             }
         }
         detect(fileUrl)
@@ -209,7 +210,7 @@ class SkipService(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Logger.w(TAG, "Couldn't listen for the opening and ending: ${e.message}")
+                Logger.w(TAG, "Couldn't listen for the opening and ending: ${Redact.tokens(e.message)}")
             }
         }
     }

@@ -17,6 +17,9 @@ import com.yarmiplaytv.media.CompositeMediaSource
 import com.yarmiplaytv.media.LanHosts
 import com.yarmiplaytv.media.MediaSource
 import com.yarmiplaytv.media.MediaSourceException
+import com.yarmiplaytv.media.Redact
+import com.yarmiplaytv.media.ServerMismatchException
+import com.yarmiplaytv.media.SharedHttp
 import com.yarmiplaytv.media.jellyfin.ClientInfo
 import com.yarmiplaytv.media.jellyfin.JellyfinClient
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
@@ -80,7 +83,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.OkHttpClient
 
 /** Process-wide singletons (one mpv instance, one Syncplay connection, the media servers). */
 class AppContainer(
@@ -282,7 +284,7 @@ class AppContainer(
         SeekLocals.completeRelay = { url -> relay?.completeFile(url) }
         SingletonImageLoader.setSafe { context ->
             ImageLoader.Builder(context)
-                .components { add(OkHttpNetworkFetcherFactory(callFactory = { OkHttpClient.Builder().dns(SessionDns).build() })) }
+                .components { add(OkHttpNetworkFetcherFactory(callFactory = { SharedHttp.base.newBuilder().dns(SessionDns).build() })) }
                 .build()
         }
         scope.launch {
@@ -364,7 +366,7 @@ class AppContainer(
                     Logger.i(TAG, "Jellyfin at ${session.serverUrl} speaks HTTP this session; saved URL stays HTTPS-preferred")
                     runCatching { source.refreshIndex() }
                 } else {
-                    Logger.w(TAG, "Jellyfin HTTPS handshake looked like plain HTTP but HTTP also failed: ${failure.message}")
+                    Logger.w(TAG, "Jellyfin HTTPS handshake looked like plain HTTP but HTTP also failed: ${Redact.tokens(failure.message)}")
                 }
             }
             valid == false && session.isShared -> {
@@ -377,6 +379,8 @@ class AppContainer(
             }
             valid == true && session.noLongerShared -> put(jellyfinSource(session.copy(noLongerShared = false)))
             valid == null && session.isShared -> movedJellyfin(session)?.let { put(jellyfinSource(it)) }
+            // Another device has its address on this network: kept like an unreachable server, and no token goes there.
+            failure is ServerMismatchException -> Logger.w(TAG, "Jellyfin ${source.displayName} unreachable: ${Redact.tokens(failure.message)}")
             else -> runCatching { source.refreshIndex() }
         }
     }
@@ -397,7 +401,9 @@ class AppContainer(
         val refreshed = try {
             plexClient.refresh(source.session)
         } catch (e: MediaSourceException) {
-            Logger.w(TAG, "Plex server ${source.displayName} unreachable: ${e.message}")
+            Logger.w(TAG, "Plex server ${source.displayName} unreachable: ${Redact.tokens(e.message)}")
+            // Another device has its address on this network: kept like an unreachable server, and no token goes there.
+            if (e is ServerMismatchException) return
             source.session
         }
         when {

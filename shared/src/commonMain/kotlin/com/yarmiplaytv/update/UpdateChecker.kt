@@ -1,5 +1,6 @@
 package com.yarmiplaytv.update
 
+import com.yarmiplaytv.media.SharedHttp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -55,7 +56,7 @@ object AppVersions {
  */
 class UpdateChecker(
     private val manifestUrl: String = System.getProperty("yarmiplaytv.updateManifest") ?: MANIFEST_URL,
-    private val http: OkHttpClient = OkHttpClient.Builder().callTimeout(20, TimeUnit.SECONDS).build(),
+    private val http: OkHttpClient = SharedHttp.base.newBuilder().callTimeout(20, TimeUnit.SECONDS).build(),
 ) {
     /** The update for [platform] when the page has a newer version than [current]; null otherwise or on any error. */
     suspend fun check(platform: String, current: String): Update? = fetch(platform, current).getOrNull()

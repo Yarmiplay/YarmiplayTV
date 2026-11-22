@@ -69,5 +69,10 @@ class MalEpisodesTest {
         val found = episodes.of(MalAnime(100, "Hero Academy", numEpisodes = 12))
         assertEquals(listOf(3, 4), found.map { it.number })
         assertEquals("file:///a/Hero%20Academy%20-%2003.mkv", found.first().localUri)
+
+        // A new list of files (a rescan) is read again; the same list isn't.
+        files.value = files.value + LocalFile("Hero Academy - 05.mkv", 1, "file:///a/Hero%20Academy%20-%2005.mkv", directory = "Hero Academy")
+        assertEquals(listOf(3, 4, 5), episodes.of(MalAnime(100, "Hero Academy", numEpisodes = 12), fresh = true).map { it.number })
+        assertEquals(listOf(3, 4, 5), episodes.of(MalAnime(100, "Hero Academy", numEpisodes = 12), fresh = true).map { it.number })
     }
 }

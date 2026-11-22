@@ -152,7 +152,13 @@ sealed interface ResolveResult {
 
 enum class MatchKind { EXACT_FILENAME, NORMALIZED_FILENAME, PARSED_SEARCH }
 
-class MediaSourceException(message: String, val httpCode: Int? = null, cause: Throwable? = null) : Exception(message, cause)
+open class MediaSourceException(message: String, val httpCode: Int? = null, cause: Throwable? = null) : Exception(message, cause)
+
+/**
+ * A saved server's address is answered by another server (or something that isn't a media server), found without
+ * sending the saved token. Callers treat it like the server being unreachable, never like a revoked sign-in.
+ */
+class ServerMismatchException(message: String, cause: Throwable? = null) : MediaSourceException(message, cause = cause)
 
 /** The server [key] inside a combined library, or this source when it is that server. */
 fun MediaSource.server(key: String): MediaSource? = when (this) {

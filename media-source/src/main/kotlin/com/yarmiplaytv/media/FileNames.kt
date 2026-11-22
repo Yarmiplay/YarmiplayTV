@@ -57,11 +57,16 @@ object FileNames {
         return Parsed(cleanTitle(titlePart), season, episode, year?.value?.toInt())
     }
 
+    private val dotsAndUnderscores = Regex("[._]")
+    private val brackets = Regex("[()\\[\\]]")
+    private val edgeDashes = Regex("\\s+-\\s*$|^\\s*-\\s+")
+    private val spaces = Regex("\\s+")
+
     private fun cleanTitle(part: String): String = qualityTokens.replace(part, " ")
-        .replace(Regex("[._]"), " ")
-        .replace(Regex("[()\\[\\]]"), " ")
-        .replace(Regex("\\s+-\\s*$|^\\s*-\\s+"), " ")
-        .replace(Regex("\\s+"), " ")
+        .replace(dotsAndUnderscores, " ")
+        .replace(brackets, " ")
+        .replace(edgeDashes, " ")
+        .replace(spaces, " ")
         .trim(' ', '-')
 
     /**

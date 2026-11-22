@@ -1,6 +1,8 @@
 package com.yarmiplaytv.media.plex
 
 import com.yarmiplaytv.media.MediaSourceException
+import com.yarmiplaytv.media.ServerMismatchException
+import com.yarmiplaytv.media.SharedHttp
 import com.yarmiplaytv.media.jellyfin.ClientInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -58,7 +60,7 @@ class PlexClient(
     http: OkHttpClient? = null,
     private val plexTvUrl: String = "https://plex.tv",
 ) {
-    internal val http: OkHttpClient = http ?: OkHttpClient.Builder()
+    internal val http: OkHttpClient = http ?: SharedHttp.base.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
@@ -134,13 +136,18 @@ class PlexClient(
     internal suspend fun probeAll(server: PlexServer): List<Pair<PlexResourceConnection, String?>> {
         val ordered = server.connections.sortedBy { c -> if (c.relay) 2 else if (c.local) 0 else 1 }
         return coroutineScope {
-            ordered.map { c -> async { c to probe(c.uri, server.accessToken, server.machineId) } }.awaitAll()
+            ordered.map { c -> async { c to probe(c.uri, server.machineId) } }.awaitAll()
         }
     }
 
-    private suspend fun probe(uri: String, token: String, machineId: String): String? = try {
-        val identity: PlexResponse = json.decodeFromString(execute(probeHttp, uri, token, "identity") { })
-        identity.container.machineIdentifier.takeIf { it != null && it != machineId }?.let { "a different server answered ($it)" }
+    /**
+     * Null when the Plex server [machineId] answers at [uri], or why not. Asks `/identity`, which Plex answers
+     * without a token, so no token goes to whatever device has the address on this network.
+     */
+    private suspend fun probe(uri: String, machineId: String): String? = try {
+        val identity: PlexResponse = json.decodeFromString(execute(probeHttp, uri, null, "identity") { })
+        val answered = identity.container.machineIdentifier
+        if (answered != machineId) "a different server answered (${answered ?: "no server id"})" else null
     } catch (e: MediaSourceException) {
         e.message ?: e.toString()
     } catch (e: SerializationException) {
@@ -151,22 +158,61 @@ class PlexClient(
      * Checks a stored session. Returns it unchanged when the server answers, a session on a new
      * address when the old one stopped working, null when the token was revoked. Throws when the
      * server can't be reached at all (keep the session; it may be offline).
+     *
+     * The saved address is first asked who it is without the token; when another device answers there it counts
+     * as unreachable (the server is looked for at its other addresses), and the token isn't sent to it. When the
+     * server is found nowhere then, [ServerMismatchException] is thrown.
      */
     suspend fun refresh(session: PlexSession): PlexSession? {
-        try {
-            execute(probeHttp, session.serverUrl, session.serverToken, "identity") { }
-            return session
-        } catch (e: MediaSourceException) {
-            if (e.httpCode == 401) return null
-            if (e.httpCode != null) throw e
+        val identity = identityAt(session.serverUrl, session.machineId)
+        val stranger = (identity as? Identity.Stranger)?.why
+        if (identity == Identity.Ours) {
+            try {
+                execute(probeHttp, session.serverUrl, session.serverToken, "identity") { }
+                return session
+            } catch (e: MediaSourceException) {
+                if (e.httpCode == 401) return null
+                if (e.httpCode != null) throw e
+            }
         }
-        val server = try {
-            servers(session.accountToken).firstOrNull { it.machineId == session.machineId }
+        try {
+            val server = try {
+                servers(session.accountToken).firstOrNull { it.machineId == session.machineId }
+            } catch (e: MediaSourceException) {
+                if (e.httpCode == 401) return null
+                throw e
+            } ?: return null
+            return connect(server, session.accountToken, session.userName)
         } catch (e: MediaSourceException) {
-            if (e.httpCode == 401) return null
-            throw e
-        } ?: return null
-        return connect(server, session.accountToken, session.userName)
+            if (stranger == null || e.httpCode == 401) throw e
+            throw ServerMismatchException("$stranger; ${e.message}", e)
+        }
+    }
+
+    private sealed interface Identity {
+        /** The session's server answers there. */
+        data object Ours : Identity
+        /** Nothing answers there. */
+        data object Unreachable : Identity
+        /** Something else answers there. */
+        data class Stranger(val why: String) : Identity
+    }
+
+    /** Who answers [uri], asked without a token. A server error (5xx) is thrown as it is, as before. */
+    private suspend fun identityAt(uri: String, machineId: String): Identity {
+        val where = uri.toHttpUrlOrNull()?.let { "${it.host}:${it.port}" } ?: uri
+        return try {
+            val identity: PlexResponse = json.decodeFromString(execute(probeHttp, uri, null, "identity") { })
+            val answered = identity.container.machineIdentifier
+            if (answered == machineId) Identity.Ours
+            else Identity.Stranger("a different server answers at $where (${answered ?: "no server id"})")
+        } catch (e: MediaSourceException) {
+            val code = e.httpCode ?: return Identity.Unreachable
+            if (code >= 500) throw e
+            Identity.Stranger("no Plex server answers at $where (${e.message})")
+        } catch (e: SerializationException) {
+            Identity.Stranger("no Plex server answers at $where")
+        }
     }
 
     // --- HTTP plumbing ------------------------------------------------------------------

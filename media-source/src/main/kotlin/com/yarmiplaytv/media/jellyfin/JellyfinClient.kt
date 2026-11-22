@@ -2,12 +2,15 @@ package com.yarmiplaytv.media.jellyfin
 
 import com.yarmiplaytv.media.LanHosts
 import com.yarmiplaytv.media.MediaSourceException
+import com.yarmiplaytv.media.ServerMismatchException
+import com.yarmiplaytv.media.SharedHttp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import okhttp3.Dns
 import okhttp3.HttpUrl
@@ -72,7 +75,7 @@ class JellyfinClient(
     /** Looks up server names; the app maps a Syncplay server's name to the address it reached it at. */
     dns: Dns = Dns.SYSTEM,
 ) {
-    internal val http: OkHttpClient = http ?: OkHttpClient.Builder()
+    internal val http: OkHttpClient = http ?: SharedHttp.base.newBuilder()
         .dns(dns)
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -154,7 +157,7 @@ class JellyfinClient(
         val http = plainHttpUrl(probe) ?: plainHttpUrl(session.serverUrl) ?: run {
             session.serverUrl.takeIf { it.startsWith("http://", ignoreCase = true) }
         } ?: return null
-        return http.takeIf { runCatching { validateAt(it, session.accessToken) }.getOrNull() == true }
+        return http.takeIf { runCatching { validateAt(it, session.accessToken, session.serverId) }.getOrNull() == true }
     }
 
     /** @deprecated Use [reachablePlainHttp]; kept name for older call sites during 2.9.2. */
@@ -266,6 +269,13 @@ class JellyfinClient(
             return if (session.preferHttps) session else session.copy(preferHttps = true)
         }
 
+        /** Jellyfin ids, compared the way the server writes them in either place (with or without dashes, any case). */
+        fun sameServerId(a: String?, b: String?): Boolean {
+            val x = a?.replace("-", "")?.trim().orEmpty()
+            val y = b?.replace("-", "")?.trim().orEmpty()
+            return x.isNotEmpty() && x.equals(y, ignoreCase = true)
+        }
+
         fun bothSchemesFailed(httpsUrl: String, httpsErr: Throwable, httpUrl: String, httpErr: Throwable): MediaSourceException {
             val httpsWhy = httpsErr.message?.substringAfter("(", "")?.trimEnd(')')?.ifBlank { null }
                 ?: httpsErr.message ?: "HTTPS failed"
@@ -279,14 +289,46 @@ class JellyfinClient(
         }
     }
 
-    /** Checks a stored session is still valid at its preferred probe URL (HTTPS first when requested). */
-    suspend fun validate(session: JellyfinSession): Boolean = validateAt(preferredProbeUrl(session), session.accessToken)
+    /**
+     * Checks a stored session is still valid at its preferred probe URL (HTTPS first when requested). The token is
+     * only sent once the server there proved to be the session's ([confirmServer]); another one throws
+     * [ServerMismatchException], like an unreachable server.
+     */
+    suspend fun validate(session: JellyfinSession): Boolean =
+        validateAt(preferredProbeUrl(session), session.accessToken, session.serverId)
 
-    suspend fun validateAt(serverUrl: String, accessToken: String): Boolean = try {
-        getRaw(serverUrl, accessToken, "Users/Me") { }
-        true
-    } catch (e: MediaSourceException) {
-        if (e.httpCode == 401 || e.httpCode == 403) false else throw e
+    /**
+     * Whether [accessToken] still signs in at [serverUrl]. With a [serverId], the server there is asked who it is
+     * first, without the token, and the token is only sent when it is that server.
+     */
+    suspend fun validateAt(serverUrl: String, accessToken: String, serverId: String = ""): Boolean {
+        if (serverId.isNotBlank()) confirmServer(serverUrl, serverId)
+        return try {
+            getRaw(serverUrl, accessToken, "Users/Me") { }
+            true
+        } catch (e: MediaSourceException) {
+            if (e.httpCode == 401 || e.httpCode == 403) false else throw e
+        }
+    }
+
+    /**
+     * Asks the server at [serverUrl] for its id without a token (`System/Info/Public`, which every Jellyfin answers)
+     * and throws [ServerMismatchException] unless it is [serverId]. When nothing answers at all, the network error
+     * is thrown as it is.
+     */
+    suspend fun confirmServer(serverUrl: String, serverId: String) {
+        val where = serverUrl.toHttpUrlOrNull()?.let { "${it.host}:${it.port}" } ?: serverUrl
+        val info = try {
+            publicInfo(serverUrl)
+        } catch (e: MediaSourceException) {
+            if (e.httpCode == null) throw e
+            throw ServerMismatchException("Cannot reach $where (no Jellyfin answers there: ${e.message})", e)
+        } catch (e: SerializationException) {
+            throw ServerMismatchException("Cannot reach $where (no Jellyfin answers there)", e)
+        }
+        if (!sameServerId(info.id, serverId)) {
+            throw ServerMismatchException("Cannot reach $where (a different server answers there)")
+        }
     }
 
     suspend fun logout(session: JellyfinSession) {

@@ -5,6 +5,7 @@ import com.yarmiplaytv.media.MediaItemType
 import com.yarmiplaytv.media.PlaybackReport
 import com.yarmiplaytv.media.ReportState
 import com.yarmiplaytv.media.ResolveResult
+import com.yarmiplaytv.media.ServerMismatchException
 import com.yarmiplaytv.media.SkipSegment
 import com.yarmiplaytv.media.jellyfin.ClientInfo
 import kotlinx.coroutines.flow.toList
@@ -27,6 +28,8 @@ class PlexSourceTest {
     private lateinit var client: PlexClient
     private var pinPolls = 0
     private var revoked = false
+    /** plex.tv's addresses for the server, when not its usual two. */
+    private var connections: String? = null
 
     private val fileName = "Hyperdimension Neptunia - S01E01 - The Goddess (Neptune) Of Planeptune.mkv"
     private val path = "/media/Neptunia/Season 1/$fileName"
@@ -37,7 +40,8 @@ class PlexSourceTest {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val url = request.requestUrl!!
-                if (revoked && url.encodedPath == "/identity") return MockResponse().setResponseCode(401)
+                // Plex answers /identity without a token; a revoked token is refused.
+                if (revoked && url.encodedPath == "/identity" && request.getHeader("X-Plex-Token") != null) return MockResponse().setResponseCode(401)
                 if (url.encodedPath == "/notplex/identity") return MockResponse().setHeader("Content-Type", "text/html").setBody("<html>Router login</html>")
                 val body = when (url.encodedPath) {
                     "/api/v2/pins" -> """{"id":42,"code":"ABCD","expiresIn":900}"""
@@ -46,7 +50,7 @@ class PlexSourceTest {
                     "/api/v2/resources" -> """[
                         {"name":"Player","provides":"player","clientIdentifier":"p1"},
                         {"name":"Benny","provides":"server","clientIdentifier":"mid","accessToken":"srvtok","owned":true,
-                         "connections":[{"uri":"http://127.0.0.1:1","local":true},{"uri":"${baseUrl()}","local":false}]}
+                         "connections":${connections ?: """[{"uri":"http://127.0.0.1:1","local":true},{"uri":"${baseUrl()}","local":false}]"""}}
                     ]"""
                     "/identity" -> """{"MediaContainer":{"machineIdentifier":"mid"}}"""
                     "/library/sections" -> """{"MediaContainer":{"Directory":[
@@ -158,6 +162,65 @@ class PlexSourceTest {
     fun refreshFindsServerAtNewAddress() = runBlocking {
         val moved = session().copy(serverUrl = "http://127.0.0.1:1")
         assertEquals(baseUrl(), client.refresh(moved)?.serverUrl)
+    }
+
+    /** Another network's device with the saved address: it answers /identity as itself and refuses tokens. */
+    private fun stranger(): MockWebServer = MockWebServer().apply {
+        dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                if (request.requestUrl!!.encodedPath == "/identity" && request.getHeader("X-Plex-Token") == null) {
+                    MockResponse().setHeader("Content-Type", "application/json").setBody("""{"MediaContainer":{"machineIdentifier":"other"}}""")
+                } else {
+                    MockResponse().setResponseCode(401)
+                }
+        }
+        start()
+    }
+
+    private fun MockWebServer.received(): List<RecordedRequest> = generateSequence { takeRequest(0, TimeUnit.SECONDS) }.toList()
+
+    @Test
+    fun anotherServerAtTheSavedAddressGetsNoTokenAndIsNotARevokedSignIn() = runBlocking {
+        val stranger = stranger()
+        try {
+            val saved = session().copy(serverUrl = stranger.url("/").toString().trimEnd('/'))
+            // Found again where plex.tv says it is, like a server that stopped answering at its address.
+            assertEquals(baseUrl(), client.refresh(saved)?.serverUrl)
+
+            // Found nowhere: kept, like an unreachable server.
+            connections = """[{"uri":"http://127.0.0.1:1","local":true}]"""
+            val error = runCatching { client.refresh(saved) }.exceptionOrNull()
+            assertTrue("$error", error is ServerMismatchException)
+
+            val seen = stranger.received()
+            assertTrue(seen.isNotEmpty())
+            assertTrue("no token to the stranger", seen.all { it.getHeader("X-Plex-Token") == null })
+        } finally {
+            stranger.shutdown()
+        }
+    }
+
+    @Test
+    fun aRouterPageAtTheSavedAddressIsNotARevokedSignIn() = runBlocking {
+        val saved = session().copy(serverUrl = "${baseUrl()}/notplex")
+        connections = """[{"uri":"http://127.0.0.1:1","local":true}]"""
+        assertTrue(runCatching { client.refresh(saved) }.exceptionOrNull() is ServerMismatchException)
+        assertTrue(requests().filter { it.path!!.startsWith("/notplex") }.all { it.getHeader("X-Plex-Token") == null })
+    }
+
+    @Test
+    fun probingAddressesSendsNoToken() = runBlocking {
+        client.connect(client.servers("acct").single(), "acct", "yarmi")
+        val identity = requests().filter { it.requestUrl!!.encodedPath == "/identity" }
+        assertTrue(identity.isNotEmpty())
+        assertTrue(identity.all { it.getHeader("X-Plex-Token") == null })
+    }
+
+    @Test
+    fun refreshSendsTheTokenOnlyToTheRealServer() = runBlocking {
+        assertEquals(session(), client.refresh(session()))
+        val identity = requests().filter { it.requestUrl!!.encodedPath == "/identity" }
+        assertEquals(listOf(null, "srvtok"), identity.map { it.getHeader("X-Plex-Token") })
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.yarmiplaytv.media.MediaSourceException
 import com.yarmiplaytv.media.PlaybackReport
 import com.yarmiplaytv.media.ReportState
 import com.yarmiplaytv.media.ResolveResult
+import com.yarmiplaytv.media.ServerMismatchException
 import com.yarmiplaytv.media.SkipSegment
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -35,6 +36,7 @@ class JellyfinSourceTest {
     private lateinit var server: MockWebServer
     private val client = JellyfinClient(ClientInfo(deviceName = "Test TV", deviceId = "dev1", version = "0.1"))
     private var quickConnectPolls = 0
+    private var revoked = false
 
     private val fileName = "Hyperdimension Neptunia - S01E01 - The Goddess (Neptune) Of Planeptune.mkv"
     private val path = "F:\\Torrents\\Neptunia\\Season 1\\$fileName"
@@ -72,7 +74,7 @@ class JellyfinSourceTest {
                         {"Id":"s3","ItemId":"ep1","Type":"Outro","StartTicks":13500000000,"EndTicks":14400000000}]}"""
                     "/Sessions/Playing", "/Sessions/Playing/Progress", "/Sessions/Playing/Stopped", "/Users/u1/PlayedItems/ep1" ->
                         return MockResponse().setResponseCode(204)
-                    "/Users/Me" -> """{"Id":"u1","Name":"yarmi"}"""
+                    "/Users/Me" -> if (revoked) return MockResponse().setResponseCode(401) else """{"Id":"u1","Name":"yarmi"}"""
                     "/UserViews" -> """{"Items":[{"Id":"lib1","Name":"Movies","Type":"UserView","CollectionType":"movies","IsFolder":true}],"TotalRecordCount":1}"""
                     else -> return MockResponse().setResponseCode(404)
                 }
@@ -265,6 +267,61 @@ class JellyfinSourceTest {
         )
         assertTrue(JellyfinClient.isPlainHttpSslFailure(SSLException("error:0A00010B:SSL routines::wrong version number")))
         assertFalse(JellyfinClient.isPlainHttpSslFailure(MediaSourceException("Cannot reach host:8096 (timed out)")))
+    }
+
+    @Test
+    fun validateSendsTheTokenToTheSessionsServerAndReportsARevokedSignIn() = runBlocking {
+        assertTrue(client.validate(session()))
+        val seen = generateSequence { server.takeRequest(0, TimeUnit.SECONDS) }.toList()
+        assertEquals(listOf("/System/Info/Public", "/Users/Me"), seen.map { it.requestUrl!!.encodedPath })
+        assertFalse("asked who it is without the token", seen[0].getHeader("Authorization")!!.contains("Token="))
+        assertTrue(seen[1].getHeader("Authorization")!!.contains("Token=\"tok\""))
+        revoked = true
+        assertFalse(client.validate(session()))
+        // Ids written with dashes or in another case are the same server.
+        assertFalse(client.validate(session().copy(serverId = "SRV")))
+    }
+
+    @Test
+    fun anotherServerAtTheSavedAddressGetsNoTokenAndIsNotARevokedSignIn() = runBlocking {
+        for (publicInfo in listOf(
+            MockResponse().setHeader("Content-Type", "application/json").setBody("""{"ServerName":"Neighbour","Id":"other"}"""),
+            MockResponse().setHeader("Content-Type", "text/html").setBody("<html>Router login</html>"),
+            MockResponse().setResponseCode(404),
+            MockResponse().setResponseCode(401),
+        )) {
+            val stranger = MockWebServer()
+            stranger.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse =
+                    if (request.requestUrl!!.encodedPath == "/System/Info/Public") publicInfo else MockResponse().setResponseCode(401)
+            }
+            stranger.start()
+            try {
+                val saved = session().copy(serverUrl = stranger.url("/").toString().trimEnd('/'))
+                val error = runCatching { client.validate(saved) }.exceptionOrNull()
+                assertTrue("$error", error is ServerMismatchException)
+                assertNull((error as MediaSourceException).httpCode)
+                val seen = generateSequence { stranger.takeRequest(0, TimeUnit.SECONDS) }.toList()
+                assertEquals(listOf("/System/Info/Public"), seen.map { it.requestUrl!!.encodedPath })
+                assertTrue("no token to the stranger", seen.none { it.getHeader("Authorization").orEmpty().contains("tok\"") })
+            } finally {
+                stranger.shutdown()
+            }
+        }
+    }
+
+    @Test
+    fun validateOfAnUnreachableServerStillFailsAsUnreachable() = runBlocking {
+        val error = runCatching { client.validate(session().copy(serverUrl = "http://127.0.0.1:1")) }.exceptionOrNull()
+        assertTrue("$error", error is MediaSourceException && error !is ServerMismatchException)
+        assertTrue(error!!.message!!.contains("Cannot reach"))
+    }
+
+    @Test
+    fun serverIdsCompareWithoutDashesOrCase() {
+        assertTrue(JellyfinClient.sameServerId("f3b9a2c4-1111-2222-3333-444455556666", "F3B9A2C4111122223333444455556666"))
+        assertFalse(JellyfinClient.sameServerId("abc", "abd"))
+        assertFalse(JellyfinClient.sameServerId(null, ""))
     }
 
     @Test
