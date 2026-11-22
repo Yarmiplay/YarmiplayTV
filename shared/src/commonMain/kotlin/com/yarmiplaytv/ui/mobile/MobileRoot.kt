@@ -337,7 +337,7 @@ private fun MobileScaffold(
 
 @Composable
 private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
-    val state by container.player.state.collectAsStateWithLifecycle()
+    val state by container.player.collectStateWithoutClock()
     if (!state.fileLoaded) return
 
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()

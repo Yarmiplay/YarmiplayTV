@@ -284,7 +284,7 @@ private fun signedMillis(seconds: Double): String {
 /** Picture, speed, looping, and chapters. Each adjustment shows its value and resets on its own. */
 @Composable
 fun VideoAdjustments(container: AppContainer, modifier: Modifier = Modifier, initialFocus: FocusRequester? = null) {
-    val state by container.player.state.collectAsStateWithLifecycle()
+    val state by container.player.collectStateWithoutClock()
     val zoom = rememberPlayerValue(container.player.propertyDouble("video-zoom") ?: 0.0) { container.player.propertyDouble("video-zoom") ?: 0.0 }
     val contrast = rememberPlayerValue(container.player.propertyDouble("contrast") ?: 0.0) { container.player.propertyDouble("contrast") ?: 0.0 }
     val brightness = rememberPlayerValue(container.player.propertyDouble("brightness") ?: 0.0) { container.player.propertyDouble("brightness") ?: 0.0 }

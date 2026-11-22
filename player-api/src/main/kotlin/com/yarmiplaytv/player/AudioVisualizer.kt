@@ -318,20 +318,30 @@ object MediaTags {
 object SpectrumMotion {
     const val BARS = 48
 
-    fun idle(phase: Float, bars: Int = BARS): FloatArray = FloatArray(bars) { i ->
-        val n = if (bars <= 1) 0.5f else i / (bars - 1f)
-        val lobe = kotlin.math.sin(Math.PI * n).toFloat()
-        val flick = 0.55f + 0.45f * kotlin.math.sin(phase * 1.6f + i * 0.45f)
-        val slow = 0.75f + 0.25f * kotlin.math.sin(phase * 0.7f + n * 4f)
-        (0.08f + 0.72f * lobe * flick * slow).coerceIn(0.04f, 1f)
+    fun idle(phase: Float, bars: Int = BARS): FloatArray = FloatArray(bars).also { idleInto(phase, it) }
+
+    /** [idle] written into [out] (one level per element), for a caller that draws every frame. */
+    fun idleInto(phase: Float, out: FloatArray) {
+        val bars = out.size
+        for (i in 0 until bars) {
+            val n = if (bars <= 1) 0.5f else i / (bars - 1f)
+            val lobe = kotlin.math.sin(Math.PI * n).toFloat()
+            val flick = 0.55f + 0.45f * kotlin.math.sin(phase * 1.6f + i * 0.45f)
+            val slow = 0.75f + 0.25f * kotlin.math.sin(phase * 0.7f + n * 4f)
+            out[i] = (0.08f + 0.72f * lobe * flick * slow).coerceIn(0.04f, 1f)
+        }
     }
 
     /** Moves [current] toward [target]. A zero [dt] returns a copy of [current] unchanged. */
-    fun approach(current: FloatArray, target: FloatArray, dt: Float, bars: Int = BARS): FloatArray {
-        val out = FloatArray(bars)
+    fun approach(current: FloatArray, target: FloatArray, dt: Float, bars: Int = BARS): FloatArray =
+        FloatArray(bars).also { approachInto(current, target, dt, it) }
+
+    /** [approach] written into [out]; [out] may be [current] itself, which then moves in place. */
+    fun approachInto(current: FloatArray, target: FloatArray, dt: Float, out: FloatArray) {
+        val bars = out.size
         if (dt <= 0f) {
             for (i in 0 until bars) out[i] = current.getOrElse(i) { 0f }
-            return out
+            return
         }
         for (i in 0 until bars) {
             val c = current.getOrElse(i) { 0f }
@@ -340,7 +350,6 @@ object SpectrumMotion {
             val a = (1f - kotlin.math.exp(-k * dt)).coerceIn(0f, 1f)
             out[i] = (c + (t - c) * a).coerceIn(0f, 1f)
         }
-        return out
     }
 }
 

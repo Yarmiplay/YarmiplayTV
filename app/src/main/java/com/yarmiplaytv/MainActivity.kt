@@ -115,12 +115,11 @@ class MainActivity : ComponentActivity() {
 
         if (hasPip && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             lifecycleScope.launch {
-                combine(container.settings, container.player.state) { settings, playerState ->
-                    settings.playback.pictureInPicture to playerState
-                }.collect { (pipEnabled, state) ->
-                    val isVideo = playbackShowsVideo(state)
-                    val auto = pipEnabled && isVideo
-                    val params = pipParams(this@MainActivity, state.displayAspect, state.paused, autoEnter = auto)
+                // Only what the parameters are made of: the player's clock ticks several times a second.
+                combine(container.settings, container.player.state) { settings, state ->
+                    PipShape(settings.playback.pictureInPicture && playbackShowsVideo(state), state.displayAspect, state.paused)
+                }.distinctUntilChanged().collect { shape ->
+                    val params = pipParams(this@MainActivity, shape.aspect, shape.paused, autoEnter = shape.auto)
                     runCatching { setPictureInPictureParams(params) }
                 }
             }
@@ -248,6 +247,8 @@ class MainActivity : ComponentActivity() {
         applicationInfo.dataDir,
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) applicationInfo.deviceProtectedDataDir else null,
     )
+
+    private data class PipShape(val auto: Boolean, val aspect: Double, val paused: Boolean)
 
     companion object {
         var activeActivity: MainActivity? = null

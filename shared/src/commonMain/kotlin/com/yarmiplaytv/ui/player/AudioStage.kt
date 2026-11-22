@@ -103,12 +103,16 @@ fun BoxScope.AudioStage(
                 val dt = if (last == 0L) 0.016f else ((now - last) / 1_000_000_000f).coerceIn(0f, 0.05f)
                 last = now
                 motion.phase += dt
-                val next = SpectrumMotion.approach(motion.levels, SpectrumMotion.idle(motion.phase), dt)
-                next.copyInto(motion.levels)
+                // In place: the same levels as approach(levels, idle(phase), dt), without two new arrays a frame.
+                SpectrumMotion.idleInto(motion.phase, motion.target)
+                SpectrumMotion.approachInto(motion.levels, motion.target, dt, motion.levels)
                 clock.longValue = now
             }
         }
     }
+    // The same for every bar, so worked out once rather than per bar per frame.
+    val barColors = remember(accent) { listOf(accent.copy(alpha = 0.95f), accent.copy(alpha = 0.18f)) }
+    val reflection = remember(accent) { accent.copy(alpha = 0.10f) }
     Box(Modifier.fillMaxSize().testTag("audio_stage")) {
         Box(
             Modifier.fillMaxSize().background(
@@ -126,24 +130,22 @@ fun BoxScope.AudioStage(
             val barW = (size.width - gap * (n + 1)) / n
             val base = size.height * 0.90f
             val maxH = size.height * (if (compact) 0.28f else 0.34f)
+            val corner = CornerRadius(barW / 2f, barW / 2f)
             for (i in 0 until n) {
                 val h = (maxH * motion.levels[i]).coerceAtLeast(4f)
                 val x = gap + i * (barW + gap)
                 drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        listOf(accent.copy(alpha = 0.95f), accent.copy(alpha = 0.18f)),
-                        startY = base - h,
-                        endY = base,
-                    ),
+                    // Spans this bar's own height, so it is the one thing made per bar.
+                    brush = Brush.verticalGradient(barColors, startY = base - h, endY = base),
                     topLeft = Offset(x, base - h),
                     size = Size(barW, h),
-                    cornerRadius = CornerRadius(barW / 2f, barW / 2f),
+                    cornerRadius = corner,
                 )
                 drawRoundRect(
-                    color = accent.copy(alpha = 0.10f),
+                    color = reflection,
                     topLeft = Offset(x, base + 6f),
                     size = Size(barW, h * 0.28f),
-                    cornerRadius = CornerRadius(barW / 2f, barW / 2f),
+                    cornerRadius = corner,
                 )
             }
         }
@@ -196,4 +198,6 @@ private fun CoverArt(bytes: ByteArray?, edge: Dp) {
 private class IdleSpectrum {
     var phase = 0f
     val levels = SpectrumMotion.idle(0f)
+    /** Where [levels] head this frame; refilled each frame rather than allocated. */
+    val target = FloatArray(levels.size)
 }

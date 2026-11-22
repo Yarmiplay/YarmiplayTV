@@ -14,7 +14,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,7 +50,8 @@ actual fun rememberPictureInPicture(player: Player, autoEnter: Boolean, inRoom: 
     if (activity == null || !supported) return PictureInPicture(supported = false, active = false) {}
 
     var active by remember { mutableStateOf(activity.isInPictureInPictureMode) }
-    val state by player.state.collectAsState()
+    // Without the clock: none of the window's parameters follow the position.
+    val state by player.collectStateWithoutClockAlways()
     val isVideo = playbackShowsVideo(state)
     val auto = autoEnter && isVideo
     val params = remember(state.displayAspect, state.paused, auto) { pipParams(activity, state.displayAspect, state.paused, auto) }

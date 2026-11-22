@@ -154,7 +154,8 @@ private enum class PlayerSheet(val label: String, val icon: ImageVector) {
 @Composable
 fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     val player = container.player
-    val state by player.state.collectAsStateWithLifecycle()
+    // Without the clock: the seek bar polls the position itself, so its ticks don't rebuild the whole screen.
+    val state by player.collectStateWithoutClock()
     val room by container.sync.room.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     val status by container.playlist.status.collectAsStateWithLifecycle()
@@ -861,9 +862,8 @@ private fun BottomControls(
     onMenus: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val state by container.player.state.collectAsStateWithLifecycle()
+    val state by container.player.collectStateWithoutClock()
     val settings by container.settings.collectAsStateWithLifecycle()
-    val voiceLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
     val useMenus = container.deviceKind == DeviceKind.PHONE || container.deviceKind == DeviceKind.TABLET
     Column(
         modifier.fillMaxWidth()
@@ -888,12 +888,12 @@ private fun BottomControls(
                 )
             }
             // Beside Ready — same toggleMic() path as the Room tab (OPEN_MIC mute / TOGGLE latch).
-            PlayerMicButton(
+            LiveMicButton(
+                container,
                 voiceUi,
                 onToggle = { container.voice.toggleMic(); onInteract() },
                 onVideo = true,
                 showKeyboardShortcut = container.deviceKind == DeviceKind.DESKTOP,
-                level = voiceLevel,
             )
             PlayerVoiceMembershipButton(
                 voiceUi,

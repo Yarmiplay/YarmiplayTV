@@ -168,6 +168,21 @@ class AudioVisualizerTest {
     }
 
     @Test
+    fun inPlaceMotionMatchesTheAllocatingOne() {
+        val levels = SpectrumMotion.idle(0f)
+        val target = FloatArray(levels.size)
+        var phase = 0f
+        for (dt in listOf(0.016f, 0f, 0.05f, 0.033f, 0.016f, 0.02f)) {
+            phase += dt
+            val expected = SpectrumMotion.approach(levels, SpectrumMotion.idle(phase), dt)
+            SpectrumMotion.idleInto(phase, target)
+            assertArrayEquals(SpectrumMotion.idle(phase), target, 0f)
+            SpectrumMotion.approachInto(levels, target, dt, levels)
+            assertArrayEquals(expected, levels, 0f)
+        }
+    }
+
+    @Test
     fun tagsPreferTheFirstPresentKey() {
         val values = mapOf("metadata/by-key/Artist" to "  Ada  ", "metadata/by-key/Title" to "")
         assertEquals("Ada", MediaTags.artist { values[it] })
