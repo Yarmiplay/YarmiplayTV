@@ -158,13 +158,18 @@ data class Track(
     val isExternal: Boolean,
     /** An attached still picture (cover art), not a moving image. */
     val image: Boolean = false,
+    /**
+     * False when this device cannot play the track. It stays in the list so the choice is visible,
+     * and selecting it does not replace the track that is playing.
+     */
+    val playable: Boolean = true,
 ) {
     val label: String
         get() = listOfNotNull(
             title?.takeIf { it.isNotBlank() },
             language?.takeIf { it.isNotBlank() }?.uppercase(),
             codec?.takeIf { it.isNotBlank() },
-        ).joinToString(" · ").ifEmpty { "Track $id" }
+        ).joinToString(" · ").ifEmpty { "Track $id" }.let { if (playable) it else "$it · unsupported" }
 }
 
 sealed interface PlayerEvent {

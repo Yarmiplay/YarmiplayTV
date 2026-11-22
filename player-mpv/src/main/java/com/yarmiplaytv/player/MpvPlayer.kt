@@ -64,6 +64,8 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     /** Bytes of the loaded libavfilter, or null when the file cannot be read. */
     private val filterLibrary: ByteArray? by lazy { readFilterLibrary() }
     private val mainHandler = Handler(Looper.getMainLooper())
+    /** What mpv was last told to play, so an AC-4 decision does not set `aid` again on every track update. */
+    private var appliedAid: String? = null
 
     @Volatile private var cachedPosition = 0.0
     @Volatile private var cachedPositionAt = 0L
@@ -102,6 +104,20 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     private val tls = TlsCheck(supported = { trustedCertificates != null })
     /** The last [load]'s arguments, to open the file again unchecked when the trust store itself failed. */
     @Volatile private var lastLoad: LoadRequest? = null
+    private val ac4 = Ac4Bridge(
+        context = appContext,
+        clock = { currentPosition() },
+        transport = {
+            val playing = _state.value
+            Ac4Transport(
+                playing = playing.fileLoaded && !cachedPaused && !playing.seeking && !playing.buffering,
+                speed = cachedSpeed.toFloat(),
+            )
+        },
+        post = { mainHandler.post(it) },
+        publish = { showTracks(it) },
+        setAid = { applyAid(it) },
+    )
 
     private data class LoadRequest(val url: String, val mediaTitle: String?, val startPaused: Boolean, val startPosition: Double)
 
@@ -231,6 +247,8 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     override fun load(url: String, mediaTitle: String?, startPaused: Boolean, startPosition: Double) {
         val now = SystemClock.elapsedRealtime()
         currentUrl = url
+        appliedAid = null
+        ac4.reset()
         pendingStartPaused = startPaused
         cachedPaused = startPaused
         cachedPosition = startPosition
@@ -285,6 +303,8 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
     override fun stop() {
         currentUrl = null
+        appliedAid = null
+        ac4.reset()
         latestLoad = -1
         userSeekedFlag = false
         resetPresentation()
@@ -315,6 +335,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
         cachedPositionAt = now
         signals.position(now, seeking = true)
         _state.update { it.copy(position = target, seeking = true) }
+        ac4.seekTo(target)
         mpv.command(arrayOf("seek", target.toString(), "absolute+exact"))
     }
 
@@ -381,8 +402,20 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
     }
 
     override fun selectTrack(type: TrackType, id: Int?) {
+        if (type == TrackType.AUDIO) {
+            ac4.onAudioSelected(id)
+            return
+        }
         mpv.setPropertyString(type.property, id?.toString() ?: "no")
         loadTracks()
+    }
+
+    /** Tells mpv which audio track to decode. Null is `no`, used while Android plays AC-4 itself. */
+    private fun applyAid(id: Int?) {
+        val value = id?.toString() ?: "no"
+        if (appliedAid == value) return
+        appliedAid = value
+        mpv.setPropertyString("aid", value)
     }
 
     override fun showText(text: String, durationMs: Int) {
@@ -643,6 +676,12 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
                     (mpv.getPropertyBoolean("track-list/$i/image") ?: false),
             )
         }
+        val url = currentUrl
+        mainHandler.post { ac4.onMpvTracks(list, url) }
+    }
+
+    /** Publishes the track list after AC-4 rows and the fallback choice have been applied. */
+    private fun showTracks(list: List<Track>) {
         latestTracks = list
         publishTracks(list)
         val only = AudioOnly.isAudioOnly(list)
