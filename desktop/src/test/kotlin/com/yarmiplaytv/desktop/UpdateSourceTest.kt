@@ -190,6 +190,13 @@ class UpdateSourceTest {
             val scripts = listOf(
                 PortableUpdater.script(File("C:/Temp/it's.zip"), launcher, listOf("a b", "it's"), "1.9.0", listOf(1, 2), relaunch = true),
                 WindowsUpdater(launcher, listOf("x")).script(File("C:/Temp/it's.msi"), listOf(1), relaunch = true),
+                PortableUpdater.script(
+                    File("C:/Temp/d'1/it's.zip"), launcher, listOf("a b"), "1.9.0", listOf(1), relaunch = true, cleanupDir = File("C:/Temp/d'1"),
+                ),
+                WindowsUpdater(launcher, listOf("x")).msiScript(File("C:/Temp/d'1/it's.msi"), listOf(1), relaunch = true, cleanupDir = File("C:/Temp/d'1")),
+                WindowsUpdater(File("C:/Program Files/Yarmiplay's TV/YarmiplayTV.exe"), listOf("x")).exeScript(
+                    File("C:/Temp/d'1/it's-setup.exe"), listOf(1), relaunch = true, expectedSha256 = "ab".repeat(32), cleanupDir = File("C:/Temp/d'1"),
+                ),
             )
             scripts.forEach { script ->
                 val file = tmp.newFile("script.txt").apply { writeText(script) }
@@ -206,6 +213,12 @@ class UpdateSourceTest {
                 MacUpdater.script(File("/tmp/it's.dmg"), launcher, File("/tmp/swap.sh"), listOf("a b"), "1.9.0", 1, relaunch = true),
                 MacUpdater.swapScript(),
                 DebUpdater.script(File("/tmp/it's.deb"), File("/opt/x/bin/Y"), listOf("a b"), "1.9.0", 1, relaunch = true, pkexec = true),
+                DebUpdater.script(
+                    File("/tmp/d'1/it's.deb"), File("/opt/x/bin/Y"), listOf("a b"), "1.9.0", 1, relaunch = true, pkexec = true, cleanupDir = File("/tmp/d'1"),
+                ),
+                MacUpdater.script(
+                    File("/tmp/d'1/it's.dmg"), launcher, File("/tmp/d'1/swap.sh"), listOf("a b"), "1.9.0", 1, relaunch = true, cleanupDir = File("/tmp/d'1"),
+                ),
             )
             scripts.forEach { script ->
                 val file = tmp.newFile("script.sh").apply { writeText(script) }
@@ -299,6 +312,62 @@ class UpdateSourceTest {
             "C:/Users/Dor Farhi/AppData/Local/YarmiplayTV",
             resolveWindowsInstallDir(backslashExe, home = "C:\\Users\\Dor Farhi") { null }.path.replace('\\', '/'),
         )
+    }
+
+    @Test
+    fun `an elevated setup is checked against its checksum again right before it starts`() {
+        val launcher = File("C:/Program Files/YarmiplayTV/YarmiplayTV.exe")
+        val setup = File("C:/Users/Sam/AppData/Local/Temp/yarmiplaytv-update-1/YarmiplayTV-3.1.4-setup.exe")
+        val sha = "ab".repeat(32)
+        val script = WindowsUpdater(launcher, emptyList()).exeScript(
+            setup, listOf(4), relaunch = false, expectedSha256 = sha, cleanupDir = setup.parentFile,
+        )
+        val outerCheck = script.indexOf("Get-FileHash -LiteralPath ${psQuoted(setup.path)} -Algorithm SHA256")
+        assertTrue("checked before the elevated start", outerCheck in script.indexOf("if (\$needAdmin)")..script.indexOf("\$psi.Verb = 'runas'"))
+        assertTrue(script.contains("throw 'the installer changed after it was checked'"))
+        assertTrue(script.contains(psQuoted(sha)))
+        val encoded = script.substringAfter("-EncodedCommand ").substringBefore("'")
+        val elevated = String(java.util.Base64.getDecoder().decode(encoded), Charsets.UTF_16LE)
+        val innerCheck = elevated.indexOf("Get-FileHash -LiteralPath ${psQuoted(setup.path)}")
+        assertTrue("checked again as the administrator", innerCheck in 0 until elevated.indexOf("Process]::Start"))
+        assertTrue(elevated.contains("exit $PS_INSTALLER_CHANGED"))
+        assertTrue("the download's folder goes too", script.contains("Remove-Item -LiteralPath ${psQuoted(setup.parentFile.path)} -Recurse"))
+
+        val unchecked = WindowsUpdater(launcher, emptyList()).exeScript(setup, listOf(4), relaunch = false)
+        assertFalse(unchecked.contains("Get-FileHash"))
+        assertFalse(unchecked.contains(psQuoted(setup.parentFile.path)))
+    }
+
+    @Test
+    fun `update downloads go into a new folder of their own`() {
+        val first = newUpdateDir()
+        val second = newUpdateDir(othersCanRead = true)
+        try {
+            assertTrue(first.isDirectory && second.isDirectory)
+            assertTrue(first != second)
+            assertEquals(emptyList<String>(), first.list()!!.toList())
+            val posix = java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix")
+            if (posix) {
+                fun perms(f: File) = java.nio.file.attribute.PosixFilePermissions.toString(java.nio.file.Files.getPosixFilePermissions(f.toPath()))
+                assertEquals("only this user", "rwx------", perms(first))
+                assertEquals("apt's user can read the .deb, nobody else can write", "rwxr-xr-x", perms(second))
+            }
+        } finally {
+            first.deleteRecursively()
+            second.deleteRecursively()
+        }
+
+        val deb = File("/tmp/yarmiplaytv-update-1/yarmiplaytv_1.9.0_amd64.deb")
+        val launcher = File("/opt/yarmiplaytv/bin/YarmiplayTV")
+        val installed = DebUpdater.script(deb, launcher, emptyList(), "1.9.0", 7, relaunch = true, pkexec = true, cleanupDir = deb.parentFile)
+        assertTrue(installed.indexOf("rm -f \"\$log\" '${deb.invariantSeparatorsPath}'") < installed.indexOf("rmdir '/tmp/yarmiplaytv-update-1'"))
+        val opened = DebUpdater.script(deb, launcher, emptyList(), "1.9.0", 7, relaunch = true, pkexec = false, cleanupDir = deb.parentFile)
+        assertFalse("the software installer still needs the package", opened.contains("rmdir"))
+        val mac = MacUpdater.script(
+            File("/tmp/d/YarmiplayTV-1.9.0.dmg"), macLauncher, File("/tmp/d/yarmiplaytv-swap.sh"), emptyList(), "1.9.0", 1, relaunch = true,
+            cleanupDir = File("/tmp/d"),
+        )
+        assertTrue(mac.indexOf("rm -f '/tmp/d/YarmiplayTV-1.9.0.dmg'") < mac.indexOf("rmdir '/tmp/d'"))
     }
 
     @Test

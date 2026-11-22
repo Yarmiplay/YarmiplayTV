@@ -6,6 +6,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import okio.Path.Companion.toOkioPath
 import java.io.File
+import java.io.IOException
+import java.nio.file.FileAlreadyExistsException
+import java.nio.file.FileSystems
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
 
 /** Where the desktop app keeps its settings. */
 object DesktopPaths {
@@ -77,7 +82,37 @@ fun desktopSettingsStore(
     dir: File = DesktopPaths.configDir(),
     scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
 ): SettingsStore {
-    dir.mkdirs()
     val file = File(dir, "settings.preferences_pb")
+    makeSettingsPrivate(dir, file)
     return SettingsStore(PreferenceDataStoreFactory.createWithPath(scope = scope, produceFile = { file.toOkioPath() }), isTv = false)
+}
+
+/**
+ * The settings hold every saved token and password. On macOS and Linux [dir] is created (or, from an older
+ * version, changed to) rwx------, so no other user can read anything in it, and an existing [file] is made
+ * rw-------. Elsewhere (Windows) this only creates [dir]; a folder under the user's profile is already theirs.
+ */
+internal fun makeSettingsPrivate(dir: File, file: File) {
+    val posix = FileSystems.getDefault().supportedFileAttributeViews().contains("posix")
+    if (!posix) {
+        dir.mkdirs()
+        return
+    }
+    val path = dir.toPath()
+    try {
+        if (!Files.isDirectory(path)) {
+            path.toAbsolutePath().parent?.let { Files.createDirectories(it) }
+            try {
+                Files.createDirectory(path, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")))
+            } catch (_: FileAlreadyExistsException) {
+            }
+        }
+        Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwx------"))
+        if (file.isFile) Files.setPosixFilePermissions(file.toPath(), PosixFilePermissions.fromString("rw-------"))
+    } catch (_: IOException) {
+        // Settings still load and save; only the permissions stay as they were.
+        dir.mkdirs()
+    } catch (_: UnsupportedOperationException) {
+        dir.mkdirs()
+    }
 }

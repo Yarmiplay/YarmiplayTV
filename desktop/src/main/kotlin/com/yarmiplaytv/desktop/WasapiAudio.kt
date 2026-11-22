@@ -223,30 +223,38 @@ internal class WasapiCapture(
         if (format.sampleRate == VoicePcm.SAMPLE_RATE) null else StreamingResampler(format.sampleRate, VoicePcm.SAMPLE_RATE)
     private var pending = ShortArray(0)
 
+    // Reused by every readMono48k call (it is synchronized): about 100 calls a second would otherwise box each
+    // sample and allocate these references anew.
+    private val next = IntByReference()
+    private val data = PointerByReference()
+    private val frames = IntByReference()
+    private val flags = IntByReference()
+    private var mono = ShortArray(960)
+
     /** Pull whatever the device has queued and return 48 kHz mono PCM16. Empty when nothing is ready. */
     @Synchronized
     fun readMono48k(): ShortArray {
         if (released.get()) return ShortArray(0)
-        val mono = ArrayList<Short>(960)
+        var size = 0
         repeat(8) {
-            val next = IntByReference()
             if (hr(capture, 5, next) < 0 || next.value <= 0) return@repeat
-            val data = PointerByReference()
-            val frames = IntByReference()
-            val flags = IntByReference()
             if (hr(capture, 3, data, frames, flags, Pointer.NULL, Pointer.NULL) < 0) return@repeat
             val n = frames.value
             val silent = flags.value and AUDCLNT_BUFFERFLAGS_SILENT != 0
             if (n > 0 && !silent) {
                 val chunk = readFrames(data.value, n)
-                for (s in chunk) mono += s
+                ensureMono(size + chunk.size)
+                System.arraycopy(chunk, 0, mono, size, chunk.size)
+                size += chunk.size
             } else if (n > 0) {
-                repeat(n) { mono += 0 }
+                ensureMono(size + n)
+                mono.fill(0, size, size + n)
+                size += n
             }
             hr(capture, 4, n)
         }
-        if (mono.isEmpty() && pending.isEmpty()) return ShortArray(0)
-        val raw = ShortArray(mono.size) { mono[it] }
+        if (size == 0 && pending.isEmpty()) return ShortArray(0)
+        val raw = mono.copyOf(size)
         val at48 = resampler?.push(raw) ?: raw
         if (pending.isEmpty()) return at48
         val joined = ShortArray(pending.size + at48.size)
@@ -254,6 +262,10 @@ internal class WasapiCapture(
         if (at48.isNotEmpty()) System.arraycopy(at48, 0, joined, pending.size, at48.size)
         pending = ShortArray(0)
         return joined
+    }
+
+    private fun ensureMono(capacity: Int) {
+        if (capacity > mono.size) mono = mono.copyOf(maxOf(capacity, mono.size * 2))
     }
 
     private fun readFrames(src: Pointer?, frames: Int): ShortArray {

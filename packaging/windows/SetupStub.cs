@@ -27,7 +27,10 @@ class SetupStub {
 
     static int Run() {
         string self = Process.GetCurrentProcess().MainModule.FileName;
-        string tempRoot = Path.Combine(Path.GetTempPath(), "YarmiplayTV-setup-" + Process.GetCurrentProcess().Id);
+        // A name nobody can guess, and never a folder that is already there: the files in it run, elevated when
+        // the install needs it.
+        string tempRoot = Path.Combine(Path.GetTempPath(), "YarmiplayTV-setup-" + Guid.NewGuid().ToString("N"));
+        if (Directory.Exists(tempRoot) || File.Exists(tempRoot)) throw new InvalidOperationException("Couldn't prepare the installer.");
         Directory.CreateDirectory(tempRoot);
         try {
             string zipPath = Path.Combine(tempRoot, "image.zip");

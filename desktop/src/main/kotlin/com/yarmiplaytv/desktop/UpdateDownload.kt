@@ -17,6 +17,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
@@ -245,12 +247,45 @@ internal fun appProcessIds(launcher: File?): List<Long> {
 }
 
 /**
+ * A new, empty folder under the temp folder for one update's files. On Linux the temp folder is shared by every
+ * user, so a fixed name there could be created (or swapped) by someone else first: this folder has a random name
+ * and is the owner's alone (rwx------), or readable by others when [othersCanRead] (rwxr-xr-x, for apt's own user).
+ */
+internal fun newUpdateDir(othersCanRead: Boolean = false): File {
+    val dir = Files.createTempDirectory("yarmiplaytv-update-")
+    if (othersCanRead) {
+        try {
+            Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwxr-xr-x"))
+        } catch (_: UnsupportedOperationException) {
+            // Windows: the temp folder is the user's own.
+        }
+    }
+    return dir.toFile()
+}
+
+/**
+ * [downloadVerified] into a [newUpdateDir] as [name]. If the download fails the folder goes too;
+ * after a successful one, removing it is up to the install step.
+ */
+internal suspend fun downloadIntoNewDir(update: Update, name: String, progress: (Float?) -> Unit, othersCanRead: Boolean = false): File {
+    val dir = newUpdateDir(othersCanRead)
+    try {
+        return downloadVerified(update, File(dir, name), progress)
+    } catch (e: Throwable) {
+        dir.deleteRecursively()
+        throw e
+    }
+}
+
+/**
  * Runs [script] with /bin/sh in the background, so it outlives this process.
+ * The script is written as [name] into a [newUpdateDir] of its own, which the shell removes when it exits.
  * Starting the shell is not a finished update: if the shell cannot be started, this throws.
  */
 internal fun runDetachedShell(script: String, name: String) {
-    val file = File(System.getProperty("java.io.tmpdir"), name).apply {
-        writeText(script)
+    val dir = newUpdateDir()
+    val file = File(dir, name).apply {
+        writeText("trap ${shellQuoted("rm -rf " + shellQuoted(dir.path))} EXIT\n$script")
         setExecutable(true, true)
     }
     try {
@@ -259,6 +294,7 @@ internal fun runDetachedShell(script: String, name: String) {
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start()
     } catch (e: IOException) {
+        dir.deleteRecursively()
         throw UpdateFailedException("launch", e.message?.let(::redactUpdateText)?.takeIf { it.isNotEmpty() } ?: "couldn't start the update helper")
     }
 }

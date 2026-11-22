@@ -167,17 +167,24 @@ internal fun psRelaunch(launcher: File, args: List<String>, version: String): St
  * is installed elevated: the same command line is inside an encoded PowerShell script, and the elevated
  * `powershell.exe` argument list itself has no path, so ShellExecute has nothing to split.
  * `$ok` is not set here. The caller sets it from `$code`.
+ *
+ * With [expectedSha256], an elevated start first checks that [file] still has that SHA-256, both here and in the
+ * elevated PowerShell itself (after the permission prompt), and does not start it when it has changed.
  */
-internal fun psStartWait(file: String, argumentsExpr: String, elevateIfNeededDir: String? = null): String = buildString {
+internal fun psStartWait(file: String, argumentsExpr: String, elevateIfNeededDir: String? = null, expectedSha256: String? = null): String = buildString {
+    val sha = expectedSha256?.takeIf { it.isNotBlank() }
     append("\$p = \$null; \$stage = 'launch'; \$code = -1; \$detail = ''; \$ok = \$false; ")
     append("try { ")
     append(psNewProcess(file, argumentsExpr))
-    if (!elevateIfNeededDir.isNullOrBlank()) append(psElevateIfUnwritable(elevateIfNeededDir, file, argumentsExpr))
+    if (!elevateIfNeededDir.isNullOrBlank()) append(psElevateIfUnwritable(elevateIfNeededDir, file, argumentsExpr, sha))
     append("\$p = [System.Diagnostics.Process]::Start(\$psi); ")
     append("if (\$null -eq \$p) { \$code = -2; \$detail = 'the installer returned no process' } ")
     append("else { \$p.WaitForExit(); ")
     append("if (\$null -eq \$p.ExitCode) { \$code = -2; \$detail = 'the installer returned no exit code' } ")
     append("else { \$code = \$p.ExitCode; ")
+    if (sha != null && !elevateIfNeededDir.isNullOrBlank()) {
+        append("if (\$needAdmin -and \$code -eq $PS_INSTALLER_CHANGED -and -not \$detail) { \$detail = 'the installer changed after it was checked' }; ")
+    }
     append("if (\$code -eq 1223 -and -not \$detail) { \$detail = 'the permission prompt was declined' } } } ")
     append("} catch { \$detail = \$_.Exception.Message; \$code = -3 }; ")
 }
@@ -199,9 +206,11 @@ private fun psNewProcess(file: String, argumentsExpr: String?): String = buildSt
  * The elevated argument list is only `-EncodedCommand` plus base64, so a profile path with spaces is not
  * on that command line.
  */
-private fun psElevateIfUnwritable(dir: String, file: String, argumentsExpr: String): String {
+private fun psElevateIfUnwritable(dir: String, file: String, argumentsExpr: String, sha256: String? = null): String {
     val encoded = psEncodedCommand(buildString {
         append("\$ErrorActionPreference = 'Stop'; ")
+        // Checked again as the administrator, right before it starts: the prompt may have waited a long time.
+        if (sha256 != null) append("if ${psHashDiffers(file, sha256)} { exit $PS_INSTALLER_CHANGED }; ")
         append(psNewProcess(file, argumentsExpr))
         append("\$p = [System.Diagnostics.Process]::Start(\$psi); ")
         append("if (\$null -eq \$p) { exit 2 }; ")
@@ -225,6 +234,7 @@ private fun psElevateIfUnwritable(dir: String, file: String, argumentsExpr: Stri
         append("} catch { \$needAdmin = \$true } ")
         append("}; ")
         append("if (\$needAdmin) { ")
+        if (sha256 != null) append("if ${psHashDiffers(file, sha256)} { throw 'the installer changed after it was checked' }; ")
         append("\$psi = New-Object System.Diagnostics.ProcessStartInfo; ")
         append("\$psi.FileName = 'powershell.exe'; ")
         append("\$psi.Arguments = ${psQuoted("-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded")}; ")
@@ -234,6 +244,17 @@ private fun psElevateIfUnwritable(dir: String, file: String, argumentsExpr: Stri
         append("}; ")
     }
 }
+
+/** Removes [dir], the download's own folder, when there is one. */
+internal fun psRemoveDir(dir: File?): String =
+    if (dir == null) "" else "Remove-Item -LiteralPath ${psQuoted(dir.path)} -Recurse -Force -ErrorAction SilentlyContinue; "
+
+/** True in PowerShell when [file]'s SHA-256 is not [sha256] (any case). */
+private fun psHashDiffers(file: String, sha256: String): String =
+    "((Get-FileHash -LiteralPath ${psQuoted(file)} -Algorithm SHA256).Hash -ne ${psQuoted(sha256)})"
+
+/** The exit code of the elevated PowerShell when the installer no longer has the checksum it was downloaded with. */
+internal const val PS_INSTALLER_CHANGED = -4
 
 /** Waits for known PIDs, then any remaining YarmiplayTV process, then a short settle for file locks. */
 internal fun psWaitForAppExit(pids: List<Long>): String = buildString {
@@ -257,6 +278,7 @@ internal class WindowsUpdater(
     private val args: List<String>,
 ) : UpdateInstaller {
     private var packageFile: File? = null
+    private var packageSha256: String? = null
     private var version: String? = null
     private var exeSetup = false
 
@@ -267,15 +289,16 @@ internal class WindowsUpdater(
         exeSetup = branded || update.downloadUrl.substringAfterLast('/').substringBefore('?').endsWith(".exe", ignoreCase = true)
         val packageUpdate = if (branded) update.copy(downloadUrl = setup!!, sha256 = setupSha) else update
         val destName = if (exeSetup) "YarmiplayTV-${update.version}-setup.exe" else "YarmiplayTV-${update.version}.msi"
-        packageFile = downloadVerified(packageUpdate, File(System.getProperty("java.io.tmpdir"), destName), progress)
+        packageFile = downloadIntoNewDir(packageUpdate, destName, progress)
+        packageSha256 = packageUpdate.sha256
         version = update.version
     }
 
     override fun installAfterExit(relaunch: Boolean) {
         val pkg = packageFile ?: throw UpdateFailedException("launch", "the downloaded installer is missing")
         runDetachedPowerShell(
-            if (exeSetup) exeScript(pkg, appProcessIds(launcher), relaunch)
-            else msiScript(pkg, appProcessIds(launcher), relaunch),
+            if (exeSetup) exeScript(pkg, appProcessIds(launcher), relaunch, expectedSha256 = packageSha256, cleanupDir = pkg.parentFile)
+            else msiScript(pkg, appProcessIds(launcher), relaunch, cleanupDir = pkg.parentFile),
         )
     }
 
@@ -283,6 +306,8 @@ internal class WindowsUpdater(
      * Branded setup.exe: `--silent` still shows the progress card, `--dir` is this install's folder.
      * `--dir` is one quoted command-line argument, including when the folder is `C:\Users\Dor Farhi\...`.
      * Relaunch is [psRelaunch], after the installer exits, so the new copy is what starts.
+     * [expectedSha256] is the checksum [exe] was downloaded with, checked again before an elevated start.
+     * [cleanupDir], when given, is the download's own folder, removed with the installer.
      */
     internal fun exeScript(
         exe: File,
@@ -290,6 +315,8 @@ internal class WindowsUpdater(
         relaunch: Boolean,
         home: String = System.getProperty("user.home").orEmpty(),
         env: (String) -> String? = System::getenv,
+        expectedSha256: String? = null,
+        cleanupDir: File? = null,
     ): String = buildString {
         val targetDir = resolveWindowsInstallDir(launcher, home = home, env = env)
         val relaunchExe = if (isSafeWindowsInstallDir(parentDirOf(launcher), home, env)) launcher else File(targetDir, "YarmiplayTV.exe")
@@ -298,7 +325,7 @@ internal class WindowsUpdater(
         append(psWaitForAppExit(pids))
         append("Unblock-File -LiteralPath ${psQuoted(exe.path)} -ErrorAction SilentlyContinue; ")
         append("Remove-Item -LiteralPath ${psQuoted(status)} -Force -ErrorAction SilentlyContinue; ")
-        append(psStartWait(exe.path, psQuoted(setupArgs), elevateIfNeededDir = targetDir.path))
+        append(psStartWait(exe.path, psQuoted(setupArgs), elevateIfNeededDir = targetDir.path, expectedSha256 = expectedSha256))
         append("if (\$code -in -2, -3) { \$stage = 'launch' } else { \$stage = 'install' }; ")
         // 3010: installed, Windows wants a restart for something else. Anything else is not success.
         append("\$ok = \$code -in 0, 3010; ")
@@ -308,10 +335,12 @@ internal class WindowsUpdater(
         append("}; ")
         append("if (-not \$ok -and -not \$detail) { \$detail = \"exit code \$code\" }; ")
         append("Remove-Item -LiteralPath ${psQuoted(exe.path)} -ErrorAction SilentlyContinue; ")
+        append(psRemoveDir(cleanupDir))
         append(if (relaunch) psRelaunch(relaunchExe, args, version.orEmpty()) else psWriteOutcome(version.orEmpty()))
     }
 
-    internal fun msiScript(msi: File, pids: List<Long>, relaunch: Boolean): String = buildString {
+    /** [cleanupDir], when given, is the download's own folder, removed with the package. */
+    internal fun msiScript(msi: File, pids: List<Long>, relaunch: Boolean, cleanupDir: File? = null): String = buildString {
         // The launcher runs the app in a child process and holds YarmiplayTV.exe open until it exits too.
         append(psWaitForAppExit(pids))
         append("Unblock-File -LiteralPath ${psQuoted(msi.path)} -ErrorAction SilentlyContinue; ")
@@ -327,6 +356,7 @@ internal class WindowsUpdater(
         append("}; ")
         append("if (-not \$ok -and -not \$detail) { \$detail = \"exit code \$code\" }; ")
         append("Remove-Item -LiteralPath ${psQuoted(msi.path)} -ErrorAction SilentlyContinue; ")
+        append(psRemoveDir(cleanupDir))
         append(if (relaunch) psRelaunch(launcher, args, version.orEmpty()) else psWriteOutcome(version.orEmpty()))
     }
 
