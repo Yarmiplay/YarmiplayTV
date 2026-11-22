@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MalClient, MalError } from "./client";
+import { MAL_NO_ACCOUNT_SERVER, MalClient, MalError } from "./client";
 import type { EpisodeInfo } from "./episode";
 import { fakeFetch, type FakeAnswer, type SeenRequest } from "./fakeFetch";
 import { emptyListStatus, listSummary, malAnime, statusValue, type MalListStatus } from "./models";
@@ -318,7 +318,7 @@ describe("MalService", () => {
     await expect(mal.completeSignIn("the-code", state)).rejects.toBeInstanceOf(MalError);
   });
 
-  it("without a passthrough, the lookup says why and an update waits in the queue", async () => {
+  it("without a server for the account, the lookup says why and an update waits in the queue", async () => {
     const mal = new MalService({
       client: new MalClient("client-id", { passthroughBase: () => null, fetch: server.fetch }),
       storage,
@@ -328,7 +328,7 @@ describe("MalService", () => {
     services.push(mal);
     mal.playing(ep(1));
     await eventually("the failure", () => mal.state.value.kind === "failed");
-    expect(mal.state.value).toMatchObject({ message: "MyAnimeList needs a YarmiplayServerTV 1.8 room or a saved one" });
+    expect(mal.state.value).toMatchObject({ message: MAL_NO_ACCOUNT_SERVER });
     await mal.edit(malAnime({ id: 5, title: "Somebody's show" }), { score: 7 });
     expect(mal.store.value.queue).toEqual([{ animeId: 5, update: { score: 7 } }]);
     expect(server.requests).toEqual([]);

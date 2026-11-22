@@ -63,10 +63,11 @@ New to it? The [user manual](https://tv.yarmiplay.com/manual/) explains everythi
   shows in the library have it too. You sign in on MyAnimeList's own page (in your browser on desktop, or on Android
   in a web view); the app keeps only its tokens, on the device, and signing out deletes everything it kept. Builds need a
   MyAnimeList Client ID (`MAL_CLIENT_ID` in `~/.gradle/gradle.properties` or the CI secret; never in the
-  repository), registered with the redirect URL `http://localhost:47821/mal-callback`. The browser version doesn't
-  sign in to MyAnimeList: MyAnimeList refuses requests from web pages, so the browser could only reach it through a
-  room's YarmiplayServerTV, and it doesn't send account tokens through room servers. It still finds shows and asks
-  MyAnimeList which show an episode is (for AniSkip) that way, with the app's Client ID only.
+  repository), registered with the redirect URL `http://localhost:47821/mal-callback`. In the browser version the
+  account is opt-in: MyAnimeList refuses requests from web pages, so the user picks one YarmiplayServerTV to pass
+  the account's requests on (its sign-in, tokens and list go only there, never to the room they happen to be in);
+  public lookups (Find a show, and which show an episode is for AniSkip) go through the room's server with the
+  app's Client ID only.
 - Skips openings and endings, found from the file's chapters ("Opening", "ED", "Credits"…), the media server's
   markers (Jellyfin 10.10 media segments, Plex intro and credits markers), for anime AniSkip's times for the
   episode MyAnimeList says is playing (no account needed), or else by listening: the start and end of the episode

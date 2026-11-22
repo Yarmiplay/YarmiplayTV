@@ -1,6 +1,6 @@
 import { Store } from "../store";
 import { MalCache } from "./cache";
-import { MAL_UNAVAILABLE, MalClient, MalError, type RandomInts } from "./client";
+import { MAL_NO_ACCOUNT_SERVER, MalClient, MalError, type RandomInts } from "./client";
 import { sameEpisode, type EpisodeInfo } from "./episode";
 import { MalMatcher, type MalMatch } from "./matcher";
 import { restoring, statusValue, type MalAnime, type MalListStatus, type MalListUpdate, type MalQueued, type MalStatus } from "./models";
@@ -250,8 +250,9 @@ export class MalService {
       if (!this.client.configured) return { kind: "notConfigured" };
       if (!this.signedIn) return { kind: "signedOut" };
       if (this.isIgnored(info)) return { kind: "ignored", info };
-      // The browser asks MyAnimeList through a YarmiplayServerTV; without one, say so rather than find nothing.
-      if (!this.client.available) return { kind: "failed", info, message: MAL_UNAVAILABLE };
+      // The browser asks MyAnimeList through the YarmiplayServerTV the user chose for the account; without one, say so
+      // rather than find nothing.
+      if (!this.client.accountAvailable) return { kind: "failed", info, message: MAL_NO_ACCOUNT_SERVER };
       const match = await this.matcher.match(info, this.store.value.mappings[MalService.mappingKey(info)] ?? null);
       if (match == null) return { kind: "idle" };
       if (match.sure) return { kind: "matched", info, match, entry: await this.catalog.anime(match.anime.id) };

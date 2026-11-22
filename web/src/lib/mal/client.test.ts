@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { MAL_UNAVAILABLE, MalClient, MalError } from "./client";
+import { MAL_NO_ACCOUNT_SERVER, MAL_UNAVAILABLE, MalClient, MalError } from "./client";
 import { fakeFetch, type FakeAnswer, type SeenRequest } from "./fakeFetch";
 import { statusValue, type MalTokens } from "./models";
 
@@ -235,6 +235,44 @@ describe("MalClient", () => {
     expect(e.httpCode).toBe(429);
     expect(e.message).toBe("Too many MyAnimeList requests; try again in a minute");
     expect(limited.requests[0].url.href).toBe(`${BASE}${API}/anime/1?fields=${encodeURIComponent("id,title,alternative_titles,main_picture,start_date,media_type,num_episodes,status,mean,related_anime,my_list_status")}`);
+  });
+
+  describe("the account's server", () => {
+    const ROOM = "https://stranger.example:8999";
+    const tokens = (): MalTokens => ({ accessToken: "access-1", refreshToken: "refresh-1", expiresAtMillis: clock + 3_600_000 });
+    const withAccount = (account: string | null) =>
+      new MalClient("client-id", { passthroughBase: () => ROOM, accountBase: () => account, fetch: server.fetch, now: () => clock });
+    const sentToken = (host: string) =>
+      server.requests.some((r) => r.url.origin === host && (r.headers.authorization != null || r.body.includes("refresh_token") || r.body.includes("code=")));
+
+    it("signing in, the list and updates go only to the chosen server", async () => {
+      const c = withAccount(BASE);
+      await c.exchange("the-code", "v", "https://tv.yarmiplay.com/watch/mal-callback.html");
+      await c.me();
+      await c.myList("watching");
+      await c.anime(52991);
+      expect(server.requests.every((r) => r.url.origin === BASE)).toBe(true);
+      expect(sentToken(ROOM)).toBe(false);
+    });
+
+    it("without a chosen server, nothing with a token is sent anywhere", async () => {
+      const c = withAccount(null);
+      c.tokens = tokens();
+      expect((await failure(c.me())).message).toBe(MAL_NO_ACCOUNT_SERVER);
+      expect((await failure(c.exchange("the-code", "v", "https://x/cb"))).message).toBe(MAL_NO_ACCOUNT_SERVER);
+      // An expired token isn't refreshed either: that would send the refresh token.
+      c.tokens = { ...tokens(), expiresAtMillis: clock - 1 };
+      expect((await failure(c.myList("watching"))).message).toBe(MAL_NO_ACCOUNT_SERVER);
+      expect(server.requests).toHaveLength(0);
+    });
+
+    it("public data goes through the room's server with the Client ID alone, signed in or not", async () => {
+      const c = withAccount(null);
+      c.tokens = tokens();
+      expect((await c.search("frieren"))[0].id).toBe(52991);
+      expect((await c.anime(52991)).id).toBe(52991);
+      expect(server.requests.every((r) => r.url.origin === ROOM && r.headers.authorization == null)).toBe(true);
+    });
   });
 
   it("a request that can't be sent says MyAnimeList can't be reached", async () => {

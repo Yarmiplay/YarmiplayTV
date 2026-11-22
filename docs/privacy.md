@@ -34,6 +34,13 @@ unless you turn it off, to GitHub to check for a new version.
   - *Shared media servers:* when the host shares their Jellyfin server, the app adds it to your servers and
     signs in with a Quick Connect code that the Syncplay server approves for you. Turn this off with
     **Add media servers shared by Syncplay hosts** in Settings.
+  - *MyAnimeList in the browser player, only if you choose it:* MyAnimeList doesn't accept requests from web pages,
+    so to sign in to MyAnimeList in the browser player you choose, on its MyAnimeList screen, one YarmiplayServerTV
+    to pass your requests on, and confirm that it may. That server then handles your MyAnimeList sign-in (the code
+    MyAnimeList's page gives back and the sign-in tokens), and sees what the app asks MyAnimeList for you: your
+    list, the shows you look up and the changes you make. Nothing with your account goes through any other server,
+    including the rooms you join; you can change the server, or choose none, on the MyAnimeList screen, and **Sign
+    out** deletes the account from this browser. The apps for Android and computers talk to MyAnimeList directly.
   - *Voice chat, when the host turned it on:* if you leave **Voice chat** on in Settings, the app can send
     your microphone audio through that Syncplay server to the other people in the same room, and play theirs
     to you. The audio is streamed only while you are in the room; the app does not record it or keep it, and
@@ -62,19 +69,18 @@ unless you turn it off, to GitHub to check for a new version.
   what you type in **Find a show** to search for shows, and,
   when you've watched an episode or change something in the MyAnimeList panel, updates your list: the episodes
   watched, status, score, rewatching and start and finish dates. MyAnimeList handles this under its
-  [privacy policy](https://myanimelist.net/about/privacy_policy). Nothing about MyAnimeList goes anywhere else.
-  The browser player doesn't sign in to MyAnimeList: MyAnimeList doesn't accept requests from web pages, so your
-  sign-in would have to pass through a room's server. Use the app to keep your list up to date.
+  [privacy policy](https://myanimelist.net/about/privacy_policy). Nothing about MyAnimeList goes anywhere else, except
+  in the browser player, through the one server you choose for it, as described above.
 - **MyAnimeList and AniSkip, to skip openings and endings:** when an anime episode plays, the app works out
   which MyAnimeList entry it is, also without a MyAnimeList account: it asks MyAnimeList, with the app's id
   rather than yours, about the show (its title, or the MyAnimeList id your media server has for it) and its
   seasons. It then asks [AniSkip](https://aniskip.com) (api.aniskip.com) where the episode's opening and ending
   are, sending the MyAnimeList id, the episode number and the file's length, nothing else. When the video plays
   from your Jellyfin or Plex server, the app also asks that server for the episode's intro and credits markers.
-  The answers are kept in memory only. In the browser player, the questions to MyAnimeList (and the shows you
-  search for in **Find a show**) go through the YarmiplayServerTV server of the room you're in, or else of the last
-  room you joined, which passes them on; they carry the app's id and the show, nothing about you or your account.
-  In a room on a YarmiplayServerTV server, turning automatic skipping on or off goes to the
+  The answers are kept in memory only. In the browser player, these questions to MyAnimeList (and the shows you
+  search for in **Find a show** when you aren't signed in) go through the YarmiplayServerTV server of the room you're
+  in, or else of the last room you joined, which passes them on; they carry the app's id and the show, nothing
+  about you or your account. In a room on a YarmiplayServerTV server, turning automatic skipping on or off goes to the
   server, which tells the room who changed it.
 - **Listening for openings and endings, on your device:** when nothing above knows where an episode's opening
   and ending are, the app reads the sound of the start and end of the episode and of the episodes before and after

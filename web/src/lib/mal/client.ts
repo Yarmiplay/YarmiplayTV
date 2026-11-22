@@ -30,14 +30,21 @@ export class MalError extends Error {
 
 /** Why MyAnimeList can't be asked from this page: there's no YarmiplayServerTV to pass the requests through. */
 export const MAL_UNAVAILABLE = "MyAnimeList needs a YarmiplayServerTV 1.8 room or a saved one";
+/** Why the account can't be used: no server was chosen to pass its requests on (Settings > MyAnimeList). */
+export const MAL_NO_ACCOUNT_SERVER = "Choose the server for your MyAnimeList account on the MyAnimeList screen";
 
 export interface MalClientOptions {
   /**
-   * The YarmiplayServerTV (1.8 or later) that passes the requests on to MyAnimeList, e.g.
-   * `https://myhome.duckdns.org:8999`; null when there's none, and MyAnimeList can't be asked. MyAnimeList refuses
-   * browsers' cross-origin requests, so the browser never asks it directly.
+   * The YarmiplayServerTV (1.8 or later) that passes public requests (no account: which show an episode is, Find a
+   * show) on to MyAnimeList, e.g. `https://myhome.duckdns.org:8999`; null when there's none, and MyAnimeList can't
+   * be asked. MyAnimeList refuses browsers' cross-origin requests, so the browser never asks it directly.
    */
   passthroughBase: () => string | null;
+  /**
+   * The one server the account's requests (sign-in, tokens, the list) go through, which the user chose; null when
+   * none is chosen, and then nothing with a token is sent anywhere. [passthroughBase] when not given.
+   */
+  accountBase?: () => string | null;
   fetch?: FetchLike;
   /** Milliseconds, as `Date.now()`. */
   now?: () => number;
@@ -82,6 +89,7 @@ export class MalClient {
   onTokens: (tokens: MalTokens | null) => void = () => {};
 
   private readonly passthroughBase: () => string | null;
+  private readonly accountBase: () => string | null;
   private readonly fetch: FetchLike;
   private readonly now: () => number;
   private readonly authUrl: string;
@@ -93,6 +101,7 @@ export class MalClient {
     options: MalClientOptions,
   ) {
     this.passthroughBase = options.passthroughBase;
+    this.accountBase = options.accountBase ?? options.passthroughBase;
     this.fetch = options.fetch ?? ((url, init) => globalThis.fetch(url, init));
     this.now = options.now ?? Date.now;
     this.authUrl = (options.authUrl ?? "https://myanimelist.net").replace(/\/+$/, "");
@@ -106,6 +115,11 @@ export class MalClient {
   /** Whether there's a YarmiplayServerTV to ask MyAnimeList through now. */
   get available(): boolean {
     return this.passthroughBase() != null;
+  }
+
+  /** Whether a server is chosen for the account's requests. */
+  get accountAvailable(): boolean {
+    return this.accountBase() != null;
   }
 
   /** The page where the user signs in on MyAnimeList itself; it comes back to [redirectUri] with a code. */
@@ -160,7 +174,7 @@ export class MalClient {
 
   private async token(fields: [string, string][]): Promise<MalTokens> {
     const body = new URLSearchParams([["client_id", this.clientId], ...fields]).toString();
-    const text = await this.execute(`${this.base()}/yarmiplay/mal/token`, {
+    const text = await this.execute(`${this.accountBaseUrl()}/yarmiplay/mal/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
@@ -216,34 +230,48 @@ export class MalClient {
     return parsePage(readJson(await this.call(url))).map((d) => [d.node, d.listStatus ?? emptyListStatus()]);
   }
 
+  /** Where public requests go: no token is ever sent there. */
   private base(): string {
     const base = this.passthroughBase();
     if (!base) throw new MalError(MAL_UNAVAILABLE);
     return base.replace(/\/+$/, "");
   }
 
-  /** The URL that asks MyAnimeList's `{path}` through the passthrough (read when the request is made). */
-  private api(path: string, query: Record<string, string> = {}): () => string {
-    return () => {
+  /** The server the user chose for the account: the only one a token is sent to. */
+  private accountBaseUrl(): string {
+    const base = this.accountBase();
+    if (!base) throw new MalError(MAL_NO_ACCOUNT_SERVER);
+    return base.replace(/\/+$/, "");
+  }
+
+  /** The URL that asks MyAnimeList's `{path}` through the passthrough at a base (read when the request is made). */
+  private api(path: string, query: Record<string, string> = {}): (base: string) => string {
+    return (base) => {
       const q = new URLSearchParams(query).toString();
-      return `${this.base()}/yarmiplay/mal/api/${path}${q ? `?${q}` : ""}`;
+      return `${base}/yarmiplay/mal/api/${path}${q ? `?${q}` : ""}`;
     };
   }
 
   /**
-   * Public data (titles, episodes, related anime): as the signed-in user when there is one, else with the app's
-   * Client ID alone, which MyAnimeList allows for public data.
+   * Public data (titles, episodes, related anime): as the signed-in user, through the account's server, when there
+   * is one; else with the app's Client ID alone, which MyAnimeList allows for public data, through the room's.
    */
-  private async publicCall(url: () => string): Promise<string> {
-    if (this.tokens != null) return this.call(url);
+  private async publicCall(url: (base: string) => string): Promise<string> {
+    if (this.tokens != null && this.accountAvailable) return this.call(url);
     if (!this.configured) throw signedOut();
-    return this.execute(url(), { headers: { "X-MAL-CLIENT-ID": this.clientId } });
+    return this.execute(url(this.base()), { headers: { "X-MAL-CLIENT-ID": this.clientId } });
   }
 
-  /** Runs an API request as the signed-in user, refreshing the access token first when it ran out, or once on a 401. */
-  private async call(url: () => string, init: RequestInit = {}): Promise<string> {
+  /**
+   * Runs an API request as the signed-in user, through the account's server only, refreshing the access token first
+   * when it ran out, or once on a 401.
+   */
+  private async call(api: (base: string) => string, init: RequestInit = {}): Promise<string> {
     let t = this.tokens;
     if (!t) throw signedOut();
+    // Fails here, before a refresh sends the refresh token, when no server is chosen.
+    this.accountBaseUrl();
+    const url = () => api(this.accountBaseUrl());
     if (t.expiresAtMillis - this.now() < 60_000) t = await this.refreshed((c) => c.expiresAtMillis - this.now() >= 60_000);
     const withToken = (token: MalTokens): RequestInit => ({
       ...init,

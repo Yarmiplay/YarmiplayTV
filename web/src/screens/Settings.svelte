@@ -330,7 +330,7 @@
       {:else if shown === "myanimelist"}
         <h2>MyAnimeList</h2>
         <div class="card group">
-          <p>Find any show. Updating your MyAnimeList list as you watch is in the apps for Android and computers, not in the browser.</p>
+          <p>Keep your MyAnimeList list up to date as you watch, and find any show.</p>
           <a class="button quiet" href="#/mal"><Icon name="bookmarks" size={18} />MyAnimeList</a>
         </div>
       {:else if shown === "whatsnew"}
