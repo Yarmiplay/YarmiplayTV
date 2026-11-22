@@ -201,13 +201,18 @@
   });
 
   // The system's media controls (keyboard media keys, lock screen, the taskbar's controls): Media Session.
+  // Only what they show is read here, not the player's state, which changes five times a second while playing.
+  const sessionLoaded = $derived(!!s?.loaded);
+  const sessionTitle = $derived(s ? s.mediaTitle || s.name : "");
+  const sessionArtist = $derived(s?.mediaArtist || (room && inRoom ? `YarmiplayTV · ${ManagedRooms.display(room.room)}` : "YarmiplayTV"));
+  const sessionCover = $derived(s?.coverUrl ?? null);
   $effect(() => {
-    if (!("mediaSession" in navigator) || !s?.loaded) return;
+    if (!("mediaSession" in navigator) || !sessionLoaded) return;
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: s.mediaTitle || s.name,
-      artist: s.mediaArtist || (room && inRoom ? `YarmiplayTV · ${ManagedRooms.display(room.room)}` : "YarmiplayTV"),
-      artwork: s.coverUrl
-        ? [{ src: s.coverUrl }]
+      title: sessionTitle,
+      artist: sessionArtist,
+      artwork: sessionCover
+        ? [{ src: sessionCover }]
         : [{ src: "./favicon.svg", sizes: "any", type: "image/svg+xml" }],
     });
     const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
@@ -280,44 +285,115 @@
     poke();
   }
 
+  // Where to resume: written every few seconds while playing (not at each of the player's five updates a second),
+  // when paused, and when the page is hidden or closed.
+  const RESUME_SAVE_MS = 5000;
+  let resumeSavedAt = 0;
+  let resumeSaved = -1;
+  /** The last position seen and its file, kept so it's written when the file changes or the page goes. */
+  let resumeLatest: { fileName: string; position: number } | null = null;
+  function rememberPosition(fileName: string, position: number) {
+    if (position <= 0) return;
+    saveSeekPosition(fileName, position);
+    resumeSavedAt = performance.now();
+    resumeSaved = position;
+  }
   $effect(() => {
     if (!s?.loaded || s.position <= 0) return;
     const fileName = session?.nowPlaying.value?.fileName ?? s.name;
-    if (fileName) saveSeekPosition(fileName, s.position);
+    if (!fileName) return;
+    const before = resumeLatest;
+    resumeLatest = { fileName, position: s.position };
+    if (before && before.fileName !== fileName) {
+      rememberPosition(before.fileName, before.position);
+      resumeSaved = -1;
+      resumeSavedAt = 0;
+    }
+    const due = s.paused ? Math.abs(s.position - resumeSaved) > 0.01 : performance.now() - resumeSavedAt >= RESUME_SAVE_MS;
+    if (due) rememberPosition(fileName, s.position);
   });
+  $effect(() => {
+    const flush = () => {
+      if (resumeLatest) rememberPosition(resumeLatest.fileName, resumeLatest.position);
+    };
+    const hidden = () => document.visibilityState === "hidden" && flush();
+    addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      flush();
+      removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", hidden);
+    };
+  });
+
+  /** The newest time a picture was asked for while one was being made; only that one is made next. */
+  let previewWanted: number | null = null;
+  let previewBusy = false;
+  /** Bumped when the pictures are hidden, so one still being made isn't shown after. */
+  let previewGeneration = 0;
+  /** The last Jellyfin trickplay sheet, decoded once for all its tiles. */
+  let sheet: { url: string; bitmap: Promise<ImageBitmap | null> } | null = null;
+
+  /** Asks for the picture at [time]. The pointer moves faster than pictures are made: one at a time, the newest. */
+  function requestPreview(time: number) {
+    previewWanted = time;
+    if (previewBusy) return;
+    previewBusy = true;
+    void (async () => {
+      try {
+        while (previewWanted !== null) {
+          const next = previewWanted;
+          previewWanted = null;
+          await showPreview(next).catch(() => {});
+        }
+      } finally {
+        previewBusy = false;
+      }
+    })();
+  }
+
+  function decodedSheet(url: string): Promise<ImageBitmap | null> {
+    if (sheet?.url !== url) {
+      dropSheet();
+      sheet = { url, bitmap: cachedBlob(url).then((blob) => (blob ? createImageBitmap(blob) : null)).catch(() => null) };
+    }
+    return sheet.bitmap;
+  }
+
+  function dropSheet() {
+    void sheet?.bitmap.then((b) => b?.close());
+    sheet = null;
+  }
 
   /** The picture at [time] under the seek bar: a server's stored frame, or the keyframe read from the file. */
   async function showPreview(time: number) {
+    const generation = previewGeneration;
     const key = session?.nowPlaying.value?.key ?? null;
     const offer = key ? seekOffer(key) : null;
     if (offer?.kind === "jellyfin") {
       const tile = trickplayTile(offer.set, time);
       if (tile) {
-        const blob = await cachedBlob(sheetUrl(offer, tile.sheet));
-        if (blob) {
-          const full = await createImageBitmap(blob);
+        const full = await decodedSheet(sheetUrl(offer, tile.sheet));
+        if (full) {
           const w = Math.min(tile.width, full.width - tile.x);
           const h = Math.min(tile.height, full.height - tile.y);
           if (w > 0 && h > 0) {
-            const bitmap = await createImageBitmap(full, tile.x, tile.y, w, h);
-            full.close();
-            drawPreview(bitmap);
+            drawPreview(await createImageBitmap(full, tile.x, tile.y, w, h), generation);
             return;
           }
-          full.close();
         }
       }
     } else if (offer?.kind === "plex" && key) {
       const blob = await fetch(jpegUrl(offer, time)).then((r) => (r.ok ? r.blob() : null)).catch(() => null);
       if (!blob) dropSeek(key);
       else {
-        drawPreview(await createImageBitmap(blob));
+        drawPreview(await createImageBitmap(blob), generation);
         return;
       }
     }
     const byteSource = await previewSource(key, player?.source ?? null);
     if (!byteSource) {
-      previewShown = false;
+      if (generation === previewGeneration) previewShown = false;
       return;
     }
     if (seekFramesFor !== byteSource) {
@@ -328,11 +404,11 @@
     const frames = await seekFrames;
     const bitmap = await frames?.frame(time, 160);
     if (!bitmap || !preview) return;
-    drawPreview(bitmap);
+    drawPreview(bitmap, generation);
   }
 
-  function drawPreview(bitmap: ImageBitmap) {
-    if (!preview) {
+  function drawPreview(bitmap: ImageBitmap, generation: number) {
+    if (!preview || generation !== previewGeneration) {
       bitmap.close();
       return;
     }
@@ -361,7 +437,10 @@
 
   /** Done with pictures for now: the second FFmpeg lets go of the file. */
   function hidePreview() {
+    previewGeneration++;
+    previewWanted = null;
     previewShown = false;
+    dropSheet();
     void seekFrames?.then((f) => f?.close());
     seekFrames = null;
     seekFramesFor = null;
@@ -686,7 +765,7 @@
             aria-valuenow={s.position}
             onpointermove={(e) => {
               hover = { x: e.offsetX, time: trackTime(e, e.currentTarget) };
-              void showPreview(dragging ?? hover.time);
+              requestPreview(dragging ?? hover.time);
             }}
             onpointerleave={() => {
               hover = null;

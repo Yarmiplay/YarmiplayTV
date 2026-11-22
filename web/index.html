@@ -7,22 +7,15 @@
     <meta name="description" content="Watch together in your browser: Syncplay rooms on YarmiplayServerTV, with nothing to install." />
     <meta name="theme-color" content="#0E1116" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <script>
-      // The theme before the first paint, so the page never flashes the wrong colours (see src/lib/ui/theme.ts).
-      (function () {
-        var key = "dark";
-        try { key = localStorage.getItem("ytv:app_theme") || "dark"; } catch (e) {}
-        if (key === "system") key = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        var known = { dark: 1, noire: 1, monochrome: 1, light: 1, ember: 1, snow: 1, grass: 1, sky: 1 };
-        if (!known[key]) key = "dark";
-        document.documentElement.dataset.theme = key;
-        var bar = {
-          dark: "#0E1116", noire: "#100C16", monochrome: "#000000", light: "#F3F5F8",
-          ember: "#14110E", snow: "#75898A", grass: "#538532", sky: "#41B1E9",
-        }[key];
-        document.querySelector('meta[name="theme-color"]').setAttribute("content", bar);
-      })();
-    </script>
+    <!--
+      Scripts only from this site (and WebAssembly for FFmpeg and libass), no plugins, no <base>. Media servers and
+      Syncplay servers are whatever the user adds, so pictures and connections may go anywhere.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src * data: blob:; media-src * data: blob:; font-src * data: blob:; connect-src * data: blob: ws: wss: http: https:; object-src 'none'; base-uri 'none'; form-action 'self'"
+    />
+    <script src="./theme.js"></script>
   </head>
   <body>
     <div id="app"></div>

@@ -150,7 +150,10 @@ export const PGS = "hdmv_pgs_subtitle";
  */
 export class PgsLayer {
   private readonly renderer: PgsRenderer;
+  /** Segments in time order, as a .sup file has them (kept sorted as they come, rather than sorted at each reload). */
   private readonly parts: Uint8Array[] = [];
+  /** Each of [parts]' time. */
+  private readonly times: number[] = [];
   private readonly seen = new Set<number>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private size = 0;
@@ -169,6 +172,10 @@ export class PgsLayer {
     this.seen.add(packet.time);
     const pts = Math.round(packet.time * 90_000) >>> 0;
     const data = packet.packet.data;
+    // After every segment at or before this time: packets come in order, so this is nearly always the end. Equal
+    // times keep their order, as the stable sort this replaces did.
+    let insert = this.times.length;
+    while (insert > 0 && this.times[insert - 1] > pts) insert--;
     for (let at = 0; at + 3 <= data.length; ) {
       const length = (data[at + 1] << 8) | data[at + 2];
       const segment = new Uint8Array(10 + 3 + length);
@@ -178,7 +185,9 @@ export class PgsLayer {
       view.setUint32(2, pts);
       view.setUint32(6, 0);
       segment.set(data.subarray(at, at + 3 + length), 10);
-      this.parts.push(segment);
+      this.parts.splice(insert, 0, segment);
+      this.times.splice(insert, 0, pts);
+      insert++;
       this.size += segment.length;
       at += 3 + length;
     }
@@ -187,11 +196,9 @@ export class PgsLayer {
   }
 
   private reload() {
-    // Display sets in time order, as a .sup file has them.
     const all = new Uint8Array(this.size);
-    const sorted = [...this.parts].sort((a, b) => new DataView(a.buffer).getUint32(2) - new DataView(b.buffer).getUint32(2));
     let at = 0;
-    for (const p of sorted) {
+    for (const p of this.parts) {
       all.set(p, at);
       at += p.length;
     }
