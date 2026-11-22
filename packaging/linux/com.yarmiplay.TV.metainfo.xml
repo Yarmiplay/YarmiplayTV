@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.1.5" date="2026-11-22">
+      <description>
+        <p>On computers, Syncplay-style windows (Settings &gt; Appearance): a join screen like Syncplay's with Auto-join and a video to play once joined, then the room in one window (chat, who's playing what, the shared playlist and I'm ready to watch) and the player in a window of its own. Everything else stays a menu away, and View &gt; Switch to the regular view goes back.</p>
+      </description>
+    </release>
     <release version="3.1.4" date="2026-11-22">
       <description>
         <p>Safer connections and a faster player. The app now asks before using a connection that isn't encrypted: a Jellyfin server you saved as https:// that only answers over plain HTTP, a Syncplay server that doesn't set up encryption (Settings &gt; Syncing can stop asking), or a video whose server certificate can't be checked. Saved Jellyfin and Plex sign-ins go only to the server they belong to, passwords and keys no longer appear in logs, and updates are signed and checked before they install. In the browser, MP4 and WebM files play again on Windows, MyAnimeList is now opt-in through a server you choose, and a join link can no longer send you to someone else's server. Playback, voice chat and long playlists use less processor time.</p>
