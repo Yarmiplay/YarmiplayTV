@@ -529,6 +529,7 @@ class SettingsStore(
 
         val deviceId = stringPreferencesKey("device_id")
         val localFolders = stringPreferencesKey("local_folders")
+        val networkLocations = stringPreferencesKey("network_locations")
 
         val deviceName = stringPreferencesKey("device_name")
         val addSharedServers = booleanPreferencesKey("add_shared_servers")
@@ -1130,6 +1131,7 @@ class SettingsStore(
         private val json = Json { ignoreUnknownKeys = true }
         private val jellyfinList = ListSerializer(JellyfinSession.serializer())
         private val plexList = ListSerializer(PlexSession.serializer())
+        private val networkLocationList = ListSerializer(com.yarmiplaytv.network.NetworkLocation.serializer())
         private val LEGACY_SERVER_KEYS = listOf(
             Keys.jfUrl, Keys.jfServerName, Keys.jfServerId, Keys.jfUserId, Keys.jfUserName, Keys.jfToken,
             Keys.pxUrl, Keys.pxServerName, Keys.pxMachineId, Keys.pxUserName, Keys.pxServerToken, Keys.pxAccountToken,
@@ -1142,6 +1144,13 @@ class SettingsStore(
     }
 
     suspend fun saveLocalFolders(uris: List<String>) = dataStore.edit { it[Keys.localFolders] = uris.joinToString("\n") }
+
+    suspend fun loadNetworkLocations(): List<com.yarmiplaytv.network.NetworkLocation> =
+        dataStore.data.first()[Keys.networkLocations]?.let { decode(it, networkLocationList) } ?: emptyList()
+
+    suspend fun saveNetworkLocations(locations: List<com.yarmiplaytv.network.NetworkLocation>) = dataStore.edit {
+        it[Keys.networkLocations] = json.encodeToString(networkLocationList, locations)
+    }
 
     suspend fun deviceId(): String {
         var id: String? = null

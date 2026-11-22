@@ -27,9 +27,12 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VideoFile
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -58,6 +61,10 @@ import coil3.compose.AsyncImage
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.local.LocalBrowse
 import com.yarmiplaytv.local.LocalFile
+import com.yarmiplaytv.network.NetworkDraft
+import com.yarmiplaytv.network.NetworkEntry
+import com.yarmiplaytv.network.NetworkLocations
+import com.yarmiplaytv.network.NetworkUris
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.ManagedRooms
 import com.yarmiplaytv.ui.nav.Navigator
@@ -65,6 +72,7 @@ import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.SurfaceInk
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,29 +86,86 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
     var picked by remember { mutableStateOf<String?>(null) }
     val pickFolder = rememberFolderPicker(container)
     val pickVideo = rememberVideoPicker { uri -> if (inRoom) picked = uri else container.playlist.playLocal(uri, inRoom = false) }
+    val scanStorage = rememberStorageScan(container)
     // The media folder being browsed and the path inside it; none shows the media folders themselves.
     var openUri by rememberSaveable { mutableStateOf<String?>(null) }
     var path by rememberSaveable { mutableStateOf("") }
+    var shareId by rememberSaveable { mutableStateOf<String?>(null) }
+    var sharePath by rememberSaveable { mutableStateOf("") }
+    var addingShare by rememberSaveable { mutableStateOf(false) }
+    val places by container.shares.locations.collectAsStateWithLifecycle()
+    val share = places.firstOrNull { it.id == shareId }
+    var shareError by remember { mutableStateOf<String?>(null) }
+    val shareEntries by produceState(emptyList<NetworkEntry>(), shareId, sharePath) {
+        val id = shareId ?: run { value = emptyList(); return@produceState }
+        val listed = runCatching { container.shares.list(id, sharePath) }
+        shareError = listed.exceptionOrNull()?.message
+        value = listed.getOrDefault(emptyList())
+    }
     val open = folders.firstOrNull { it.uri == openUri }
     fun up() {
         if (path.isEmpty()) openUri = null else path = path.substringBeforeLast('/', "")
     }
-    PlatformBackHandler(enabled = open != null) { up() }
+    PlatformBackHandler(enabled = open != null || share != null) {
+        when {
+            open != null -> up()
+            sharePath.isNotEmpty() -> sharePath = sharePath.substringBeforeLast('/', "")
+            else -> shareId = null
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         MobileTopBar(
-            title = open?.let { path.substringAfterLast('/').ifEmpty { it.name } } ?: "Files on this device",
+            title = when {
+                open != null -> path.substringAfterLast('/').ifEmpty { open.name }
+                share != null -> sharePath.substringAfterLast('/').ifEmpty { share.name }
+                else -> "Files on this device"
+            },
             nav = nav,
             subtitle = open?.let { listOf("Files on this device", it.name).plus(path.split('/').dropLast(1).filter(String::isNotEmpty)).joinToString(" / ") },
-            showBack = open != null || nav.canGoBack,
-            onBack = { if (open != null) up() else nav.back() },
+            showBack = open != null || share != null || nav.canGoBack,
+            onBack = {
+                when {
+                    open != null -> up()
+                    sharePath.isNotEmpty() -> sharePath = sharePath.substringBeforeLast('/', "")
+                    share != null -> shareId = null
+                    else -> nav.back()
+                }
+            },
         ) {
             IconButton({ scope.launch { container.local.refresh() } }) { Icon(Icons.Filled.Refresh, "Rescan") }
         }
         if (indexing) LinearProgressIndicator(Modifier.fillMaxWidth())
         val listing = remember(files, open, path) { open?.let { LocalBrowse.list(files, it, path) } }
         LazyColumn(Modifier.fillMaxSize().testTag("local_list"), contentPadding = PaddingValues(bottom = 24.dp)) {
-            if (open == null || listing == null) {
+            if (share != null) {
+                item {
+                    Text(
+                        listOf(share.protocol.uppercase(), share.host).joinToString(" · ") +
+                            shareError?.let { " — $it" }.orEmpty(),
+                        color = AppColors.TextDim,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+                items(shareEntries, key = { "n:" + sharePath + "/" + it.name }) { entry ->
+                    val child = if (sharePath.isEmpty()) entry.name else "$sharePath/${entry.name}"
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            if (entry.directory) sharePath = child
+                            else {
+                                val uri = NetworkUris.of(share.id, child)
+                                if (inRoom) picked = uri else container.playlist.playLocal(uri, inRoom = false)
+                            }
+                        }.padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(if (entry.directory) Icons.Filled.Folder else Icons.Filled.Movie, contentDescription = null, tint = AppColors.Accent)
+                        Spacer(Modifier.width(12.dp))
+                        Text(entry.name, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            } else if (open == null || listing == null) {
                 item {
                     Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(pickVideo, Modifier.weight(1f).testTag("open_video")) {
@@ -110,6 +175,11 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
                             Icon(Icons.Filled.CreateNewFolder, contentDescription = null); Text(" Add folder")
                         }
                     }
+                    if (scanStorage != null) {
+                        FilledTonalButton(scanStorage, Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                            Text("Scan USB and internal storage")
+                        }
+                    }
                     Text(
                         "Media folders work like Syncplay's media directories: when the room's playlist moves to a file, " +
                             "YarmiplayTV looks for it here first (subfolders included), then on Jellyfin and Plex.",
@@ -117,6 +187,27 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
+                }
+                item { SectionHeader("FTP and SMB", Modifier.padding(top = 8.dp)) }
+                items(places, key = { "s:" + it.id }) { place ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { shareId = place.id; sharePath = place.startPath; shareError = null }
+                            .padding(start = 16.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Filled.Folder, contentDescription = null, tint = AppColors.Accent)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
+                            Text(place.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${place.protocol.uppercase()} · ${place.host}", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                        }
+                        IconButton({ scope.launch { container.shares.remove(place.id) } }) {
+                            Icon(Icons.Filled.Delete, "Remove", tint = AppColors.TextDim)
+                        }
+                    }
+                }
+                item {
+                    TextButton({ addingShare = true }, Modifier.padding(horizontal = 8.dp)) { Text("Add FTP or SMB") }
                 }
                 if (folders.isNotEmpty()) {
                     item { SectionHeader("Media folders", Modifier.padding(top = 8.dp)) }
@@ -164,6 +255,13 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
                     item { EmptyMessage("No videos in this folder") }
                 }
             }
+        }
+    }
+
+    if (addingShare) AddShareDialog(onDismiss = { addingShare = false }) { draft ->
+        scope.launch {
+            container.shares.add(draft)
+            addingShare = false
         }
     }
 
@@ -224,4 +322,62 @@ internal fun formatSize(bytes: Long): String = when {
     bytes >= 1L shl 30 -> "%.1f GB".format(bytes / (1L shl 30).toDouble())
     bytes >= 1L shl 20 -> "%.0f MB".format(bytes / (1L shl 20).toDouble())
     else -> "%.0f KB".format(bytes / 1024.0)
+}
+
+@Composable
+private fun AddShareDialog(onDismiss: () -> Unit, onSave: (com.yarmiplaytv.network.NetworkLocation) -> Unit) {
+    var protocol by remember { mutableStateOf(NetworkLocations.FTP) }
+    var host by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var shareName by remember { mutableStateOf("") }
+    var folder by remember { mutableStateOf("") }
+    var label by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add FTP or SMB") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row {
+                    TextButton({ protocol = NetworkLocations.FTP }) { Text(if (protocol == NetworkLocations.FTP) "FTP" else "Use FTP") }
+                    TextButton({ protocol = NetworkLocations.SMB }) { Text(if (protocol == NetworkLocations.SMB) "SMB" else "Use SMB") }
+                }
+                OutlinedTextField(host, { host = it }, label = { Text("Server") }, singleLine = true)
+                OutlinedTextField(
+                    port,
+                    { port = it },
+                    label = { Text(if (protocol == NetworkLocations.SMB) "Port (445)" else "Port (21)") },
+                    singleLine = true,
+                )
+                OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true)
+                OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true)
+                if (protocol == NetworkLocations.SMB) {
+                    OutlinedTextField(shareName, { shareName = it }, label = { Text("Share name") }, singleLine = true)
+                }
+                OutlinedTextField(folder, { folder = it }, label = { Text("Folder (optional)") }, singleLine = true)
+                OutlinedTextField(label, { label = it }, label = { Text("Name (optional)") }, singleLine = true)
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                Text(
+                    "The password stays in this app's settings and is not put in the playback address.",
+                    color = AppColors.TextDim,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton({
+                when (
+                    val draft = NetworkLocations.draft(
+                        UUID.randomUUID().toString(), protocol, host, port, username, password, shareName, label, folder,
+                    )
+                ) {
+                    is NetworkDraft.Ok -> onSave(draft.location)
+                    is NetworkDraft.Invalid -> error = draft.reason
+                }
+            }) { Text("Save") }
+        },
+        dismissButton = { TextButton(onDismiss) { Text("Cancel") } },
+    )
 }

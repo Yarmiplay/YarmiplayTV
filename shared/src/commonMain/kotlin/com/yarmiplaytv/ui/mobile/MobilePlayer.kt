@@ -847,7 +847,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                     }
                 }
                 when (kind) {
-                    PlayerSheet.PLAYLIST -> PlaylistContent(container, onBrowse = { sheet = null; nav.popTo(Screen.Home) })
+                    PlayerSheet.PLAYLIST -> PlaylistContent(container, onBrowse = { sheet = null; nav.push(Screen.LocalFiles) })
                     PlayerSheet.ROOM -> RoomUsersContent(container)
                     PlayerSheet.CHAT -> ChatContent(container, maxHeight = 220.dp)
                     PlayerSheet.AUDIO -> TracksContent(container, TrackType.AUDIO, onPicked = { sheet = null })
@@ -1357,7 +1357,7 @@ private fun CenterStatus(
                     )
                     StatusButtons {
                         Button(playFile, Modifier.testTag("open_video")) { ActionLabel("Open a video") }
-                        FilledTonalButton({ nav.popTo(Screen.Home) }, Modifier.testTag("browse")) { ActionLabel("Browse") }
+                        FilledTonalButton({ nav.push(Screen.LocalFiles) }, Modifier.testTag("browse")) { ActionLabel("Browse") }
                     }
                 }
             }

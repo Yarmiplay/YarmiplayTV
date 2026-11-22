@@ -167,6 +167,13 @@ class AppContainer(
     val mediaSource: StateFlow<MediaSource?> = servers.map(::browsable).stateIn(scope, SharingStarted.Eagerly, browsable(servers.value))
 
     val local: LocalLibrary = createLocalLibrary(settingsStore, scope, initial.localFolders)
+    private val shareCache = cacheDir ?: File(System.getProperty("java.io.tmpdir"), "yarmiplaytv-shares")
+    val shares = com.yarmiplaytv.network.NetworkLibrary(
+        settingsStore,
+        scope,
+        shareCache,
+        com.yarmiplaytv.network.networkBackend(shareCache),
+    )
     val thumbnails: VideoThumbnails? = frameGrabber?.let { grabber -> cacheDir?.let { VideoThumbnails(File(it, "thumbnails"), grabber) } }
     val sync = SyncController(scope, player).apply {
         showChat = initial.showRoomChat
@@ -190,7 +197,7 @@ class AppContainer(
     /** The YarmiplayServerTV file relay; idle on other servers. */
     val relay: RelayManager? = cacheDir?.let { RelayManager(scope, sync, player, local, it, settings.map { s -> s.shareFiles }) }
     private val locator = MediaLocator(local, servers) { name -> relay?.find(name) }.apply { preferredServer = initial.preferredServer }
-    val playlist = PlaylistController(scope, sync, player, mediaSource, local, locator, relay, settingsStore).apply {
+    val playlist = PlaylistController(scope, sync, player, mediaSource, local, locator, relay, settingsStore, shares).apply {
         confirmUntrustedCertificate = { host ->
             securityPrompts.ask("certificate:${host.lowercase()}", SecurityQuestions.untrustedCertificate(host)) != SecurityAnswer.CANCEL
         }

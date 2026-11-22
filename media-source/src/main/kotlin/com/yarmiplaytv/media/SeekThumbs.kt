@@ -83,6 +83,37 @@ sealed interface StoredSeekFrames {
 /** A subtitle file next to a video, or one a server already lists as external. */
 data class ExternalSubtitle(val url: String, val title: String, val language: String?)
 
+/**
+ * Names in [folderNames] that are subtitles for [videoName].
+ * Text sidecars use [sidecarMatches]. A VobSub index is included only together with its `.sub`.
+ * The `.sub` of that pair is omitted, because the player opens the index and finds the bitmap beside it.
+ * A `.sub` with no index is kept as a text subtitle.
+ */
+fun subtitleSiblings(videoName: String, folderNames: Collection<String>): List<String> {
+    val lowerNames = folderNames.associateBy { it.lowercase() }
+    fun paired(name: String, extension: String): Boolean {
+        val stem = name.lowercase().substringBeforeLast('.')
+        return lowerNames.containsKey("$stem.$extension")
+    }
+    return folderNames.filter { name ->
+        val extension = name.substringAfterLast('.', "").lowercase()
+        when (extension) {
+            "idx" -> paired(name, "sub") && stemBelongsTo(videoName, name)
+            "sub" -> !paired(name, "idx") && stemBelongsTo(videoName, name)
+            else -> sidecarMatches(videoName, name)
+        }
+    }
+}
+
+private fun stemBelongsTo(videoName: String, subtitleName: String): Boolean {
+    val videoStem = videoName.substringBeforeLast('.').lowercase()
+    val stem = subtitleName.substringBeforeLast('.').lowercase()
+    if (stem == videoStem) return true
+    val lang = stem.substringAfterLast('.', "")
+    val base = stem.substringBeforeLast('.')
+    return base == videoStem && lang.isNotEmpty() && lang.length <= 8 && lang.all { it.isLetter() }
+}
+
 /** [subtitleName] belongs beside [videoName]: the same name, or that name plus one language tag. */
 fun sidecarMatches(videoName: String, subtitleName: String): Boolean {
     val ext = subtitleName.substringAfterLast('.', "").lowercase()

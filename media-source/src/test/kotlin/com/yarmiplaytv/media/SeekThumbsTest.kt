@@ -51,6 +51,12 @@ class SeekThumbsTest {
         assertEquals(true, sidecarMatches("Episode.mkv", "episode.en.ass"))
         assertEquals(false, sidecarMatches("Episode.mkv", "Episode.extra.en.srt"))
         assertEquals(false, sidecarMatches("Episode.mkv", "Other.srt"))
+        assertEquals(
+            listOf("Episode.srt", "Episode.idx"),
+            subtitleSiblings("Episode.mkv", listOf("Episode.srt", "Episode.idx", "Episode.sub", "Notes.idx", "Lone.sub")),
+        )
+        assertEquals(emptyList<String>(), subtitleSiblings("Episode.mkv", listOf("Episode.idx", "Lone.sub")))
+        assertEquals(listOf("Episode.sub"), subtitleSiblings("Episode.mkv", listOf("Episode.sub", "Other.idx")))
         assertEquals("en", sidecarLanguage("Episode.en.srt"))
         assertNull(sidecarLanguage("Episode.srt"))
         assertEquals("b", preferredSidecar(

@@ -51,9 +51,16 @@ abstract class LocalLibrary(
     }
 
     fun addFolder(uri: String) {
-        onFolderAdded(uri)
-        if (_folders.value.any { it.uri == uri }) return
-        _folders.value = _folders.value + folderOf(uri)
+        addFolders(listOf(uri))
+    }
+
+    /** Adds every folder that is not already saved, then indexes once. */
+    fun addFolders(uris: Collection<String>) {
+        val known = _folders.value.map { it.uri }.toSet()
+        val extra = uris.filter { it.isNotBlank() && it !in known }
+        extra.forEach(::onFolderAdded)
+        if (extra.isEmpty()) return
+        _folders.value = _folders.value + extra.map(::folderOf)
         persistAndRefresh()
     }
 

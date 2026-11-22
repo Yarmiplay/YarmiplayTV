@@ -10,10 +10,11 @@ import com.yarmiplaytv.Logger
 import com.yarmiplaytv.data.SettingsStore
 import com.yarmiplaytv.media.ExternalSubtitle
 import com.yarmiplaytv.media.sidecarLanguage
-import com.yarmiplaytv.media.sidecarMatches
+import com.yarmiplaytv.media.subtitleSiblings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.io.IOException
 import java.nio.channels.FileChannel
 
@@ -35,6 +36,7 @@ class SafLocalLibrary(
     }
 
     override fun onFolderAdded(uri: String) {
+        if (Uri.parse(uri).scheme == "file") return
         runCatching { resolver.takePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             .onFailure { Logger.w(TAG, "No persistable permission for $uri", it) }
     }
@@ -70,6 +72,7 @@ class SafLocalLibrary(
 
     override fun scan(folder: LocalFolder): List<LocalFile> {
         val treeUri = Uri.parse(folder.uri)
+        if (treeUri.scheme == "file") return scanFiles(folder, treeUri.path?.let(::File))
         val out = ArrayList<LocalFile>()
         // Document id and its path under the media folder.
         val pending = ArrayDeque<Pair<String, String>>().apply { add(DocumentsContract.getTreeDocumentId(treeUri) to "") }
@@ -105,11 +108,12 @@ class SafLocalLibrary(
     override fun sidecarsBeside(videoUri: String, videoName: String): List<ExternalSubtitle> {
         val parsed = Uri.parse(videoUri)
         if (parsed.scheme == "file") {
-            val dir = parsed.path?.let { java.io.File(it).parentFile } ?: return emptyList()
-            return dir.listFiles()?.mapNotNull { file ->
-                if (!file.isFile || !sidecarMatches(videoName, file.name)) return@mapNotNull null
+            val dir = parsed.path?.let { File(it).parentFile } ?: return emptyList()
+            val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+            val chosen = subtitleSiblings(videoName, files.map { it.name }).toSet()
+            return files.filter { it.name in chosen }.map { file ->
                 ExternalSubtitle(Uri.fromFile(file).toString(), file.name.substringBeforeLast('.'), sidecarLanguage(file.name))
-            }.orEmpty()
+            }
         }
         if (!videoUri.contains("/tree/")) return emptyList()
         val docId = runCatching { DocumentsContract.getDocumentId(parsed) }.getOrNull() ?: return emptyList()
@@ -117,20 +121,89 @@ class SafLocalLibrary(
         val parentId = if ('/' in docId) docId.substringBeforeLast('/') else treeId
         if (parentId == docId) return emptyList()
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(parsed, parentId)
-        val out = mutableListOf<ExternalSubtitle>()
+        val rows = mutableListOf<Pair<String, String>>()
         resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
             while (c.moveToNext()) {
                 val name = c.getString(1) ?: continue
-                if (!sidecarMatches(videoName, name)) continue
-                val uri = DocumentsContract.buildDocumentUriUsingTree(parsed, c.getString(0)).toString()
-                out += ExternalSubtitle(uri, name.substringBeforeLast('.'), sidecarLanguage(name))
+                rows += c.getString(0) to name
+            }
+        }
+        val chosen = subtitleSiblings(videoName, rows.map { it.second }).toSet()
+        return rows.filter { it.second in chosen }.mapNotNull { (id, name) ->
+            val uri = DocumentsContract.buildDocumentUriUsingTree(parsed, id).toString()
+            val playable = if (name.endsWith(".idx", ignoreCase = true)) stageVobSub(uri, name, rows, parsed) else uri
+            playable?.let { ExternalSubtitle(it, name.substringBeforeLast('.'), sidecarLanguage(name)) }
+        }
+    }
+
+    /**
+     * mpv opens one file descriptor for a content subtitle, so a VobSub index would not see its `.sub`.
+     * Both files are copied next to each other in the cache and the index path is what gets loaded.
+     */
+    private fun stageVobSub(idxUri: String, idxName: String, rows: List<Pair<String, String>>, tree: Uri): String? {
+        val subName = idxName.dropLast(3) + "sub"
+        val subId = rows.firstOrNull { it.second.equals(subName, ignoreCase = true) }?.first ?: return null
+        val subUri = DocumentsContract.buildDocumentUriUsingTree(tree, subId).toString()
+        val idxBytes = readLimited(idxUri) ?: return null
+        val subBytes = readLimited(subUri) ?: return null
+        val folder = File(app.cacheDir, "vobsub/" + Integer.toHexString((idxUri + subUri).hashCode()))
+        if (!folder.mkdirs() && !folder.isDirectory) return null
+        val idxFile = File(folder, idxName.substringAfterLast('/'))
+        val subFile = File(folder, subName.substringAfterLast('/'))
+        return runCatching {
+            idxFile.writeBytes(idxBytes)
+            subFile.writeBytes(subBytes)
+            Uri.fromFile(idxFile).toString()
+        }.getOrNull()
+    }
+
+    private fun readLimited(uri: String): ByteArray? = runCatching {
+        resolver.openInputStream(Uri.parse(uri))?.use { input ->
+            val bytes = input.readBytes()
+            if (bytes.size > MAX_VOBSUB) null else bytes
+        }
+    }.getOrNull()
+
+    private fun scanFiles(folder: LocalFolder, root: File?): List<LocalFile> {
+        if (root == null || !root.isDirectory) return emptyList()
+        val rootPath = runCatching { root.canonicalFile }.getOrNull() ?: return emptyList()
+        val out = ArrayList<LocalFile>()
+        val pending = ArrayDeque<File>()
+        pending.add(rootPath)
+        while (pending.isNotEmpty() && out.size < MAX_FILES) {
+            val dir = pending.removeFirst()
+            val children = dir.listFiles() ?: continue
+            for (child in children) {
+                if (child.name.startsWith(".")) continue
+                if (child.isDirectory) {
+                    val canonical = runCatching { child.canonicalFile }.getOrNull() ?: continue
+                    val rootPrefix = rootPath.path.trimEnd('/') + "/"
+                    if (canonical.path == rootPath.path || canonical.path.startsWith(rootPrefix)) pending.add(canonical)
+                } else if (child.isFile && LocalMatcher.isMedia(child.name, null)) {
+                    val parent = child.parentFile
+                    val directory = if (parent == null || parent == rootPath) "" else rootPath.toPath().relativize(parent.toPath()).toString().replace('\\', '/')
+                    out += LocalFile(
+                        child.name,
+                        child.length(),
+                        Uri.fromFile(child).toString(),
+                        folder.name,
+                        child.lastModified(),
+                        directory,
+                        folder.uri,
+                    )
+                }
             }
         }
         return out
     }
 
     override fun folderOf(uri: String): LocalFolder {
-        val docId = runCatching { DocumentsContract.getTreeDocumentId(Uri.parse(uri)) }.getOrDefault(uri)
+        val parsed = Uri.parse(uri)
+        if (parsed.scheme == "file") {
+            val name = parsed.path?.trimEnd('/')?.substringAfterLast('/').orEmpty().ifEmpty { "Storage" }
+            return LocalFolder(uri, name)
+        }
+        val docId = runCatching { DocumentsContract.getTreeDocumentId(parsed) }.getOrDefault(uri)
         val path = docId.substringAfter(':', docId)
         val name = path.trimEnd('/').substringAfterLast('/').ifEmpty { docId.substringBefore(':').let { if (it == "primary") "Internal storage" else it } }
         return LocalFolder(uri, name)
@@ -138,5 +211,6 @@ class SafLocalLibrary(
 
     private companion object {
         const val TAG = "LocalLibrary"
+        const val MAX_VOBSUB = 32 * 1024 * 1024
     }
 }
