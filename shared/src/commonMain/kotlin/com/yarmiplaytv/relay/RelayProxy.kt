@@ -111,7 +111,7 @@ class RelayProxy(private val scope: CoroutineScope) {
             Logger.d(TAG, "$what: serving $start-$end of $size")
             val head = buildString {
                 append(if (partial) "HTTP/1.1 206 Partial Content\r\n" else "HTTP/1.1 200 OK\r\n")
-                append("Content-Type: ${growing?.contentType ?: contentType(transfer.name)}\r\n")
+                append("Content-Type: ${headerValue(growing?.contentType ?: contentType(transfer.name))}\r\n")
                 append("Accept-Ranges: bytes\r\n")
                 append("Content-Length: ${end - start + 1}\r\n")
                 if (partial) append("Content-Range: bytes $start-$end/$size\r\n")
@@ -159,7 +159,7 @@ class RelayProxy(private val scope: CoroutineScope) {
     private suspend fun servePlaylist(out: OutputStream, head: Boolean, index: GrowingIndex) {
         val snap = if (index.state.value.segments.isEmpty()) index.awaitFirstSegment(FIRST_SEGMENT_WAIT_MS) else index.refresh()
         if (snap.segments.isEmpty()) return respond(out, 503, "Service Unavailable")
-        val body = GrowingPlaylist.render(snap, "$MEDIA.${GrowingPlaylist.extension(index.contentType)}").toByteArray(Charsets.UTF_8)
+        val body = index.playlist.render(snap,"$MEDIA.${GrowingPlaylist.extension(index.contentType)}").toByteArray(Charsets.UTF_8)
         val headers = "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.apple.mpegurl\r\nContent-Length: ${body.size}\r\n" +
             "Cache-Control: no-store\r\nConnection: close\r\n\r\n"
         out.write(headers.toByteArray(Charsets.US_ASCII))
@@ -210,6 +210,9 @@ class RelayProxy(private val scope: CoroutineScope) {
             } ?: return null
             return range.takeIf { it.first in 0 until size && it.second >= it.first }
         }
+
+        /** [value] without line breaks or other control characters, which would end the header and start another. */
+        internal fun headerValue(value: String): String = value.filterNot { it < ' ' || it == '\u007f' }
 
         private fun contentType(name: String): String {
             return when (name.substringAfterLast('.', "").lowercase()) {

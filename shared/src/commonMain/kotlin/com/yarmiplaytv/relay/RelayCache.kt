@@ -113,10 +113,13 @@ class CachedFile internal constructor(
     /** Bumped whenever a block completes, for readers waiting on data. */
     val version: StateFlow<Long> = _version.asStateFlow()
 
+    /** Bytes in complete blocks, kept as they complete: the size comes from the room, so the blocks may be many. */
+    private var completeBytes = 0L
+
     /** Bytes in complete blocks. */
     @get:Synchronized
     val cachedBytes: Long
-        get() = (0 until blockCount).sumOf { if (blocks[it]) blockLength(it) else 0L }
+        get() = completeBytes
 
     val complete: Boolean @Synchronized get() = blocks.cardinality() == blockCount
 
@@ -194,6 +197,7 @@ class CachedFile internal constructor(
     fun markComplete(index: Int) {
         if (deleted || index !in 0 until blockCount || blocks[index]) return
         blocks.set(index)
+        completeBytes += blockLength(index)
         partial.remove(index)
         partialAnnounced.remove(index)
         _version.value++

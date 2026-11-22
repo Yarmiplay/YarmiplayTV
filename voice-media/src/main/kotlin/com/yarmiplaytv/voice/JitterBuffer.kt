@@ -91,8 +91,12 @@ class VoiceJitterBuffer(
         var windowReceived: Int = 0
         var windowLost: Int = 0
 
-        /** Decoded PCM not yet played (time compression can leave a partial frame here). */
-        var pcmFifo = ShortArray(0)
+        /**
+         * Decoded PCM not yet played (time compression can leave a partial frame here): the first [pcmFifoSize]
+         * samples of [pcmFifo], which is reused (and grows when needed) instead of reallocated every tick.
+         */
+        var pcmFifo = ShortArray(frameSamples * 4)
+        var pcmFifoSize = 0
         var lastSample: Short = 0
         /** RMS of the last frame decoded from a real packet (hole detection). */
         var lastRealRms: Double = 0.0
@@ -103,22 +107,19 @@ class VoiceJitterBuffer(
 
         fun pushFifo(samples: ShortArray) {
             if (samples.isEmpty()) return
-            val next = ShortArray(pcmFifo.size + samples.size)
-            System.arraycopy(pcmFifo, 0, next, 0, pcmFifo.size)
-            System.arraycopy(samples, 0, next, pcmFifo.size, samples.size)
-            pcmFifo = next
+            val needed = pcmFifoSize + samples.size
+            if (needed > pcmFifo.size) pcmFifo = pcmFifo.copyOf(maxOf(needed, pcmFifo.size * 2))
+            System.arraycopy(samples, 0, pcmFifo, pcmFifoSize, samples.size)
+            pcmFifoSize = needed
         }
 
         /** Exactly one [frameSamples] frame; zero-pads if a short decode left the FIFO thin. */
         fun popFifoFrame(): ShortArray {
-            if (pcmFifo.size < frameSamples) {
-                val out = ShortArray(frameSamples)
-                System.arraycopy(pcmFifo, 0, out, 0, pcmFifo.size)
-                pcmFifo = ShortArray(0)
-                return out
-            }
-            val out = pcmFifo.copyOfRange(0, frameSamples)
-            pcmFifo = pcmFifo.copyOfRange(frameSamples, pcmFifo.size)
+            val out = ShortArray(frameSamples)
+            val n = min(pcmFifoSize, frameSamples)
+            System.arraycopy(pcmFifo, 0, out, 0, n)
+            System.arraycopy(pcmFifo, n, pcmFifo, 0, pcmFifoSize - n)
+            pcmFifoSize -= n
             return out
         }
 
@@ -498,13 +499,13 @@ class VoiceJitterBuffer(
      * [frameSamples] frame while keeping the remaining samples in [PeerSlot.pcmFifo].
      */
     private fun combineWithFifo(slot: PeerSlot, pcm1: ShortArray, pcm2: ShortArray): ShortArray {
-        val totalLen = slot.pcmFifo.size + pcm1.size + pcm2.size
+        val totalLen = slot.pcmFifoSize + pcm1.size + pcm2.size
         val concat = ShortArray(totalLen)
         var pos = 0
-        if (slot.pcmFifo.isNotEmpty()) {
-            System.arraycopy(slot.pcmFifo, 0, concat, 0, slot.pcmFifo.size)
-            pos += slot.pcmFifo.size
-            slot.pcmFifo = ShortArray(0)
+        if (slot.pcmFifoSize > 0) {
+            System.arraycopy(slot.pcmFifo, 0, concat, 0, slot.pcmFifoSize)
+            pos += slot.pcmFifoSize
+            slot.pcmFifoSize = 0
         }
         System.arraycopy(pcm1, 0, concat, pos, pcm1.size)
         pos += pcm1.size
