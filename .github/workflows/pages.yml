@@ -206,6 +206,25 @@ jobs:
           npm run build
           cp -r dist "$GITHUB_WORKSPACE/_site/watch"
 
+      # The apps take an update only when version.json is signed with the release key (UpdateSignature.kt holds its
+      # public half), so a site without a valid signature would offer every app nothing: fail instead.
+      - name: Sign version.json
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          PUBLIC_KEY_FILE: main/shared/src/commonMain/kotlin/com/yarmiplaytv/update/UpdateSignature.kt
+        run: |
+          if [ -z "$UPDATE_SIGNING_KEY" ]; then echo "::error::The UPDATE_SIGNING_KEY secret isn't set"; exit 1; fi
+          key="$RUNNER_TEMP/update-signing-key.pem"
+          umask 077
+          printf '%s\n' "$UPDATE_SIGNING_KEY" > "$key"
+          openssl dgst -sha256 -sign "$key" -out "$RUNNER_TEMP/version.sig" _site/version.json
+          base64 -w0 "$RUNNER_TEMP/version.sig" > _site/version.json.sig
+          # The same check the apps make, against the public key they carry.
+          grep -o '"MF[A-Za-z0-9+/=]*"' "$PUBLIC_KEY_FILE" | tr -d '"' | base64 -d > "$RUNNER_TEMP/public.der"
+          openssl pkey -pubin -inform DER -in "$RUNNER_TEMP/public.der" -out "$RUNNER_TEMP/public.pem"
+          openssl dgst -sha256 -verify "$RUNNER_TEMP/public.pem" -signature "$RUNNER_TEMP/version.sig" _site/version.json
+          rm -f "$key"
+
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site

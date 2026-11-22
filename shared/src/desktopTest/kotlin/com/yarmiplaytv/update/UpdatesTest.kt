@@ -52,7 +52,7 @@ class UpdatesTest {
     private fun manifestUrl() = server.url("/YarmiplayTV/version.json").toString()
 
     private fun updates(installer: UpdateInstaller? = null) =
-        Updates(scope, store, "1.1.0", UpdateChecker(manifestUrl())).apply {
+        Updates(scope, store, "1.1.0", UpdateChecker(manifestUrl(), signingKey = null)).apply {
             platform = "windows"
             this.installer = installer
         }
@@ -92,11 +92,67 @@ class UpdatesTest {
         assertEquals("https://tv.yarmiplay.com/YarmiplayTV.msi", update.downloadUrl)
     }
 
+    private val releaseKey = java.security.KeyPairGenerator.getInstance("EC").apply { initialize(256) }.generateKeyPair()
+
+    private fun sign(text: String, key: java.security.PrivateKey = releaseKey.private): String =
+        java.util.Base64.getEncoder().encodeToString(
+            java.security.Signature.getInstance("SHA256withECDSA").run {
+                initSign(key)
+                update(text.toByteArray())
+                sign()
+            },
+        )
+
+    @Test
+    fun `a signed manifest offers its update, and the signature is read beside it`() {
+        val body = manifest()
+        server.enqueue(MockResponse().setBody(body))
+        server.enqueue(MockResponse().setBody(sign(body)))
+        val update = runBlocking { UpdateChecker(manifestUrl(), signingKey = releaseKey.public).fetch("windows", "1.1.0") }
+        assertEquals("1.2.0", update.getOrThrow()?.version)
+        server.takeRequest()
+        assertTrue(server.takeRequest().requestUrl.toString().endsWith("/YarmiplayTV/version.json.sig"))
+    }
+
+    @Test
+    fun `an unsigned, changed or wrongly signed manifest offers nothing`() {
+        val body = manifest()
+        val other = java.security.KeyPairGenerator.getInstance("EC").apply { initialize(256) }.generateKeyPair()
+        val checker = UpdateChecker(manifestUrl(), signingKey = releaseKey.public)
+        // No .sig at all.
+        server.enqueue(MockResponse().setBody(body))
+        server.enqueue(MockResponse().setResponseCode(404))
+        // The package changed after signing (another file, another SHA-256).
+        server.enqueue(MockResponse().setBody(body.replace("\"bb\"", "\"evil\"")))
+        server.enqueue(MockResponse().setBody(sign(body)))
+        // Signed by another key.
+        server.enqueue(MockResponse().setBody(body))
+        server.enqueue(MockResponse().setBody(sign(body, other.private)))
+        // Not even base64.
+        server.enqueue(MockResponse().setBody(body))
+        server.enqueue(MockResponse().setBody("<html>"))
+        runBlocking {
+            repeat(4) {
+                val result = checker.fetch("windows", "1.1.0")
+                assertTrue("attempt $it must fail, got $result", result.isFailure)
+            }
+        }
+    }
+
+    @Test
+    fun `the release key in the app checks what openssl signs in the Pages workflow`() {
+        // `openssl dgst -sha256 -sign <release key> | base64 -w0` of this text, as pages.yml signs version.json.
+        val signed = "{\"test\":1}\n".toByteArray()
+        val signature = "MEYCIQDPhFjm1A3leVSK2OVWDlmXnLHthvFM/67bWTrPcHhEFwIhAJOD+Ex+U/aXFElNgQAgCG6Q9E5FUOGdWFjxlsGoV3H7"
+        assertTrue(UpdateSignature.verifies(signed, signature, UpdateSignature.key()))
+        assertFalse(UpdateSignature.verifies("{\"test\":2}\n".toByteArray(), signature, UpdateSignature.key()))
+    }
+
     @Test
     fun `check returns null when the page is unreachable or broken`() {
         server.enqueue(MockResponse().setResponseCode(404))
         server.enqueue(MockResponse().setBody("<html>not json</html>"))
-        val checker = UpdateChecker(manifestUrl())
+        val checker = UpdateChecker(manifestUrl(), signingKey = null)
         runBlocking {
             assertNull(checker.check("windows", "1.1.0"))
             assertNull(checker.check("windows", "1.1.0"))
@@ -107,7 +163,7 @@ class UpdatesTest {
     fun `while the app runs it looks again, so a version released meanwhile shows too`() {
         server.enqueue(MockResponse().setBody(manifest(windows = "1.1.0")))
         server.enqueue(MockResponse().setBody(manifest(windows = "1.3.0")))
-        val updates = Updates(scope, store, "1.1.0", UpdateChecker(manifestUrl()), recheckMillis = 200).apply { platform = "windows" }
+        val updates = Updates(scope, store, "1.1.0", UpdateChecker(manifestUrl(), signingKey = null), recheckMillis = 200).apply { platform = "windows" }
         updates.checkOnLaunch()
         awaitTrue { updates.state.value?.update?.version == "1.3.0" }
         assertTrue(server.requestCount >= 2)
@@ -122,7 +178,7 @@ class UpdatesTest {
             override suspend fun check() = true
             override fun update(): Boolean { updated++; return true }
         }
-        val updates = Updates(scope, store, "1.1.0", UpdateChecker(manifestUrl()), recheckMillis = 100).apply { this.store = play }
+        val updates = Updates(scope, store, "1.1.0", UpdateChecker(manifestUrl(), signingKey = null), recheckMillis = 100).apply { this.store = play }
         updates.checkOnLaunch()
         awaitTrue { updates.storeUpdate.value === play }
         assertEquals("the download page isn't asked", 0, server.requestCount)

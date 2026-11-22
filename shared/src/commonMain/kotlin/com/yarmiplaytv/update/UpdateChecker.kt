@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.security.PublicKey
 import java.util.concurrent.TimeUnit
 
 /** A newer version on the download page for one platform. */
@@ -57,6 +58,11 @@ object AppVersions {
 class UpdateChecker(
     private val manifestUrl: String = System.getProperty("yarmiplaytv.updateManifest") ?: MANIFEST_URL,
     private val http: OkHttpClient = SharedHttp.base.newBuilder().callTimeout(20, TimeUnit.SECONDS).build(),
+    /**
+     * The key version.json must be signed with ([UpdateSignature]); an unsigned or wrongly signed one offers no
+     * update. Null only in tests of the manifest itself.
+     */
+    private val signingKey: PublicKey? = UpdateSignature.key(),
 ) {
     /** The update for [platform] when the page has a newer version than [current]; null otherwise or on any error. */
     suspend fun check(platform: String, current: String): Update? = fetch(platform, current).getOrNull()
@@ -68,9 +74,10 @@ class UpdateChecker(
                 if (!response.isSuccessful) {
                     throw UpdateFailedException("check", "the download page answered HTTP ${response.code}")
                 }
-                val body = response.body?.string()
+                val body = response.body?.bytes()
                     ?: throw UpdateFailedException("check", "the download page sent an empty response")
-                parse(body, platform, current, manifestUrl)
+                signingKey?.let { checkSignature(body, it) }
+                parse(body.decodeToString(), platform, current, manifestUrl)
             }
             Result.success(update)
         } catch (e: CancellationException) {
@@ -88,6 +95,19 @@ class UpdateChecker(
         } catch (e: Exception) {
             val detail = e.message?.let(::redactUpdateText)?.takeIf { it.isNotEmpty() }
             Result.failure(UpdateFailedException("check", detail))
+        }
+    }
+
+    /** Reads `version.json.sig` beside the manifest and throws unless it's [key]'s signature of [manifest]. */
+    private fun checkSignature(manifest: ByteArray, key: PublicKey) {
+        val signature = http.newCall(Request.Builder().url("$manifestUrl.sig").build()).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw UpdateFailedException("check", "the download page's update file isn't signed (HTTP ${response.code})")
+            }
+            response.body?.string().orEmpty()
+        }
+        if (!UpdateSignature.verifies(manifest, signature, key)) {
+            throw UpdateFailedException("check", "the download page's update file isn't signed by YarmiplayTV")
         }
     }
 

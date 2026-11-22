@@ -83,16 +83,30 @@ class SettingsUiTest {
         main = Executors.newSingleThreadExecutor { Thread(it, "main") }.asCoroutineDispatcher()
         Dispatchers.setMain(main)
         storeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        // The fake download page signs its version.json as the release does, with a key of its own.
+        val siteKey = java.security.KeyPairGenerator.getInstance("EC").apply { initialize(256) }.generateKeyPair()
+        fun manifest() = """{"page": "./", "platforms": {"windows": {"version": "$offered", "file": "YarmiplayTV.msi", "sha256": "00"}}}"""
+            .toByteArray()
         site = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
             createContext("/version.json") { exchange ->
-                val body = """{"page": "./", "platforms": {"windows": {"version": "$offered", "file": "YarmiplayTV.msi", "sha256": "00"}}}"""
-                    .toByteArray()
+                val body = if (exchange.requestURI.path.endsWith(".sig")) {
+                    java.util.Base64.getEncoder().encode(
+                        java.security.Signature.getInstance("SHA256withECDSA").run {
+                            initSign(siteKey.private)
+                            update(manifest())
+                            sign()
+                        },
+                    )
+                } else {
+                    manifest()
+                }
                 exchange.sendResponseHeaders(200, body.size.toLong())
                 exchange.responseBody.use { it.write(body) }
             }
             start()
         }
         System.setProperty("yarmiplaytv.updateManifest", "http://127.0.0.1:${site.address.port}/version.json")
+        System.setProperty("yarmiplaytv.updatePublicKey", java.util.Base64.getEncoder().encodeToString(siteKey.public.encoded))
         app = container()
         app.updates.platform = "windows"
     }
@@ -100,6 +114,7 @@ class SettingsUiTest {
     @After
     fun tearDown() {
         System.clearProperty("yarmiplaytv.updateManifest")
+        System.clearProperty("yarmiplaytv.updatePublicKey")
         if (::site.isInitialized) site.stop(0)
         // Join before resetMain: an update check still on Main races and fails on macOS CI.
         if (::app.isInitialized) {
