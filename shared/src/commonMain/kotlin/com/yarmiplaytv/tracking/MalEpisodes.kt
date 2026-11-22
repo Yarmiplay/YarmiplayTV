@@ -6,13 +6,18 @@ import com.yarmiplaytv.media.EpisodeInfo
 import com.yarmiplaytv.media.MediaItem
 import com.yarmiplaytv.media.MediaItemType
 import com.yarmiplaytv.media.MediaSource
+import com.yarmiplaytv.media.Redact
 import com.yarmiplaytv.media.mal.MalAnime
 import com.yarmiplaytv.sync.episodeFromFile
 import com.yarmiplaytv.ui.shared.malInfo
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
 /** An episode of a MyAnimeList entry that's in the library: on a media server ([item]) or a file here ([localUri]). */
@@ -52,15 +57,40 @@ class MalEpisodes(
             val match = identify(info) ?: continue
             if (match.anime.id == anime.id) found += AvailableEpisode(match.episode, item.displayTitle, item = item)
         }
-        for (file in localFiles.value) {
-            val info = episodeFromFile(file.name, file.directory) ?: continue
-            if (names.none { name -> simple(info.seriesName).let { it.contains(name) || name.contains(it) } }) continue
+        val parsed = parsedLocal()
+        val candidates = withContext(Dispatchers.Default) {
+            parsed.filter { local -> names.any { name -> local.simpleSeries.contains(name) || name.contains(local.simpleSeries) } }
+        }
+        for ((file, info) in candidates) {
             val match = identify(info) ?: continue
             if (match.anime.id == anime.id) found += AvailableEpisode(match.episode, file.name, localUri = file.uri)
         }
         val episodes = found.groupBy { it.number }.map { (_, same) -> same.first() }.sortedBy { it.number }
         known[anime.id] = now() to episodes
         episodes
+    }
+
+    /** A file here that looks like an episode, with its show's name as [simple] gives it. */
+    private data class LocalEpisode(val file: LocalFile, val info: EpisodeInfo, val simpleSeries: String)
+
+    /** The local files' episodes, parsed once for each list of files (the list is replaced whenever it changes). */
+    @Volatile private var parsedFiles: Pair<List<LocalFile>, List<LocalEpisode>>? = null
+    private val parsing = Mutex()
+
+    private suspend fun parsedLocal(): List<LocalEpisode> {
+        val files = localFiles.value
+        parsedFiles?.takeIf { it.first === files }?.let { return it.second }
+        return parsing.withLock {
+            parsedFiles?.takeIf { it.first === files }?.let { return@withLock it.second }
+            val parsed = withContext(Dispatchers.Default) {
+                files.mapNotNull { file ->
+                    val info = episodeFromFile(file.name, file.directory) ?: return@mapNotNull null
+                    LocalEpisode(file, info, simple(info.seriesName))
+                }
+            }
+            parsedFiles = files to parsed
+            parsed
+        }
     }
 
     private suspend fun identify(info: EpisodeInfo) = try {
@@ -82,7 +112,7 @@ class MalEpisodes(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Logger.w(TAG, "Couldn't search for $title: ${e.message}")
+                Logger.w(TAG, "Couldn't search for $title: ${Redact.tokens(e.message)}")
                 continue
             }
             for (r in results) when (r.type) {
