@@ -1,7 +1,7 @@
 import { audioStreamToConfig, laFrameToAudioData, packetToEncodedAudioChunk } from "libavjs-webcodecs-bridge";
 import workletUrl from "./audio-worklet.ts?worker&url";
 import type { StreamInfo, TimedPacket } from "./demuxer";
-import type { LibAV } from "./libav";
+import { unsignedLowWords, type LibAV } from "./libav";
 
 /** Stereo sound at [sampleRate], starting at file time [time]. */
 export interface PcmChunk {
@@ -264,7 +264,7 @@ class WebCodecsAudio implements AudioDecoding {
   async decode(packets: TimedPacket[]) {
     if (this.decoder.state === "closed") this.decoder = this.make();
     try {
-      for (const p of packets) this.decoder.decode(packetToEncodedAudioChunk(tight(p.packet), this.stream.timeBase));
+      for (const p of packets) this.decoder.decode(packetToEncodedAudioChunk(unsignedLowWords(tight(p.packet)), this.stream.timeBase));
     } catch (e) {
       this.onError(e as Error);
     }

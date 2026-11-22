@@ -136,6 +136,8 @@ export class MediaPlayer implements PlayerAdapter {
   private stopFollowing: (() => void) | null = null;
   private generation = 0;
   private eof = false;
+  /** Whether the video decoder was told the file ended (once every held packet went in). */
+  private videoFlushed = false;
   /** File time of the file's start; positions shown count from here (MPEG-TS files start a second or so in). */
   private origin = 0;
   /** Where a seek is going, in file time; null when none is. */
@@ -277,6 +279,7 @@ export class MediaPlayer implements PlayerAdapter {
       if (generation !== this.generation) return;
 
       this.eof = false;
+      this.videoFlushed = false;
       this.origin = demuxer.startTime;
       this.wallBase = this.origin;
       this.wallStart = performance.now();
@@ -610,13 +613,20 @@ export class MediaPlayer implements PlayerAdapter {
           await this.useSoftwareAudio();
           continue;
         }
+        // Held video goes in after the file is read too: a short file is read to its end long before it plays.
+        if (!this.state.error && this.heldVideo.length && this.video && this.video.queued < MAX_QUEUED) {
+          const batch = this.heldVideo.splice(0, MAX_QUEUED - this.video.queued);
+          await this.video.decode(batch);
+        }
+        if (this.eof && !this.videoFlushed && !this.heldVideo.length) {
+          this.videoFlushed = true;
+          // Not waited for: a hardware decoder holds its last frames until the shown ones are let go, which takes
+          // playing, and the sound's checks above have to go on meanwhile.
+          this.video?.flush().catch((e: Error) => generation === this.generation && this.fail(e));
+        }
         if (this.eof || !this.demuxer || this.state.error) {
           await sleep(50);
           continue;
-        }
-        if (this.heldVideo.length && this.video && this.video.queued < MAX_QUEUED) {
-          const batch = this.heldVideo.splice(0, MAX_QUEUED - this.video.queued);
-          await this.video.decode(batch);
         }
         const audioAhead = this.output ? this.output.buffered : Infinity;
         const videoWants = !!this.video && this.frames.length < MAX_FRAMES && this.video.queued < MAX_QUEUED / 2;
@@ -631,10 +641,7 @@ export class MediaPlayer implements PlayerAdapter {
         const { packets, eof } = await this.demuxer.read(512 * 1024);
         if (generation !== this.generation || this.seekPending) continue;
         await this.route(packets);
-        if (eof) {
-          this.eof = true;
-          await this.video?.flush();
-        }
+        if (eof) this.eof = true;
       } catch (e) {
         if (generation === this.generation) this.fail(e as Error);
         return;
@@ -682,6 +689,7 @@ export class MediaPlayer implements PlayerAdapter {
     this.output?.flush(target);
     this.dropBefore = target;
     this.eof = false;
+    this.videoFlushed = false;
     // Subtitle lines that began a little before the target are read again too.
     await this.demuxer?.seek(this.subtitles ? Math.max(0, target - 1) : target);
     if (!this.videoStream && !this.audioStream) this.finishSeek();

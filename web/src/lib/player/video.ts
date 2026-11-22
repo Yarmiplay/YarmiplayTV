@@ -1,6 +1,6 @@
 import { laFrameToVideoFrame, packetToEncodedVideoChunk, videoStreamToConfig } from "libavjs-webcodecs-bridge";
 import type { StreamInfo, TimedPacket } from "./demuxer";
-import type { LibAV } from "./libav";
+import { unsignedLowWords, type LibAV } from "./libav";
 
 /** Decodes the video stream to VideoFrames: in hardware through WebCodecs when the browser can, else with FFmpeg. */
 export interface VideoDecoding {
@@ -77,7 +77,7 @@ class WebCodecsVideo implements VideoDecoding {
       for (const p of packets) {
         if (this.needKey && !p.key) continue;
         this.needKey = false;
-        this.decoder.decode(packetToEncodedVideoChunk(p.packet, this.stream.timeBase));
+        this.decoder.decode(packetToEncodedVideoChunk(unsignedLowWords(p.packet), this.stream.timeBase));
       }
     } catch (e) {
       this.onError(e as Error);

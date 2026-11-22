@@ -130,6 +130,17 @@ export async function createLibAV(): Promise<LibAV> {
   return mod.LibAV({ base: libavBase(), variant: LIBAV_VARIANT, nothreads: true });
 }
 
+/**
+ * [packet] with its timestamps' low words unsigned, for libavjs-webcodecs-bridge. libav.js gives the low word signed,
+ * and the bridge adds it to the high word times 2^32 as it is, so a negative pts (AAC's and Opus's first packet,
+ * -1024 say) became -(2^32 + 1024). Windows' AAC decoder dates all its output from the first chunk, so the whole
+ * track was dropped as 25 hours before the start and the clock never moved.
+ */
+export function unsignedLowWords<T extends { pts?: number; dts?: number; duration?: number }>(packet: T): T {
+  const fix = (lo: number | undefined) => (lo === undefined ? undefined : lo >>> 0);
+  return { ...packet, pts: fix(packet.pts), dts: fix(packet.dts), duration: fix(packet.duration) };
+}
+
 /** Seconds of a 64-bit libav timestamp split in low and high words, in a time base. */
 export function seconds(lo: number | undefined, hi: number | undefined, num: number, den: number): number | null {
   if (lo === undefined) return null;
