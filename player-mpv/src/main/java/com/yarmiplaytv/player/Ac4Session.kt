@@ -79,13 +79,13 @@ internal class Ac4Session(
             val index = ac4Index(extractor, ordinal) ?: error("the platform demuxer has no AC-4 track $ordinal")
             extractor.selectTrack(index)
             val format = extractor.getTrackFormat(index)
-            audio = openTrack(format)
-            track = audio
-            val compressed = audio.audioFormat.encoding == AudioFormat.ENCODING_AC4
-            if (!compressed) codec = decoder(format)
+            val opened = openTrack(format)
+            audio = opened.track
+            track = opened.track
+            if (!opened.compressed) codec = decoder(format)
             codec?.start()
-            jumped(extractor, codec, audio, (clock() * 1_000_000.0).toLong())
-            if (compressed) passthrough(extractor, audio) else decode(extractor, codec ?: error("no AC-4 decoder"), audio)
+            jumped(extractor, codec, opened.track, (clock() * 1_000_000.0).toLong())
+            if (opened.compressed) passthrough(extractor, opened.track) else decode(extractor, codec ?: error("no AC-4 decoder"), opened.track)
         } finally {
             runCatching { codec?.stop() }
             runCatching { codec?.release() }
@@ -97,13 +97,15 @@ internal class Ac4Session(
         }
     }
 
-    private fun openTrack(format: MediaFormat): AudioTrack {
+    private fun openTrack(format: MediaFormat): OpenedAudio {
         if (capability.direct && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            bitstream(format)?.let { return it }
+            bitstream(format)?.let { return OpenedAudio(it, compressed = true) }
         }
-        if (capability.decoder) return pcmTrack(format)
+        if (capability.decoder) return OpenedAudio(pcmTrack(format), compressed = false)
         error("this device cannot play AC-4")
     }
+
+    private class OpenedAudio(val track: AudioTrack, val compressed: Boolean)
 
     private fun bitstream(format: MediaFormat): AudioTrack? {
         val rate = integer(format, MediaFormat.KEY_SAMPLE_RATE, 48_000)
