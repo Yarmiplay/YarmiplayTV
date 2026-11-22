@@ -9,3 +9,9 @@
 -dontwarn javax.sound.sampled.**
 -dontwarn dev.onvoid.webrtc.**
 -dontwarn ai.onnxruntime.**
+
+# smbj's event bus can filter with the Java EE expression language, and its SPNEGO
+# authenticator references Kerberos. Neither is on Android, and shares here sign in
+# with a username or as a guest, which does not use those classes.
+-dontwarn javax.el.**
+-dontwarn org.ietf.jgss.**
