@@ -16,7 +16,7 @@ import java.util.Base64
 object UpdateSignature {
     /** The release key's public half (SubjectPublicKeyInfo, DER, base64). */
     private const val PUBLIC_KEY =
-        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEO4laJ1jTomsF9ISkNKirUzZ6JOSHWkEs4d4K/ToHUUyxyRORFtZsQhwOuZVh65c/kJdDZ+OSkIF3VolQfQEtVw=="
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEZ2sWkTOoxR+x5mSD4nwBGb2pTB2m+e5mvSrideR0HuSLMxMePazArdwIWKYXOtj9m0+mziTiJ6KZWTk1X7Kpvw=="
 
     /** The key updates are checked against; `-Dyarmiplaytv.updatePublicKey=` replaces it, to test against another site. */
     fun key(): PublicKey = parseKey(System.getProperty("yarmiplaytv.updatePublicKey") ?: PUBLIC_KEY)

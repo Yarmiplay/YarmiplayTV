@@ -143,7 +143,7 @@ class UpdatesTest {
     fun `the release key in the app checks what openssl signs in the Pages workflow`() {
         // `openssl dgst -sha256 -sign <release key> | base64 -w0` of this text, as pages.yml signs version.json.
         val signed = "{\"test\":1}\n".toByteArray()
-        val signature = "MEYCIQDPhFjm1A3leVSK2OVWDlmXnLHthvFM/67bWTrPcHhEFwIhAJOD+Ex+U/aXFElNgQAgCG6Q9E5FUOGdWFjxlsGoV3H7"
+        val signature = "MEQCIF38aPclYgMmltbGelFYeqbBVuwuuo+akLPc3l70k6zQAiA4h983WzQFqr9d0F/4s9abmBcBhbUAWpEVOcmeDeMdBA=="
         assertTrue(UpdateSignature.verifies(signed, signature, UpdateSignature.key()))
         assertFalse(UpdateSignature.verifies("{\"test\":2}\n".toByteArray(), signature, UpdateSignature.key()))
     }
