@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.1.7" date="2026-11-22">
+      <description>
+        <p>External subtitles beside a video play, including VobSub, and the Browse button opens the file browser. HDMI can pass multichannel audio the device reports it accepts, instead of always downmixing to stereo. USB and internal storage can be scanned, and FTP and SMB shares can be browsed and played.</p>
+      </description>
+    </release>
     <release version="3.1.6" date="2026-11-22">
       <description>
         <p>On computers, the Syncplay-style join screen's Join room and Create managed room buttons move under the checkboxes when the window is too narrow for them, instead of Join room being squeezed into a sliver.</p>

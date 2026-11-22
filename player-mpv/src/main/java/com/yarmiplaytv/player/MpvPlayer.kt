@@ -120,6 +120,13 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             setOptionString("hwdec", options.hwdec)
             setOptionString("hwdec-codecs", "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
             setOptionString("ao", "audiotrack,opensles")
+            // auto-safe (mpv's default) downmixes everything to stereo, so a 5.1 track never reaches HDMI.
+            setOptionString("audio-channels", "auto")
+            val passthrough = runCatching {
+                AndroidAudioPassthrough.mpvSpdifCodecs(AndroidAudioPassthrough.supportedEncodings(appContext))
+            }.getOrDefault(emptyList())
+            if (passthrough.isNotEmpty()) setOptionString("audio-spdif", passthrough.joinToString(","))
+            Log.i(TAG, "Audio channels follow the file; passthrough: ${passthrough.ifEmpty { listOf("off") }.joinToString()}")
             setOptionString("audio-set-media-role", "yes")
             // load() turns it on per file, with the system's certificates (see trustedCertificates).
             setOptionString("tls-verify", "no")

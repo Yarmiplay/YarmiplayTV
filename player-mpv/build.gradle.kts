@@ -102,4 +102,5 @@ dependencies {
     api(files(patchLibmpvAar))
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.core.ktx)
+    testImplementation(libs.junit)
 }

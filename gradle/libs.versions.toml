@@ -33,6 +33,7 @@ concentus = "1.0.2"
 webrtcJava = "1.0.0"
 onnxruntime = "1.20.0"
 androidDeepfilternet = "0.0.8"
+smbj = "0.13.0"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -73,6 +74,7 @@ concentus = { module = "io.github.jaredmdobson:concentus", version.ref = "concen
 webrtc-java = { module = "dev.onvoid.webrtc:webrtc-java", version.ref = "webrtcJava" }
 onnxruntime = { module = "com.microsoft.onnxruntime:onnxruntime", version.ref = "onnxruntime" }
 android-deepfilternet = { module = "io.github.kaleyravideo:android-deepfilternet", version.ref = "androidDeepfilternet" }
+smbj = { module = "com.hierynomus:smbj", version.ref = "smbj" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 lwjgl = { module = "org.lwjgl:lwjgl", version.ref = "lwjgl" }
 lwjgl-glfw = { module = "org.lwjgl:lwjgl-glfw", version.ref = "lwjgl" }
