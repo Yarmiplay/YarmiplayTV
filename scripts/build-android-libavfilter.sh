@@ -1,12 +1,12 @@
 #!/bin/bash
-# Rebuild FFmpeg 8.1 libavfilter (the same version as dev.jdtech.mpv:libmpv:1.0.0)
+# Rebuild FFmpeg 9.0.2 libavfilter (the same version as dev.jdtech.mpv:libmpv:1.1.0)
 # with the desktop visualizer graph's filters. Everything else stays the upstream .so files.
 # The libraries this produces are committed at player-mpv/src/main/prebuilt-libavfilter/<abi>/.
-# Needs the FFmpeg 8.1 source in /tmp/ffmpeg-8.1, NDK r29 in /tmp/ndk/android-ndk-r29, and the
-# unpacked 1.0.0 AAR jni/ tree in /tmp/libmpv-aar/unz/jni (the symbol check links against it).
+# Needs the FFmpeg 9.0.2 source in /tmp/ffmpeg-9.0.2, NDK r29 in /tmp/ndk/android-ndk-r29, and the
+# unpacked 1.1.0 AAR jni/ tree in /tmp/libmpv-aar/unz/jni (the symbol check links against it).
 set -euo pipefail
 
-SRC=/tmp/ffmpeg-8.1
+SRC=/tmp/ffmpeg-9.0.2
 NDK_BIN=/tmp/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/bin
 OUT=/tmp/lavfi-out
 AAR_JNI=/tmp/libmpv-aar/unz/jni

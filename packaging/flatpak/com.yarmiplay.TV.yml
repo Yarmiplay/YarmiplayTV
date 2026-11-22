@@ -53,8 +53,8 @@ modules:
       - /share/ffmpeg
     sources:
       - type: archive
-        url: https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz
-        sha256: 8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+        url: https://ffmpeg.org/releases/ffmpeg-9.1.tar.xz
+        sha256: 1a4d394ae63d190a526cd052eb4415c156b5c5e2df37efab41a7de0b8fde2433
 
   - name: libass
     config-opts:
@@ -64,13 +64,14 @@ modules:
         url: https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz
         sha256: 2dca25c0e0c837ddf00b52011b3f82cac1e4ddd3ad018227806b0c2288864acc
 
+  # mpv 0.42 requires libplacebo 7.387.0 or newer.
   - name: libplacebo
     buildsystem: meson
     sources:
       - type: git
         url: https://github.com/haasn/libplacebo.git
-        tag: v7.360.1
-        commit: cee9b076f2c63104ccfd497fa79c39a867293ec4
+        tag: v7.387.0
+        commit: 275f7dea27924cdd34ab2e6c20e448b6bc4fab65
 
   - name: libmpv
     buildsystem: meson
@@ -86,8 +87,8 @@ modules:
       - /share
     sources:
       - type: archive
-        url: https://github.com/mpv-player/mpv/archive/v0.41.0.tar.gz
-        sha256: ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209
+        url: https://github.com/mpv-player/mpv/archive/v0.42.0.tar.gz
+        sha256: bcfebbfa2b65a6d88dc97ea18117831072373e38b5785a2afb874ed4df5070dd
 
   - name: yarmiplaytv
     buildsystem: simple

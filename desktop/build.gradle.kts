@@ -93,7 +93,7 @@ tasks.test {
     testLogging { events("passed", "skipped", "failed") }
 }
 
-val appVersion = "3.1.8"
+val appVersion = "3.1.9"
 val libmpvDir = project(":player-mpv-desktop").layout.buildDirectory.dir("libmpv")
 
 /** Draws the app logo (the two play triangles of ic_logo.xml on the banner gradient) as png, ico and icns. */
@@ -325,7 +325,9 @@ compose.desktop {
     }
 }
 
-// Ubuntu 24.04 / Debian 12 ship libmpv2, Ubuntu 22.04 libmpv1. Free args go into jpackage's @argfile as they
+// The .deb uses the distro's libmpv (apt), the same client API through mpv 0.42.0. Ubuntu 24.04 and
+// Debian 12 ship libmpv2, Ubuntu 22.04 libmpv1; a floor of 0.42 would make the package uninstallable
+// there. macOS resolves Homebrew's mpv the same way. Free args go into jpackage's @argfile as they
 // are, so a value with spaces needs its own quotes.
 tasks.withType<AbstractJPackageTask>().configureEach {
     if (targetFormat == TargetFormat.Deb) freeArgs.addAll("--linux-package-deps", "\"libmpv2 | libmpv1\"")

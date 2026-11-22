@@ -35,10 +35,11 @@ dependencies {
 // macOS and Linux use the system libmpv (Homebrew / distro package). On Windows we bundle a pinned
 // shinchiro build; its .7z uses the BCJ2 filter, which only 7-Zip itself can unpack.
 
+// 20261111 is mpv 0.42.0-38-gbcde6b93c and FFmpeg N-128766-gcd4e96eb3 (libavcodec 63.28.100).
 object Libmpv {
-    const val TAG = "20261001"
-    const val ARCHIVE = "mpv-dev-x86_64-20261001-git-3186d369f9.7z"
-    const val ARCHIVE_SHA256 = "DE0AA24A39E27B07D9F663616F8D09C91586C7328D8C33FBFBC8E3888C35D89C"
+    const val TAG = "20261111"
+    const val ARCHIVE = "mpv-dev-x86_64-20261111-git-bcde6b93cc.7z"
+    const val ARCHIVE_SHA256 = "273C079B11EA5575822F972756F4C9A71149A5C10130353ABEB8586738938452"
     const val ARCHIVE_URL = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/$TAG/$ARCHIVE"
     const val SEVEN_ZIP_URL = "https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe"
     const val SEVEN_ZIP_SHA256 = "AD4C82FADCBDF93C03B4FC440F300509C7D60C5C2F4D183E35D9D70D6957037D"
