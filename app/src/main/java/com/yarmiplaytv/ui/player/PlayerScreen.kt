@@ -571,22 +571,63 @@ internal fun statusCardTakesRemote(status: PlaylistStatus, nothingLoaded: Boolea
 internal fun backDismissesStatusCard(status: PlaylistStatus): Boolean =
     status is PlaylistStatus.NotFound || status is PlaylistStatus.Failed || status is PlaylistStatus.Untrusted
 
-/** The card's buttons, kept together so the remote can't walk off them onto the video. */
+/** One height for every status-card button, with or without an icon, so they match. */
+private val StatusButtonHeight = 52.dp
+
+/**
+ * The card's buttons, kept together so the remote can't walk off them onto the video.
+ * [expand] gives every button the same width (and [StatusButtonHeight]) across the card.
+ */
 @Composable
-private fun StatusActions(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
+private fun StatusActions(
+    modifier: Modifier = Modifier,
+    expand: Boolean = false,
+    content: @Composable RowScope.() -> Unit,
+) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
+            .then(if (expand) Modifier.fillMaxWidth() else Modifier)
             .focusProperties { onExit = { cancelFocusChange() } }
             .focusGroup(),
         content = content,
     )
 }
 
+/** A status-card action: one line, a shared height, and the card's width when [expand] is set. */
+@Composable
+private fun RowScope.StatusButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    primary: Boolean = false,
+    expand: Boolean = false,
+) {
+    ActionButton(
+        text,
+        onClick,
+        modifier
+            .then(if (expand) Modifier.weight(1f) else Modifier)
+            .height(StatusButtonHeight),
+        icon = icon,
+        primary = primary,
+        singleLine = true,
+    )
+}
+
 /** Looks for the room's file again: the media folders first, then the media servers. */
 @Composable
-private fun SearchAgainButton(container: AppContainer, modifier: Modifier = Modifier) =
-    ActionButton("Search again", { container.playlist.searchAgain() }, modifier.testTag("search_again"), icon = Icons.Filled.Refresh, primary = true)
+private fun RowScope.SearchAgainButton(container: AppContainer, modifier: Modifier = Modifier, expand: Boolean = false) =
+    StatusButton(
+        "Search again",
+        { container.playlist.searchAgain() },
+        modifier.testTag("search_again"),
+        icon = Icons.Filled.Refresh,
+        primary = true,
+        expand = expand,
+    )
 
 @Composable
 private fun CenterStatus(
@@ -623,17 +664,17 @@ private fun CenterStatus(
                         Text(if (notFound) "Couldn't find this file" else "Couldn't play this file", style = MaterialTheme.typography.headlineSmall)
                         Text(file, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(reason, color = AppColors.TextDim)
-                        StatusActions(Modifier.padding(top = 8.dp)) {
+                        StatusActions(Modifier.padding(top = 8.dp), expand = true) {
                             if (notFound) {
-                                SearchAgainButton(container, Modifier.focusRequester(focus))
+                                SearchAgainButton(container, Modifier.focusRequester(focus), expand = true)
                             }
                             if (mediaSource != null) {
-                                ActionButton("Pick manually", { nav.push(Screen.Search(pickFor = file)) }, icon = Icons.Filled.Search, primary = !notFound)
+                                StatusButton("Pick manually", { nav.push(Screen.Search(pickFor = file)) }, icon = Icons.Filled.Search, primary = !notFound, expand = true)
                             } else {
-                                ActionButton("Connect Jellyfin", { nav.push(Screen.JellyfinLogin) }, primary = !notFound)
-                                ActionButton("Connect Plex", { nav.push(Screen.PlexLogin) })
+                                StatusButton("Connect Jellyfin", { nav.push(Screen.JellyfinLogin) }, primary = !notFound, expand = true)
+                                StatusButton("Connect Plex", { nav.push(Screen.PlexLogin) }, expand = true)
                             }
-                            ActionButton("Dismiss", { container.playlist.dismissStatus() }, if (notFound) Modifier else Modifier.focusRequester(focus))
+                            StatusButton("Dismiss", { container.playlist.dismissStatus() }, if (notFound) Modifier else Modifier.focusRequester(focus), expand = true)
                         }
                     }
                 }
@@ -645,9 +686,9 @@ private fun CenterStatus(
                         Text("Open this link?", style = MaterialTheme.typography.headlineSmall)
                         Text(status.url, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text("The room picked it, but it isn't on one of your trusted domains.", color = AppColors.TextDim)
-                        StatusActions(Modifier.padding(top = 8.dp)) {
-                            ActionButton("Open", { container.playlist.playUntrusted() }, primary = true)
-                            ActionButton("Dismiss", { container.playlist.dismissStatus() }, Modifier.focusRequester(focus))
+                        StatusActions(Modifier.padding(top = 8.dp), expand = true) {
+                            StatusButton("Open", { container.playlist.playUntrusted() }, primary = true, expand = true)
+                            StatusButton("Dismiss", { container.playlist.dismissStatus() }, Modifier.focusRequester(focus), expand = true)
                         }
                     }
                 }
@@ -677,14 +718,14 @@ private fun CenterStatus(
                     }
                     StatusActions {
                         if (entry != null) SearchAgainButton(container, Modifier.focusRequester(focus))
-                        ActionButton(
+                        StatusButton(
                             "Browse",
                             { nav.popTo(Screen.Home) },
                             if (entry == null) Modifier.focusRequester(focus) else Modifier,
                             icon = Icons.Filled.Home,
                             primary = entry == null,
                         )
-                        ActionButton("Exit", { container.exitApp() }, icon = Icons.AutoMirrored.Filled.Logout)
+                        StatusButton("Exit", { container.exitApp() }, icon = Icons.AutoMirrored.Filled.Logout)
                     }
                 }
             }

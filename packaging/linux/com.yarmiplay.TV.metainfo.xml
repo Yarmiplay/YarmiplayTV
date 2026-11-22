@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.1.3" date="2026-11-22">
+      <description>
+        <p>When a playlist file can't be found, the phone shows that card in the middle of the screen instead of over the video, and its buttons stay on one line. On a TV the card's buttons match in size.</p>
+      </description>
+    </release>
     <release version="3.1.2" date="2026-11-21">
       <description>
         <p>Windows shows the app as YarmiplayTV again in lists such as Open with, instead of its tagline. Updating fixes it on PCs that kept the old name from an earlier version.</p>
