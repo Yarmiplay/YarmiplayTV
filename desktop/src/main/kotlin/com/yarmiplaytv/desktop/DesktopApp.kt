@@ -42,6 +42,7 @@ import com.yarmiplaytv.defaultSyncplayName
 import com.yarmiplaytv.device.FileDeviceKeyStore
 import com.yarmiplaytv.local.FileLocalLibrary
 import com.yarmiplaytv.local.FrameGrabber
+import com.yarmiplaytv.media.SharedHttp
 import com.yarmiplaytv.playback.PlaybackAction
 import com.yarmiplaytv.player.desktop.DesktopMpvOptions
 import com.yarmiplaytv.player.desktop.DesktopMpvPlayer
@@ -74,7 +75,6 @@ import javax.swing.JOptionPane
 import javax.swing.SwingUtilities
 import kotlin.system.exitProcess
 import kotlinx.coroutines.runBlocking
-import okhttp3.OkHttpClient
 
 internal fun runApp(args: List<String>) {
     val configDir = DesktopPaths.portableDir() ?: DesktopPaths.migrateLegacyConfig()
@@ -89,7 +89,7 @@ internal fun runApp(args: List<String>) {
     val launchUpdate = runBlocking {
         updateBeforeLaunch(store.current(), installer, failedInstall, LaunchUpdateWindow()) {
             val platform = (updateSource as UpdateSource.DownloadPage).platform
-            UpdateChecker(http = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).build())
+            UpdateChecker(http = SharedHttp.base.newBuilder().callTimeout(5, TimeUnit.SECONDS).build())
                 .fetch(platform, APP_VERSION)
                 .getOrThrow()
         }

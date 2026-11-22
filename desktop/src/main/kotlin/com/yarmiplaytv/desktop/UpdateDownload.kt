@@ -1,5 +1,6 @@
 package com.yarmiplaytv.desktop
 
+import com.yarmiplaytv.media.SharedHttp
 import com.yarmiplaytv.update.Update
 import com.yarmiplaytv.update.UpdateFailedException
 import com.yarmiplaytv.update.UpdateFailure
@@ -158,7 +159,7 @@ internal fun writeUpdateStatus(message: String?) {
     file.writeText(message.trim())
 }
 
-internal val updateHttp: OkHttpClient by lazy { OkHttpClient.Builder().readTimeout(60, TimeUnit.SECONDS).build() }
+internal val updateHttp: OkHttpClient by lazy { SharedHttp.base.newBuilder().readTimeout(60, TimeUnit.SECONDS).build() }
 
 /**
  * Downloads [update]'s package to [target] and checks it against the download page's SHA-256: a package without
