@@ -138,6 +138,25 @@ class FileLocalLibraryTest {
     }
 
     @Test
+    fun `a burst of changes is indexed once it settles, or after the longest wait`() {
+        val settle = ChangeSettle(startMs = 0, settleMs = 1_500, maxWaitMs = 10_000)
+        assertEquals(1_500L, settle.waitMs(0))
+        assertEquals(500L, settle.waitMs(1_000))
+        settle.changed(1_000)
+        assertEquals("another change restarts the quiet period", 1_500L, settle.waitMs(1_000))
+        assertEquals(0L, settle.waitMs(2_500))
+
+        // A file that keeps growing: a change every 200 ms never goes quiet, so the cap decides.
+        val growing = ChangeSettle(startMs = 0, settleMs = 1_500, maxWaitMs = 10_000)
+        var now = 0L
+        while (growing.waitMs(now) > 0) {
+            now += 200
+            growing.changed(now)
+        }
+        assertEquals(10_000L, now)
+    }
+
+    @Test
     fun `new and deleted videos are picked up while watching`() {
         val lib = library(listOf(FileLocalLibrary.uriOf(media.toPath())), watch = true)
         awaitTrue { lib.files.value.size == 2 && !lib.indexing.value }

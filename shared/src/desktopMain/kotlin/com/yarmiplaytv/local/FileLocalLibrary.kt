@@ -8,7 +8,6 @@ import com.yarmiplaytv.media.sidecarMatches
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
@@ -32,6 +31,7 @@ import java.nio.file.WatchKey
 import java.nio.file.WatchService
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 /**
  * Media folders on the local file system (file:// URIs), indexed with a directory walk and
@@ -138,14 +138,17 @@ class FileLocalLibrary(
         try {
             while (currentCoroutineContext().isActive) {
                 val first = runInterruptible { w.take() }
-                var changed = drain(first)
-                // Copies and extractions arrive as bursts of events; index once they settle.
-                delay(SETTLE_MS)
+                if (!drain(first)) continue
+                // Copies and extractions arrive as bursts of events (a growing file sends one after another): index
+                // once they have been quiet for a moment, or after MAX_WAIT_MS of steady changes at the latest.
+                val settle = ChangeSettle(System.nanoTime() / 1_000_000, SETTLE_MS, MAX_WAIT_MS)
                 while (true) {
-                    val next = w.poll() ?: break
-                    changed = drain(next) || changed
+                    val wait = settle.waitMs(System.nanoTime() / 1_000_000)
+                    if (wait <= 0) break
+                    val next = runInterruptible { w.poll(wait, TimeUnit.MILLISECONDS) } ?: continue
+                    if (drain(next)) settle.changed(System.nanoTime() / 1_000_000)
                 }
-                if (changed) refresh()
+                refresh()
             }
         } catch (_: ClosedWatchServiceException) {
         }
@@ -170,10 +173,27 @@ class FileLocalLibrary(
     companion object {
         private const val TAG = "LocalLibrary"
         private const val SETTLE_MS = 1_500L
+        private const val MAX_WAIT_MS = 10_000L
         private const val MAX_NEIGHBOURS = 500L
 
         fun uriOf(path: Path): String = path.toAbsolutePath().normalize().toUri().toString()
 
         fun pathOf(uri: String): Path = if (uri.startsWith("file:")) Paths.get(URI(uri)) else Paths.get(uri)
     }
+}
+
+/**
+ * When to index after a change seen at [startMs]: once no further change has come for [settleMs], but no later than
+ * [maxWaitMs] after the first one. Times are milliseconds on one monotonic clock.
+ */
+internal class ChangeSettle(private val startMs: Long, private val settleMs: Long, private val maxWaitMs: Long) {
+    private var lastMs = startMs
+
+    /** Another relevant change at [nowMs] restarts the quiet period. */
+    fun changed(nowMs: Long) {
+        lastMs = nowMs
+    }
+
+    /** How long to keep waiting for more changes at [nowMs]; 0 or less means index now. */
+    fun waitMs(nowMs: Long): Long = minOf(lastMs + settleMs, startMs + maxWaitMs) - nowMs
 }
