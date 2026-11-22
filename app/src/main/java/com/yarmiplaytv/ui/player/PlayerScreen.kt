@@ -137,6 +137,7 @@ import com.yarmiplaytv.ui.mobile.ChapterMarks
 import com.yarmiplaytv.ui.mobile.SkipMarks
 import com.yarmiplaytv.ui.mobile.chapterBoundaries
 import com.yarmiplaytv.ui.mobile.chapterTitleAt
+import com.yarmiplaytv.ui.mobile.collectStateWithoutClock
 import com.yarmiplaytv.ui.mobile.LocalTvPlaybackControls
 import com.yarmiplaytv.ui.mobile.pictureInPictureLabel
 import com.yarmiplaytv.ui.mobile.rememberPictureInPicture
@@ -147,6 +148,7 @@ import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.OnVideo
 import com.yarmiplaytv.ui.theme.onVideoLabel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filter
 
 internal enum class PanelKind(val label: String, val icon: ImageVector) {
@@ -169,7 +171,8 @@ internal sealed interface Overlay {
 @Composable
 fun PlayerScreen(container: AppContainer, nav: Navigator) {
     val player = container.player as SurfacePlayer
-    val state by player.state.collectAsStateWithLifecycle()
+    // Without the clock: what shows the position follows it in its own composable, so ticks don't rebuild the screen.
+    val state by player.collectStateWithoutClock()
     val tracks by player.tracks.collectAsStateWithLifecycle()
     val room by container.sync.room.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
@@ -192,7 +195,6 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
     val micFocus = remember { FocusRequester() }
     val panelFocus = remember { FocusRequester() }
     val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
-    val voiceLevel by container.voice.captureLevel.collectAsStateWithLifecycle()
     val tabFocus = remember { PanelKind.entries.associateWith { FocusRequester() } }
     val focusManager = LocalFocusManager.current
     val panels = PanelKind.entries.filter { it != PanelKind.MAL || container.mal.client.configured }
@@ -440,21 +442,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 val flashVisible = remember(seekFlash) { mutableStateOf(seekFlash != 0L) }
                 LaunchedEffect(seekFlash) { delay(1800); flashVisible.value = false }
                 if (overlay == Overlay.Hidden && flashVisible.value && state.duration > 0) {
-                    Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 64.dp, vertical = 40.dp)) {
-                        ProgressBar(player.currentPosition(), state.duration, state.cacheSeconds, segments = skipSegments, chapters = state.chapters)
-                        val seekChapter = chapterTitleAt(chapterBoundaries(state.chapters, state.duration), player.currentPosition())
-                        Text(
-                            buildString {
-                                append(formatClock(player.currentPosition()))
-                                if (seekChapter != null) append("  ").append(seekChapter)
-                                append(" / ").append(formatClock(state.duration))
-                            },
-                            color = OnVideo.Text,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 8.dp).onVideoLabel(),
-                        )
-                    }
+                    SeekFlash(player, skipSegments)
                 }
 
                 if (overlay == Overlay.Controls) {
@@ -464,7 +452,6 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                         controlsFocus = controlsFocus,
                         micFocus = micFocus,
                         voiceUi = voiceUi,
-                        voiceLevel = voiceLevel,
                         pip = pip,
                         onTogglePause = ::togglePause,
                         onSeek = ::seekBy,
@@ -477,7 +464,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                         playerStreamingLabel(container, controlsVisible = true, state.fileLoaded),
                         Modifier.align(Alignment.TopEnd).padding(32.dp),
                         micLive = voiceUi.micControlLive(),
-                        micLevel = voiceLevel,
+                        micLevel = container.voice.captureLevel,
                     )
                 }
 
@@ -769,7 +756,6 @@ private fun ControlsBar(
     controlsFocus: FocusRequester,
     micFocus: FocusRequester,
     voiceUi: com.yarmiplaytv.voice.VoiceUiState,
-    voiceLevel: Float = 0f,
     pip: PictureInPicture,
     onTogglePause: () -> Unit,
     onSeek: (Double) -> Unit,
@@ -778,7 +764,7 @@ private fun ControlsBar(
     onHome: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val state by container.player.state.collectAsStateWithLifecycle()
+    val state by container.player.collectStateWithoutClock()
     val room by container.sync.room.collectAsStateWithLifecycle()
     val inRoom = room.status == ConnectionStatus.CONNECTED
     // Re-read the extrapolated position a few times a second while visible.
@@ -847,7 +833,7 @@ private fun ControlsBar(
                 )
             }
             // Every remote can focus this and press OK — primary TV talk control (tap toggle).
-            TvMicButton(voiceUi, onToggle = { container.voice.toggleTalk() }, focusRequester = micFocus, onVideo = true, level = voiceLevel)
+            LiveTvMicButton(container, voiceUi, micFocus)
             if (voiceUi.showVoiceMembershipButton) {
                 val inVoice = voiceUi.voiceMembershipIsLeave
                 IconAction(
@@ -955,7 +941,7 @@ private fun RoomChip(
     streaming: String? = null,
     modifier: Modifier = Modifier,
     micLive: Boolean = false,
-    micLevel: Float = 0f,
+    micLevel: StateFlow<Float>,
 ) {
     val text: String
     val color: Color
@@ -981,16 +967,52 @@ private fun RoomChip(
         } else {
             VideoChip(text, color, Modifier)
         }
-        if (micLive) {
-            com.yarmiplaytv.voice.MicActivityRing(
-                level = micLevel,
-                active = true,
-                color = AppColors.Ready,
-                modifier = Modifier.padding(start = 8.dp),
-                size = 18.dp,
-                stroke = 1.5.dp,
-            )
-        }
+        if (micLive) LiveMicRing(micLevel)
+    }
+}
+
+/** The chip's mic ring, following the capture meter without recomposing the chip. */
+@Composable
+private fun LiveMicRing(micLevel: StateFlow<Float>) {
+    val level by micLevel.collectAsStateWithLifecycle()
+    com.yarmiplaytv.voice.MicActivityRing(
+        level = level,
+        active = true,
+        color = AppColors.Ready,
+        modifier = Modifier.padding(start = 8.dp),
+        size = 18.dp,
+        stroke = 1.5.dp,
+    )
+}
+
+/** The bar's Mic button, following the capture meter without recomposing the bar. */
+@Composable
+private fun LiveTvMicButton(container: AppContainer, voiceUi: com.yarmiplaytv.voice.VoiceUiState, micFocus: FocusRequester) {
+    val level by container.voice.captureLevel.collectAsStateWithLifecycle()
+    TvMicButton(voiceUi, onToggle = { container.voice.toggleTalk() }, focusRequester = micFocus, onVideo = true, level = level)
+}
+
+/**
+ * The clock shown for a moment after a seek. It shows where playback is now, so it follows the player's full state
+ * (clock included) here rather than rebuilding the whole screen on each tick.
+ */
+@Composable
+private fun BoxScope.SeekFlash(player: SurfacePlayer, skipSegments: List<SkipSegment>) {
+    val state by player.state.collectAsStateWithLifecycle()
+    Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 64.dp, vertical = 40.dp)) {
+        ProgressBar(player.currentPosition(), state.duration, state.cacheSeconds, segments = skipSegments, chapters = state.chapters)
+        val seekChapter = chapterTitleAt(chapterBoundaries(state.chapters, state.duration), player.currentPosition())
+        Text(
+            buildString {
+                append(formatClock(player.currentPosition()))
+                if (seekChapter != null) append("  ").append(seekChapter)
+                append(" / ").append(formatClock(state.duration))
+            },
+            color = OnVideo.Text,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 8.dp).onVideoLabel(),
+        )
     }
 }
 

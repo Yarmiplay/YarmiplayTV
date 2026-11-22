@@ -113,7 +113,7 @@ class AndroidAudioDecoder(context: Context) : AudioDecoder {
             resampler?.flush() ?: return null
             return firstUs / 1e6
         } catch (e: Exception) {
-            Logger.w(TAG, "Can't read the sound of $uri: ${e.message}")
+            Logger.w(TAG, com.yarmiplaytv.player.MediaUrls.redact("Can't read the sound of $uri: ${e.message}"))
             return null
         } finally {
             runCatching { codec?.stop() }

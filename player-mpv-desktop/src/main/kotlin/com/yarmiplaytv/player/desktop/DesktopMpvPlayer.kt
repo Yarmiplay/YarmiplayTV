@@ -8,6 +8,7 @@ import com.yarmiplaytv.player.commit
 import com.yarmiplaytv.player.Chapter
 import com.yarmiplaytv.player.EmbeddedMedia
 import com.yarmiplaytv.player.MediaTags
+import com.yarmiplaytv.player.MediaUrls
 import com.yarmiplaytv.player.PlaybackState
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.PlayerEvent
@@ -178,8 +179,16 @@ class DesktopMpvPlayer(
         core.command("loadfile", target, "replace")
     }
 
-    /** file:// URIs become plain paths; a missing local file is reported as such instead of mpv's generic error. */
+    /**
+     * file:// URIs become plain paths; a missing local file is reported as such instead of mpv's generic error.
+     * mpv's internal protocols (fdclose://, edl:// and the like) are never taken from the caller: such an address
+     * fails to open like any other unplayable one.
+     */
     private fun mpvTarget(url: String): String {
+        if (MediaUrls.isInternalProtocol(url)) {
+            System.err.println("mpv: refusing mpv-internal address ${MediaUrls.redact(url)}")
+            return MediaUrls.REFUSED_TARGET
+        }
         if (!url.startsWith("file:")) return StreamRoutes.route(url)
         val path = runCatching { Paths.get(URI(url)).toString() }.getOrElse { return url }
         if (!File(path).isFile) openError = "File not found"
@@ -457,7 +466,7 @@ class DesktopMpvPlayer(
         if (event.text == lastLogLine && now - lastLogAt < 1_000_000_000L) return
         lastLogLine = event.text
         lastLogAt = now
-        System.err.println("mpv [${event.prefix}] ${event.level}: ${event.text}")
+        System.err.println(MediaUrls.redact("mpv [${event.prefix}] ${event.level}: ${event.text}"))
         _events.tryEmit(PlayerEvent.Log(event.prefix, level, event.text))
         if (event.prefix == "cplayer" && level <= LOG_ERROR) _events.tryEmit(PlayerEvent.EndFile(currentUrl, event.text))
         if (level <= LOG_ERROR && _state.value.audioVisualizer && lavfiRejected(event.text)) giveUpOnVisualizer()

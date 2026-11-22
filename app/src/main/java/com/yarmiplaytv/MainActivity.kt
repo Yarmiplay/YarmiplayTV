@@ -115,12 +115,11 @@ class MainActivity : ComponentActivity() {
 
         if (hasPip && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             lifecycleScope.launch {
-                combine(container.settings, container.player.state) { settings, playerState ->
-                    settings.playback.pictureInPicture to playerState
-                }.collect { (pipEnabled, state) ->
-                    val isVideo = playbackShowsVideo(state)
-                    val auto = pipEnabled && isVideo
-                    val params = pipParams(this@MainActivity, state.displayAspect, state.paused, autoEnter = auto)
+                // Only what the parameters are made of: the player's clock ticks several times a second.
+                combine(container.settings, container.player.state) { settings, state ->
+                    PipShape(settings.playback.pictureInPicture && playbackShowsVideo(state), state.displayAspect, state.paused)
+                }.distinctUntilChanged().collect { shape ->
+                    val params = pipParams(this@MainActivity, shape.aspect, shape.paused, autoEnter = shape.auto)
                     runCatching { setPictureInPictureParams(params) }
                 }
             }
@@ -230,16 +229,26 @@ class MainActivity : ComponentActivity() {
     /**
      * `am start -n com.yarmiplaytv/.MainActivity --es url <stream>` or a VIEW intent plays a URL directly;
      * content:// URIs (e.g. "Open with" from a file manager) play as local files.
+     * Any app can send these, so a file in this app's own storage is ignored, and only stream addresses play.
      */
     private fun handleIntent(intent: Intent?) {
         val data = intent?.data?.takeIf { intent.action == Intent.ACTION_VIEW }
         if (data != null && (data.scheme == "content" || data.scheme == "file")) {
+            if (data.scheme == "file" && IntentMedia.isPrivateFile(data.path, privateDirs())) return
             container.playlist.playLocal(data.toString(), inRoom = false)
             return
         }
         val url = intent?.getStringExtra("url") ?: data?.toString()
-        if (!url.isNullOrBlank()) container.playlist.playUrl(url)
+        if (!url.isNullOrBlank() && IntentMedia.isStreamUrl(url)) container.playlist.playUrl(url)
     }
+
+    /** This app's own storage: files, cache, no_backup, databases (and their device-protected twin). */
+    private fun privateDirs(): List<String> = listOfNotNull(
+        applicationInfo.dataDir,
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) applicationInfo.deviceProtectedDataDir else null,
+    )
+
+    private data class PipShape(val auto: Boolean, val aspect: Double, val paused: Boolean)
 
     companion object {
         var activeActivity: MainActivity? = null
