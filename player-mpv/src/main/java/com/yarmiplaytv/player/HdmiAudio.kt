@@ -9,7 +9,8 @@ import android.os.Build
 
 /**
  * Which compressed audio the device says it can take, mapped to mpv's `audio-spdif` names.
- * mpv wraps those codecs as IEC 61937. AC-4 is not one of the names stock mpv accepts, so it is left out.
+ * mpv wraps those codecs as IEC 61937. AC-4 is not one of the names stock mpv accepts, so it is left out
+ * here and played by [Ac4Bridge] when the device itself can take it.
  */
 internal object HdmiAudio {
     fun codecsFor(encodings: Set<Int>): List<String> {
