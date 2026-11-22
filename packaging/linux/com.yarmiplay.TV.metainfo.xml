@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.1.6" date="2026-11-22">
+      <description>
+        <p>On computers, the Syncplay-style join screen's Join room and Create managed room buttons move under the checkboxes when the window is too narrow for them, instead of Join room being squeezed into a sliver.</p>
+      </description>
+    </release>
     <release version="3.1.5" date="2026-11-22">
       <description>
         <p>On computers, Syncplay-style windows (Settings &gt; Appearance): a join screen like Syncplay's with Auto-join and a video to play once joined, then the room in one window (chat, who's playing what, the shared playlist and I'm ready to watch) and the player in a window of its own. Everything else stays a menu away, and View &gt; Switch to the regular view goes back.</p>
