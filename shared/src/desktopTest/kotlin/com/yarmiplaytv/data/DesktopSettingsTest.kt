@@ -149,6 +149,28 @@ class DesktopSettingsTest {
     }
 
     @Test
+    fun `the settings folder and file are the owner's alone on macOS and Linux`() {
+        val posix = java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix")
+        val fresh = File(tmp.root, "fresh/YarmiplayTV")
+        val freshFile = File(fresh, "settings.preferences_pb")
+        makeSettingsPrivate(fresh, freshFile)
+        assertTrue(fresh.isDirectory)
+        org.junit.Assume.assumeTrue("POSIX permissions only", posix)
+        fun perms(f: File) = java.nio.file.attribute.PosixFilePermissions.toString(java.nio.file.Files.getPosixFilePermissions(f.toPath()))
+        assertEquals("rwx------", perms(fresh))
+
+        // An install from before: a 755 folder and a 644 file.
+        val old = tmp.newFolder("old")
+        val oldFile = File(old, "settings.preferences_pb").apply { writeText("x") }
+        java.nio.file.Files.setPosixFilePermissions(old.toPath(), java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"))
+        java.nio.file.Files.setPosixFilePermissions(oldFile.toPath(), java.nio.file.attribute.PosixFilePermissions.fromString("rw-r--r--"))
+        makeSettingsPrivate(old, oldFile)
+        assertEquals("rwx------", perms(old))
+        assertEquals("rw-------", perms(oldFile))
+        assertEquals("x", oldFile.readText())
+    }
+
+    @Test
     fun `device id is generated once`() = runBlocking {
         val store = desktopSettingsStore(tmp.newFolder("ids"))
         assertEquals(store.deviceId(), store.deviceId())
