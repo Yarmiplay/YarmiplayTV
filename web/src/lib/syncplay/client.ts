@@ -4,7 +4,7 @@ import { md5Hex } from "./hash";
 import * as ManagedRooms from "./managedRooms";
 import { Constants, defaultSyncSettings, formatTime, systemClock, type Clock, type FileInfo, type PlayerAdapter, type SyncSettings } from "./models";
 import { PingService } from "./ping";
-import { firstOpen, LAN_HEAD_START_MS, openWebSocket, type Route, type Transport, type TransportFactory } from "./transport";
+import { firstOpen, LAN_HEAD_START_MS, openWebSocket, UNCONFIRMED_LAN_DELAY_MS, type Route, type Transport, type TransportFactory } from "./transport";
 import {
   allOff,
   emptyYarmiplayInfo,
@@ -49,6 +49,12 @@ export interface SyncplayConfig {
   requestAccess?: boolean;
   /** The server's LAN name (its certificate covers it too), tried after a moment, for routers that don't loop back. */
   lanName?: string | null;
+  /**
+   * Whether the server itself named [lanName] over its public name (saved by this app). A browser can only check a
+   * certificate against the name it dials, so a name from anywhere else (a join link) could be anyone's server: it's
+   * tried only when the public name can't be reached, isn't saved, and gets no saved operator password.
+   */
+  lanConfirmed?: boolean;
 }
 
 export type ConnectionStatus = "DISCONNECTED" | "CONNECTING" | "CONNECTED" | "RECONNECTING";
@@ -235,6 +241,8 @@ export class SyncplayClient {
 
   private pendingCreatePassword: string | null = null;
   private identifiedRoom: string | null = null;
+  /** Connected through a LAN name the server hasn't confirmed: no saved secrets go there, and nothing it says is kept. */
+  private unconfirmedRoute = false;
   private readonly sentPasswords = new Map<string, string>();
 
   /** A saved operator password for a managed room (the full `+name:HASH`), sent once after joining it. */
@@ -473,7 +481,7 @@ export class SyncplayClient {
     const routes: Route[] = [{ host, port: this.config.port, delayMs: 0, atHome: false }];
     const lan = this.config.lanName?.trim();
     if (lan && this.config.useTls && lan.toLowerCase() !== host.toLowerCase()) {
-      routes.push({ host: lan, port: this.config.port, delayMs: LAN_HEAD_START_MS, atHome: true });
+      routes.push({ host: lan, port: this.config.port, delayMs: this.config.lanConfirmed ? LAN_HEAD_START_MS : UNCONFIRMED_LAN_DELAY_MS, atHome: true });
     }
     const opened = await firstOpen(routes, this.config.useTls, this.transportFactory);
     if (this.stopped) {
@@ -485,6 +493,7 @@ export class SyncplayClient {
     }
     const { route, transport } = opened;
     this.transport = transport;
+    this.unconfirmedRoute = route.atHome && !this.config.lanConfirmed;
     this.lastMessageTime = this.clock();
     this.update({ route: { host: route.host, atHome: route.atHome } });
     this.log(`Connected to ${route.host}:${route.port}${route.atHome ? " at home" : ""}`);
@@ -802,7 +811,7 @@ export class SyncplayClient {
   /** After joining (or rejoining) a managed room, sends its saved password once, like the official client. */
   private identifyWithSavedPassword() {
     const s = this._state;
-    if (!this.logged || !inManagedRoom(s) || this.identifiedRoom === s.room || isOperator(s)) return;
+    if (!this.logged || !inManagedRoom(s) || this.identifiedRoom === s.room || isOperator(s) || this.unconfirmedRoute) return;
     const password = this.savedOperatorPassword(s.room);
     if (!password?.trim()) return;
     this.identifiedRoom = s.room;
@@ -1099,9 +1108,10 @@ export class SyncplayClient {
   /** The server's LAN name, for the next connection's race, when its certificate is the one we connect to. */
   private rememberLanName() {
     const tls = this._state.yarmiplay.tls;
-    if (!tls?.lanName) return;
-    if (tls.name.toLowerCase() === this.config.host.trim().toLowerCase() && tls.lanName !== this.config.lanName) {
-      this.config = { ...this.config, lanName: tls.lanName };
+    // Only a server reached by its public name (or by a LAN name it confirmed before) is believed about its LAN name.
+    if (!tls?.lanName || this.unconfirmedRoute) return;
+    if (tls.name.toLowerCase() === this.config.host.trim().toLowerCase() && (tls.lanName !== this.config.lanName || !this.config.lanConfirmed)) {
+      this.config = { ...this.config, lanName: tls.lanName, lanConfirmed: true };
     }
   }
 

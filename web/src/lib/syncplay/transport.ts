@@ -119,6 +119,11 @@ export interface Route {
 
 /** How long the public name has to answer before the LAN name is tried too (as LanRoutes.kt's head start). */
 export const LAN_HEAD_START_MS = 300;
+/**
+ * How long a LAN name the server hasn't confirmed (one from a join link) waits for the public name: it's tried only
+ * when the public name can't be reached, as at home behind a router that doesn't loop back.
+ */
+export const UNCONFIRMED_LAN_DELAY_MS = 4000;
 
 /**
  * Opens [routes], each after its delay, and returns the first that opens (the others are closed). The public name

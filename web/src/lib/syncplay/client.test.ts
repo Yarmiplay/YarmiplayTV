@@ -419,6 +419,59 @@ describe("SyncplayClient", () => {
     await eventually("sent again", () => sets(second).some(([k]) => k === "controllerAuth"));
   });
 
+  describe("a LAN name the server hasn't confirmed (a join link's)", () => {
+    function lanClient(lanConfirmed: boolean, publicAnswers: boolean) {
+      transports = [];
+      events = [];
+      const dialed: string[] = [];
+      const factory: TransportFactory = async (host) => {
+        dialed.push(host);
+        if (host === "yarmi.example" && !publicAnswers) throw new Error("no loopback");
+        const t = new ScriptedTransport();
+        transports.push(t);
+        return t;
+      };
+      const c = new SyncplayClient(
+        { host: "yarmi.example", port: 8999, username: "ana", room: managed, useTls: true, deviceAuth: null, lanName: "lan.example", lanConfirmed },
+        new StillPlayer(),
+        undefined,
+        () => Date.now() / 1000,
+        factory,
+      );
+      c.savedOperatorPassword = () => "ab-123-456";
+      c.start();
+      clients.push(c);
+      return { c, dialed };
+    }
+
+    it("isn't raced while the public name answers", async () => {
+      const { c, dialed } = lanClient(false, true);
+      await connect(c, hello({ room: managed, managedRooms: true }));
+      await new Promise((r) => setTimeout(r, 400));
+      expect(dialed).toEqual(["yarmi.example"]);
+      expect(c.state.route).toEqual({ host: "yarmi.example", atHome: false });
+    });
+
+    it("is tried when the public name can't be reached, without the saved operator password", async () => {
+      const { c } = lanClient(false, false);
+      const t = await eventually("the LAN connection", () => transports[0], 6000);
+      await eventually("hello sent", () => t.sent.length > 0);
+      t.receive(hello({ room: managed, managedRooms: true }));
+      await eventually("connected", () => c.state.status === "CONNECTED");
+      expect(c.state.route).toEqual({ host: "lan.example", atHome: true });
+      expect(sets(t).some(([k]) => k === "controllerAuth")).toBe(false);
+    }, 10_000);
+
+    it("a confirmed one still gets its head start and the saved password", async () => {
+      const { c } = lanClient(true, false);
+      const t = await eventually("the LAN connection", () => transports[0], 1000);
+      await eventually("hello sent", () => t.sent.length > 0);
+      t.receive(hello({ room: managed, managedRooms: true }));
+      await eventually("connected", () => c.state.status === "CONNECTED");
+      expect(sets(t).filter(([k]) => k === "controllerAuth").map(([, v]) => v.password)).toEqual(["AB-123-456"]);
+    });
+  });
+
   it("without managedRooms in the server's Hello nothing is sent", async () => {
     const c = client({ deviceAuth: null });
     const t = await connect(c, hello({ managedRooms: null }));

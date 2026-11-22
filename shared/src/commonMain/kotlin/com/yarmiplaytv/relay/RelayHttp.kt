@@ -1,6 +1,7 @@
 package com.yarmiplaytv.relay
 
 import com.yarmiplaytv.media.LanHosts
+import com.yarmiplaytv.media.SharedHttp
 import com.yarmiplaytv.syncplay.ServerTlsFormat
 import com.yarmiplaytv.syncplay.YarmiplaySession
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -17,7 +18,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /** HTTP to the Syncplay server's relay: the server ends a read when no data arrived for 60 s. */
-internal fun relayHttpClient(): OkHttpClient = OkHttpClient.Builder()
+internal fun relayHttpClient(): OkHttpClient = SharedHttp.base.newBuilder()
     .dns(SessionDns)
     .connectTimeout(10, TimeUnit.SECONDS)
     .readTimeout(75, TimeUnit.SECONDS)

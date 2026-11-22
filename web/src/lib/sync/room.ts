@@ -264,6 +264,8 @@ export class RoomSession {
       appVersion: this.appVersion,
       requestAccess: options.requestAccess ?? true,
       lanName: options.lanName ?? saved?.lanName ?? null,
+      // A saved room's LAN name came from the server; one from a join link is only a hint until the server names it.
+      lanConfirmed: sameLanName(options.lanName ?? saved?.lanName ?? null, saved?.lanName ?? null),
     };
     const client = new SyncplayClient(config, this.player, this.settings.sync);
     client.savedOperatorPassword = (r) => Settings.roomPassword(`${this.server}/${r}`);
@@ -446,7 +448,8 @@ export class RoomSession {
   private recordVisit(room: string) {
     const join = this.lastJoin;
     if (!join) return;
-    const lanName = this.client?.config.lanName ?? null;
+    // Only a LAN name the server confirmed is kept: one from a join link could send the next join anywhere.
+    const lanName = this.client?.config.lanConfirmed ? (this.client.config.lanName ?? null) : null;
     const visit = SavedRooms.room({
       host: join.profile.host.trim(),
       port: join.profile.port,
@@ -1126,4 +1129,9 @@ function urlNowPlaying(url: string): NowPlaying {
     remote: true,
     open: () => HttpSource.open(url),
   };
+}
+
+/** Whether [lan] is the LAN name the saved room already has (so it came from the server), ignoring case. */
+function sameLanName(lan: string | null, saved: string | null): boolean {
+  return !!lan && !!saved && lan.trim().toLowerCase() === saved.trim().toLowerCase();
 }
