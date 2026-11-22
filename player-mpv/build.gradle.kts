@@ -63,6 +63,7 @@ abstract class PatchLibmpvAarTask : DefaultTask() {
                 check(text.contains("$name\u0000")) { "$file does not contain the $name filter" }
             }
         }
+        val metadata = "META-INF/com/android/build/gradle/aar-metadata.properties"
         val replaced = HashSet<String>()
         ZipFile(upstreamAar.get().asFile).use { zip ->
             ZipOutputStream(FileOutputStream(out)).use { output ->
@@ -73,11 +74,19 @@ abstract class PatchLibmpvAarTask : DefaultTask() {
                     val next = ZipEntry(entry.name)
                     next.time = entry.time
                     output.putNextEntry(next)
-                    if (replacement != null) {
-                        replaced += entry.name
-                        replacement.inputStream().use { it.copyTo(output) }
-                    } else {
-                        zip.getInputStream(entry).use { it.copyTo(output) }
+                    when {
+                        replacement != null -> {
+                            replaced += entry.name
+                            replacement.inputStream().use { it.copyTo(output) }
+                        }
+                        // 1.1.0 was compiled with SDK 37. Its Java API is Context and Surface, so the app
+                        // stays on compileSdk 36; only the recorded floor is lowered.
+                        entry.name == metadata -> {
+                            val text = zip.getInputStream(entry).bufferedReader().use { it.readText() }
+                            check(text.contains("minCompileSdk=37")) { "libmpv no longer asks for compileSdk 37" }
+                            output.write(text.replace("minCompileSdk=37", "minCompileSdk=36").toByteArray())
+                        }
+                        else -> zip.getInputStream(entry).use { it.copyTo(output) }
                     }
                     output.closeEntry()
                 }
