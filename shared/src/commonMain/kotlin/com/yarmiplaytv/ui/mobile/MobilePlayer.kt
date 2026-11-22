@@ -89,6 +89,7 @@ import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.key.Key
@@ -150,6 +151,12 @@ private enum class PlayerSheet(val label: String, val icon: ImageVector) {
     MAL("MyAnimeList", Icons.Filled.Bookmarks),
 }
 
+/**
+ * True in the desktop's Syncplay-style player window: the room, chat and playlist are in the other window, so the
+ * player leaves out their buttons and side panel.
+ */
+val LocalRoomElsewhere = staticCompositionLocalOf { false }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
@@ -162,6 +169,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     val settings by container.settings.collectAsStateWithLifecycle()
     val step = settings.playback.seekStepSeconds.toDouble()
     val inRoom = room.status == ConnectionStatus.CONNECTED
+    val roomElsewhere = LocalRoomElsewhere.current
 
     var controls by remember { mutableStateOf(true) }
     var interaction by remember { mutableLongStateOf(0L) }
@@ -229,7 +237,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
             else -> null
         }
         // Side panel is desktop-landscape only; phone/tablet and portrait always use the modal sheet.
-        val useDesktopSidePanel = container.deviceKind == DeviceKind.DESKTOP && !portraitLayout
+        val useDesktopSidePanel = container.deviceKind == DeviceKind.DESKTOP && !portraitLayout && !roomElsewhere
         if (tab == null || !useDesktopSidePanel || !toggleRoomSidePanel(tab)) sheet = kind
     }
     fun openMenus() = openSheet(lastSheet)
@@ -340,7 +348,12 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    IconButton(nav::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
+                                    // A player window of its own has nothing to go back to.
+                                    if (roomElsewhere) {
+                                        Spacer(Modifier.width(12.dp))
+                                    } else {
+                                        IconButton(nav::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
+                                    }
                                     if (isPortrait) {
                                         Spacer(Modifier.weight(1f))
                                     } else {
@@ -730,9 +743,11 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                                 Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = AppColors.Text)
                                             }
                                         } else {
-                                            SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist", tint = AppColors.Text) { openSheet(PlayerSheet.PLAYLIST) }
-                                            SheetButton(Icons.Filled.Groups, "Room", tint = AppColors.Text) { openSheet(PlayerSheet.ROOM) }
-                                            SheetButton(Icons.Filled.Forum, "Chat", tint = AppColors.Text) { openSheet(PlayerSheet.CHAT) }
+                                            if (!roomElsewhere) {
+                                                SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist", tint = AppColors.Text) { openSheet(PlayerSheet.PLAYLIST) }
+                                                SheetButton(Icons.Filled.Groups, "Room", tint = AppColors.Text) { openSheet(PlayerSheet.ROOM) }
+                                                SheetButton(Icons.Filled.Forum, "Chat", tint = AppColors.Text) { openSheet(PlayerSheet.CHAT) }
+                                            }
                                             SheetButton(Icons.Filled.Audiotrack, "Audio", tint = AppColors.Text) { openSheet(PlayerSheet.AUDIO) }
                                             SheetButton(Icons.Filled.Subtitles, "Subtitles", tint = AppColors.Text) { openSheet(PlayerSheet.SUBTITLES) }
                                             SheetButton(Icons.Filled.Tune, "Video", tint = AppColors.Text) { openSheet(PlayerSheet.VIDEO) }
@@ -743,7 +758,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                             }
                         }
                     }
-                } else {
+                } else if (!roomElsewhere) {
                     RoomSidePanel(container)
                 }
             },
@@ -913,9 +928,12 @@ private fun BottomControls(
                     Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = Color.White)
                 }
             } else {
-                SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist") { onSheet(PlayerSheet.PLAYLIST) }
-                SheetButton(Icons.Filled.Groups, "Room") { onSheet(PlayerSheet.ROOM) }
-                SheetButton(Icons.Filled.Forum, "Chat") { onSheet(PlayerSheet.CHAT) }
+                // The Syncplay-style room window has these; its player window leaves them out.
+                if (!LocalRoomElsewhere.current) {
+                    SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist") { onSheet(PlayerSheet.PLAYLIST) }
+                    SheetButton(Icons.Filled.Groups, "Room") { onSheet(PlayerSheet.ROOM) }
+                    SheetButton(Icons.Filled.Forum, "Chat") { onSheet(PlayerSheet.CHAT) }
+                }
                 SheetButton(Icons.Filled.Audiotrack, "Audio") { onSheet(PlayerSheet.AUDIO) }
                 SheetButton(Icons.Filled.Subtitles, "Subtitles") { onSheet(PlayerSheet.SUBTITLES) }
                 SheetButton(Icons.Filled.Tune, "Video") { onSheet(PlayerSheet.VIDEO) }

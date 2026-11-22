@@ -140,6 +140,30 @@ in turns it on again when you join it.
 **Ready**: everyone marks themselves ready before the video starts. By default you're ready when a playlist
 entry has loaded; Settings > Syncing changes when you're ready and what happens when you unpause.
 
+### Syncplay-style windows (computers)
+
+If you're used to Syncplay, turn on **Settings > Appearance > Syncplay-style windows**. The app then works like
+Syncplay with mpv, in its own colours:
+
+- It starts on a **Join a room** screen: the server address (`syncplay.pl:8999`, or pick one from its list), a
+  server password if there is one, your name and the room, plus **Auto-join** (join that room as soon as the app
+  starts, skipping this screen) and a video to play once you've joined. **Show more settings** puts the settings
+  categories beside it; **Enable shared playlists** is at the bottom.
+- In a room, the window has the chat on the left and, on the right, who's playing what (each person's ready
+  state, file size, length and file name; right-click someone to block them, mute their voice or, as an operator,
+  mark them ready), the shared playlist, switching rooms, and **I'm ready to watch!** across the bottom. Dropping
+  videos on this window adds them to the playlist.
+- The join screen's room list keeps your saved and recent rooms: the star saves or renames one, the cross forgets
+  it. **Create managed room** is beside **Join room**.
+- The player opens in a window of its own, without the room, chat and playlist buttons (they're in the room
+  window). Dropping a video on it plays it. Closing it pauses and hides it; **Playback > Show the player window**
+  (or playing anything) brings it back.
+- The menus along the top open files, the library and search, control playback, turn skipping openings and
+  endings on or off, open **Room details, voice and managed rooms** (voice volumes, operator passwords, creating a
+  managed room) and the settings, and **View > Switch to the regular view** goes back to the usual layout. The
+  library, search and settings open inside the room window, with a way back to the room.
+- Minimizing the player window while a video plays opens picture-in-picture, as in the regular view.
+
 ## The shared playlist
 
 Add videos from your library, your files or a link. Each entry shows its whole file name, on as many lines as it
@@ -408,7 +432,7 @@ a computer, a wide tablet or a TV, the categories are on the left and the chosen
   (light or dark as your device is set, changing with it). Everything takes the new colours at once, the player's panels and
   sheets included; what's written straight on the video (its title, the times, hints) stays white on see-through
   black, so it reads on a bright picture too. On Windows the window's title bar follows; on a Mac it does after
-  restarting the app.
+  restarting the app. On a computer, **Syncplay-style windows** is here too (see below).
 - **Updates:** checking for and installing new versions.
 - **About:** the version, what's new, this manual, the website, privacy, the community rules, the source code,
   reporting a problem, and open-source licenses. On a TV, these links show a QR code to open on your phone.

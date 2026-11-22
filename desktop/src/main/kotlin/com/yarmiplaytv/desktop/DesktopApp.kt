@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +51,8 @@ import com.yarmiplaytv.player.desktop.MpvFrameGrabber
 import com.yarmiplaytv.player.desktop.MpvUnavailableException
 import com.yarmiplaytv.player.desktop.VideoSurface
 import com.yarmiplaytv.screenshot.FolderScreenshotStore
+import com.yarmiplaytv.ui.mobile.ClassicRoomWindow
+import com.yarmiplaytv.ui.mobile.ClassicWindows
 import com.yarmiplaytv.ui.mobile.DesktopBack
 import com.yarmiplaytv.ui.mobile.DesktopDialogs
 import com.yarmiplaytv.ui.mobile.DesktopPip
@@ -74,6 +77,7 @@ import java.util.concurrent.TimeUnit
 import javax.swing.JOptionPane
 import javax.swing.SwingUtilities
 import kotlin.system.exitProcess
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 internal fun runApp(args: List<String>) {
@@ -238,6 +242,58 @@ internal fun openFiles(container: AppContainer, files: List<File>, addToPlaylist
     if (container.sync.isActive && videos.size > 1) container.playlist.addLocalFilesToRoomPlaylist(videos.drop(1))
 }
 
+/** The app's own keys that share mpv's table, and mpv's actions; false when the key did nothing. */
+private fun performShortcut(container: AppContainer, action: PlaybackAction, togglePip: () -> Unit): Boolean = when (action) {
+    PlaybackAction.SkipSegment -> {
+        if (container.skips.prompt.value == null) false else {
+            container.skips.skip()
+            true
+        }
+    }
+    PlaybackAction.FocusChat -> {
+        if (container.settings.value.classicMode) ClassicWindows.focusChat() else DesktopRoomPanel.focusChat()
+        true
+    }
+    PlaybackAction.TogglePip -> {
+        togglePip()
+        true
+    }
+    PlaybackAction.ToggleMic -> {
+        if (!container.voice.ui.value.showMicButton) {
+            false
+        } else {
+            container.voice.toggleMic()
+            true
+        }
+    }
+    else -> container.playback.perform(action)
+}
+
+/**
+ * Files dropped on a window: videos play (or go to the room's playlist when [toPlaylist] says so), folders stand for
+ * the videos in them, and subtitle files go with the video dropped with them or the one playing.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+internal fun fileDrop(container: AppContainer, toPlaylist: () -> Boolean): DragAndDropTarget = object : DragAndDropTarget {
+    override fun onDrop(event: DragAndDropEvent): Boolean {
+        val files = (event.dragData() as? DragData.FilesList)?.readFiles().orEmpty()
+            .mapNotNull { runCatching { Paths.get(URI(it)).toFile() }.getOrNull() }
+        val (videos, subs) = splitDropped(files)
+        val playingWith = videos.flatMap { DesktopDialogs.videosIn(it.toPath()) }.firstOrNull()
+        val sidecars = subs.map { file ->
+            com.yarmiplaytv.media.ExternalSubtitle(
+                FileLocalLibrary.uriOf(file.toPath()),
+                file.nameWithoutExtension,
+                com.yarmiplaytv.media.sidecarLanguage(file.name),
+            )
+        }
+        if (playingWith != null) container.playlist.rememberSidecars(FileLocalLibrary.uriOf(playingWith), sidecars)
+        openFiles(container, videos, addToPlaylist = toPlaylist())
+        if (playingWith == null) sidecars.forEach { container.playlist.addExternalSubtitle(it.url, it.title, it.language) }
+        return files.isNotEmpty()
+    }
+}
+
 @OptIn(ExperimentalComposeUiApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: File) {
@@ -256,58 +312,42 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
         if (on) setPip(false)
         fullscreen.set(on)
     }
+    val settings by container.settings.collectAsState()
+    val classic = settings.classicMode
+    /** The Syncplay-style player window's full screen, while that window is open. */
+    var playerFullscreen by remember { mutableStateOf<Fullscreen?>(null) }
     val shortcuts = remember {
         object : ShortcutTarget {
-            override val isFullscreen get() = fullscreen.isFullscreen
-            override fun setFullscreen(on: Boolean) = applyFullscreen(on)
-            override fun back() = DesktopBack.dispatch()
-            override val player get() = DesktopPlayerInput.input?.value
-            override fun perform(action: PlaybackAction): Boolean = when (action) {
-                PlaybackAction.SkipSegment -> {
-                    if (container.skips.prompt.value == null) false else {
-                        container.skips.skip()
-                        true
-                    }
-                }
-                PlaybackAction.FocusChat -> {
-                    DesktopRoomPanel.focusChat()
-                    true
-                }
-                PlaybackAction.TogglePip -> {
-                    setPip(!DesktopPip.open)
-                    true
-                }
-                PlaybackAction.ToggleMic -> {
-                    if (!container.voice.ui.value.showMicButton) {
-                        false
-                    } else {
-                        container.voice.toggleMic()
-                        true
-                    }
-                }
-                else -> container.playback.perform(action)
+            // In the Syncplay-style windows, this window is the room's: F goes to the player window.
+            override val isFullscreen get() = if (container.settings.value.classicMode) false else fullscreen.isFullscreen
+            override fun setFullscreen(on: Boolean) {
+                if (container.settings.value.classicMode) playerFullscreen?.toggle() else applyFullscreen(on)
             }
+            override fun back() = if (container.settings.value.classicMode) ClassicWindows.back() else DesktopBack.dispatch()
+            override val player get() = DesktopPlayerInput.input?.value
+            override fun perform(action: PlaybackAction): Boolean = performShortcut(container, action, togglePip = { setPip(!DesktopPip.open) })
         }
     }
-    val drop = remember {
-        object : DragAndDropTarget {
-            override fun onDrop(event: DragAndDropEvent): Boolean {
-                val files = (event.dragData() as? DragData.FilesList)?.readFiles().orEmpty()
-                    .mapNotNull { runCatching { Paths.get(URI(it)).toFile() }.getOrNull() }
-                val (videos, subs) = splitDropped(files)
-                val playingWith = videos.flatMap { DesktopDialogs.videosIn(it.toPath()) }.firstOrNull()
-                val sidecars = subs.map { file ->
-                    com.yarmiplaytv.media.ExternalSubtitle(
-                        FileLocalLibrary.uriOf(file.toPath()),
-                        file.nameWithoutExtension,
-                        com.yarmiplaytv.media.sidecarLanguage(file.name),
-                    )
-                }
-                if (playingWith != null) container.playlist.rememberSidecars(FileLocalLibrary.uriOf(playingWith), sidecars)
-                openFiles(container, videos, addToPlaylist = DesktopRoomPanel.showsPlaylist && container.sync.isActive)
-                if (playingWith == null) sidecars.forEach { container.playlist.addExternalSubtitle(it.url, it.title, it.language) }
-                return files.isNotEmpty()
+    val playerShortcuts = { playerWindow: Fullscreen ->
+        object : ShortcutTarget {
+            override val isFullscreen get() = playerWindow.isFullscreen
+            override fun setFullscreen(on: Boolean) {
+                if (on) setPip(false)
+                playerWindow.set(on)
             }
+            // The player has nowhere to go back to; Esc only leaves full screen (and closes its own menus).
+            override fun back() = false
+            override val player get() = DesktopPlayerInput.input?.value
+            override fun perform(action: PlaybackAction): Boolean = performShortcut(container, action, togglePip = {
+                if (!DesktopPip.open) playerWindow.set(false)
+                setPip(!DesktopPip.open)
+            })
+        }
+    }
+    // Dropped on the Syncplay-style room window, videos go to the room's playlist, like dropping them on Syncplay's.
+    val drop = remember {
+        fileDrop(container) {
+            container.sync.isActive && (container.settings.value.classicMode || DesktopRoomPanel.showsPlaylist)
         }
     }
     val close = {
@@ -318,6 +358,14 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
     }
     container.onExitApp = close
     container.updates.exitApp = close
+    fun useMainWindowForVideo(window: java.awt.Window) {
+        DesktopPlayerInput.toggleFullscreen = { applyFullscreen(!fullscreen.isFullscreen) }
+        DesktopPlayerInput.moveWindow = { dx, dy ->
+            if (!fullscreen.isFullscreen && state.placement == WindowPlacement.Floating) {
+                window.setLocation(window.x + dx, window.y + dy)
+            }
+        }
+    }
     Window(
         onCloseRequest = close,
         state = state,
@@ -344,13 +392,12 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             window.minimumSize = Dimension(WindowBounds.MIN_WIDTH.toInt(), WindowBounds.MIN_HEIGHT.toInt())
             fullscreen.attach(window)
             mainWindow = window
-            DesktopPlayerInput.toggleFullscreen = { applyFullscreen(!fullscreen.isFullscreen) }
-            DesktopPlayerInput.moveWindow = { dx, dy ->
-                if (!fullscreen.isFullscreen && state.placement == WindowPlacement.Floating) {
-                    window.setLocation(window.x + dx, window.y + dy)
-                }
-            }
+            useMainWindowForVideo(window)
             DesktopPip.toggle = { setPip(!DesktopPip.open) }
+            ClassicWindows.raiseRoom = {
+                state.isMinimized = false
+                window.toFront()
+            }
             runCatching { window.iconImages = LaunchUpdateWindow.windowIcons() }
         }
         LaunchedEffect(Unit) {
@@ -365,6 +412,8 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             var playerBeforeMinimize = false
             snapshotFlow { state.isMinimized }.collect { minimized ->
                 val playing = container.player.state.value.let { it.fileLoaded && !it.paused }
+                // The Syncplay-style room window has no video to keep going.
+                if (container.settings.value.classicMode) return@collect
                 if (minimized && !DesktopPip.open && playing && container.settings.value.playback.pictureInPicture) {
                     playerBeforeMinimize = DesktopPlayerInput.input != null
                     setPip(true)
@@ -389,8 +438,34 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
                 }
                 .dragAndDropTarget(shouldStartDragAndDrop = { it.dragData() is DragData.FilesList }, target = drop),
         ) {
-            MobileTheme(palette) { MobileRoot(container, DeviceKind.DESKTOP) }
+            MobileTheme(palette) {
+                if (classic) {
+                    ClassicRoomWindow(container, onRegularView = {
+                        container.scope.launch {
+                            container.settingsStore.saveClassicMode(false)
+                            // The regular view shows what's playing in this window again.
+                            if (container.player.state.value.fileLoaded) container.playlist.showPlayer()
+                        }
+                    })
+                } else {
+                    MobileRoot(container, DeviceKind.DESKTOP)
+                }
+            }
         }
+    }
+    LaunchedEffect(classic) {
+        // The room window has no player: whatever was in full screen leaves it.
+        if (classic) fullscreen.set(false)
+    }
+    if (classic && ClassicWindows.playerOpen) {
+        ClassicPlayerWindow(
+            container,
+            File(boundsFile.parentFile, "player-window.properties"),
+            shortcuts = playerShortcuts,
+            onFullscreen = { playerFullscreen = it },
+            setPip = { on -> setPip(on) },
+            onGone = { mainWindow?.let(::useMainWindowForVideo) },
+        )
     }
     if (DesktopPip.open) {
         PipWindow(

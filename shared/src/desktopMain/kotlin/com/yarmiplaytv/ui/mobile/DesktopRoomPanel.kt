@@ -491,7 +491,7 @@ internal fun UrlField(onAdd: (String) -> Boolean, onClose: () -> Unit) {
 private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
 
 @Composable
-private fun DesktopChat(container: AppContainer, modifier: Modifier) {
+internal fun DesktopChat(container: AppContainer, modifier: Modifier) {
     val feed by container.sync.feed.collectAsState()
     val room by container.sync.room.collectAsState()
     val settings by container.settings.collectAsState()

@@ -197,25 +197,7 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                     if (screen == Screen.Player) {
                         CompositionLocalProvider(LocalContentColor provides AppColors.Text) { MobilePlayerScreen(container, nav) }
                     } else {
-                    saveable.SaveableStateProvider(screen.key) {
-                        when (screen) {
-                            Screen.Home -> MobileHomeScreen(container, nav, kind)
-                            Screen.SyncplayConnect, Screen.Room -> MobileRoomScreen(container, nav)
-                            Screen.JellyfinLogin -> MobileJellyfinScreen(container, nav)
-                            Screen.PlexLogin -> MobilePlexScreen(container, nav)
-                            Screen.Servers -> MobileServersScreen(container, nav)
-                            Screen.Settings -> MobileSettingsScreen(container, nav)
-                            Screen.LocalFiles -> MobileLocalFilesScreen(container, nav)
-                            Screen.Licenses -> MobileLicensesScreen(nav)
-                            Screen.MalLogin -> MobileMalLoginScreen(container, nav)
-                            Screen.Mal -> MobileMalScreen(container, nav)
-                            Screen.WhatsNew -> MobileWhatsNewScreen(container, nav)
-                            is Screen.MalEntry -> MobileMalEntryScreen(container, nav, screen.item)
-                            is Screen.Browse -> MobileBrowseScreen(container, nav, screen.item, kind)
-                            is Screen.Search -> MobileSearchScreen(container, nav, screen.initialQuery, screen.pickFor, kind)
-                            Screen.Player -> Unit
-                        }
-                    }
+                    saveable.SaveableStateProvider(screen.key) { AppScreen(container, nav, screen, kind) }
                 }
             }
         }
@@ -228,6 +210,28 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                 MobileSecurityPromptDialog(container)
             }
         }
+    }
+}
+
+/** One screen of the app other than the player; the desktop's Syncplay-style window shows these too. */
+@Composable
+internal fun AppScreen(container: AppContainer, nav: Navigator, screen: Screen, kind: DeviceKind) {
+    when (screen) {
+        Screen.Home -> MobileHomeScreen(container, nav, kind)
+        Screen.SyncplayConnect, Screen.Room -> MobileRoomScreen(container, nav)
+        Screen.JellyfinLogin -> MobileJellyfinScreen(container, nav)
+        Screen.PlexLogin -> MobilePlexScreen(container, nav)
+        Screen.Servers -> MobileServersScreen(container, nav)
+        Screen.Settings -> MobileSettingsScreen(container, nav)
+        Screen.LocalFiles -> MobileLocalFilesScreen(container, nav)
+        Screen.Licenses -> MobileLicensesScreen(nav)
+        Screen.MalLogin -> MobileMalLoginScreen(container, nav)
+        Screen.Mal -> MobileMalScreen(container, nav)
+        Screen.WhatsNew -> MobileWhatsNewScreen(container, nav)
+        is Screen.MalEntry -> MobileMalEntryScreen(container, nav, screen.item)
+        is Screen.Browse -> MobileBrowseScreen(container, nav, screen.item, kind)
+        is Screen.Search -> MobileSearchScreen(container, nav, screen.initialQuery, screen.pickFor, kind)
+        Screen.Player -> Unit
     }
 }
 

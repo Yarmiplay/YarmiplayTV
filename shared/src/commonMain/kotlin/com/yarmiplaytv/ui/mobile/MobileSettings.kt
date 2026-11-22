@@ -108,7 +108,7 @@ import kotlinx.coroutines.launch
  * The groups of settings: on phones a list of these, each opening its own page; on wide windows the list beside the
  * chosen one's settings. [summary] says what's in it, on the phone's list.
  */
-private enum class SettingsCategory(val title: String, val icon: ImageVector, val summary: String) {
+internal enum class SettingsCategory(val title: String, val icon: ImageVector, val summary: String) {
     MEDIA("Media", Icons.Filled.VideoLibrary, "Media servers, media folders, sharing your files, where files are saved"),
     MAL("MyAnimeList", Icons.Filled.Tv, "Your account and list updates"),
     SYNCING("Syncing", Icons.Filled.Sync, "Unpausing, catching up, readiness, playlists, chat, your device's name"),
@@ -222,7 +222,7 @@ private fun ExitAppRow(container: AppContainer, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ColumnScope.CategorySettings(category: SettingsCategory, container: AppContainer, nav: Navigator) {
+internal fun ColumnScope.CategorySettings(category: SettingsCategory, container: AppContainer, nav: Navigator) {
     when (category) {
         SettingsCategory.MEDIA -> MediaSettings(container, nav)
         SettingsCategory.MAL -> MalSettings(container, nav)
@@ -687,7 +687,20 @@ private fun AppearanceSettings(container: AppContainer) {
         }
     }
     Text(THEME_NOTE, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+    if (container.deviceKind == DeviceKind.DESKTOP) {
+        SettingsToggle(
+            CLASSIC_MODE_TITLE,
+            CLASSIC_MODE_SUBTITLE,
+            settings.classicMode,
+            Modifier.padding(top = 8.dp).testTag("toggle_classic_mode"),
+        ) { on -> container.scope.launch { container.settingsStore.saveClassicMode(on) } }
+    }
 }
+
+internal const val CLASSIC_MODE_TITLE = "Syncplay-style windows"
+internal const val CLASSIC_MODE_SUBTITLE =
+    "Like Syncplay: a join screen, then the room in this window (chat, who's playing what, the playlist) and the " +
+        "player in a window of its own. The room window's View menu switches back"
 
 /** A theme in small: its background, a card, a line of text and its accent. */
 @Composable

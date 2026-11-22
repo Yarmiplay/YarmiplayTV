@@ -181,7 +181,7 @@ private fun RoomColumn(container: AppContainer, model: SyncplayConnectModel, onE
 
 /** "Save this room" (★) for the room you're in, or "Saved" to take it off the list. */
 @Composable
-private fun SaveCurrentRoom(container: AppContainer, modifier: Modifier = Modifier) {
+internal fun SaveCurrentRoom(container: AppContainer, modifier: Modifier = Modifier) {
     val settings by container.settings.collectAsStateWithLifecycle()
     val room by container.sync.room.collectAsStateWithLifecycle()
     val server = container.sync.server ?: return
@@ -219,7 +219,7 @@ private fun SaveCurrentRoom(container: AppContainer, modifier: Modifier = Modifi
 
 /** Asks for a name for a saved room (optional); [onDone] gets it, or null when cancelled. */
 @Composable
-private fun RoomNameDialog(title: String, initial: String, onDone: (String?) -> Unit) {
+internal fun RoomNameDialog(title: String, initial: String, onDone: (String?) -> Unit) {
     var name by remember { mutableStateOf(TextFieldValue(initial, TextRange(initial.length))) }
     AlertDialog(
         onDismissRequest = { onDone(null) },
@@ -497,7 +497,7 @@ private fun FormLabel(text: String) {
 }
 
 @Composable
-private fun RoomRulesDialog(onAgree: () -> Unit, onDecline: () -> Unit) {
+internal fun RoomRulesDialog(onAgree: () -> Unit, onDecline: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDecline,
         title = { Text("Community rules") },
