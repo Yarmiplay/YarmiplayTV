@@ -25,10 +25,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # One runner that reaches the store is enough (the snap job takes whichever set came through), so a runner
+      # that can't is a warning, not a failed job.
       - name: Download content snaps from the Snap Store
+        id: fetch
+        continue-on-error: true
         run: bash scripts/snap-fetch.sh snap-seed
 
+      - name: Note a runner that couldn't reach the store
+        if: steps.fetch.outcome == 'failure'
+        run: echo "::warning::${{ matrix.os }} couldn't download the content snaps from the Snap Store; another runner's are used."
+
       - uses: actions/upload-artifact@v7
+        if: steps.fetch.outcome == 'success'
         with:
           name: content-snaps-${{ matrix.os }}
           path: snap-seed/

@@ -122,7 +122,7 @@ class RoomPanelUiTest {
 
     private fun join(name: String): AppContainer {
         val app = AppContainer(
-            settingsStore = desktopSettingsStore(tmp.root.resolve(name), storeScope),
+            settingsStore = desktopSettingsStore(tmp.root.resolve(name), storeScope).allowingPlainText(),
             deviceName = name,
             appVersion = "test",
             createPlayer = { IdlePlayer() },

@@ -134,7 +134,7 @@ class OfficialClientInteropTest {
     fun `playlist edits and chat reach the official client and back`() {
         val (host, port) = server.split(":").let { it[0] to it[1].toInt() }
         val tv = AppContainer(
-            settingsStore = desktopSettingsStore(tmp.root.resolve("tv"), storeScope),
+            settingsStore = desktopSettingsStore(tmp.root.resolve("tv"), storeScope).allowingPlainText(),
             deviceName = "tv",
             appVersion = "test",
             createPlayer = { FakePlayer() },

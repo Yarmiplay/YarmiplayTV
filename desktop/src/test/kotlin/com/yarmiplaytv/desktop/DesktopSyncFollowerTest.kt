@@ -44,7 +44,7 @@ class DesktopSyncFollowerTest {
         val main = Executors.newSingleThreadExecutor { Thread(it, "main") }.asCoroutineDispatcher()
         Dispatchers.setMain(main)
         val storeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-        val store = desktopSettingsStore(tmp.root.resolve("config"), storeScope)
+        val store = desktopSettingsStore(tmp.root.resolve("config"), storeScope).allowingPlainText()
         runBlocking { store.saveLocalFolders(listOf(FileLocalLibrary.uriOf(media.toPath()))) }
         val player = DesktopMpvPlayer().apply { renderer.setSize(640, 360) }
         val app = AppContainer(

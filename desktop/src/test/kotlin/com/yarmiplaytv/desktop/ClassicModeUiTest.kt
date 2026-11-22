@@ -126,7 +126,7 @@ class ClassicModeUiTest {
         onNodeWithTag("classic_settings_nav").assertDoesNotExist()
         screenshot("classic_join")
 
-        onNodeWithTag("classic_server_pick").performClick()
+        onNodeWithTag("classic_server_pick").performScrollTo().performClick()
         onNodeWithTag("classic_public_8997").performClick()
         onNodeWithTag("classic_server").assertTextContains("syncplay.pl:8997")
 

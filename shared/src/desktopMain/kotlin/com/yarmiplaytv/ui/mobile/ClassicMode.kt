@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -658,6 +660,7 @@ internal fun formatFileSize(bytes: Long): String = when {
  * Syncplay's configuration window in the app's design: the connection, auto-join and a video to play once joined;
  * "Show more settings" adds the app's settings categories beside it.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ClassicJoin(container: AppContainer) {
     val model = rememberSyncplayConnectModel(container)
@@ -716,14 +719,22 @@ private fun ClassicJoin(container: AppContainer) {
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                CheckRow("Show more settings", showMore, Modifier.testTag("classic_show_more")) { ClassicWindows.showMoreSettings = it }
-                Spacer(Modifier.width(12.dp))
-                CheckRow("Enable shared playlists", settings.sync.sharedPlaylists, Modifier.testTag("classic_shared_playlists")) { on ->
-                    val sync = container.settings.value.sync
-                    container.scope.launch { container.settingsStore.savePlaylistOptions(on, sync.loopPlaylist, sync.loopSingleFile) }
+            // The buttons go under the checkboxes when the window (or a larger font) leaves no room beside them.
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CheckRow("Show more settings", showMore, Modifier.testTag("classic_show_more")) { ClassicWindows.showMoreSettings = it }
+                    Spacer(Modifier.width(12.dp))
+                    CheckRow("Enable shared playlists", settings.sync.sharedPlaylists, Modifier.testTag("classic_shared_playlists")) { on ->
+                        val sync = container.settings.value.sync
+                        container.scope.launch { container.settingsStore.savePlaylistOptions(on, sync.loopPlaylist, sync.loopSingleFile) }
+                    }
                 }
-                Spacer(Modifier.weight(1f))
+                Row(verticalAlignment = Alignment.CenterVertically) {
                 if (connecting) {
                     CircularProgressIndicator(Modifier.size(24.dp))
                     TextButton({ container.sync.disconnect() }, Modifier.testTag("classic_cancel")) { Text("Cancel") }
@@ -743,6 +754,7 @@ private fun ClassicJoin(container: AppContainer) {
                     Spacer(Modifier.width(8.dp))
                 }
                 Button(::join, enabled = !connecting, modifier = Modifier.testTag("classic_join_button")) { Text("Join room") }
+                }
             }
         }
     }

@@ -51,7 +51,7 @@ class ManagedRoomJoinServerTest {
         Dispatchers.setMain(main)
         storeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         app = AppContainer(
-            settingsStore = desktopSettingsStore(tmp.root.resolve("app"), storeScope),
+            settingsStore = desktopSettingsStore(tmp.root.resolve("app"), storeScope).allowingPlainText(),
             deviceName = "test",
             appVersion = "test",
             createPlayer = { FakePlayer() },

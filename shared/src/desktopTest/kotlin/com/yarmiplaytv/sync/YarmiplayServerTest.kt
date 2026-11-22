@@ -96,7 +96,7 @@ class YarmiplayServerTest {
     private fun join(server: String, name: String, player: FakePlayer = FakePlayer()): AppContainer {
         val dir = tmp.root.resolve(name)
         val app = AppContainer(
-            settingsStore = desktopSettingsStore(dir.resolve("settings"), storeScope),
+            settingsStore = desktopSettingsStore(dir.resolve("settings"), storeScope).allowingPlainText(),
             deviceName = name,
             appVersion = "test",
             createPlayer = { player },
@@ -323,7 +323,7 @@ class YarmiplayServerTest {
     private fun container(name: String): AppContainer {
         val dir = tmp.root.resolve(name)
         return AppContainer(
-            settingsStore = desktopSettingsStore(dir.resolve("settings"), storeScope),
+            settingsStore = desktopSettingsStore(dir.resolve("settings"), storeScope).allowingPlainText(),
             deviceName = name,
             appVersion = "test",
             createPlayer = { FakePlayer() },

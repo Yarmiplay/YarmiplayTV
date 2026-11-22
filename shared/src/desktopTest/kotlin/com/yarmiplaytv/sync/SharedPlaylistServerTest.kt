@@ -79,7 +79,7 @@ class SharedPlaylistServerTest {
 
     private fun container(name: String, player: FakePlayer): AppContainer {
         val app = AppContainer(
-            settingsStore = desktopSettingsStore(tmp.root.resolve(name), storeScope),
+            settingsStore = desktopSettingsStore(tmp.root.resolve(name), storeScope).allowingPlainText(),
             deviceName = name,
             appVersion = "test",
             createPlayer = { player },
