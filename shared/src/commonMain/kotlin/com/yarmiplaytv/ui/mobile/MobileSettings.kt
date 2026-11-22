@@ -88,6 +88,8 @@ import com.yarmiplaytv.ui.shared.SKIP_ALONE_SUBTITLE
 import com.yarmiplaytv.ui.shared.SKIP_ALONE_TITLE
 import com.yarmiplaytv.ui.shared.SKIP_BUTTON_SUBTITLE
 import com.yarmiplaytv.ui.shared.SKIP_BUTTON_TITLE
+import com.yarmiplaytv.ui.shared.SYNCPLAY_PLAIN_TEXT_NOTE
+import com.yarmiplaytv.ui.shared.SYNCPLAY_PLAIN_TEXT_SETTING
 import com.yarmiplaytv.ui.shared.aboutLinks
 import com.yarmiplaytv.ui.shared.nextPreferred
 import com.yarmiplaytv.ui.shared.preferredOf
@@ -342,6 +344,12 @@ private fun SyncingSettings(container: AppContainer) {
             Modifier.testTag("toggle_chat_on_video"),
         ) { container.scope.launch { container.settingsStore.saveChatOnVideo(it) } }
     }
+    SettingsToggle(
+        SYNCPLAY_PLAIN_TEXT_SETTING,
+        SYNCPLAY_PLAIN_TEXT_NOTE,
+        settings.syncplayPlainText,
+        Modifier.testTag("toggle_syncplay_plain_text"),
+    ) { container.scope.launch { container.settingsStore.saveSyncplayPlainText(it) } }
     if (container.supportsDeviceAccess) {
         SettingTextField(
             settings.deviceName,

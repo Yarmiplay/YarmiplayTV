@@ -89,7 +89,9 @@ and fill in:
 
 - **Server** and **Port**: the public servers are `syncplay.pl` on ports 8995 to 8999; tap one of the public
   server buttons to fill them in. Your friends' Syncplay shows the server they use.
-- **TLS** encrypts the connection when the server supports it. Leave it on.
+- **TLS** encrypts the connection when the server supports it. Leave it on. If the server doesn't set it up,
+  the app asks before connecting without encryption; **Never ask** (or Settings > Syncing > Connect without
+  encryption when a Syncplay server doesn't offer it) stops the question.
 - **Your name**, as the others will see it.
 - **Room**: any name. Anyone who knows it can join it on that server, so pick one that's hard to guess, or use
   a server of your own with a password (**More options > Server password**).
@@ -161,6 +163,10 @@ Remember room playlists).
 Choose **Jellyfin** on the home screen. Servers on your network are listed; otherwise type the address (for
 example `http://192.168.1.10:8096`). Sign in with **Quick Connect** (enter the code in another Jellyfin app
 under your profile > Quick Connect) or with your user name and password.
+
+If an address you gave as `https://` only answers over plain HTTP, the app asks before using HTTP, since your
+password and sign-in would travel unencrypted. If a server's certificate can't be verified when a video starts,
+the app asks before playing it anyway. Each answer holds until you close the app.
 
 ### Plex
 

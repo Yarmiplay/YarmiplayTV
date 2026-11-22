@@ -124,7 +124,10 @@ class AppContainer(
         deviceId = runBlocking { settingsStore.deviceId() },
         version = appVersion,
     )
-    val jellyfinClient = JellyfinClient(clientInfo, dns = SessionDns)
+    /** Questions before a connection that wouldn't be private; the root UIs show them. */
+    val securityPrompts = SecurityPrompts()
+
+    val jellyfinClient = JellyfinClient(clientInfo, dns = SessionDns, confirmPlainHttp = ::confirmJellyfinPlainHttp)
     val plexClient = PlexClient(clientInfo)
 
     val player: Player = createPlayer(initial).also { it.setSubtitleScale(initial.playback.subtitleScale) }
@@ -182,11 +185,16 @@ class AppContainer(
         }
         knownServer = { server -> settings.value.knownServers[server] }
         lanDiscovery = { port -> discoverSyncplayServers(setOf(port)) }
+        confirmPlainText = ::confirmSyncplayPlainText
     }
     /** The YarmiplayServerTV file relay; idle on other servers. */
     val relay: RelayManager? = cacheDir?.let { RelayManager(scope, sync, player, local, it, settings.map { s -> s.shareFiles }) }
     private val locator = MediaLocator(local, servers) { name -> relay?.find(name) }.apply { preferredServer = initial.preferredServer }
-    val playlist = PlaylistController(scope, sync, player, mediaSource, local, locator, relay, settingsStore)
+    val playlist = PlaylistController(scope, sync, player, mediaSource, local, locator, relay, settingsStore).apply {
+        confirmUntrustedCertificate = { host ->
+            securityPrompts.ask("certificate:${host.lowercase()}", SecurityQuestions.untrustedCertificate(host)) != SecurityAnswer.CANCEL
+        }
+    }
     val screenshots: Screenshots? = screenshotStore?.let { store ->
         Screenshots(scope, player, store, folder = { settings.value.screenshotDirectory }) { playlist.nowPlaying.value?.title }
     }
@@ -354,6 +362,30 @@ class AppContainer(
         }
     }
 
+    /**
+     * A Jellyfin given as https:// answers only over plain HTTP: asked once per server for the run. A sign-in asks
+     * again after an earlier Cancel; the background checks don't.
+     */
+    private suspend fun confirmJellyfinPlainHttp(server: String, signIn: Boolean): Boolean {
+        val url = server.toHttpUrlOrNull()
+        val key = "jellyfin:" + (url?.let { "${it.host.lowercase()}:${it.port}" } ?: server)
+        val question = SecurityQuestions.jellyfinPlainHttp(url?.let(JellyfinClient::serverLabel) ?: server)
+        return securityPrompts.ask(key, question, rememberCancel = true, reuseCancel = !signIn) != SecurityAnswer.CANCEL
+    }
+
+    /** A Syncplay server didn't set up TLS: plain text without asking when the setting says so, else asked per host:port. */
+    private suspend fun confirmSyncplayPlainText(host: String, port: Int): Boolean {
+        if (settings.value.syncplayPlainText) return true
+        return when (securityPrompts.ask("syncplay:${host.lowercase()}:$port", SecurityQuestions.syncplayPlainText(host))) {
+            SecurityAnswer.CONFIRM -> true
+            SecurityAnswer.NEVER_ASK -> {
+                settingsStore.saveSyncplayPlainText(true)
+                true
+            }
+            SecurityAnswer.CANCEL -> false
+        }
+    }
+
     private suspend fun checkJellyfin(source: JellyfinSource) {
         val session = source.session
         source.resetToPreferredProbe()
@@ -366,7 +398,7 @@ class AppContainer(
                     Logger.i(TAG, "Jellyfin at ${session.serverUrl} speaks HTTP this session; saved URL stays HTTPS-preferred")
                     runCatching { source.refreshIndex() }
                 } else {
-                    Logger.w(TAG, "Jellyfin HTTPS handshake looked like plain HTTP but HTTP also failed: ${Redact.tokens(failure.message)}")
+                    Logger.w(TAG, "Jellyfin HTTPS handshake looked like plain HTTP; not using HTTP (declined or failed): ${Redact.tokens(failure.message)}")
                 }
             }
             valid == false && session.isShared -> {

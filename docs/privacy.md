@@ -107,7 +107,9 @@ unless you turn it off, to GitHub to check for a new version.
 
 Connections are encrypted when the server supports it: Syncplay servers with TLS, and Jellyfin and Plex
 servers on HTTPS. plex.tv is always HTTPS. Media servers on a home network often use plain HTTP, and the app
-allows that.
+allows that. The app asks before it connects without encryption to a Syncplay server (unless you turn that
+question off in Settings) or to a Jellyfin address you gave as https://, and before it plays from a server whose
+certificate it can't verify.
 
 ## What stays on your device
 

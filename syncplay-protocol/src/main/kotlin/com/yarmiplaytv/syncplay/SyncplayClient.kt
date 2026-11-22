@@ -64,6 +64,12 @@ class SyncplayClient(
     private val serverInfo: suspend (host: String, port: Int) -> ServerTls? = { h, p -> ServerInfo.tls(h, p) },
     dispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1),
     private val log: (String) -> Unit = {},
+    /**
+     * Asked when TLS is on but the server at [SyncplayConfig.host]:[SyncplayConfig.port] didn't set it up (no or a
+     * "false" STARTTLS reply, or an attacker removing it): true goes on in plain text, false ends the connection without
+     * reconnecting. The default goes on, as before.
+     */
+    private val confirmPlainText: suspend (host: String, port: Int) -> Boolean = { _, _ -> true },
 ) {
     private val scope = CoroutineScope(parentScope.coroutineContext + SupervisorJob(parentScope.coroutineContext[Job]) + dispatcher)
     private val json = Json { ignoreUnknownKeys = true }
@@ -517,6 +523,12 @@ class SyncplayClient(
                 throw IOException(fatalError, error)
             }
             throw error as? IOException ?: IOException(error?.message ?: "Couldn't reach ${config.host}", error)
+        }
+        // Only the typed address can win without TLS (a route at home needs it verified).
+        if (config.useTls && !t.isTls && !confirmPlainText(config.host.trim(), config.port)) {
+            t.close()
+            fatalError = "Didn't connect without encryption to ${config.host.trim()}"
+            throw IOException(fatalError)
         }
         val dialed = t.remoteAddress ?: route.dial
         _state.update { it.copy(route = ConnectionRoute(dialed, name.takeIf { t.isTls }, route.atHome)) }

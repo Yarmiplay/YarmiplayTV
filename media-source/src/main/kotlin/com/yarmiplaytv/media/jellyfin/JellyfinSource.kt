@@ -43,6 +43,9 @@ class JellyfinSource(
     private val base get() = requestBase
     private val token get() = session.accessToken
 
+    /** Requests go over plain `http://` right now (the saved URL, or this run's fallback). */
+    val onPlainHttp: Boolean get() = requestBase.startsWith("http://", ignoreCase = true)
+
     @Volatile private var cachedLibraries: Pair<Long, List<MediaItem>>? = null
 
     /** Prefer HTTPS again (e.g. on reconnect); next call will fall back to HTTP only if TLS still fails. */
