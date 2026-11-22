@@ -4,6 +4,7 @@ import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.Logger
 import com.yarmiplaytv.data.AppSettings
 import com.yarmiplaytv.local.SeekFrames
+import com.yarmiplaytv.media.Redact
 import com.yarmiplaytv.media.SkipSegment
 import com.yarmiplaytv.sync.NowPlaying
 import kotlinx.coroutines.CancellationException
@@ -128,7 +129,7 @@ class SkipDetector(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Logger.w(TAG, "Can't listen to ${episode.fileName}", e)
+                Logger.w(TAG, "Can't listen to ${episode.fileName}", Redact.tokens(e))
                 null
             } finally {
                 cancelHandle?.dispose()

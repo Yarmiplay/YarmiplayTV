@@ -1,6 +1,7 @@
 package com.yarmiplaytv.media.aniskip
 
 import com.yarmiplaytv.media.MediaSourceException
+import com.yarmiplaytv.media.SharedHttp
 import com.yarmiplaytv.media.SkipSegment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -24,7 +25,7 @@ class AniSkipClient(
     http: OkHttpClient? = null,
     private val apiUrl: String = "https://api.aniskip.com/v2",
 ) {
-    private val http: OkHttpClient = http ?: OkHttpClient.Builder()
+    private val http: OkHttpClient = http ?: SharedHttp.base.newBuilder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()

@@ -1,6 +1,7 @@
 package com.yarmiplaytv.media.mal
 
 import com.yarmiplaytv.media.MediaSourceException
+import com.yarmiplaytv.media.SharedHttp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -27,7 +28,7 @@ class MalClient(
     private val apiUrl: String = "https://api.myanimelist.net/v2",
     private val now: () -> Long = System::currentTimeMillis,
 ) {
-    private val http: OkHttpClient = http ?: OkHttpClient.Builder()
+    private val http: OkHttpClient = http ?: SharedHttp.base.newBuilder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()

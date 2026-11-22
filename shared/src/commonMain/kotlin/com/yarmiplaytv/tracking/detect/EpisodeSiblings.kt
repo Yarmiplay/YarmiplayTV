@@ -5,6 +5,7 @@ import com.yarmiplaytv.local.LocalFile
 import com.yarmiplaytv.local.LocalLibrary
 import com.yarmiplaytv.local.SeekFrames
 import com.yarmiplaytv.media.MediaSource
+import com.yarmiplaytv.media.Redact
 import com.yarmiplaytv.sync.NowPlaying
 import com.yarmiplaytv.sync.episodeFromFile
 import kotlinx.coroutines.CancellationException
@@ -74,7 +75,7 @@ class EpisodeSiblings(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Logger.w(TAG, "No season from ${source.displayName}: ${e.message}")
+                Logger.w(TAG, "No season from ${source.displayName}: ${Redact.tokens(e.message)}")
                 continue
             }
             val number = season.firstOrNull { it.itemId == copy.itemId }?.episode?.episode ?: np.episode?.episode ?: continue
