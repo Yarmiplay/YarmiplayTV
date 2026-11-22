@@ -64,6 +64,8 @@
     </div>
   </header>
 
+  <p class="dim small">FTP and SMB shares are in the Android and desktop apps. A web page can't open those connections.</p>
+
   {#if files.length === 0}
     <section class="card">
       <p>No videos yet. Add a media folder: videos in it are found by themselves when a room plays them.</p>

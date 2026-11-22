@@ -1,5 +1,6 @@
 package com.yarmiplaytv.ui.mobile
 
+import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.ContentResolver
@@ -8,8 +9,11 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.view.SurfaceView
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -32,10 +36,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.local.storageFolderUris
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.SurfacePlayer
 import com.yarmiplaytv.relay.SaveTarget
@@ -179,6 +185,39 @@ actual fun rememberFolderPicker(container: AppContainer): () -> Unit {
         if (uri != null) container.local.addFolder(uri.toString())
     }
     return { launcher.launch(null) }
+}
+
+@Composable
+actual fun rememberStorageScan(container: AppContainer): (() -> Unit)? {
+    val context = LocalContext.current
+    fun addWhatIsReadable() {
+        container.local.addFolders(storageFolderUris(context))
+    }
+    val settings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        addWhatIsReadable()
+    }
+    val read = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        addWhatIsReadable()
+    }
+    return {
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager() -> {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:${context.packageName}"),
+                )
+                try {
+                    settings.launch(intent)
+                } catch (_: ActivityNotFoundException) {
+                    addWhatIsReadable()
+                }
+            }
+            Build.VERSION.SDK_INT <= 32 &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED -> read.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            else -> addWhatIsReadable()
+        }
+    }
 }
 
 @Composable

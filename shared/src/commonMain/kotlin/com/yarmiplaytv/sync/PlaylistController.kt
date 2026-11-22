@@ -29,6 +29,7 @@ import com.yarmiplaytv.syncplay.SyncplayEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -45,6 +46,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** What the player is (about to be) showing. */
@@ -113,6 +115,7 @@ class PlaylistController(
     private val locator: MediaLocator,
     private val relay: RelayManager? = null,
     private val settingsStore: SettingsStore? = null,
+    private val shares: com.yarmiplaytv.network.NetworkLibrary? = null,
 ) {
     private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
     val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying.asStateFlow()
@@ -560,6 +563,7 @@ class PlaylistController(
             }
             return
         }
+        if (shares != null && !media.url.startsWith("http://127.0.0.1:")) shares.releasePlayback()
         _nowPlaying.value = media
         _status.value = PlaylistStatus.Loading(media.fileName)
         sync.reportLoading()
@@ -615,7 +619,7 @@ class PlaylistController(
         }
     }
 
-    private suspend fun discoverSubs(media: NowPlaying): List<ExternalSubtitle> {
+    private suspend fun discoverSubs(media: NowPlaying): List<ExternalSubtitle> = withContext(Dispatchers.IO) {
         val beside = runCatching { local.sidecarsBeside(media.url, media.fileName) }.getOrDefault(emptyList())
         val item = media.itemId
         val key = media.copies.firstOrNull()?.sourceKey
@@ -625,7 +629,7 @@ class PlaylistController(
             emptyList()
         }
         val already = synchronized(queuedSubs) { queuedSubs.map { it.url }.toSet() }
-        return (beside + remote).filter { it.url !in already }
+        (beside + remote).filter { it.url !in already }
     }
 
     private fun flushSubs() {
@@ -827,7 +831,14 @@ class PlaylistController(
      */
     fun playLocal(uri: String, inRoom: Boolean) {
         scope.launch {
-            val known = remember(localPlayable(uri))
+            val known = try {
+                remember(localPlayable(uri))
+            } catch (e: Exception) {
+                val name = com.yarmiplaytv.network.NetworkUris.fileName(uri) ?: uri.substringAfterLast('/')
+                _status.value = PlaylistStatus.Failed(name, e.message ?: "Couldn't open this file")
+                _openPlayerRequests.value++
+                return@launch
+            }
             val client = sync.client
             if (inRoom && client != null && sync.isActive) {
                 client.playInRoom(known.playable.fileName)
@@ -859,7 +870,23 @@ class PlaylistController(
         }
     }
 
-    private suspend fun localPlayable(uri: String): PlayableMedia = local.describe(uri).also(local::rememberOpened).toPlayable()
+    private suspend fun localPlayable(uri: String): PlayableMedia {
+        val library = shares
+        if (library != null && com.yarmiplaytv.network.NetworkUris.isNetwork(uri)) {
+            val opened = library.openForPlayback(uri)
+            if (opened.sidecars.isNotEmpty()) rememberSidecars(opened.playbackUrl, opened.sidecars)
+            return PlayableMedia(
+                itemId = uri,
+                url = opened.playbackUrl,
+                fileName = opened.fileName,
+                sizeBytes = opened.sizeBytes,
+                durationSeconds = 0.0,
+                title = opened.fileName,
+                episode = episodeFromFile(opened.fileName),
+            )
+        }
+        return local.describe(uri).also(local::rememberOpened).toPlayable()
+    }
 
     private fun addFileNameToPlaylist(fileName: String) {
         if (sync.client == null) {
