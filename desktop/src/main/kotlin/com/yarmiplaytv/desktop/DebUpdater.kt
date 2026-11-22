@@ -19,19 +19,33 @@ internal class DebUpdater(
     private var version: String? = null
 
     override suspend fun download(update: Update, progress: (Float?) -> Unit) {
-        // apt reads local packages as its own user, so the file goes where everyone can read it.
-        deb = downloadVerified(update, File(System.getProperty("java.io.tmpdir"), "yarmiplaytv_${update.version}_amd64.deb"), progress)
+        // apt reads local packages as its own user, so the file goes where everyone can read it: a new folder that
+        // only this user can write to, which others can read.
+        deb = downloadIntoNewDir(update, "yarmiplaytv_${update.version}_amd64.deb", progress, othersCanRead = true)
             .apply { setReadable(true, false) }
         version = update.version
     }
 
     override fun installAfterExit(relaunch: Boolean) {
         val deb = deb ?: throw UpdateFailedException("launch", "the downloaded package is missing")
-        runDetachedShell(script(deb, launcher, args, version.orEmpty(), ProcessHandle.current().pid(), relaunch, hasPkexec()), "yarmiplaytv-update.sh")
+        runDetachedShell(
+            script(deb, launcher, args, version.orEmpty(), ProcessHandle.current().pid(), relaunch, hasPkexec(), cleanupDir = deb.parentFile),
+            "yarmiplaytv-update.sh",
+        )
     }
 
     companion object {
-        fun script(deb: File, launcher: File, args: List<String>, version: String, pid: Long, relaunch: Boolean, pkexec: Boolean): String =
+        /** [cleanupDir], when given, is the download's own folder, removed with the package once it is installed. */
+        fun script(
+            deb: File,
+            launcher: File,
+            args: List<String>,
+            version: String,
+            pid: Long,
+            relaunch: Boolean,
+            pkexec: Boolean,
+            cleanupDir: File? = null,
+        ): String =
             buildString {
                 val debPath = shellQuoted(deb.invariantSeparatorsPath)
                 val run = shellQuoted(launcher.invariantSeparatorsPath) + args.joinToString("") { " " + shellQuoted(it) }
@@ -65,6 +79,7 @@ internal class DebUpdater(
                 appendLine("  detail=\$(tail -c 400 \"\$log\")")
                 appendLine("fi")
                 appendLine("rm -f \"\$log\" $debPath")
+                if (cleanupDir != null) appendLine("rmdir ${shellQuoted(cleanupDir.invariantSeparatorsPath)} 2>/dev/null")
                 append(shRecordFailure())
                 appendLine()
                 if (relaunch) {

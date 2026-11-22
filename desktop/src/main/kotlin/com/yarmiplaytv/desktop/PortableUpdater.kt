@@ -18,7 +18,7 @@ internal class PortableUpdater(
     private var version: String? = null
 
     override suspend fun download(update: Update, progress: (Float?) -> Unit) {
-        zip = downloadVerified(update, File(System.getProperty("java.io.tmpdir"), "YarmiplayTV-${update.version}-portable.zip"), progress)
+        zip = downloadIntoNewDir(update, "YarmiplayTV-${update.version}-portable.zip", progress)
         version = update.version
     }
 
@@ -28,14 +28,23 @@ internal class PortableUpdater(
         if (!isSafePortableDir(targetDir)) {
             throw UpdateFailedException("replace", "Couldn't replace files in ${targetDir?.path ?: launcher.path}: unsafe portable folder")
         }
-        runDetachedPowerShell(script(zip, launcher, args, version.orEmpty(), appProcessIds(launcher), relaunch))
+        runDetachedPowerShell(script(zip, launcher, args, version.orEmpty(), appProcessIds(launcher), relaunch, cleanupDir = zip.parentFile))
     }
 
     companion object {
         /** The folders of the app the zip replaces; anything else in the folder, `data` above all, stays. */
         val REPLACED = listOf("app", "runtime")
 
-        fun script(zip: File, launcher: File, args: List<String>, version: String, pids: List<Long>, relaunch: Boolean): String {
+        /** [cleanupDir], when given, is the download's own folder, removed with the zip. */
+        fun script(
+            zip: File,
+            launcher: File,
+            args: List<String>,
+            version: String,
+            pids: List<Long>,
+            relaunch: Boolean,
+            cleanupDir: File? = null,
+        ): String {
             // parentDirOf keeps `C:\Users\Dor Farhi\...` one folder even when `\` is not this OS's separator.
             val folder = parentDirOf(launcher) ?: launcher.absoluteFile.parentFile
             val dir = psQuoted(folder?.path ?: launcher.parent.orEmpty())
@@ -63,6 +72,7 @@ internal class PortableUpdater(
                 append("} catch { \$detail = \$_.Exception.Message; \$code = 1 }; ")
                 append("Remove-Item -LiteralPath \$tmp -Recurse -Force -ErrorAction SilentlyContinue; ")
                 append("Remove-Item -LiteralPath ${psQuoted(zip.path)} -ErrorAction SilentlyContinue; ")
+                append(psRemoveDir(cleanupDir))
                 append(if (relaunch) psRelaunch(launcher, args, version) else psWriteOutcome(version))
             }
         }

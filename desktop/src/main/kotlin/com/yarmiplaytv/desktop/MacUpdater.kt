@@ -20,16 +20,21 @@ internal class MacUpdater(
     private var version: String? = null
 
     override suspend fun download(update: Update, progress: (Float?) -> Unit) {
-        dmg = downloadVerified(update, File(System.getProperty("java.io.tmpdir"), "YarmiplayTV-${update.version}.dmg"), progress)
+        dmg = downloadIntoNewDir(update, "YarmiplayTV-${update.version}.dmg", progress)
         version = update.version
     }
 
     override fun installAfterExit(relaunch: Boolean) {
         val dmg = dmg ?: throw UpdateFailedException("launch", "the downloaded disk image is missing")
-        val tmp = System.getProperty("java.io.tmpdir")
-        val swap = File(tmp, "yarmiplaytv-swap.sh")
+        // The swap script can run as an administrator, so it sits in the download's own folder, which only this
+        // user can write to.
+        val dir = dmg.parentFile
+        val swap = File(dir, "yarmiplaytv-swap.sh")
         swap.writeText(swapScript())
-        runDetachedShell(script(dmg, launcher, swap, args, version.orEmpty(), ProcessHandle.current().pid(), relaunch), "yarmiplaytv-update.sh")
+        runDetachedShell(
+            script(dmg, launcher, swap, args, version.orEmpty(), ProcessHandle.current().pid(), relaunch, cleanupDir = dir),
+            "yarmiplaytv-update.sh",
+        )
     }
 
     companion object {
@@ -45,7 +50,17 @@ internal class MacUpdater(
             |
         """.trimMargin()
 
-        fun script(dmg: File, launcher: File, swap: File, args: List<String>, version: String, pid: Long, relaunch: Boolean): String {
+        /** [cleanupDir], when given, is the download's own folder, removed with the image and the swap script. */
+        fun script(
+            dmg: File,
+            launcher: File,
+            swap: File,
+            args: List<String>,
+            version: String,
+            pid: Long,
+            relaunch: Boolean,
+            cleanupDir: File? = null,
+        ): String {
             val bundle = requireNotNull(bundleOf(launcher)) { "not in an .app bundle: $launcher" }.invariantSeparatorsPath
             val app = shellQuoted(bundle)
             val swapPath = swap.invariantSeparatorsPath
@@ -92,6 +107,7 @@ internal class MacUpdater(
                 appendLine("fi")
                 appendLine("rmdir \"\$mnt\" 2>/dev/null")
                 appendLine("rm -f ${shellQuoted(dmg.invariantSeparatorsPath)} ${shellQuoted(swapPath)}")
+                if (cleanupDir != null) appendLine("rmdir ${shellQuoted(cleanupDir.invariantSeparatorsPath)} 2>/dev/null")
                 append(shRecordFailure())
                 appendLine()
                 if (relaunch) {
