@@ -582,19 +582,32 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
                 loadTracks()
                 currentUrl?.let { _events.tryEmit(PlayerEvent.FileLoaded(it, duration)) }
             }
-            MpvEvent.MPV_EVENT_END_FILE -> {
-                publishState { it.copy(fileLoaded = false) }
-                val failedToOpen = openingLatest && filesStarted == latestLoad
-                openingLatest = false
-                // Ended before loading and not replaced or stopped since: opening failed. mpv often only
-                // logs the reason at verbose level (stream/ffmpeg), so the error-log path below misses it.
-                if (failedToOpen) reportOpenFailure(currentUrl, openError ?: "Couldn't open the file")
-            }
             MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
                 // The position was frozen while seeking; extrapolate from now, not from when the seek was issued.
                 if (_state.value.seeking) cachedPositionAt = SystemClock.elapsedRealtime()
                 publishState { it.copy(seeking = false) }
             }
+        }
+    }
+
+    /**
+     * libmpv 1.1.0 delivers end-of-file here. [MPVLib.event] no longer sees [MpvEvent.MPV_EVENT_END_FILE], so
+     * playlist advance, Syncplay and open errors all depend on this callback. [reason] is an
+     * [MPVLib.MpvEndFileReason] and [error] is an mpv error code, negative when the open failed.
+     */
+    override fun eventEndFile(reason: Int, error: Int) {
+        publishState { it.copy(fileLoaded = false) }
+        val failedToOpen = openingLatest && filesStarted == latestLoad
+        openingLatest = false
+        // Ended before loading and not replaced or stopped since: opening failed. mpv often only
+        // logs the reason at verbose level (stream/ffmpeg), so the error-log path below misses it.
+        // A stop, quit or redirect is not an open error; EOF and ERROR of a file that never loaded are.
+        val stopped = reason == MPVLib.MpvEndFileReason.MPV_END_FILE_REASON_STOP ||
+            reason == MPVLib.MpvEndFileReason.MPV_END_FILE_REASON_QUIT ||
+            reason == MPVLib.MpvEndFileReason.MPV_END_FILE_REASON_REDIRECT
+        if (failedToOpen && !stopped) {
+            if (error < 0) Log.w(TAG, "Couldn't open the file (mpv error $error)")
+            reportOpenFailure(currentUrl, openError ?: "Couldn't open the file")
         }
     }
 

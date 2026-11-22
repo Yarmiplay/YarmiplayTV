@@ -27,10 +27,11 @@ kotlin {
     jvmToolchain(17)
 }
 
-// dev.jdtech.mpv:libmpv 1.0.0 builds FFmpeg with --disable-filters, so showfreqs and showspectrum
-// are absent and a lavfi spectrum cannot run. The prebuilt libraries are that same FFmpeg 8.1
-// libavfilter rebuilt with the desktop graph's filters (scripts/build-android-libavfilter.sh).
-// The rest of the AAR (libmpv and the other FFmpeg libraries) is unchanged.
+// dev.jdtech.mpv:libmpv 1.1.0 (mpv 0.42.0) builds FFmpeg 9.0.2 with --disable-filters, so
+// showfreqs and showspectrum are absent and a lavfi spectrum cannot run. The prebuilt libraries
+// are that same FFmpeg 9.0.2 libavfilter rebuilt with the desktop graph's filters
+// (scripts/build-android-libavfilter.sh). The rest of the AAR (libmpv and the other FFmpeg
+// libraries) is unchanged. FFmpeg 9.1 is a different libavfilter ABI, so it is not used here.
 val upstreamLibmpv: Configuration by configurations.creating {
     isCanBeResolved = true
     isCanBeConsumed = false
