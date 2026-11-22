@@ -222,14 +222,20 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
 
     /**
      * mpv can't open Android content:// URIs, so hand it a file descriptor instead; mpv closes it
-     * when the file is unloaded (fdclose://). file:// URLs become plain paths.
+     * when the file is unloaded (fdclose://). file:// URLs become plain paths. mpv's internal protocols
+     * (fdclose:// and the like) are only ever built here, never taken from the caller: such an address
+     * fails to open like any other unplayable one.
      */
     private fun mpvTarget(url: String): String = when {
+        MediaUrls.isInternalProtocol(url) -> {
+            Log.w(TAG, "Refusing mpv-internal address ${MediaUrls.redact(url)}")
+            MediaUrls.REFUSED_TARGET
+        }
         url.startsWith("content://") -> runCatching {
             val pfd = appContext.contentResolver.openFileDescriptor(Uri.parse(url), "r") ?: error("no descriptor")
             "fdclose://${pfd.detachFd()}"
         }.getOrElse {
-            Log.w(TAG, "Cannot open $url: ${it.message}")
+            Log.w(TAG, MediaUrls.redact("Cannot open $url: ${it.message}"))
             openError = if (it is SecurityException) "No permission to read this file" else it.message
             url
         }
@@ -531,7 +537,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             if (line == lastLogLine && now - lastLogAt < 1_000L) return
             lastLogLine = line
             lastLogAt = now
-            Log.w(TAG, "[$prefix] $line")
+            Log.w(TAG, MediaUrls.redact("[$prefix] $line"))
             _events.tryEmit(PlayerEvent.Log(prefix, level, line))
             if (prefix == "cplayer" && level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_ERROR) {
                 _events.tryEmit(PlayerEvent.EndFile(currentUrl, line))
@@ -540,7 +546,7 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
                 giveUpOnVisualizer()
             }
         } else if (level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_INFO) {
-            Log.i(TAG, "[$prefix] $line")
+            Log.i(TAG, MediaUrls.redact("[$prefix] $line"))
         }
     }
 

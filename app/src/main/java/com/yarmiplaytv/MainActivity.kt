@@ -230,16 +230,24 @@ class MainActivity : ComponentActivity() {
     /**
      * `am start -n com.yarmiplaytv/.MainActivity --es url <stream>` or a VIEW intent plays a URL directly;
      * content:// URIs (e.g. "Open with" from a file manager) play as local files.
+     * Any app can send these, so a file in this app's own storage is ignored, and only stream addresses play.
      */
     private fun handleIntent(intent: Intent?) {
         val data = intent?.data?.takeIf { intent.action == Intent.ACTION_VIEW }
         if (data != null && (data.scheme == "content" || data.scheme == "file")) {
+            if (data.scheme == "file" && IntentMedia.isPrivateFile(data.path, privateDirs())) return
             container.playlist.playLocal(data.toString(), inRoom = false)
             return
         }
         val url = intent?.getStringExtra("url") ?: data?.toString()
-        if (!url.isNullOrBlank()) container.playlist.playUrl(url)
+        if (!url.isNullOrBlank() && IntentMedia.isStreamUrl(url)) container.playlist.playUrl(url)
     }
+
+    /** This app's own storage: files, cache, no_backup, databases (and their device-protected twin). */
+    private fun privateDirs(): List<String> = listOfNotNull(
+        applicationInfo.dataDir,
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) applicationInfo.deviceProtectedDataDir else null,
+    )
 
     companion object {
         var activeActivity: MainActivity? = null
