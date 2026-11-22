@@ -225,6 +225,7 @@ fun MobileRoot(container: AppContainer, kind: DeviceKind, stack: SnapshotStateLi
                     MobileItemActionsSheet(container, item, onDismiss = { nav.actionItem = null }, onMal = { nav.push(Screen.MalEntry(item)) })
                 }
                 MobileDeviceAccessDialog(container)
+                MobileSecurityPromptDialog(container)
             }
         }
     }

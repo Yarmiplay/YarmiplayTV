@@ -326,7 +326,9 @@ class JellyfinLoginModel(private val container: AppContainer, private val scope:
 /** Signs out of one server (any kind); Jellyfin also ends the session on the server. */
 fun signOutOfServer(container: AppContainer, key: String) {
     val source = container.serverFor(key) ?: return
-    if (source is JellyfinSource) container.scope.launch { runCatching { container.jellyfinClient.logout(source.session) } }
+    if (source is JellyfinSource) {
+        container.scope.launch { runCatching { container.jellyfinClient.logout(source.session, alsoPlainHttp = source.onPlainHttp) } }
+    }
     container.removeServer(key)
 }
 

@@ -135,6 +135,11 @@ class SyncController(
      */
     var lanDiscovery: (suspend (port: Int) -> List<LanServer>)? = null
     var appVersion: String = ""
+    /**
+     * Whether to go on in plain text when TLS is on but the server at host:port didn't set it up; false ends that
+     * join without reconnecting ([SyncplayClient]'s confirmPlainText). The default goes on, as before.
+     */
+    var confirmPlainText: suspend (host: String, port: Int) -> Boolean = { _, _ -> true }
 
     /**
      * Joins [config]'s room. [requestAccess] asks a YarmiplayServerTV host to approve this device if they haven't
@@ -164,6 +169,7 @@ class SyncController(
             settings = syncSettings,
             parentScope = scope,
             log = { Logger.d(TAG, it) },
+            confirmPlainText = confirmPlainText,
         )
         newClient.savedOperatorPassword = { room -> passwordKey(room)?.let { operatorPasswords?.get(it) } }
         newClient.lanDiscovery = lanDiscovery

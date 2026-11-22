@@ -253,6 +253,8 @@ data class AppSettings(
     val lastSeenVersion: String = "",
     /** Show other people's chat in rooms; off hides all of it, whatever names they use. */
     val showRoomChat: Boolean = true,
+    /** Connect in plain text without asking when a Syncplay server with TLS on doesn't set it up. */
+    val syncplayPlainText: Boolean = false,
     /** Chat messages pop up over the video as they arrive; off keeps them to the chat panel. */
     val chatOnVideo: Boolean = false,
     /**
@@ -443,6 +445,7 @@ class SettingsStore(
         val dismissedUpdate = stringPreferencesKey("update_dismissed")
         val lastSeenVersion = stringPreferencesKey("last_seen_version")
         val showRoomChat = booleanPreferencesKey("chat_show")
+        val syncplayPlainText = booleanPreferencesKey("syncplay_plain_text")
         val chatOnVideo = booleanPreferencesKey("chat_on_video")
         val voiceChat = booleanPreferencesKey("voice_chat")
         val voiceAutoJoin = booleanPreferencesKey("voice_auto_join")
@@ -610,6 +613,7 @@ class SettingsStore(
             dismissedUpdate = p[Keys.dismissedUpdate] ?: "",
             lastSeenVersion = p[Keys.lastSeenVersion] ?: if (p.asMap().isEmpty()) "" else USED_BEFORE_WHATS_NEW,
             showRoomChat = p[Keys.showRoomChat] ?: true,
+            syncplayPlainText = p[Keys.syncplayPlainText] ?: false,
             chatOnVideo = p[Keys.chatOnVideo] ?: false,
             voiceChat = p[Keys.voiceChat] ?: true,
             voiceAutoJoin = p[Keys.voiceAutoJoin] ?: true,
@@ -903,6 +907,8 @@ class SettingsStore(
     suspend fun saveLastSeenVersion(version: String) = dataStore.edit { it[Keys.lastSeenVersion] = version }
 
     suspend fun saveShowRoomChat(on: Boolean) = dataStore.edit { it[Keys.showRoomChat] = on }
+
+    suspend fun saveSyncplayPlainText(on: Boolean) = dataStore.edit { it[Keys.syncplayPlainText] = on }
 
     suspend fun saveChatOnVideo(on: Boolean) = dataStore.edit { it[Keys.chatOnVideo] = on }
 

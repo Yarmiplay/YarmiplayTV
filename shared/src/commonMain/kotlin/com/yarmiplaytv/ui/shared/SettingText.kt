@@ -40,3 +40,7 @@ fun rememberSavedText(value: String, onSave: (String) -> Unit): MutableState<Str
     }
     return text
 }
+
+/** The Syncplay setting that skips the question before a connection without TLS ([com.yarmiplaytv.SecurityQuestions]). */
+const val SYNCPLAY_PLAIN_TEXT_SETTING = "Connect without encryption when a Syncplay server doesn't offer it"
+const val SYNCPLAY_PLAIN_TEXT_NOTE = "Off asks first. Without encryption the room, chat and your server password's hash travel unencrypted"

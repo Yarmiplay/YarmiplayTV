@@ -17,6 +17,7 @@ import com.yarmiplaytv.media.preferredSidecar
 import com.yarmiplaytv.media.server
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.PlayerEvent
+import com.yarmiplaytv.player.StreamTls
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.relay.RelayManager
 import com.yarmiplaytv.syncplay.ConnectionStatus
@@ -172,6 +173,14 @@ class PlaylistController(
     private data class PendingLoad(val media: NowPlaying, val resetPosition: Boolean, val fromRoom: Boolean)
 
     private var pending: PendingLoad? = null
+    /** Asks whether to play a file whose server's certificate couldn't be verified; another load takes it away. */
+    private var certificateQuestion: Job? = null
+
+    /**
+     * Whether to play a file anyway when [host]'s HTTPS certificate couldn't be verified; set by the app (which asks
+     * the user). False keeps the open error, as for any file that doesn't open.
+     */
+    var confirmUntrustedCertificate: suspend (host: String) -> Boolean = { false }
     private var resolveJob: Job? = null
     /** The room's entry whose search last gave up, until something else loads; [retryGivenUp] looks for it again. */
     private var givenUp: String? = null
@@ -317,9 +326,24 @@ class PlaylistController(
             is PlayerEvent.EndFile -> {
                 val p = pending ?: return
                 if (event.url != null && event.url != p.media.url) return
-                pending = null
-                _status.value = PlaylistStatus.Failed(p.media.fileName, event.error ?: "Playback failed")
-                sync.postLocal("Could not play ${p.media.fileName}: ${event.error}", isError = true)
+                val host = event.untrustedHost
+                if (host == null) {
+                    failed(p, event.error)
+                    return
+                }
+                certificateQuestion?.cancel()
+                certificateQuestion = scope.launch {
+                    val playAnyway = confirmUntrustedCertificate(host)
+                    // Still the file to open (a room replaying its selection meanwhile leaves the same one).
+                    val now = pending?.takeIf { it.media.url == p.media.url } ?: return@launch
+                    if (!playAnyway) {
+                        failed(now, event.error)
+                        return@launch
+                    }
+                    Logger.i(TAG, "Playing '${now.media.fileName}' without checking $host's certificate")
+                    StreamTls.allowUnverified(host)
+                    reopen(now)
+                }
             }
             is PlayerEvent.UninitiatedJump -> {
                 val now = _nowPlaying.value ?: return
@@ -335,6 +359,27 @@ class PlaylistController(
                 loadFromRoom(now.fileName, resetPosition = false)
             }
             else -> Unit
+        }
+    }
+
+    private fun failed(p: PendingLoad, error: String?) {
+        pending = null
+        _status.value = PlaylistStatus.Failed(p.media.fileName, error ?: "Playback failed")
+        sync.postLocal("Could not play ${p.media.fileName}: $error", isError = true)
+    }
+
+    /** Opens the file [p] failed to open again, the way [load] did ([StreamTls] now lets its host's certificate pass). */
+    private fun reopen(p: PendingLoad) {
+        val media = p.media
+        _status.value = PlaylistStatus.Loading(media.fileName)
+        val savedPos = if (media.growing) 0.0 else getSeekPosition(media.fileName)
+        player.load(media.url, media.title, startPaused = true, startPosition = savedPos)
+        // The subtitles found for the first try are still queued; they're added once it's open.
+        scope.launch {
+            withTimeoutOrNull(20_000) {
+                while (isActive && !(player.isFileLoaded && player.state.value.url == media.url)) delay(50)
+            }
+            if (_nowPlaying.value?.url == media.url && player.isFileLoaded) flushSubs()
         }
     }
 
@@ -505,6 +550,7 @@ class PlaylistController(
             _nowPlaying.value?.sizeBytes == media.sizeBytes &&
             Filenames.same(_nowPlaying.value?.fileName.orEmpty(), media.fileName)
         givenUp = null
+        if (pending?.media?.url != media.url) certificateQuestion?.cancel()
         pending = PendingLoad(media, resetPosition, fromRoom)
         // E.g. a reconnect replays the room's selection while a manual pick of the same file is opening,
         // or the exact same file is already playing.
@@ -877,6 +923,7 @@ class PlaylistController(
 
     fun stop() {
         resolveJob?.cancel()
+        certificateQuestion?.cancel()
         givenUp = null
         autoPlayJob?.cancel()
         previousMedia = null

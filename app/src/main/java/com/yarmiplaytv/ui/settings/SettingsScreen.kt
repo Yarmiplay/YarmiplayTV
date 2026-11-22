@@ -76,6 +76,8 @@ import com.yarmiplaytv.ui.shared.SKIP_ALONE_SUBTITLE
 import com.yarmiplaytv.ui.shared.SKIP_ALONE_TITLE
 import com.yarmiplaytv.ui.shared.SKIP_BUTTON_SUBTITLE
 import com.yarmiplaytv.ui.shared.SKIP_BUTTON_TITLE
+import com.yarmiplaytv.ui.shared.SYNCPLAY_PLAIN_TEXT_NOTE
+import com.yarmiplaytv.ui.shared.SYNCPLAY_PLAIN_TEXT_SETTING
 import com.yarmiplaytv.ui.shared.UpdateCheckModel
 import com.yarmiplaytv.ui.shared.aboutLinks
 import com.yarmiplaytv.ui.shared.nextPreferred
@@ -176,6 +178,12 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                         subtitle = CHAT_ON_VIDEO_NOTE,
                     )
                 }
+                ToggleRow(
+                    SYNCPLAY_PLAIN_TEXT_SETTING,
+                    settings.syncplayPlainText,
+                    { container.scope.launch { container.settingsStore.saveSyncplayPlainText(!settings.syncplayPlainText) } },
+                    subtitle = SYNCPLAY_PLAIN_TEXT_NOTE,
+                )
                 if (container.supportsDeviceAccess) {
                     var deviceName by rememberSavedText(settings.deviceName) { name -> container.scope.launch { container.settingsStore.saveDeviceName(name) } }
                     TvTextField(
