@@ -295,7 +295,8 @@ class SkipServiceTest {
         pauseLocalDetect()
         eventually("reading", millis = 10_000) { season.reads.isNotEmpty() }
         settings.value = AppSettings(playback = PlaybackPrefs(detectSkips = false))
-        eventually("the read to stop", millis = 15_000) { season.sawCancel }
+        // Busy CI hosts (Build job packs unit tests + APK) need more than 15s for the IO cancel path.
+        eventually("the read to stop", millis = 30_000) { season.sawCancel }
         season.hang = false
         settings.value = AppSettings(playback = PlaybackPrefs(detectSkips = true))
         pauseLocalDetect()
