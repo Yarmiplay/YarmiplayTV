@@ -25,8 +25,11 @@ import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.SyncplayConfig
 import com.yarmiplaytv.syncplay.UnpauseMode
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -537,7 +540,12 @@ class SettingsStore(
         val malKeys = listOf(malAccount, malAuto, malAsk, malMappings, malIgnored, malIgnoredNames, malQueue)
     }
 
-    val settings: Flow<AppSettings> = dataStore.data.map(::read)
+    /**
+     * The settings, decoded off the main thread: every write (a playback position every few seconds too) makes the
+     * store emit again, and decoding all of them is too much work for the UI thread. Unchanged settings aren't
+     * emitted again.
+     */
+    val settings: Flow<AppSettings> = dataStore.data.map(::read).distinctUntilChanged().flowOn(Dispatchers.Default)
 
     suspend fun current(): AppSettings = settings.first()
 
