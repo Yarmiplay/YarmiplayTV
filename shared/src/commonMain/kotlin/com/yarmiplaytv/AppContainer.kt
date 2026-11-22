@@ -25,6 +25,8 @@ import com.yarmiplaytv.media.jellyfin.JellyfinClient
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
 import com.yarmiplaytv.media.jellyfin.JellyfinSource
 import com.yarmiplaytv.media.aniskip.AniSkipClient
+import com.yarmiplaytv.network.NetworkLibrary
+import com.yarmiplaytv.network.networkBackend
 import com.yarmiplaytv.playback.PlaybackController
 import com.yarmiplaytv.media.mal.MalClient
 import com.yarmiplaytv.media.plex.PlexClient
@@ -167,6 +169,8 @@ class AppContainer(
     val mediaSource: StateFlow<MediaSource?> = servers.map(::browsable).stateIn(scope, SharingStarted.Eagerly, browsable(servers.value))
 
     val local: LocalLibrary = createLocalLibrary(settingsStore, scope, initial.localFolders)
+    private val networkCache = cacheDir ?: File(System.getProperty("java.io.tmpdir"), "yarmiplaytv-network")
+    val network = NetworkLibrary(settingsStore, scope, networkCache, networkBackend(networkCache))
     val thumbnails: VideoThumbnails? = frameGrabber?.let { grabber -> cacheDir?.let { VideoThumbnails(File(it, "thumbnails"), grabber) } }
     val sync = SyncController(scope, player).apply {
         showChat = initial.showRoomChat
@@ -190,7 +194,7 @@ class AppContainer(
     /** The YarmiplayServerTV file relay; idle on other servers. */
     val relay: RelayManager? = cacheDir?.let { RelayManager(scope, sync, player, local, it, settings.map { s -> s.shareFiles }) }
     private val locator = MediaLocator(local, servers) { name -> relay?.find(name) }.apply { preferredServer = initial.preferredServer }
-    val playlist = PlaylistController(scope, sync, player, mediaSource, local, locator, relay, settingsStore).apply {
+    val playlist = PlaylistController(scope, sync, player, mediaSource, local, locator, relay, settingsStore, network).apply {
         confirmUntrustedCertificate = { host ->
             securityPrompts.ask("certificate:${host.lowercase()}", SecurityQuestions.untrustedCertificate(host)) != SecurityAnswer.CANCEL
         }

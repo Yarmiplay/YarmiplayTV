@@ -123,7 +123,7 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
         PanelHeader("Shared playlist", if (inRoom) "Room ${ManagedRooms.label(room.room)} · everyone sees these changes" else null)
         if (!inRoom) {
             Text("Join a Syncplay room to use the shared playlist.", color = AppColors.TextDim)
-            ActionButton("Browse", { nav.popTo(Screen.Home) }, Modifier.padding(top = 16.dp).focusRequester(focus), icon = Icons.Filled.Home)
+            ActionButton("Browse", { nav.push(Screen.LocalFiles) }, Modifier.padding(top = 16.dp).focusRequester(focus), icon = Icons.Filled.Home)
             return@Column
         }
         val np = nowPlaying

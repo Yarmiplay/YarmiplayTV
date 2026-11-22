@@ -136,6 +136,13 @@ expect fun rememberSubtitlePicker(onPicked: (String) -> Unit): () -> Unit
 expect fun rememberFolderPicker(container: AppContainer): () -> Unit
 
 /**
+ * On Android, asks for storage access if needed and adds internal storage and USB volumes as media folders.
+ * Null on desktop, where a normal folder picker already sees mounted disks.
+ */
+@Composable
+expect fun rememberStorageScanner(container: AppContainer): (() -> Unit)?
+
+/**
  * Asks where to save a copy of a relayed file named `fileName`, or uses the download folder from settings without
  * asking. `onPicked` isn't called when the user cancels.
  */

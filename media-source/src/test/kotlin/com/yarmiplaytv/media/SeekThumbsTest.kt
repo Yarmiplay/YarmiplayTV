@@ -49,8 +49,13 @@ class SeekThumbsTest {
     fun sidecarNamesMatchTheVideoAndOneLanguageTag() {
         assertEquals(true, sidecarMatches("Episode.mkv", "Episode.srt"))
         assertEquals(true, sidecarMatches("Episode.mkv", "episode.en.ass"))
+        assertEquals(true, sidecarMatches("Episode.mkv", "Episode.idx"))
+        assertEquals(true, sidecarMatches("Episode.mkv", "Episode.sub"))
         assertEquals(false, sidecarMatches("Episode.mkv", "Episode.extra.en.srt"))
         assertEquals(false, sidecarMatches("Episode.mkv", "Other.srt"))
+        assertEquals(listOf("Episode.idx"), matchingSidecarNames("Episode.mkv", listOf("Episode.idx", "Episode.sub", "Other.srt")))
+        assertEquals(listOf("Episode.sub"), matchingSidecarNames("Episode.mkv", listOf("Episode.sub")))
+        assertEquals(emptyList<String>(), matchingSidecarNames("Episode.mkv", listOf("Episode.idx")))
         assertEquals("en", sidecarLanguage("Episode.en.srt"))
         assertNull(sidecarLanguage("Episode.srt"))
         assertEquals("b", preferredSidecar(
