@@ -13,6 +13,8 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.buildJsonObject
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.HttpURLConnection
@@ -186,12 +188,28 @@ object ServerInfo {
                 connection.readTimeout = timeoutMs
                 connection.instanceFollowRedirects = false
                 if (connection.responseCode != 200) return@runCatching null
-                val text = connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+                val text = connection.inputStream.use { readCapped(it, MAX_INFO_BYTES) } ?: return@runCatching null
                 parse(text)
             } finally {
                 connection.disconnect()
             }
         }.getOrNull()
+    }
+
+    /** Far more than the info ever takes; a bigger answer isn't a YarmiplayServerTV's. */
+    internal const val MAX_INFO_BYTES = 64 * 1024
+
+    /** [input] as UTF-8 text, or null when it's longer than [max] bytes (read no further than that). */
+    internal fun readCapped(input: InputStream, max: Int): String? {
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(8_192)
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            out.write(buffer, 0, n)
+            if (out.size() > max) return null
+        }
+        return out.toByteArray().toString(Charsets.UTF_8)
     }
 
     fun parse(text: String): ServerTls? =
