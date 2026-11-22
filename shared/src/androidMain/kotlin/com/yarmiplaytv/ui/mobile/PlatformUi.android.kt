@@ -1,6 +1,5 @@
 package com.yarmiplaytv.ui.mobile
 
-import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.ContentResolver
@@ -8,13 +7,9 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.ActivityInfo
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
-import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
-import android.provider.Settings
 import android.view.SurfaceView
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -37,12 +32,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.yarmiplaytv.AppContainer
-import com.yarmiplaytv.local.removableVolumeNames
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.SurfacePlayer
 import com.yarmiplaytv.relay.SaveTarget
@@ -182,66 +175,10 @@ actual fun rememberSubtitlePicker(onPicked: (String) -> Unit): () -> Unit {
 
 @Composable
 actual fun rememberFolderPicker(container: AppContainer): () -> Unit {
-    val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) container.local.addFolder(uri.toString())
     }
-    return {
-        try {
-            launcher.launch(null)
-        } catch (e: ActivityNotFoundException) {
-            Toast.makeText(context, "This device has no folder picker", Toast.LENGTH_LONG).show()
-        }
-    }
-}
-
-@Composable
-actual fun rememberStorageScanner(container: AppContainer): (() -> Unit)? {
-    val context = LocalContext.current
-    val settingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (storageReadable(context)) container.local.addFolders(storageFolderUris())
-    }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) container.local.addFolders(storageFolderUris())
-        else Toast.makeText(context, "Allow storage access to see videos on USB", Toast.LENGTH_LONG).show()
-    }
-    return {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (Environment.isExternalStorageManager()) {
-                container.local.addFolders(storageFolderUris())
-            } else {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                    Uri.parse("package:${context.packageName}"),
-                )
-                try {
-                    settingsLauncher.launch(intent)
-                } catch (e: ActivityNotFoundException) {
-                    container.local.addFolders(storageFolderUris())
-                }
-            }
-        } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
-            container.local.addFolders(storageFolderUris())
-        } else {
-            permissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
-    }
-}
-
-private fun storageReadable(context: Context): Boolean = when {
-    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> Environment.isExternalStorageManager()
-    else -> ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-}
-
-/** Internal shared storage, plus each removable volume under `/storage` (USB disks show up there). */
-internal fun storageFolderUris(): List<String> {
-    val roots = mutableListOf<java.io.File>()
-    runCatching { Environment.getExternalStorageDirectory() }.getOrNull()?.takeIf { it.isDirectory && it.canRead() }?.let { roots += it }
-    java.io.File("/storage").listFiles()?.forEach { volume ->
-        if (volume.isDirectory && volume.canRead() && volume.name in removableVolumeNames(listOf(volume.name))) roots += volume
-    }
-    return roots.distinctBy { runCatching { it.canonicalPath }.getOrDefault(it.absolutePath) }
-        .map { Uri.fromFile(it).toString() }
+    return { launcher.launch(null) }
 }
 
 @Composable

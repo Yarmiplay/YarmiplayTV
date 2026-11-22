@@ -1357,7 +1357,7 @@ private fun CenterStatus(
                     )
                     StatusButtons {
                         Button(playFile, Modifier.testTag("open_video")) { ActionLabel("Open a video") }
-                        FilledTonalButton({ nav.push(Screen.LocalFiles) }, Modifier.testTag("browse")) { ActionLabel("Browse") }
+                        FilledTonalButton({ nav.popTo(Screen.Home) }, Modifier.testTag("browse")) { ActionLabel("Browse") }
                     }
                 }
             }

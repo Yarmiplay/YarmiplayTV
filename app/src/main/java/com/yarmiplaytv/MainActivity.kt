@@ -1,6 +1,5 @@
 package com.yarmiplaytv
 
-import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -8,16 +7,13 @@ import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
@@ -38,38 +34,15 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.YarmiplayTvTheme
 import com.yarmiplaytv.voice.AndroidMicPermissions
 import com.yarmiplaytv.voice.TvVoiceKeys
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val container get() = (application as YarmiplayTvApp).container
 
     /** Attached to the mic-permission bridge in onCreate; results arrive via [onRequestPermissionsResult]. */
     private val androidMicPermissions = AndroidMicPermissions(this)
-
-    /** Video opened from another app, held while the user picks the folder its subtitles are in. */
-    private var pendingExternal: Pair<String, String>? = null
-
-    private val sidecarFolderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { folder ->
-        val pending = pendingExternal
-        pendingExternal = null
-        if (pending == null) return@registerForActivityResult
-        lifecycleScope.launch {
-            if (folder != null) {
-                container.local.addFolder(folder.toString())
-                val sidecars = withContext(Dispatchers.IO) { container.local.sidecarsBeside(folder.toString(), pending.second) }
-                if (sidecars.isNotEmpty()) {
-                    container.playlist.rememberSidecars(pending.first, sidecars, select = false)
-                } else {
-                    Toast.makeText(this@MainActivity, "No matching subtitles in that folder", Toast.LENGTH_LONG).show()
-                }
-            }
-            container.playlist.playLocal(pending.first, inRoom = false)
-        }
-    }
 
     private val pipExitReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -262,41 +235,11 @@ class MainActivity : ComponentActivity() {
         val data = intent?.data?.takeIf { intent.action == Intent.ACTION_VIEW }
         if (data != null && (data.scheme == "content" || data.scheme == "file")) {
             if (data.scheme == "file" && IntentMedia.isPrivateFile(data.path, privateDirs())) return
-            openExternalVideo(data)
+            container.playlist.playLocal(data.toString(), inRoom = false)
             return
         }
         val url = intent?.getStringExtra("url") ?: data?.toString()
         if (!url.isNullOrBlank() && IntentMedia.isStreamUrl(url)) container.playlist.playUrl(url)
-    }
-
-    /**
-     * Plays a video another app handed over, and attaches subtitle files beside it when the folder can be listed.
-     * When it can't, the folder picker is the way to grant that one folder — playback still starts if the user cancels.
-     */
-    private fun openExternalVideo(uri: Uri) {
-        val videoUri = uri.toString()
-        lifecycleScope.launch {
-            val video = withContext(Dispatchers.IO) { container.local.describe(videoUri) }
-            val sidecars = withContext(Dispatchers.IO) { container.local.sidecarsBeside(videoUri, video.name) }
-            if (sidecars.isNotEmpty()) {
-                container.playlist.rememberSidecars(videoUri, sidecars, select = false)
-                container.playlist.playLocal(videoUri, inRoom = false)
-                return@launch
-            }
-            val needsFolder = withContext(Dispatchers.IO) { container.local.needsSidecarFolderPermission(videoUri, video.name) }
-            if (!needsFolder) {
-                container.playlist.playLocal(videoUri, inRoom = false)
-                return@launch
-            }
-            pendingExternal = videoUri to video.name
-            Toast.makeText(this@MainActivity, "Choose the folder containing this video to find its subtitles", Toast.LENGTH_LONG).show()
-            try {
-                sidecarFolderPicker.launch(null)
-            } catch (e: ActivityNotFoundException) {
-                pendingExternal = null
-                container.playlist.playLocal(videoUri, inRoom = false)
-            }
-        }
     }
 
     /** This app's own storage: files, cache, no_backup, databases (and their device-protected twin). */

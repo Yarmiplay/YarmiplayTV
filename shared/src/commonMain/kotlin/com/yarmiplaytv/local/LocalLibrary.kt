@@ -50,19 +50,11 @@ abstract class LocalLibrary(
         if (initialFolders.isNotEmpty()) scope.launch { refresh() }
     }
 
-    fun addFolder(uri: String) = addFolders(listOf(uri))
-
-    /** Adds every folder that isn't already saved, then indexes once. */
-    fun addFolders(uris: List<String>) {
-        var changed = false
-        uris.forEach { uri ->
-            onFolderAdded(uri)
-            if (_folders.value.none { it.uri == uri }) {
-                _folders.value = _folders.value + folderOf(uri)
-                changed = true
-            }
-        }
-        if (changed) persistAndRefresh()
+    fun addFolder(uri: String) {
+        onFolderAdded(uri)
+        if (_folders.value.any { it.uri == uri }) return
+        _folders.value = _folders.value + folderOf(uri)
+        persistAndRefresh()
     }
 
     fun removeFolder(folder: LocalFolder) {
@@ -129,9 +121,6 @@ abstract class LocalLibrary(
      * can't be listed, such as a file opened on its own.
      */
     open fun sidecarsBeside(videoUri: String, videoName: String): List<ExternalSubtitle> = emptyList()
-
-    /** True when the folder beside [videoUri] can't be listed, so the user has to grant it before sidecars show up. */
-    open fun needsSidecarFolderPermission(videoUri: String, videoName: String): Boolean = false
 
     /** The folder entry (with display name) for a folder URI. */
     abstract fun folderOf(uri: String): LocalFolder

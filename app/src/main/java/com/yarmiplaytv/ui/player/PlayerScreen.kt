@@ -456,7 +456,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                         onTogglePause = ::togglePause,
                         onSeek = ::seekBy,
                         onOpenMenus = { openPanel(lastPanel) },
-                        onHome = { nav.push(Screen.LocalFiles) },
+                        onHome = { nav.popTo(Screen.Home) },
                         modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { tvControlsHeight = with(scaledDensity) { it.height.toDp() } },
                     )
                     RoomChip(
@@ -707,7 +707,7 @@ private fun CenterStatus(
                         if (entry != null) SearchAgainButton(container, Modifier.focusRequester(focus))
                         StatusButton(
                             "Browse",
-                            { nav.push(Screen.LocalFiles) },
+                            { nav.popTo(Screen.Home) },
                             if (entry == null) Modifier.focusRequester(focus) else Modifier,
                             icon = Icons.Filled.Home,
                             primary = entry == null,

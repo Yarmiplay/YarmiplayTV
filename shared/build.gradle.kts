@@ -16,13 +16,6 @@ kotlin {
     jvm("desktop")
 
     sourceSets {
-        // FTP, SMB and the localhost streamer use Java sockets. Android and desktop both depend on this set.
-        val jvmCommon by creating {
-            dependsOn(getByName("commonMain"))
-            dependencies {
-                implementation(libs.smbj)
-            }
-        }
         commonMain.dependencies {
             api(project(":syncplay-protocol"))
             api(project(":media-source"))
@@ -42,7 +35,6 @@ kotlin {
             implementation(libs.coil.network.okhttp)
         }
         if (android) {
-            getByName("androidMain").dependsOn(jvmCommon)
             androidMain.dependencies {
                 implementation(project(":player-mpv"))
                 implementation(libs.androidx.activity.compose)
@@ -50,7 +42,6 @@ kotlin {
             }
         }
         val desktopMain by getting {
-            dependsOn(jvmCommon)
             // The logo is one Android vector drawable, read on desktop with loadXmlImageVector.
             resources.srcDir("src/androidMain/res/drawable")
         }

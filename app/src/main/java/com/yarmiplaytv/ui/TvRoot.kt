@@ -34,7 +34,6 @@ import com.yarmiplaytv.ui.home.HomeScreen
 import com.yarmiplaytv.ui.mal.MalEntryScreen
 import com.yarmiplaytv.ui.mal.MalHubScreen
 import com.yarmiplaytv.ui.mal.MalLoginScreen
-import com.yarmiplaytv.ui.mobile.MobileLocalFilesScreen
 import com.yarmiplaytv.ui.mobile.PlayerPictureInPicture
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
@@ -78,8 +77,7 @@ fun TvRoot(container: AppContainer, stack: SnapshotStateList<Screen> = remember 
                     Screen.Servers -> ServersScreen(container, nav)
                     // On the video, text is white whatever the theme; the panels over it take the theme.
                     Screen.Player -> CompositionLocalProvider(LocalContentColor provides OnVideo.Text) { PlayerScreen(container, nav) }
-                    Screen.Settings -> SettingsScreen(container, nav)
-                    Screen.LocalFiles -> MobileLocalFilesScreen(container, nav)
+                    Screen.Settings, Screen.LocalFiles -> SettingsScreen(container, nav)
                     Screen.Licenses -> LicensesScreen()
                     Screen.MalLogin -> MalLoginScreen(container, nav)
                     Screen.Mal -> MalHubScreen(container, nav)
