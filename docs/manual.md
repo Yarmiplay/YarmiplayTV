@@ -63,9 +63,10 @@ play in its player; your own Jellyfin has to be reachable over HTTPS. When the r
 through YarmiplayServerTV, it's added by itself, through the server, as in the app. The room's entries are looked up on them in the
 app's order, then fetched from another viewer through the server's file relay, which asks the host to approve the
 browser as a device the first time. The seek bar marks the file's chapters, and the time under the pointer names the chapter, the same as in the app. Openings and endings are skipped as in the app (the file's chapters, the media
-server's markers, AniSkip, or listening), and MyAnimeList stays up to date as you watch: sign in from Settings >
-MyAnimeList, through the room's server. Not in the browser: finding servers on your network, Play next episode from
-your MyAnimeList list, and the hardware-decoding switch.
+server's markers, AniSkip, or listening), and Settings > MyAnimeList finds any show. Not in the browser: signing in
+to MyAnimeList and updating your list as you watch (MyAnimeList doesn't accept requests from web pages, so the
+browser would have to send your MyAnimeList sign-in through the room's server; use the app for that), finding
+servers on your network, Play next episode from your MyAnimeList list, and the hardware-decoding switch.
 
 ## The home screen
 

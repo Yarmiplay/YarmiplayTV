@@ -11,15 +11,13 @@
   import * as ManagedRooms from "../lib/syncplay/managedRooms";
   import { chapterBoundaries, chapterTitleAt } from "../lib/player/chapterMarks";
   import { formatTime } from "../lib/syncplay/models";
-  import { mal, skip } from "../app/watching";
-  import { isQuestion, noticeShowMillis, type MalNotice } from "../lib/mal/service";
+  import { skip } from "../app/watching";
   import { saveSeekPosition } from "../lib/data/seekPositions";
   import type { SkipSegment } from "../lib/skip/segment";
   import type { IconName } from "../lib/ui/icons";
   import * as FileNames from "../lib/media/fileNames";
   import ChatPanel from "./ChatPanel.svelte";
   import Icon from "./Icon.svelte";
-  import MalPanel from "./MalPanel.svelte";
   import PeoplePanel from "./PeoplePanel.svelte";
   import PlaylistPanel from "./PlaylistPanel.svelte";
 
@@ -38,20 +36,11 @@
   let room = $state<RoomState | null>(null);
   let status = $state<PlaylistStatus>({ kind: "idle" });
   let toast = $state<FeedMessage | null>(null);
-  let panel = $state<"playlist" | "room" | "chat" | "audio" | "subtitles" | "mal" | null>(null);
+  let panel = $state<"playlist" | "room" | "chat" | "audio" | "subtitles" | null>(null);
   let skipPrompt = $state<{ segment: SkipSegment; label: string } | null>(null);
   let segments = $state<SkipSegment[]>([]);
-  let malNotice = $state<MalNotice | null>(null);
-  let malTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => skip.prompt.subscribe((p) => (skipPrompt = p)));
   $effect(() => skip.segments.subscribe((s) => (segments = s)));
-  $effect(() =>
-    mal.notice.subscribe((n) => {
-      malNotice = n;
-      clearTimeout(malTimer);
-      if (n) malTimer = setTimeout(() => (malNotice = null), noticeShowMillis(n));
-    }),
-  );
   let controlsShown = $state(true);
   let hover = $state<{ x: number; time: number } | null>(null);
   let dragging = $state<number | null>(null);
@@ -408,13 +397,12 @@
   const stepIcons = $derived<[IconName, IconName]>(
     seekStep === 5 ? ["replay_5", "forward_5"] : seekStep === 10 ? ["replay_10", "forward_10"] : seekStep === 30 ? ["replay_30", "forward_30"] : ["fast_rewind", "fast_forward"],
   );
-  const PANELS: { key: "playlist" | "room" | "chat" | "audio" | "subtitles" | "mal"; label: string; icon: IconName }[] = [
+  const PANELS: { key: "playlist" | "room" | "chat" | "audio" | "subtitles"; label: string; icon: IconName }[] = [
     { key: "playlist", label: "Playlist", icon: "queue_music" },
     { key: "room", label: "Room", icon: "groups" },
     { key: "chat", label: "Chat", icon: "forum" },
     { key: "audio", label: "Audio", icon: "audiotrack" },
     { key: "subtitles", label: "Subtitles", icon: "subtitles" },
-    { key: "mal", label: "MyAnimeList", icon: "bookmarks" },
   ];
 
   async function toggleFullscreen() {
@@ -654,15 +642,6 @@
       </button>
     {/if}
 
-    {#if malNotice}
-      <div class="mal-note" class:question={isQuestion(malNotice)}>
-        <span>{malNotice.text}</span>
-        {#if malNotice.undo}<button class="link-light" onclick={() => malNotice?.undo?.()}>Undo</button>{/if}
-        {#if malNotice.confirm}<button class="link-light" onclick={() => malNotice?.confirm?.()}>Update</button>{/if}
-        {#if malNotice.pick}<button class="link-light" onclick={() => (panel = "mal")}>Pick the entry</button>{/if}
-      </div>
-    {/if}
-
     {#if seekNote}
       <div class="note">{seekNote}</div>
     {/if}
@@ -817,7 +796,7 @@
     {#if panel}
       <aside class="side">
         <header>
-          <h2>{{ playlist: "Playlist", room: "Room", chat: "Chat", audio: "Audio", subtitles: "Subtitles", mal: "MyAnimeList" }[panel]}</h2>
+          <h2>{{ playlist: "Playlist", room: "Room", chat: "Chat", audio: "Audio", subtitles: "Subtitles" }[panel]}</h2>
           <button class="tool" onclick={() => (panel = null)} aria-label="Close" title="Close"><Icon name="close" size={22} /></button>
         </header>
         {#if panel === "playlist"}
@@ -826,8 +805,6 @@
           <PeoplePanel />
         {:else if panel === "chat"}
           <ChatPanel bind:input={chatInput} />
-        {:else if panel === "mal"}
-          <MalPanel />
         {:else if panel === "audio" && s}
           <ul class="tracks">
             {#each s.audioTracks as t (t.id)}
@@ -1128,31 +1105,6 @@
     border-radius: 5px;
     border: 1px solid rgb(255 255 255 / 0.35);
     border-bottom-width: 2px;
-  }
-  /* MyAnimeList's brief note: two seconds, one line, in the corner (1.8.9). */
-  .mal-note {
-    position: absolute;
-    top: 64px;
-    right: 16px;
-    z-index: 4;
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    padding: 6px 12px;
-    border-radius: 10px;
-    background: rgb(0 0 0 / 0.7);
-    color: #fff;
-    font-size: 14px;
-  }
-  .mal-note.question {
-    border: 1px solid var(--accent);
-  }
-  .link-light {
-    background: none;
-    border: 0;
-    color: var(--accent);
-    cursor: pointer;
-    font-weight: 600;
   }
   .part {
     position: absolute;

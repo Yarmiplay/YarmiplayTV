@@ -15,8 +15,7 @@ import {
 import { MalClient } from "../lib/mal/client";
 import type { EpisodeInfo as MalEpisode } from "../lib/mal/episode";
 import { MalService } from "../lib/mal/service";
-import { prefixedStorage } from "../lib/mal/storage";
-import { MalTracker } from "../lib/mal/tracker";
+import { MalKeys, prefixedStorage } from "../lib/mal/storage";
 import { PlaybackReporter, type EpisodeInfo } from "../lib/media";
 import { decodeMono, mediaDuration } from "../lib/player/audioExtract";
 import { HttpSource } from "../lib/player/bytes";
@@ -33,8 +32,9 @@ import { sessions, sourceByKey, sources } from "./media";
 import { settings } from "./settings";
 
 /**
- * What happens around the playing video (the apps' PlaybackReporter, MalTracker and SkipService wiring): how far
- * playback got goes to the media servers, a watched episode to MyAnimeList, and openings and endings are skipped.
+ * What happens around the playing video (the apps' PlaybackReporter and SkipService wiring): how far playback got
+ * goes to the media servers, and openings and endings are skipped. Unlike the apps, the browser doesn't sign in to
+ * MyAnimeList or update its list (see below).
  */
 
 // --- Episodes as each part needs them -------------------------------------------------------------
@@ -47,6 +47,10 @@ const malEpisode = (e: EpisodeInfo | null): MalEpisode | null =>
 /**
  * Where MyAnimeList's requests go: MyAnimeList refuses browsers, so through YarmiplayServerTV 1.8's passthrough, on
  * the room's server, or else the server of the last room joined.
+ *
+ * Only public data goes this way, with the app's Client ID (which show an episode is, for AniSkip, and Find a show).
+ * Signing in isn't offered in the browser: the account's tokens would have to go through whichever server this
+ * picks, and any server can say it passes MyAnimeList through. The apps talk to MyAnimeList directly.
  */
 function passthroughBase(): string | null {
   const s = session.value;
@@ -62,27 +66,21 @@ function passthroughBase(): string | null {
   return `${local ? "http" : "https"}://${last.host}:${last.port}`;
 }
 
+/**
+ * A MyAnimeList account signed in by an earlier version (up to 3.1.3) is forgotten, with its list updates still
+ * waiting to be sent and a sign-in left half done, before the service reads them, so its tokens are never sent again.
+ */
+function forgetMalAccount() {
+  const local = prefixedStorage("ytv:");
+  for (const key of [MalKeys.account, MalKeys.queue, MalKeys.auto, MalKeys.ask]) local.removeItem(key);
+  prefixedStorage("ytv:", () => sessionStorage).removeItem("mal_sign_in");
+}
+forgetMalAccount();
+
 export const malClient = new MalClient(buildInfo.malClientId, { passthroughBase });
-export const mal = new MalService({
-  client: malClient,
-  storage: prefixedStorage("ytv:"),
-  session: prefixedStorage("ytv:", () => sessionStorage),
-});
+export const mal = new MalService({ client: malClient, storage: prefixedStorage("ytv:") });
 // 2.8.7+: rewrite MAL keys still stored as jellyfin:<ServerId> to jellyfin:<url>.
 mal.store.migrateJellyfinKeys(sessions.value.jellyfin);
-const tracker = new MalTracker(mal);
-
-/** Sign-in finishes on mal-callback.html, which hands the code back to this page. */
-addEventListener("message", (event: MessageEvent) => {
-  if (event.origin !== location.origin || event.data?.type !== "mal-callback") return;
-  if (event.data.error || !event.data.code) return;
-  mal.completeSignIn(event.data.code, event.data.state).catch((e: Error) => session.value?.postLocal(`MyAnimeList sign-in failed: ${e.message}`, true));
-});
-
-/** Opens MyAnimeList's sign-in in a small window (not noopener: its callback page talks back to this one). */
-export function signInToMal() {
-  window.open(mal.beginSignIn(), "mal-sign-in", "popup,width=520,height=720");
-}
 
 // --- Listening for openings and endings ----------------------------------------------------------------------
 
@@ -192,13 +190,6 @@ function onPlayer(s: PlayerState) {
     duration: s.duration,
     eofReached: s.ended,
   });
-  tracker.update(np ? { key: np.key, episode: malEpisode(np.episode), durationHint: np.durationHint } : null, {
-    key: loaded ? np!.key : null,
-    fileLoaded: s.loaded,
-    duration: s.duration,
-    position: s.position,
-    ended: s.ended,
-  });
   if (loaded && s.chapters !== chaptersSeen) {
     chaptersSeen = s.chapters;
     skip.loaded(s.duration, s.chapters);
@@ -209,7 +200,6 @@ function onPlayer(s: PlayerState) {
 function onNowPlaying(np: NowPlaying | null) {
   current = np;
   chaptersSeen = null;
-  mal.playing(malEpisode(np?.episode ?? null));
   skip.fileChanged(np ? { key: np.key, episode: malEpisode(np.episode) } : null);
   if (state) onPlayer(state);
 }
@@ -230,7 +220,7 @@ session.subscribe((s) => {
 });
 player.subscribe((p) => p?.subscribe(onPlayer));
 settings.subscribe(() => skip.settingsChanged());
-// The skip button and the tracker check the time between the player's updates too.
+// The skip button checks the time between the player's updates too.
 setInterval(() => state?.loaded && current && !state.paused && skip.tick(player.value?.position ?? state.position, false), 250);
 
 export type { MalEpisode };

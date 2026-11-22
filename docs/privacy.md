@@ -1,6 +1,6 @@
 # YarmiplayTV privacy policy
 
-Effective 24 October 2026. This policy covers the YarmiplayTV app for Android TV, Android phones and tablets,
+Effective 22 November 2026. This policy covers the YarmiplayTV app for Android TV, Android phones and tablets,
 desktop (Windows, Linux and macOS), and the browser player.
 
 ## Summary
@@ -63,13 +63,18 @@ unless you turn it off, to GitHub to check for a new version.
   when you've watched an episode or change something in the MyAnimeList panel, updates your list: the episodes
   watched, status, score, rewatching and start and finish dates. MyAnimeList handles this under its
   [privacy policy](https://myanimelist.net/about/privacy_policy). Nothing about MyAnimeList goes anywhere else.
+  The browser player doesn't sign in to MyAnimeList: MyAnimeList doesn't accept requests from web pages, so your
+  sign-in would have to pass through a room's server. Use the app to keep your list up to date.
 - **MyAnimeList and AniSkip, to skip openings and endings:** when an anime episode plays, the app works out
   which MyAnimeList entry it is, also without a MyAnimeList account: it asks MyAnimeList, with the app's id
   rather than yours, about the show (its title, or the MyAnimeList id your media server has for it) and its
   seasons. It then asks [AniSkip](https://aniskip.com) (api.aniskip.com) where the episode's opening and ending
   are, sending the MyAnimeList id, the episode number and the file's length, nothing else. When the video plays
   from your Jellyfin or Plex server, the app also asks that server for the episode's intro and credits markers.
-  The answers are kept in memory only. In a room on a YarmiplayServerTV server, turning automatic skipping on or off goes to the
+  The answers are kept in memory only. In the browser player, the questions to MyAnimeList (and the shows you
+  search for in **Find a show**) go through the YarmiplayServerTV server of the room you're in, or else of the last
+  room you joined, which passes them on; they carry the app's id and the show, nothing about you or your account.
+  In a room on a YarmiplayServerTV server, turning automatic skipping on or off goes to the
   server, which tells the room who changed it.
 - **Listening for openings and endings, on your device:** when nothing above knows where an episode's opening
   and ending are, the app reads the sound of the start and end of the episode and of the episodes before and after

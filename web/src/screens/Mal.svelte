@@ -1,36 +1,16 @@
 <script lang="ts">
-  import { go } from "../app/context";
   import Icon from "../components/Icon.svelte";
-  import { mal, malClient, signInToMal } from "../app/watching";
+  import { mal, malClient } from "../app/watching";
   import MalEntry from "../components/MalEntry.svelte";
-  import { MAL_STATUSES, malStatusLabel, type MalAnime, type MalStatus } from "../lib/mal/models";
-  import type { MalSettings } from "../lib/mal/storage";
+  import type { MalAnime } from "../lib/mal/models";
 
   /**
-   * The MyAnimeList screen (MobileMal.kt): the account, updating the list as you watch (or asking first), finding any
-   * show, your lists, the shows you don't track and updates waiting to be sent.
+   * The MyAnimeList screen: why the browser doesn't sign in to MyAnimeList (the apps' MobileMal.kt does), and
+   * finding any show, which needs no account.
    */
-  let prefs = $state<MalSettings>(mal.store.settings.value);
-  $effect(() => mal.store.settings.subscribe((s) => (prefs = s)));
-
-  let status = $state<MalStatus>("watching");
-  let list = $state<MalAnime[] | null>(null);
-  let listError = $state<string | null>(null);
   let query = $state("");
   let found = $state<MalAnime[] | null>(null);
   let searchError = $state<string | null>(null);
-
-  const signedIn = $derived(prefs.account !== null);
-
-  $effect(() => {
-    if (!signedIn) return;
-    list = null;
-    listError = null;
-    mal.myList(status).then(
-      (rows) => (list = rows.map(([anime, s]) => ({ ...anime, myListStatus: s }))),
-      (e) => (listError = (e as Error).message),
-    );
-  });
 
   async function search(event: SubmitEvent) {
     event.preventDefault();
@@ -48,22 +28,18 @@
 
   {#if !malClient.configured}
     <p class="card dim">MyAnimeList isn't available in this build.</p>
-  {:else if !signedIn}
-    <section class="card group">
-      <p>Keep your MyAnimeList list up to date as you watch: when you've watched 90% of an episode, the app updates it.</p>
-      <p class="dim small">You sign in on MyAnimeList's own page; YarmiplayTV never sees your password. MyAnimeList's requests go through the YarmiplayServerTV of your last room.</p>
-      <button class="button" onclick={signInToMal}><Icon name="login" size={18} />Sign in to MyAnimeList</button>
-    </section>
   {:else}
     <section class="card group">
-      <div class="row">
-        {#if prefs.account?.picture}<img class="avatar" src={prefs.account.picture} alt="" />{/if}
-        <b class="grow">{prefs.account?.userName}</b>
-        <button class="link" onclick={() => mal.signOut()}><Icon name="logout" size={18} />Sign out</button>
-      </div>
-      <label class="switch"><input type="checkbox" checked={prefs.autoUpdate} onchange={(e) => mal.savePrefs((e.target as HTMLInputElement).checked, prefs.askFirst)} /> Update my list as I watch</label>
-      <label class="switch"><input type="checkbox" checked={prefs.askFirst} onchange={(e) => mal.savePrefs(prefs.autoUpdate, (e.target as HTMLInputElement).checked)} /> Ask before each update</label>
-      {#if prefs.queue.length}<p class="small">{prefs.queue.length} update{prefs.queue.length === 1 ? "" : "s"} waiting to be sent. <button class="link" onclick={() => mal.flushQueue()}>Send now</button></p>{/if}
+      <p>
+        Signing in to MyAnimeList, and updating your list as you watch, is only in the YarmiplayTV apps for Android and
+        computers. MyAnimeList doesn't accept requests from web pages, so in the browser your MyAnimeList sign-in would
+        have to pass through the Syncplay room's server, and YarmiplayTV won't hand your MyAnimeList account to a room's
+        server.
+      </p>
+      <p class="dim small">
+        Find a show below, and skipping anime openings and endings with AniSkip, need no account: they ask MyAnimeList
+        for public details through the room's YarmiplayServerTV.
+      </p>
     </section>
   {/if}
 
@@ -82,36 +58,6 @@
     </section>
   {/if}
 
-  {#if signedIn}
-    <section class="card group">
-      <div class="tabs">
-        {#each MAL_STATUSES.filter((s) => s === "watching" || s === "plan_to_watch" || s === "completed") as s (s)}
-          <button class:on={status === s} onclick={() => (status = s)}>{malStatusLabel[s]}</button>
-        {/each}
-      </div>
-      {#if listError}<p class="error">{listError}</p>{/if}
-      {#if list === null && !listError}<p class="dim">Loading…</p>{/if}
-      {#each list ?? [] as a (a.id)}
-        <div class="list-row">
-          <MalEntry anime={a} compact />
-          <button class="link" onclick={() => go(`#/search?q=${encodeURIComponent(a.title)}`)}><Icon name="search" size={18} />Find it in your libraries</button>
-        </div>
-      {/each}
-      {#if list?.length === 0}<p class="dim">Nothing here.</p>{/if}
-    </section>
-
-    {#if prefs.ignored.length}
-      <section class="card group">
-        <h2>Shows you don't track</h2>
-        {#each prefs.ignored as key (key)}
-          <div class="row">
-            <span class="grow">{prefs.ignoredNames[key] || key}</span>
-            <button class="link" onclick={() => mal.ignore(key, false)}>Track again</button>
-          </div>
-        {/each}
-      </section>
-    {/if}
-  {/if}
 </main>
 
 <style>
@@ -147,17 +93,7 @@
     flex: 1;
     min-width: 0;
   }
-  .avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-  }
-  .switch {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-  }
-  input:not([type="checkbox"]) {
+  input {
     background: var(--surface-high);
     border: 0;
     border-radius: 10px;
@@ -165,34 +101,6 @@
   }
   .small {
     font-size: 13px;
-  }
-  .link {
-    background: none;
-    border: 0;
-    color: var(--accent);
-    cursor: pointer;
-    font-size: 14px;
-  }
-  .tabs {
-    display: flex;
-    gap: 4px;
-  }
-  .tabs button {
-    background: var(--surface-high);
-    border: 0;
-    border-radius: 999px;
-    padding: 6px 14px;
-    cursor: pointer;
-  }
-  .tabs button.on {
-    background: var(--accent);
-    color: var(--on-accent);
-  }
-  .list-row {
-    display: grid;
-    gap: 4px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--surface-high);
   }
   .error {
     color: var(--error);
