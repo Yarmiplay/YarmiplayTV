@@ -116,21 +116,29 @@
     };
   });
 
+  // The visualiser reads only what it needs from the player's state, which is replaced five times a second: read
+  // whole, it put the bars back to their resting shape and restarted the animation at every update, so they snapped.
+  const vizFile = $derived(s?.loaded && !s.video ? s.name : "");
+  const vizAudioOnly = $derived(showSpectrum(!!s?.loaded, !!s?.video, s?.audioTrack != null));
+  const vizHold = $derived(!s || s.paused || s.buffering);
+
   $effect(() => {
-    const name = s?.loaded && !s.video ? s.name : "";
+    void vizFile;
     vizLevels = idle(0);
-    void name;
   });
 
   $effect(() => {
     const canvas = vizCanvas;
-    const audioOnly = showSpectrum(!!s?.loaded, !!s?.video, s?.audioTrack != null);
-    const hold = !s || s.paused || s.buffering;
+    const audioOnly = vizAudioOnly;
+    const hold = vizHold;
     if (!canvas || !audioOnly) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     let last = 0;
     let raf = 0;
+    // The theme's colour, read again at most once a second rather than at every frame.
+    let accent = "";
+    let accentAt = -Infinity;
     const paint = (now: number) => {
       const dt = last ? Math.min(0.05, (now - last) / 1000) : 0;
       last = now;
@@ -148,7 +156,10 @@
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
-      const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3da5f4";
+      if (now - accentAt > 1000) {
+        accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3da5f4";
+        accentAt = now;
+      }
       const n = vizLevels.length;
       const gap = width * 0.008;
       const barW = (width - gap * (n + 1)) / n;
