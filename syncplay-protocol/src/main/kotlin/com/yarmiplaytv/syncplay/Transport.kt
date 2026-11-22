@@ -4,6 +4,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.EOFException
@@ -14,6 +16,8 @@ import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
+import javax.net.ssl.SSLException
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
@@ -52,6 +56,11 @@ interface Transport : Closeable {
     suspend fun readInbound(): SyncplayInbound? = readLine()?.let { SyncplayInbound.Line(it) }
     /** Returns null when the connection is closed. Prefer [readInbound] when mux may be active. */
     suspend fun readLine(): String?
+    /**
+     * [readLine], or null when nothing arrives within [timeoutMs]. Unlike a coroutine timeout around [readLine], a
+     * socket transport really stops waiting: its blocking read can't be cancelled.
+     */
+    suspend fun readLine(timeoutMs: Long): String? = withTimeoutOrNull(timeoutMs) { readLine() }
     suspend fun writeLine(line: String)
     /**
      * Write one yv1 packet as a Syncplay-mux voice record (`0x1E` + BE u16 length + packet).
@@ -79,7 +88,9 @@ class SocketTransport(
     private val tlsName: String = host,
 ) : Transport {
     @Volatile private var socket: Socket? = null
-    private var input: InputStream? = null
+    private var input: PeekableInputStream? = null
+    /** While set ([System.nanoTime]), reads from the socket give up with [SocketTimeoutException] at that time. */
+    @Volatile private var readDeadline: Long = 0L
     private var output: OutputStream? = null
     private val writeLock = Mutex()
 
@@ -123,8 +134,47 @@ class SocketTransport(
 
     private fun attach(s: Socket) {
         socket = s
-        input = s.getInputStream()
+        input = PeekableInputStream(DeadlineInputStream(s, s.getInputStream()))
         output = s.getOutputStream()
+    }
+
+    override suspend fun readLine(timeoutMs: Long): String? {
+        val s = socket ?: return null
+        val before = runCatching { s.soTimeout }.getOrDefault(0)
+        readDeadline = System.nanoTime() + timeoutMs * 1_000_000L
+        return try {
+            withTimeoutOrNull(timeoutMs) { readLine() }
+        } catch (_: SocketTimeoutException) {
+            null
+        } finally {
+            readDeadline = 0L
+            runCatching { s.soTimeout = before }
+        }
+    }
+
+    /** The socket's own stream, with each read bounded by [readDeadline] while one is set. */
+    private inner class DeadlineInputStream(private val s: Socket, private val raw: InputStream) : InputStream() {
+        private fun bound() {
+            val deadline = readDeadline
+            if (deadline == 0L) return
+            val leftMs = (deadline - System.nanoTime()) / 1_000_000L
+            if (leftMs <= 0) throw SocketTimeoutException("Read timed out")
+            s.soTimeout = leftMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        }
+
+        override fun read(): Int {
+            bound()
+            return raw.read()
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            bound()
+            return raw.read(b, off, len)
+        }
+
+        override fun available(): Int = raw.available()
+
+        override fun close() = raw.close()
     }
 
     override suspend fun readLine(): String? {
@@ -193,6 +243,9 @@ class SocketTransport(
     override suspend fun startTls() = writeLock.withLock {
         withContext(Dispatchers.IO) {
             val plain = socket ?: error("Not connected")
+            // The server says nothing between its STARTTLS answer and the handshake. Anything it did send would sit
+            // in our buffer, where the TLS socket (reading the raw socket) can't see it: refuse rather than drop it.
+            if ((input?.buffered ?: 0) > 0) throw SSLException("Unexpected data from the server before the TLS handshake")
             val tls = sslSocketFactory.createSocket(plain, tlsName, port, true) as SSLSocket
             tls.sslParameters = tls.sslParameters.apply { endpointIdentificationAlgorithm = "HTTPS" }
             tls.useClientMode = true
@@ -228,6 +281,12 @@ class SocketTransport(
     }
 }
 
+/** A [BufferedInputStream] that tells how many bytes it holds that weren't read yet. */
+internal class PeekableInputStream(inp: InputStream) : BufferedInputStream(inp, 8_192) {
+    @get:Synchronized
+    val buffered: Int get() = count - pos
+}
+
 /**
  * Read through the next LF, starting with the already-read byte [first]; return the trimmed line without the newline,
  * or null at end of stream with nothing read. Bytes are collected first and decoded once as UTF-8: a character outside
@@ -238,6 +297,9 @@ internal fun readJsonLine(inp: InputStream, first: Int): String? {
     var c = first
     while (c != 0x0A) {
         if (c != 0x0D) buf.write(c)
+        // A line can't be longer than SYNCPLAY_MAX_LINE characters, at most 4 bytes each in UTF-8 (plus whitespace,
+        // trimmed below): stop a server that never sends a newline before it fills the memory.
+        if (buf.size() > 4 * SYNCPLAY_MAX_LINE) throw IOException("Syncplay line too long")
         c = inp.read()
         if (c < 0) {
             if (buf.size() == 0) return null

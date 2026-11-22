@@ -69,6 +69,9 @@ class GrowingIndex(
 
     val contentType: String = initial.contentType
 
+    /** This index's playlist for the player, kept rendered between its reloads. */
+    internal val playlist = GrowingPlaylist.Renderer()
+
     /** The room's list said this about the file. Lengths only grow, and a finished file stays finished. */
     fun update(media: GrowingMedia) = synchronized(segments) {
         val old = _state.value
@@ -131,7 +134,8 @@ class GrowingIndex(
         val complete = page.from <= known
         val old = _state.value
         _state.value = GrowingSnapshot(
-            segments = segments.toList(),
+            // The snapshot already holds the known list when nothing was added: no need to copy it again.
+            segments = if (segments.size == known && old.segments.size == known) old.segments else segments.toList(),
             growing = old.growing && page.growing,
             live = old.live,
             length = maxOf(old.length, page.length),
@@ -155,7 +159,8 @@ class GrowingIndex(
                 val offset = (a[0] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
                 val length = (a[1] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
                 val duration = (a[2] as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
-                MediaSegment(offset, length, duration).takeIf { offset >= 0 && length > 0 && duration >= 0 }
+                // An infinite duration (or one that overflows to it, like 1e400) would make TARGETDURATION nonsense.
+                MediaSegment(offset, length, duration).takeIf { offset >= 0 && length > 0 && duration >= 0 && duration.isFinite() }
             }
             // A dropped segment would leave a gap in the timeline: take the answer only when every one is whole.
             if (segments.size != list.size) return null
@@ -188,6 +193,74 @@ object GrowingPlaylist {
             append(mediaUri).append('\n')
         }
         if (snapshot.final) append("#EXT-X-ENDLIST\n")
+    }
+
+    /**
+     * [render], kept between a player's reloads of one growing file's playlist: segments are only ever added, so each
+     * is formatted once and a reload only adds the new ones. The text is the same as [render]'s.
+     */
+    class Renderer {
+        private var mediaUri: String? = null
+        private val lines = StringBuilder()
+        private var count = 0
+        private var first: MediaSegment? = null
+        private var last: MediaSegment? = null
+        private var maxDuration = 0.0
+        private var rendered: String? = null
+        private var renderedFinal = false
+
+        @Synchronized
+        fun render(snapshot: GrowingSnapshot, mediaUri: String): String {
+            val segments = snapshot.segments
+            // Anything but the same list with more at its end starts over.
+            if (mediaUri != this.mediaUri || segments.size < count ||
+                (count > 0 && (segments[0] != first || segments[count - 1] != last))
+            ) {
+                reset(mediaUri)
+            }
+            if (segments.size == count && rendered != null && renderedFinal == snapshot.final) return rendered!!
+            for (i in count until segments.size) {
+                val s = segments[i]
+                maxDuration = if (i == 0) s.duration else maxOf(maxDuration, s.duration)
+                appendSegment(lines, s, mediaUri)
+            }
+            count = segments.size
+            first = segments.firstOrNull()
+            last = segments.lastOrNull()
+            val target = ceil(if (count == 0) 1.0 else maxDuration).toLong().coerceAtLeast(1)
+            val text = buildString(lines.length + 160) {
+                appendHeader(this, target)
+                append(lines)
+                if (snapshot.final) append("#EXT-X-ENDLIST\n")
+            }
+            rendered = text
+            renderedFinal = snapshot.final
+            return text
+        }
+
+        private fun reset(mediaUri: String) {
+            this.mediaUri = mediaUri
+            lines.setLength(0)
+            count = 0
+            first = null
+            last = null
+            maxDuration = 0.0
+            rendered = null
+        }
+    }
+
+    private fun appendHeader(out: StringBuilder, target: Long) {
+        out.append("#EXTM3U\n")
+        out.append("#EXT-X-VERSION:4\n")
+        out.append("#EXT-X-TARGETDURATION:$target\n")
+        out.append("#EXT-X-PLAYLIST-TYPE:EVENT\n")
+        out.append("#EXT-X-MEDIA-SEQUENCE:0\n")
+    }
+
+    private fun appendSegment(out: StringBuilder, s: MediaSegment, mediaUri: String) {
+        out.append("#EXTINF:").append(String.format(Locale.ROOT, "%.3f", s.duration)).append(",\n")
+        out.append("#EXT-X-BYTERANGE:").append(s.length).append('@').append(s.offset).append('\n')
+        out.append(mediaUri).append('\n')
     }
 
     /** A file name extension players accept for segments of [contentType]. */

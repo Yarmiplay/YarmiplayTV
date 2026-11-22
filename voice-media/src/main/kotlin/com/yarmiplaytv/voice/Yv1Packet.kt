@@ -23,6 +23,30 @@ object Yv1Packet {
     private val MAGIC = byteArrayOf(0x59, 0x56) // "YV"
     private val random = SecureRandom()
 
+    /**
+     * One AES-GCM cipher per thread, and the key object of the key it last used: packets come 50 times a second per
+     * speaker, and looking up a cipher and building a key object each time is most of the cost. GCM is re-initialised
+     * with each packet's own nonce, so reuse doesn't change what goes on the wire.
+     */
+    private class Crypto {
+        val cipher: Cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        private var keyBytes: ByteArray? = null
+        private var keySpec: SecretKeySpec? = null
+
+        fun key(key: ByteArray): SecretKeySpec {
+            val cached = keySpec
+            if (cached != null && keyBytes.contentEquals(key)) return cached
+            return SecretKeySpec(key, "AES").also {
+                keyBytes = key.copyOf()
+                keySpec = it
+            }
+        }
+    }
+
+    private val crypto = object : ThreadLocal<Crypto>() {
+        override fun initialValue() = Crypto()
+    }
+
     data class Opened(
         val type: Byte,
         val sender: Long,
@@ -44,14 +68,15 @@ object Yv1Packet {
         val nonce = ByteArray(NONCE_LEN).also { random.nextBytes(it) }
         val header = header(type, token, sender, sequence, timestamp, nonce)
         return try {
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_LEN * 8, nonce))
+            val c = crypto.get()
+            val cipher = c.cipher
+            cipher.init(Cipher.ENCRYPT_MODE, c.key(key), GCMParameterSpec(TAG_LEN * 8, nonce))
             cipher.updateAAD(header)
-            val ct = cipher.doFinal(plain)
-            ByteArray(HEADER_LEN + ct.size).also {
-                System.arraycopy(header, 0, it, 0, HEADER_LEN)
-                System.arraycopy(ct, 0, it, HEADER_LEN, ct.size)
-            }
+            // Header, then ciphertext and tag written straight after it.
+            val out = ByteArray(HEADER_LEN + plain.size + TAG_LEN)
+            System.arraycopy(header, 0, out, 0, HEADER_LEN)
+            val n = cipher.doFinal(plain, 0, plain.size, out, HEADER_LEN)
+            if (HEADER_LEN + n == out.size) out else out.copyOf(HEADER_LEN + n)
         } catch (_: Exception) {
             null
         }
@@ -60,18 +85,17 @@ object Yv1Packet {
     fun open(key: ByteArray, packet: ByteArray): Opened? {
         if (key.size != 32 || packet.size < MIN_PACKET || packet.size > MAX_PACKET) return null
         if (packet[0] != MAGIC[0] || packet[1] != MAGIC[1] || packet[2] != VERSION) return null
-        val header = packet.copyOfRange(0, HEADER_LEN)
-        val ct = packet.copyOfRange(HEADER_LEN, packet.size)
-        val nonce = header.copyOfRange(28, 40)
         return try {
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_LEN * 8, nonce))
-            cipher.updateAAD(header)
-            val plain = cipher.doFinal(ct)
-            val buf = ByteBuffer.wrap(header)
+            val c = crypto.get()
+            val cipher = c.cipher
+            // The nonce is the header's last 12 bytes; the header is the additional data, the rest the ciphertext.
+            cipher.init(Cipher.DECRYPT_MODE, c.key(key), GCMParameterSpec(TAG_LEN * 8, packet, 28, NONCE_LEN))
+            cipher.updateAAD(packet, 0, HEADER_LEN)
+            val plain = cipher.doFinal(packet, HEADER_LEN, packet.size - HEADER_LEN)
+            val buf = ByteBuffer.wrap(packet, 0, HEADER_LEN)
             buf.position(12)
             Opened(
-                type = header[3],
+                type = packet[3],
                 sender = buf.long,
                 sequence = buf.int,
                 timestamp = buf.int,

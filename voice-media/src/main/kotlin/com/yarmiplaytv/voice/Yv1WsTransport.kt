@@ -52,6 +52,8 @@ class Yv1WsTransport(
         val scheme = if (secure) "wss" else "ws"
         val hostPart = if (':' in host && !host.startsWith('[')) "[$host]" else host
         val url = "$scheme://$hostPart:$syncplayPort$path?t=$tokenHex"
+        // The token is the seat in voice: keep it out of the log.
+        val logUrl = redactToken(url)
         val opened = CompletableDeferred<Boolean>()
         val ws = client.newWebSocket(
             Request.Builder().url(url).build(),
@@ -65,7 +67,7 @@ class Yv1WsTransport(
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    println("Yv1WsTransport failure url=$url error=${t.message}")
+                    println("Yv1WsTransport failure url=$logUrl error=${t.message}")
                     if (!opened.isCompleted) opened.complete(false)
                     closed.set(true)
                 }
@@ -80,7 +82,7 @@ class Yv1WsTransport(
         if (!ok || closed.get()) {
             runCatching { ws.cancel() }
             socket = null
-            println("Yv1WsTransport open failed url=$url")
+            println("Yv1WsTransport open failed url=$logUrl")
             return false
         }
         sendKeepalive()
@@ -90,7 +92,7 @@ class Yv1WsTransport(
                 sendKeepalive()
             }
         }
-        println("Yv1WsTransport open ok url=$url")
+        println("Yv1WsTransport open ok url=$logUrl")
         return true
     }
 
@@ -143,6 +145,9 @@ class Yv1WsTransport(
     }
 
     companion object {
+        /** [url] with the value of its `t` (voice token) parameter left out. */
+        internal fun redactToken(url: String): String = url.replace(Regex("([?&]t=)[^&#]*"), "\$1…")
+
         private const val OPEN_TIMEOUT_MS = 5_000L
 
         private val defaultClient: OkHttpClient = OkHttpClient.Builder()

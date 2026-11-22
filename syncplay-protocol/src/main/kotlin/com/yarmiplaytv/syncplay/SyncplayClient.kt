@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -450,7 +449,7 @@ class SyncplayClient(
 
         val writer = launch {
             for (line in out) {
-                log(">> $line")
+                log(">> ${redact(line)}")
                 t.writeLine(line)
             }
         }
@@ -594,7 +593,7 @@ class SyncplayClient(
     /** Syncplay's STARTTLS; returns whether the connection is now TLS. */
     private suspend fun negotiateTls(t: Transport, name: String): Boolean {
         t.writeLine(obj { putJsonObject("TLS") { put("startTLS", "send") } }.toString())
-        val reply = withTimeoutOrNull(5_000) { t.readLine() } ?: run {
+        val reply = t.readLine(5_000) ?: run {
             log("No STARTTLS reply; continuing without TLS")
             return false
         }
@@ -651,7 +650,7 @@ class SyncplayClient(
 
     private fun handleLine(line: String) {
         val message = runCatching { json.parseToJsonElement(line).jsonObject }.getOrElse {
-            log("Ignoring non-JSON line: $line")
+            log("Ignoring non-JSON line: ${redact(line)}")
             return
         }
         for ((command, value) in message) {
@@ -1438,11 +1437,20 @@ class SyncplayClient(
             return FileInfo(name, duration, size, sizeHash)
         }
 
-        private val tokenPattern = Regex("(\"token\"\\s*:\\s*\")[^\"]*\"")
+        /**
+         * JSON fields whose string values are secrets: session and voice tokens, the voice key, Discord lobby
+         * secrets, and passwords (the server's, as its MD5, and managed rooms' operator passwords).
+         */
+        private val SECRET_FIELDS = listOf("token", "password", "key", "lobbySecret")
+        private val QUOTED_SECRET_FIELDS = SECRET_FIELDS.map { "\"$it\"" }
 
-        /** [line] for the log, without session tokens. */
+        /** A secret field and its whole string value, escaped quotes and all. */
+        private val secretPattern =
+            Regex("(\"(?:${SECRET_FIELDS.joinToString("|")})\"\\s*:\\s*\")(?:[^\"\\\\]|\\\\.)*\"")
+
+        /** [line] for the log, without its secrets (both ways: what we send and what the server sends). */
         internal fun redact(line: String): String =
-            if ("\"token\"" in line) tokenPattern.replace(line) { "${it.groupValues[1]}…\"" } else line
+            if (QUOTED_SECRET_FIELDS.any { it in line }) secretPattern.replace(line) { "${it.groupValues[1]}…\"" } else line
 
         private fun JsonObject.bool(key: String): Boolean = (this[key] as? JsonPrimitive)?.booleanOrNull ?: false
         private fun JsonObject.long(key: String): Long =

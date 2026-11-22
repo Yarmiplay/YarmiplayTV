@@ -8,6 +8,7 @@ import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.RelayFile
 import com.yarmiplaytv.syncplay.RoomState
+import com.yarmiplaytv.syncplay.RoomUser
 import com.yarmiplaytv.syncplay.SyncplayEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -229,7 +230,41 @@ class RelayManager(
      * The relay entry for the room file [fileName]: same name, the size the room reports for it (if any), and
      * readable (someone seeds it or the server has all of it).
      */
-    fun find(fileName: String): RelayFile? = find(sync.room.value, fileName)
+    fun find(fileName: String): RelayFile? {
+        val room = sync.room.value
+        val users = room.users
+        val files = room.yarmiplay.relayFiles
+        val active = room.yarmiplay.relayActive
+        // The room changes every second (positions), the users and relay files far less: answers stay good until
+        // either list is replaced.
+        synchronized(found) {
+            if (found.users !== users || found.files !== files || found.active != active) {
+                found.users = users
+                found.files = files
+                found.active = active
+                found.answers.clear()
+            }
+            if (fileName in found.answers) return found.answers[fileName]
+        }
+        val answer = find(room, fileName)
+        synchronized(found) {
+            if (found.users === users && found.files === files && found.active == active) {
+                if (found.answers.size >= MAX_FOUND) found.answers.clear()
+                found.answers[fileName] = answer
+            }
+        }
+        return answer
+    }
+
+    /** [find]'s answers for the room's current users and relay files. */
+    private class Found {
+        var users: List<RoomUser>? = null
+        var files: List<RelayFile>? = null
+        var active = false
+        val answers = HashMap<String, RelayFile?>()
+    }
+
+    private val found = Found()
 
     /** Starts fetching [entry] and returns the URL the player opens. */
     suspend fun open(entry: RelayFile): String {
@@ -508,6 +543,7 @@ class RelayManager(
     companion object {
         private const val TAG = "RelayManager"
         private const val TICK_MS = 2_000L
+        private const val MAX_FOUND = 256
 
         fun find(room: RoomState, fileName: String): RelayFile? {
             if (!room.yarmiplay.relayActive) return null

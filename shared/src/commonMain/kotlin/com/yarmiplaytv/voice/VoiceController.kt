@@ -16,6 +16,7 @@ import com.yarmiplaytv.syncplay.VoicePeer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -84,6 +85,22 @@ class VoiceController(
     private var playbackPlaying = false
     /** Serializes mute/transmit engine work so rapid toggles can't reopen capture out of order. */
     private val transmitMutex = Mutex()
+    /** Set while the user runs the mic test (the engine may start it a moment later). */
+    @Volatile private var micTestWanted = false
+    /**
+     * Wakes the meter poll while it's idle: it polls 30 times a second only while voice is connecting or connected,
+     * or the mic test runs; otherwise it runs once after each change that can change what it reports.
+     */
+    private val pollWake = Channel<Unit>(Channel.CONFLATED)
+
+    private fun wakePoll() {
+        pollWake.trySend(Unit)
+    }
+
+    private fun pollBusy(testing: Boolean): Boolean {
+        val connection = _ui.value.connection
+        return testing || micTestWanted || connection == VoiceConnection.CONNECTED || connection == VoiceConnection.CONNECTING
+    }
 
     init {
         engine.onDeviceLost = { input ->
@@ -130,9 +147,10 @@ class VoiceController(
                         _ui.update { it.copy(speakingIds = emptySet(), receivingNames = emptyList()) }
                     }
                 }
-                delay(33)
+                if (pollBusy(testing)) delay(33) else pollWake.receive()
             }
         }
+        _ui.map { it.connection }.distinctUntilChanged().onEach { wakePoll() }.launchIn(scope)
 
         combine(
             sync.room.map {
@@ -188,25 +206,35 @@ class VoiceController(
             .onEach { (input, output) ->
                 engine.setInputGain(input)
                 engine.setOutputGain(output)
+                wakePoll()
             }
             .launchIn(scope)
 
         settings
             .map { it.voiceNoiseSuppression }
             .distinctUntilChanged()
-            .onEach { engine.setNoiseSuppression(it) }
+            .onEach {
+                engine.setNoiseSuppression(it)
+                wakePoll()
+            }
             .launchIn(scope)
 
         settings
             .map { it.voiceEchoCancellation }
             .distinctUntilChanged()
-            .onEach { engine.setEchoCancellation(it) }
+            .onEach {
+                engine.setEchoCancellation(it)
+                wakePoll()
+            }
             .launchIn(scope)
 
         settings
             .map { it.voiceAgc }
             .distinctUntilChanged()
-            .onEach { engine.setAutoGainControl(it) }
+            .onEach {
+                engine.setAutoGainControl(it)
+                wakePoll()
+            }
             .launchIn(scope)
 
         settings
@@ -215,19 +243,26 @@ class VoiceController(
             .onEach {
                 engine.setAiNoiseSuppression(it)
                 _ui.update { u -> u.copy(aiFallbackNotice = engine.statusNotice()) }
+                wakePoll()
             }
             .launchIn(scope)
 
         settings
             .map { it.voiceBitrate }
             .distinctUntilChanged()
-            .onEach { engine.setPreferredBitrate(it) }
+            .onEach {
+                engine.setPreferredBitrate(it)
+                wakePoll()
+            }
             .launchIn(scope)
 
         settings
             .map { it.voiceStereo }
             .distinctUntilChanged()
-            .onEach { engine.setPreferredStereo(it) }
+            .onEach {
+                engine.setPreferredStereo(it)
+                wakePoll()
+            }
             .launchIn(scope)
 
         settings
@@ -236,6 +271,7 @@ class VoiceController(
             .onEach { (input, output) ->
                 engine.setInputDeviceId(input.ifEmpty { null })
                 engine.setOutputDeviceId(output.ifEmpty { null })
+                wakePoll()
             }
             .launchIn(scope)
     }
@@ -269,6 +305,8 @@ class VoiceController(
             engine.setOutputDeviceId(s.voiceOutputDeviceId.ifEmpty { null })
             engine.setMicTest(true)
             _micTestActive.value = engine.isMicTestActive()
+            micTestWanted = true
+            wakePoll()
         }
     }
 
@@ -277,6 +315,8 @@ class VoiceController(
         engine.setMicTest(false)
         _micTestActive.value = false
         _micTestLevel.value = 0f
+        micTestWanted = false
+        wakePoll()
     }
 
     fun toggleMicTest() {
@@ -932,6 +972,7 @@ class VoiceController(
         engine.disconnect()
         _micTestActive.value = false
         _micTestLevel.value = 0f
+        micTestWanted = false
         lastPeers = emptyList()
         pttHeld = false
         talkLatched = false

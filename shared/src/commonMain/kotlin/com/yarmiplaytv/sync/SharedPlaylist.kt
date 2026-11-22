@@ -16,11 +16,14 @@ import kotlin.random.Random
 object PlaylistEdits {
     /** The [files] that aren't in [playlist] yet (compared like Syncplay compares filenames), in order and without repeats. */
     fun newEntries(playlist: List<String>, files: List<String>): List<String> {
-        val added = mutableListOf<String>()
+        // Each name is decoded and stripped once, not again for every comparison.
+        val existing = playlist.map { Filenames.Key(it) }
+        val added = mutableListOf<Filenames.Key>()
         for (file in files.map { it.trim() }.filter { it.isNotEmpty() }) {
-            if (playlist.none { Filenames.same(it, file) } && added.none { Filenames.same(it, file) }) added += file
+            val key = Filenames.Key(file)
+            if (existing.none { Filenames.same(it, key) } && added.none { Filenames.same(it, key) }) added += key
         }
-        return added
+        return added.map { it.name }
     }
 
     /** [playlist] with [entries] placed before index [at], or at the end when [at] is null or past it. */
