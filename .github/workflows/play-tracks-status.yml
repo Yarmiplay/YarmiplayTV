@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "*/30 * * * *"
-  # Also when this file lands on main — new schedules can lag before the first cron fires.
+  # Also when this file lands on main. The half-hour schedule often lags for hours, so a push of this file is the prompt run.
   push:
     branches: [main]
     paths:
