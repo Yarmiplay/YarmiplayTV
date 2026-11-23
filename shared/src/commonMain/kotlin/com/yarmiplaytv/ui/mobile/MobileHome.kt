@@ -61,6 +61,7 @@ import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serversDetail
 import com.yarmiplaytv.ui.shared.serversTitle
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.shared.homeCards
 import kotlinx.coroutines.flow.map
 
 @Composable
@@ -120,61 +121,8 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
         item { WhatsNewCard(container, nav, Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) }
         item {
             CardGrid(multiColumn = kind != DeviceKind.PHONE, modifier = Modifier.padding(horizontal = 16.dp)) {
-                val (title, detail, color) = when (room.status) {
-                    ConnectionStatus.CONNECTED -> Triple(
-                        "Room: ${ManagedRooms.label(room.room)}",
-                        "${room.users.size} watching · ${room.users.count { it.isReady == true }} ready",
-                        AppColors.Ready,
-                    )
-                    ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> Triple("Connecting…", container.sync.client?.config?.host ?: "", AppColors.NotReady)
-                    ConnectionStatus.DISCONNECTED -> Triple(
-                        "Join a Syncplay room",
-                        container.settings.value.savedRooms.firstOrNull()?.let { "Rejoin ${savedRoomLabel(it)} on ${it.host}" } ?: "Watch in sync with friends",
-                        AppColors.TextDim,
-                    )
-                }
-                StatusCard(Icons.Filled.Groups, title, detail, color, { nav.switchTab(Screen.SyncplayConnect) }, Modifier.fillMaxWidth().testTag("card_room"))
-                nowPlaying?.let { np ->
-                    StatusCard(Icons.Filled.PlayCircle, "Now playing", np.title, AppColors.Accent, { nav.push(Screen.Player) }, Modifier.fillMaxWidth())
-                }
-                StatusCard(
-                    Icons.Filled.Cloud,
-                    serversTitle(JellyfinSource.KIND, jellyfin),
-                    if (jellyfin.isNotEmpty()) serversDetail(jellyfin) else "Browse your media server",
-                    if (jellyfin.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
-                    { nav.push(if (jellyfin.isEmpty()) Screen.JellyfinLogin else Screen.Servers) },
-                    Modifier.fillMaxWidth().testTag("card_jellyfin"),
-                )
-                StatusCard(
-                    Icons.Filled.Cloud,
-                    serversTitle(PlexSource.KIND, plex),
-                    if (plex.isNotEmpty()) serversDetail(plex) else "Browse your Plex server",
-                    if (plex.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
-                    { nav.push(if (plex.isEmpty()) Screen.PlexLogin else Screen.Servers) },
-                    Modifier.fillMaxWidth().testTag("card_plex"),
-                )
-                StatusCard(
-                    Icons.Filled.SdStorage,
-                    "Files on this device",
-                    when {
-                        folders.isEmpty() -> "Open a video or add media folders"
-                        else -> "${localFiles.size} videos in ${folders.size} folder${if (folders.size == 1) "" else "s"}"
-                    },
-                    if (folders.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
-                    { nav.push(Screen.LocalFiles) },
-                    Modifier.fillMaxWidth().testTag("card_local"),
-                )
-                if (container.mal.client.configured) {
-                    val malAccount by container.settings.map { it.mal?.userName }.collectAsStateWithLifecycle(container.settings.value.mal?.userName)
-                    val user = malAccount
-                    StatusCard(
-                        Icons.Filled.Bookmarks,
-                        "MyAnimeList",
-                        user?.let { "Signed in as $it · your list follows what you watch" } ?: "Keep your anime list up to date as you watch",
-                        if (user != null) AppColors.Ready else AppColors.TextDim,
-                        { nav.push(if (user == null) Screen.MalLogin else Screen.Mal) },
-                        Modifier.fillMaxWidth().testTag("card_mal"),
-                    )
+                homeCards(container, nav, tv = false).forEach { card ->
+                    StatusCard(card.icon, card.title, card.detail, card.dot, card.onClick, Modifier.fillMaxWidth().testTag(card.kind.tag))
                 }
             }
         }
@@ -274,7 +222,6 @@ fun RecentRow(
 }
 
 private val MinCardWidth = 280.dp
-private val CardGap = 10.dp
 
 /**
  * One column on phones; on wider screens as many equal columns of at least [MinCardWidth] as fit. The cards of a
@@ -283,7 +230,7 @@ private val CardGap = 10.dp
 @Composable
 private fun CardGrid(multiColumn: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Layout(content, modifier) { measurables, constraints ->
-        val gap = CardGap.roundToPx()
+        val gap = HomeCardGap.roundToPx()
         val width = constraints.maxWidth
         val columns = if (multiColumn) ((width + gap) / (MinCardWidth.roundToPx() + gap)).coerceIn(1, measurables.size.coerceAtLeast(1)) else 1
         val cellWidth = (width - gap * (columns - 1)) / columns

@@ -80,3 +80,13 @@ expect fun ChatMessageText(
     blockLabel: String? = null,
     onBlock: (() -> Unit)? = null,
 )
+
+/**
+ * A chat name's colour: one of the theme's accent, green and amber, the same for a name every time, so who said what
+ * is easy to follow down the list. Those three are tuned for contrast in every theme.
+ */
+@androidx.compose.runtime.Composable
+fun chatNameColor(name: String): Color {
+    val colors = listOf(com.yarmiplaytv.ui.theme.AppColors.Accent, com.yarmiplaytv.ui.theme.AppColors.Ready, com.yarmiplaytv.ui.theme.AppColors.NotReady)
+    return colors[Math.floorMod(name.hashCode(), colors.size)]
+}

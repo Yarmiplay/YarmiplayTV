@@ -87,6 +87,7 @@ import com.yarmiplaytv.ui.shared.serversDetail
 import com.yarmiplaytv.ui.shared.serversTitle
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.SurfaceInk
+import com.yarmiplaytv.ui.shared.homeCards
 import kotlinx.coroutines.flow.map
 
 private val ContentMaxWidth = 1520.dp
@@ -179,74 +180,8 @@ fun DesktopHomeScreen(container: AppContainer, nav: Navigator) {
                     UpdateBanner(container, Modifier.fillMaxWidth().padding(bottom = 16.dp))
                     WhatsNewCard(container, nav, Modifier.fillMaxWidth().padding(bottom = 16.dp), desktop = true)
                     DesktopCardGrid {
-                        val (title, detail, color) = when (room.status) {
-                            ConnectionStatus.CONNECTED -> Triple(
-                                "Room: ${ManagedRooms.label(room.room)}",
-                                "${room.users.size} watching · ${room.users.count { it.isReady == true }} ready",
-                                AppColors.Ready,
-                            )
-                            ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> Triple(
-                                "Connecting…",
-                                container.sync.client?.config?.host ?: "",
-                                AppColors.NotReady,
-                            )
-                            ConnectionStatus.DISCONNECTED -> Triple(
-                                "Join a Syncplay room",
-                                settings.savedRooms.firstOrNull()?.let { "Rejoin ${savedRoomLabel(it)} on ${it.host}" }
-                                    ?: "Watch in sync with friends",
-                                AppColors.TextDim,
-                            )
-                        }
-                        DesktopActionCard(
-                            Icons.Filled.Groups, title, detail, color,
-                            { nav.switchTab(Screen.SyncplayConnect) },
-                            Modifier.testTag("card_room"),
-                        )
-                        nowPlaying?.let { np ->
-                            DesktopActionCard(
-                                Icons.Filled.PlayCircle, "Now playing", np.title, AppColors.Accent,
-                                { nav.push(Screen.Player) },
-                                Modifier.testTag("card_now_playing"),
-                            )
-                        }
-                        DesktopActionCard(
-                            Icons.Filled.Cloud,
-                            serversTitle(JellyfinSource.KIND, jellyfin),
-                            if (jellyfin.isNotEmpty()) serversDetail(jellyfin) else "Browse your media server",
-                            if (jellyfin.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
-                            { nav.push(if (jellyfin.isEmpty()) Screen.JellyfinLogin else Screen.Servers) },
-                            Modifier.testTag("card_jellyfin"),
-                        )
-                        DesktopActionCard(
-                            Icons.Filled.Cloud,
-                            serversTitle(PlexSource.KIND, plex),
-                            if (plex.isNotEmpty()) serversDetail(plex) else "Browse your Plex server",
-                            if (plex.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
-                            { nav.push(if (plex.isEmpty()) Screen.PlexLogin else Screen.Servers) },
-                            Modifier.testTag("card_plex"),
-                        )
-                        DesktopActionCard(
-                            Icons.Filled.SdStorage,
-                            "Files on this device",
-                            when {
-                                folders.isEmpty() -> "Open a video or add media folders"
-                                else -> "${localFiles.size} videos in ${folders.size} folder${if (folders.size == 1) "" else "s"}"
-                            },
-                            if (folders.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
-                            { nav.push(Screen.LocalFiles) },
-                            Modifier.testTag("card_local"),
-                        )
-                        if (container.mal.client.configured) {
-                            val malAccount by container.settings.map { it.mal?.userName }.collectAsStateWithLifecycle(container.settings.value.mal?.userName)
-                            val user = malAccount
-                            DesktopActionCard(
-                                Icons.Filled.Bookmarks,
-                                "MyAnimeList",
-                                user?.let { "Signed in as $it · your list follows what you watch" } ?: "Keep your anime list up to date as you watch",
-                                if (user != null) AppColors.Ready else AppColors.TextDim,
-                                { nav.push(if (user == null) Screen.MalLogin else Screen.Mal) },
-                                Modifier.testTag("card_mal"),
-                            )
+                        homeCards(container, nav, tv = false).forEach { card ->
+                            DesktopActionCard(card.icon, card.title, card.detail, card.dot, card.onClick, Modifier.testTag(card.kind.tag))
                         }
                     }
                     loadError?.let { err ->
@@ -398,7 +333,7 @@ private fun DesktopActionCard(
     icon: ImageVector,
     title: String,
     detail: String,
-    dot: Color,
+    dot: Color?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -441,8 +376,10 @@ private fun DesktopActionCard(
                         Text(detail, style = MaterialTheme.typography.bodyMedium, color = AppColors.TextDim)
                     }
                 }
-                Spacer(Modifier.width(12.dp))
-                Box(Modifier.size(10.dp).clip(CircleShape).background(dot))
+                if (dot != null) {
+                    Spacer(Modifier.width(12.dp))
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(dot))
+                }
             }
         }
     }

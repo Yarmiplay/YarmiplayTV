@@ -46,6 +46,8 @@ import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.SortByAlpha
@@ -124,6 +126,7 @@ import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serverStatusLine
 import com.yarmiplaytv.ui.chat.ChatMessageText
 import com.yarmiplaytv.ui.chat.chatLineAnnotated
+import com.yarmiplaytv.ui.chat.chatNameColor
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
@@ -216,11 +219,16 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton({ addingLinks = !addingLinks }, Modifier.testTag("playlist_add_links")) { Icon(Icons.Filled.Link, "Add links") }
-                IconButton({ container.playlist.shared.sortAlphabetically() }, enabled = room.playlist.size > 1, modifier = Modifier.testTag("playlist_sort")) {
-                    Icon(Icons.Filled.SortByAlpha, "Sort A to Z")
-                }
-                if (canUndo) IconButton({ container.playlist.shared.undo() }, Modifier.testTag("playlist_undo")) { Icon(Icons.AutoMirrored.Filled.Undo, "Undo") }
+                LabeledIconButton(Icons.Filled.Link, "Add links", { addingLinks = !addingLinks }, Modifier.testTag("playlist_add_links"), shortLabel = "Links")
+                LabeledIconButton(
+                    Icons.Filled.SortByAlpha,
+                    "Sort A to Z",
+                    { container.playlist.shared.sortAlphabetically() },
+                    Modifier.testTag("playlist_sort"),
+                    enabled = room.playlist.size > 1,
+                    shortLabel = "Sort",
+                )
+                if (canUndo) LabeledIconButton(Icons.AutoMirrored.Filled.Undo, "Undo", { container.playlist.shared.undo() }, Modifier.testTag("playlist_undo"))
             }
         }
         if (confirmEmpty) {
@@ -374,11 +382,57 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
                             }
                         }
                     }
-                    IconButton({ container.playlist.move(index, index - 1) }, enabled = index > 0) { Icon(Icons.Filled.ArrowUpward, "Move up") }
-                    IconButton({ container.playlist.move(index, index + 1) }, enabled = index < room.playlist.lastIndex) { Icon(Icons.Filled.ArrowDownward, "Move down") }
-                    IconButton({ container.playlist.removeIndex(index) }) { Icon(Icons.Filled.Delete, "Remove", tint = AppColors.Error) }
+                    PlaylistEntryMenu(container, index, room.playlist.lastIndex, file)
                 }
             }
+        }
+    }
+}
+
+/**
+ * One entry's actions behind a single button, so the list shows the file names rather than a column of arrows and
+ * red bins: play it for the room, move it, or take it out.
+ */
+@Composable
+private fun PlaylistEntryMenu(container: AppContainer, index: Int, lastIndex: Int, file: String) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton({ open = true }, Modifier.testTag("playlist_entry_menu_$index")) {
+            Icon(Icons.Filled.MoreVert, contentDescription = "Actions for $file", tint = AppColors.TextDim)
+        }
+        DropdownMenu(open, { open = false }) {
+            DropdownMenuItem(
+                { Text("Play for everyone") },
+                { open = false; container.playlist.selectIndex(index) },
+                leadingIcon = { Icon(Icons.Filled.PlayArrow, null) },
+            )
+            if (index > 0) {
+                DropdownMenuItem(
+                    { Text("Move to the top") },
+                    { open = false; container.playlist.move(index, 0) },
+                    leadingIcon = { Icon(Icons.Filled.KeyboardArrowUp, null) },
+                )
+                DropdownMenuItem(
+                    { Text("Move up") },
+                    { open = false; container.playlist.move(index, index - 1) },
+                    leadingIcon = { Icon(Icons.Filled.ArrowUpward, null) },
+                    modifier = Modifier.testTag("playlist_move_up"),
+                )
+            }
+            if (index < lastIndex) {
+                DropdownMenuItem(
+                    { Text("Move down") },
+                    { open = false; container.playlist.move(index, index + 1) },
+                    leadingIcon = { Icon(Icons.Filled.ArrowDownward, null) },
+                    modifier = Modifier.testTag("playlist_move_down"),
+                )
+            }
+            DropdownMenuItem(
+                { Text("Remove", color = AppColors.Error) },
+                { open = false; container.playlist.removeIndex(index) },
+                leadingIcon = { Icon(Icons.Filled.Delete, null, tint = AppColors.Error) },
+                modifier = Modifier.testTag("playlist_remove"),
+            )
         }
     }
 }
@@ -581,39 +635,36 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
                     }
                 }
                 if (voiceUi.showUi && !isMe) {
-                    IconButton(
+                    LabeledIconButton(
+                        if (prefs.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                        if (prefs.muted) "Unmute ${user.name}'s voice" else "Mute ${user.name}'s voice (local only)",
                         { container.voice.setPeerMuted(user.name, !prefs.muted) },
                         Modifier.testTag("voice_mute_${user.name}"),
-                    ) {
-                        Icon(
-                            if (prefs.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                            if (prefs.muted) "Unmute ${user.name}'s voice" else "Mute ${user.name}'s voice (local only)",
-                            tint = if (prefs.muted) AppColors.Error else AppColors.TextDim,
-                        )
-                    }
+                        tint = if (prefs.muted) AppColors.Error else AppColors.TextDim,
+                        shortLabel = if (prefs.muted) "Unmute" else "Mute",
+                    )
                 }
                 if (!isMe && room.isOperator) {
                     val markReady = user.isReady != true
-                    IconButton({ container.sync.setOthersReady(user.name, markReady) }, Modifier.testTag("mark_ready_${user.name}")) {
-                        Icon(
-                            if (markReady) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
-                            if (markReady) "Mark ${user.name} ready" else "Mark ${user.name} not ready",
-                            tint = if (markReady) AppColors.Ready else AppColors.NotReady,
-                        )
-                    }
+                    LabeledIconButton(
+                        if (markReady) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                        if (markReady) "Mark ${user.name} ready" else "Mark ${user.name} not ready",
+                        { container.sync.setOthersReady(user.name, markReady) },
+                        Modifier.testTag("mark_ready_${user.name}"),
+                        tint = if (markReady) AppColors.Ready else AppColors.NotReady,
+                        shortLabel = if (markReady) "Set ready" else "Not ready",
+                    )
                 }
                 if (!isMe) {
                     val isBlocked = user.name in blocked
-                    IconButton(
+                    LabeledIconButton(
+                        Icons.Filled.Block,
+                        if (isBlocked) "Unblock ${user.name}" else "Block ${user.name} (hide their messages)",
                         { if (isBlocked) container.sync.unblock(user.name) else container.sync.block(user.name) },
                         Modifier.testTag("block_${user.name}"),
-                    ) {
-                        Icon(
-                            Icons.Filled.Block,
-                            if (isBlocked) "Unblock ${user.name}" else "Block ${user.name} (hide their messages)",
-                            tint = if (isBlocked) AppColors.Error else AppColors.TextDim,
-                        )
-                    }
+                        tint = if (isBlocked) AppColors.Error else AppColors.TextDim,
+                        shortLabel = if (isBlocked) "Unblock" else "Block chat",
+                    )
                 }
             }
         }
@@ -778,7 +829,7 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
                 }
                 if (desktop) {
                     ChatMessageText(
-                        chatLineAnnotated(from, msg.text, AppColors.Accent, openLinks = true, italic = from == null),
+                        chatLineAnnotated(from, msg.text, from?.let { chatNameColor(it) } ?: AppColors.Accent, openLinks = true, italic = from == null),
                         color = color,
                         blockLabel = blockName?.let { "Block $it" },
                         onBlock = blockName?.let { name -> { container.sync.block(name) } },
@@ -790,12 +841,15 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
                             if (from != null) {
                                 Text(
                                     "$from: ",
-                                    color = AppColors.Accent,
+                                    color = chatNameColor(from),
                                     fontWeight = FontWeight.Bold,
                                     modifier = if (blockName != null) Modifier.clickable { menu = true } else Modifier,
                                 )
                             }
-                            if (openLinks) {
+                            if (from == null && !msg.isError) {
+                                // Joins, leaves and what people are playing: quieter than what people say.
+                                Text(msg.text, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                            } else if (openLinks) {
                                 ChatMessageText(
                                     chatLineAnnotated(null, msg.text, AppColors.Accent, openLinks = true),
                                     color = color,

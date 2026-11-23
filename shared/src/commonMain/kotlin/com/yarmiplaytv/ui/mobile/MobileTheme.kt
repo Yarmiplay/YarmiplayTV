@@ -10,12 +10,17 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.ui.theme.AppTheme
+import com.yarmiplaytv.ui.theme.LocalIconLabels
 import com.yarmiplaytv.ui.theme.LocalPalette
 import com.yarmiplaytv.ui.theme.Palette
 
 /** Material's colours from [palette] (by default the one already in use), which [content] also draws with. */
 @Composable
-fun MobileTheme(palette: Palette = LocalPalette.current, content: @Composable () -> Unit) {
+fun MobileTheme(
+    palette: Palette = LocalPalette.current,
+    iconLabels: Boolean = LocalIconLabels.current,
+    content: @Composable () -> Unit,
+) {
     val scheme = with(palette) {
         if (isLight) {
             lightColorScheme(
@@ -37,7 +42,7 @@ fun MobileTheme(palette: Palette = LocalPalette.current, content: @Composable ()
             )
         }
     }
-    CompositionLocalProvider(LocalPalette provides palette) {
+    CompositionLocalProvider(LocalPalette provides palette, LocalIconLabels provides iconLabels) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
 }

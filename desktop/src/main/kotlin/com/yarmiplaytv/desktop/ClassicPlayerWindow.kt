@@ -1,5 +1,6 @@
 package com.yarmiplaytv.desktop
 
+import com.yarmiplaytv.ui.theme.appIconLabels
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.layout.Box
@@ -140,7 +141,7 @@ internal fun ClassicPlayerWindow(
                 }
                 .dragAndDropTarget(shouldStartDragAndDrop = { it.dragData() is DragData.FilesList }, target = drop),
         ) {
-            MobileTheme(palette) { ClassicPlayerContent(container) }
+            MobileTheme(palette, appIconLabels(container)) { ClassicPlayerContent(container) }
         }
     }
 }

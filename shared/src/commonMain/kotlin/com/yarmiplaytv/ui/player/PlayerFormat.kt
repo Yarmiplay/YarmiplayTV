@@ -10,6 +10,16 @@ import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.syncplay.RoomUser
 import com.yarmiplaytv.ui.mobile.formatSize
 
+/**
+ * The player's heading for [np]: the media server's title, or for a plain file its name without the extension
+ * ("Orbit Station S01E02" for "Orbit Station S01E02.mp4"); the full file name stays under the expanded title.
+ */
+fun playerTitle(np: com.yarmiplaytv.sync.NowPlaying): String {
+    if (np.title != np.fileName) return np.title
+    val ext = np.title.substringAfterLast('.', "")
+    return if (ext.length in 2..4 && ext.all { it.isLetterOrDigit() }) np.title.substringBeforeLast('.').ifBlank { np.title } else np.title
+}
+
 fun formatClock(seconds: Double): String {
     if (seconds.isNaN() || seconds < 0) return "0:00"
     val total = seconds.toLong()
@@ -27,11 +37,14 @@ fun playbackShowsVideo(state: PlaybackState, name: String = state.url.orEmpty())
     state.fileLoaded && !state.audioOnly &&
         (state.videoWidth > 0 || state.displayAspect > 0.0 || !FileNames.isAudio(name))
 
-/** Under the seek bar, between the clocks: codec, height, hardware or software decoding, and speed when not 1×. */
+/**
+ * Under the seek bar, between the clocks: the speed when not 1×, and with Show playback details on, the codec, height,
+ * hardware or software decoding and (where the player reports them) dropped frames and timing.
+ */
 fun playbackInfo(state: PlaybackState, showStats: Boolean = false): String = listOfNotNull(
-    if (state.audioOnly) null else state.videoCodec?.substringBefore(' ')?.uppercase(),
-    if (!state.audioOnly && state.videoHeight > 0) "${state.videoHeight}p" else null,
-    if (state.audioOnly) null else (state.hwdec?.takeIf { it.isNotBlank() && it != "no" }?.let { "HW" } ?: if (state.fileLoaded) "SW" else null),
+    if (!showStats || state.audioOnly) null else state.videoCodec?.substringBefore(' ')?.uppercase(),
+    if (showStats && !state.audioOnly && state.videoHeight > 0) "${state.videoHeight}p" else null,
+    if (!showStats || state.audioOnly) null else (state.hwdec?.takeIf { it.isNotBlank() && it != "no" }?.let { "HW" } ?: if (state.fileLoaded) "SW" else null),
     if (state.speed != 1.0) "%.2fx".format(state.speed) else null,
     if (showStats) playbackStats(state) else null,
 ).joinToString(" · ")

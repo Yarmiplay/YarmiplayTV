@@ -70,6 +70,7 @@ import com.yarmiplaytv.sync.FeedMessage
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.LocalSurfaceInk
 import com.yarmiplaytv.ui.theme.SurfaceInk
+import com.yarmiplaytv.ui.theme.onVideoLabel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 
@@ -203,6 +204,49 @@ fun IconAction(icon: ImageVector, description: String, onClick: () -> Unit, modi
     }
 }
 
+/**
+ * [IconAction] with [label] in small type under it while Labels under icons is on (Settings > Appearance), for rows
+ * of icon-only buttons like the player bar and the menu tabs. [onVideo] gives the label the clocks' shadow. Off, it's
+ * just the [IconAction]. The focus ring and growth stay on the icon, so moving along a row looks the same either way.
+ */
+@Composable
+fun LabeledIconAction(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = AppColors.Text,
+    enabled: Boolean = true,
+    label: String = description,
+    onVideo: Boolean = false,
+) {
+    if (!com.yarmiplaytv.ui.theme.LocalIconLabels.current) {
+        IconAction(icon, description, onClick, modifier, tint, enabled)
+        return
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        IconAction(icon, description, onClick, modifier, tint, enabled)
+        IconLabel(label, tint.copy(alpha = if (enabled) 1f else 0.4f), onVideo)
+    }
+}
+
+/** The small one-line name under a labelled icon on TV. */
+@Composable
+fun IconLabel(label: String, color: Color, onVideo: Boolean = false) {
+    Text(
+        label,
+        color = color,
+        fontSize = 12.sp,
+        lineHeight = 14.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .padding(top = 2.dp)
+            .widthIn(max = 96.dp)
+            .then(if (onVideo) Modifier.onVideoLabel() else Modifier),
+    )
+}
+
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     Text(
@@ -316,7 +360,38 @@ fun TvTextField(
 /** Two-state row used in settings. */
 @Composable
 fun ToggleRow(title: String, checked: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier, subtitle: String? = null) {
-    ValueRow(title, if (checked) "On" else "Off", onToggle, modifier, subtitle, valueColor = if (checked) AppColors.Ready else AppColors.TextDim)
+    TvTile(onClick = onToggle, modifier = modifier.fillMaxWidth(), focusedScale = 1.02f) {
+        Row(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
+            }
+            Spacer(Modifier.width(16.dp))
+            SwitchPill(checked)
+        }
+    }
+}
+
+/**
+ * On or Off, drawn as a switch (a knob at the end it's set to) so it reads as something OK flips, not a button of its
+ * own; the word stays inside for anyone who'd rather read it.
+ */
+@Composable
+fun SwitchPill(checked: Boolean, modifier: Modifier = Modifier) {
+    val color = if (checked) AppColors.Ready else AppColors.TextDim
+    Row(
+        modifier
+            .clip(RoundedCornerShape(50))
+            .background(color.copy(alpha = if (checked) 0.25f else 0.16f))
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val knob = @Composable { Box(Modifier.size(18.dp).clip(CircleShape).background(color)) }
+        val word = @Composable {
+            Text(if (checked) "On" else "Off", color = color, style = MaterialTheme.typography.labelMedium, maxLines = 1, modifier = Modifier.padding(horizontal = 8.dp))
+        }
+        if (checked) { word(); knob() } else { knob(); word() }
+    }
 }
 
 @Composable

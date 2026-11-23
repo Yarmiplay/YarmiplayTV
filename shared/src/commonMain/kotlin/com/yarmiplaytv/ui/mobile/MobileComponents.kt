@@ -50,8 +50,32 @@ fun SectionHeader(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-/** A home screen card: what it is and how it stands, all of it shown (the text wraps rather than being cut off). */
-fun StatusCard(icon: ImageVector, title: String, detail: String, dot: Color, onClick: () -> Unit, modifier: Modifier = Modifier) {
+/**
+ * A home screen card: what it is and how it stands, all of it shown (the text wraps rather than being cut off). [dot]
+ * is green for connected or signed in; null leaves it out, for a card that isn't set up yet (its text says so).
+ */
+fun StatusCard(icon: ImageVector, title: String, detail: String, dot: Color?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    HomeCard(icon, title, detail, onClick, modifier) {
+        if (dot != null) Box(Modifier.size(10.dp).clip(CircleShape).background(dot))
+    }
+}
+
+/**
+ * Home's card look, for any list of things to open (Home's cards, the Settings categories and their menu rows): a
+ * rounded card on the theme's lighter surface, [icon] in the accent colour when there is one, [title] and [detail],
+ * and [trailing] at the end (a status dot, an arrow). Put them [HomeCardGap] apart, [HomeCardSidePadding] from the edges.
+ */
+@Composable
+fun HomeCard(
+    icon: ImageVector?,
+    title: String,
+    detail: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    iconTint: Color = AppColors.Accent,
+    titleColor: Color = Color.Unspecified,
+    trailing: @Composable () -> Unit = {},
+) {
     Card(
         onClick = onClick,
         modifier = modifier,
@@ -61,18 +85,24 @@ fun StatusCard(icon: ImageVector, title: String, detail: String, dot: Color, onC
         // Fills the card when a grid row makes it taller than its text, with the text in the middle.
         SurfaceInk {
         Row(Modifier.fillMaxSize().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(28.dp))
-            Spacer(Modifier.width(14.dp))
+            if (icon != null) {
+                Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(14.dp))
+            }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(detail, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
+                Text(title, style = MaterialTheme.typography.titleMedium, color = titleColor)
+                if (!detail.isNullOrEmpty()) Text(detail, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
             }
             Spacer(Modifier.width(12.dp))
-            Box(Modifier.size(10.dp).clip(CircleShape).background(dot))
+            trailing()
         }
         }
     }
 }
+
+/** The space between [HomeCard]s, and between them and the screen's sides. */
+val HomeCardGap = 10.dp
+val HomeCardSidePadding = 16.dp
 
 @Composable
 fun PosterTile(

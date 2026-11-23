@@ -349,8 +349,10 @@ data class AppSettings(
     val voiceTvMicHintShown: Boolean = false,
     /** TV: friendly label of a remote key that successfully toggled the mic, when known. */
     val voiceTvRemoteKeyLabel: String = "",
-    /** The look: "dark", "noire", "monochrome", "light" or "system" (see com.yarmiplaytv.ui.theme.AppTheme). */
+    /** The look: one of com.yarmiplaytv.ui.theme.AppTheme's keys, e.g. "dark", "light" or "system". */
     val theme: String = "dark",
+    /** A short name under the icon-only buttons (player bar, menu tabs, playlist tools); off leaves just the icons. */
+    val iconLabels: Boolean = true,
     /** The user agreed to the community rules, asked once before the first room join. */
     val acceptedRoomRules: Boolean = false,
     /** The name YarmiplayServerTV hosts see when approving this device; empty uses the platform's. */
@@ -479,6 +481,7 @@ class SettingsStore(
         val voiceTvMicHintShown = booleanPreferencesKey("voice_tv_mic_hint_shown")
         val voiceTvRemoteKeyLabel = stringPreferencesKey("voice_tv_remote_key_label")
         val theme = stringPreferencesKey("app_theme")
+        val iconLabels = booleanPreferencesKey("icon_labels")
         val acceptedRoomRules = booleanPreferencesKey("room_rules_accepted")
         /** Followed by "host:port/room"; the value is the playlist, one entry per line. */
         const val ROOM_PLAYLIST_PREFIX = "room_playlist:"
@@ -683,6 +686,7 @@ class SettingsStore(
             voiceTvMicHintShown = p[Keys.voiceTvMicHintShown] ?: false,
             voiceTvRemoteKeyLabel = p[Keys.voiceTvRemoteKeyLabel] ?: "",
             theme = p[Keys.theme] ?: defaults.theme,
+            iconLabels = p[Keys.iconLabels] ?: true,
             acceptedRoomRules = p[Keys.acceptedRoomRules] ?: false,
             deviceName = p[Keys.deviceName] ?: "",
             addSharedServers = p[Keys.addSharedServers] ?: true,
@@ -1002,6 +1006,8 @@ class SettingsStore(
     suspend fun saveVoiceTvRemoteKeyLabel(label: String) = dataStore.edit { it[Keys.voiceTvRemoteKeyLabel] = label }
 
     suspend fun saveTheme(key: String) = dataStore.edit { it[Keys.theme] = key }
+
+    suspend fun saveIconLabels(on: Boolean) = dataStore.edit { it[Keys.iconLabels] = on }
 
     suspend fun saveAcceptedRoomRules(accepted: Boolean) = dataStore.edit { it[Keys.acceptedRoomRules] = accepted }
 

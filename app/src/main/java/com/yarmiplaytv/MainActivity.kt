@@ -1,5 +1,6 @@
 package com.yarmiplaytv
 
+import com.yarmiplaytv.ui.theme.appIconLabels
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -116,7 +117,7 @@ class MainActivity : ComponentActivity() {
         if (deviceKind == DeviceKind.TV) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             setContent {
-                YarmiplayTvTheme(appPalette(container)) {
+                YarmiplayTvTheme(appPalette(container), appIconLabels(container)) {
                     Box(Modifier.fillMaxSize()) {
                         TvRoot(container, screens)
                         if (launchSplashActive) LaunchSplash(splashForm(deviceKind)) { launchSplashActive = false }
@@ -136,7 +137,7 @@ class MainActivity : ComponentActivity() {
                     // What shows before the first frame and around it, e.g. while the keyboard animates.
                     window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(palette.background.toArgb()))
                 }
-                MobileTheme(palette) {
+                MobileTheme(palette, appIconLabels(container)) {
                     Box(Modifier.fillMaxSize()) {
                         MobileRoot(container, deviceKind, screens)
                         if (launchSplashActive) LaunchSplash(splashForm(deviceKind)) { launchSplashActive = false }

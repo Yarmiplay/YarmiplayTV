@@ -125,6 +125,8 @@ import com.yarmiplaytv.tracking.SkipService
 import com.yarmiplaytv.ui.components.ActionButton
 import com.yarmiplaytv.ui.components.Dot
 import com.yarmiplaytv.ui.components.IconAction
+import com.yarmiplaytv.ui.components.IconLabel
+import com.yarmiplaytv.ui.components.LabeledIconAction
 import com.yarmiplaytv.ui.components.Panel
 import com.yarmiplaytv.ui.components.ToastHost
 import com.yarmiplaytv.ui.mal.MalPanel
@@ -145,14 +147,17 @@ import com.yarmiplaytv.ui.mobile.rememberRelaySave
 import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.AppColors
+import com.yarmiplaytv.ui.theme.LocalIconLabels
 import com.yarmiplaytv.ui.theme.OnVideo
 import com.yarmiplaytv.ui.theme.onVideoLabel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
-internal enum class PanelKind(val label: String, val icon: ImageVector) {
-    PLAYLIST("Shared playlist", Icons.AutoMirrored.Filled.PlaylistPlay),
+internal enum class PanelKind(val label: String, val icon: ImageVector, val short: String = label) {
+    PLAYLIST("Shared playlist", Icons.AutoMirrored.Filled.PlaylistPlay, "Playlist"),
     ROOM("Room", Icons.Filled.Groups),
     CHAT("Chat", Icons.Filled.Forum),
     AUDIO("Audio", Icons.Filled.Audiotrack),
@@ -397,7 +402,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                     player,
                     state,
                     fileName = nowPlaying?.fileName ?: state.url.orEmpty(),
-                    title = nowPlaying?.title ?: FileNames.baseName(state.url.orEmpty()),
+                    title = nowPlaying?.let(::playerTitle) ?: FileNames.baseName(state.url.orEmpty()),
                     subtitle = nowPlaying?.episode?.seriesName,
                     compact = false,
                 )
@@ -451,7 +456,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 if (overlay == Overlay.Controls) {
                     ControlsBar(
                         container = container,
-                        title = nowPlaying?.title ?: "Nothing playing",
+                        title = nowPlaying?.let(::playerTitle) ?: "Nothing playing",
                         controlsFocus = controlsFocus,
                         micFocus = micFocus,
                         voiceUi = voiceUi,
@@ -874,11 +879,24 @@ internal fun ProgressBar(
 ) {
     val fraction = if (duration > 0) (position / duration).coerceIn(0.0, 1.0).toFloat() else 0f
     val cached = if (duration > 0) ((position + cacheSeconds) / duration).coerceIn(0.0, 1.0).toFloat() else 0f
-    Box(modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.2f))) {
-        Box(Modifier.fillMaxWidth(cached).fillMaxHeight().background(Color.White.copy(alpha = 0.25f)))
-        Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(AppColors.Accent))
-        SkipMarks(segments, duration, Modifier.matchParentSize())
-        ChapterMarks(chapters, duration, Modifier.matchParentSize())
+    BoxWithConstraints(modifier.fillMaxWidth().height(12.dp), contentAlignment = Alignment.CenterStart) {
+        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.2f))) {
+            // Quieter than the played part, so a short clip that's all buffered doesn't read as finished.
+            Box(Modifier.fillMaxWidth(cached).fillMaxHeight().background(Color.White.copy(alpha = 0.14f)))
+            Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(AppColors.Accent))
+            SkipMarks(segments, duration, Modifier.matchParentSize())
+            ChapterMarks(chapters, duration, Modifier.matchParentSize())
+        }
+        // Where playback is, also at 0:00.
+        if (duration > 0) {
+            Box(
+                Modifier
+                    .offset(x = ((maxWidth - 12.dp) * fraction))
+                    .size(12.dp)
+                    .clip(CircleShape)
+                    .background(AppColors.Accent),
+            )
+        }
     }
 }
 
@@ -899,6 +917,8 @@ private fun ControlsBar(
 ) {
     val state by container.player.collectStateWithoutClock()
     val room by container.sync.room.collectAsStateWithLifecycle()
+    val showDetails by remember(container) { container.settings.map { it.playback.showPlaybackStats }.distinctUntilChanged() }
+        .collectAsStateWithLifecycle(container.settings.value.playback.showPlaybackStats)
     val inRoom = room.status == ConnectionStatus.CONNECTED
     // Re-read the extrapolated position a few times a second while visible.
     var position by remember { mutableStateOf(container.player.currentPosition()) }
@@ -917,8 +937,7 @@ private fun ControlsBar(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, Modifier.weight(1f), color = OnVideo.Text, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.width(24.dp))
-            Text("▲ Menus", style = MaterialTheme.typography.bodyMedium, color = OnVideo.Text, modifier = Modifier.onVideoLabel())
-            Spacer(Modifier.width(16.dp))
+            // Up opens the menus too, but the Menus button below already says so; Down is the one to point out.
             Text("▼ Hide", style = MaterialTheme.typography.bodyMedium, color = OnVideo.Text, modifier = Modifier.onVideoLabel())
         }
         Spacer(Modifier.height(12.dp))
@@ -940,63 +959,69 @@ private fun ControlsBar(
             } else {
                 Spacer(Modifier.weight(1f))
             }
-            playbackInfo(state).takeIf { it.isNotEmpty() }?.let { Text(it, color = OnVideo.Text, modifier = Modifier.onVideoLabel()) }
+            playbackInfo(state, showStats = showDetails).takeIf { it.isNotEmpty() }?.let { Text(it, color = OnVideo.Text, modifier = Modifier.onVideoLabel()) }
             Spacer(Modifier.width(24.dp))
             Text(formatClock(state.duration), color = OnVideo.Text, modifier = Modifier.onVideoLabel())
         }
         ButtonRow(Modifier.padding(top = 12.dp), start = {
-            IconAction(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, "Play/pause", onTogglePause, Modifier.focusRequester(controlsFocus), tint = OnVideo.Text)
-            IconAction(Icons.Filled.Replay10, "Back", { onSeek(-10.0) }, tint = OnVideo.Text)
-            IconAction(Icons.Filled.Forward10, "Forward", { onSeek(10.0) }, tint = OnVideo.Text)
+            LabeledIconAction(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, "Play/pause", onTogglePause, Modifier.focusRequester(controlsFocus), tint = OnVideo.Text, label = if (state.paused) "Play" else "Pause", onVideo = true)
+            LabeledIconAction(Icons.Filled.Replay10, "Back", { onSeek(-10.0) }, tint = OnVideo.Text, onVideo = true)
+            LabeledIconAction(Icons.Filled.Forward10, "Forward", { onSeek(10.0) }, tint = OnVideo.Text, onVideo = true)
             // The room playlist's previous and next entry, when there is one to go to.
             if (inRoom && room.playlist.isNotEmpty()) {
                 val previous = container.playlist.skipTarget(room, forward = false)
                 val next = container.playlist.skipTarget(room, forward = true)
-                IconAction(Icons.Filled.SkipPrevious, "Previous in the playlist", { container.playlist.skip(false) }, Modifier.testTag("skip_previous"), enabled = previous != null, tint = OnVideo.Text)
-                IconAction(Icons.Filled.SkipNext, "Next in the playlist", { container.playlist.skip(true) }, Modifier.testTag("skip_next"), enabled = next != null, tint = OnVideo.Text)
+                LabeledIconAction(Icons.Filled.SkipPrevious, "Previous in the playlist", { container.playlist.skip(false) }, Modifier.testTag("skip_previous"), enabled = previous != null, tint = OnVideo.Text, label = "Previous", onVideo = true)
+                LabeledIconAction(Icons.Filled.SkipNext, "Next in the playlist", { container.playlist.skip(true) }, Modifier.testTag("skip_next"), enabled = next != null, tint = OnVideo.Text, label = "Next", onVideo = true)
             }
             if (inRoom) {
                 val ready = room.isReady == true
-                IconAction(
+                LabeledIconAction(
                     if (ready) Icons.Filled.CheckCircle else Icons.Filled.CheckCircleOutline,
                     readyControlDescription(ready),
                     { container.sync.toggleReady() },
                     Modifier.testTag("player_ready"),
                     tint = if (ready) AppColors.Ready else AppColors.NotReady,
+                    label = if (ready) "Ready" else "Not ready",
+                    onVideo = true,
                 )
             }
             // Every remote can focus this and press OK — primary TV talk control (tap toggle).
             LiveTvMicButton(container, voiceUi, micFocus)
             if (voiceUi.showVoiceMembershipButton) {
                 val inVoice = voiceUi.voiceMembershipIsLeave
-                IconAction(
+                LabeledIconAction(
                     if (inVoice) Icons.Filled.Headset else Icons.Filled.HeadsetOff,
                     voiceUi.voiceMembershipDescription(),
                     { if (inVoice) container.voice.leave() else container.voice.join() },
                     Modifier.testTag(if (inVoice) "player_voice_leave" else "player_voice_join"),
                     tint = if (inVoice) OnVideo.Text else OnVideo.Text.copy(alpha = 0.72f),
+                    label = if (inVoice) "Leave voice" else "Join voice",
+                    onVideo = true,
                 )
             }
         }, end = {
             rememberRelaySave(container)?.let { save ->
-                IconAction(
+                LabeledIconAction(
                     if (save.saving) Icons.Filled.Downloading else Icons.Filled.Download,
                     if (save.saving) "${save.label} (${(save.fraction * 100).toInt()}%)" else save.label,
                     save.onClick,
                     Modifier.testTag("relay_save"),
                     tint = if (save.saving) AppColors.Accent else OnVideo.Text,
+                    label = if (save.saving) "${(save.fraction * 100).toInt()}%" else "Save",
+                    onVideo = true,
                 )
             }
             container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
-                IconAction(Icons.Filled.PhotoCamera, "Screenshot", screenshots::take, Modifier.testTag("screenshot"), tint = OnVideo.Text)
+                LabeledIconAction(Icons.Filled.PhotoCamera, "Screenshot", screenshots::take, Modifier.testTag("screenshot"), tint = OnVideo.Text, onVideo = true)
             }
             if (pip.supported && state.fileLoaded) {
-                IconAction(Icons.Filled.PictureInPictureAlt, pictureInPictureLabel, pip.toggle, Modifier.testTag("pip"), tint = OnVideo.Text)
+                LabeledIconAction(Icons.Filled.PictureInPictureAlt, pictureInPictureLabel, pip.toggle, Modifier.testTag("pip"), tint = OnVideo.Text, label = "Mini player", onVideo = true)
             }
-            // Icon-only like Browse/Exit — no pill/label; IconAction's accent focus ring for D-pad.
-            IconAction(Icons.Filled.Menu, "Menus", onOpenMenus, Modifier.testTag("menus"), tint = OnVideo.Text)
-            IconAction(Icons.Filled.Home, "Browse", onHome, tint = OnVideo.Text)
-            IconAction(Icons.AutoMirrored.Filled.Logout, "Exit", { container.exitApp() }, Modifier.testTag("player_exit"), tint = OnVideo.Text)
+            // With Labels under icons off these are icon only; IconAction's accent focus ring shows the D-pad's place.
+            LabeledIconAction(Icons.Filled.Menu, "Menus", onOpenMenus, Modifier.testTag("menus"), tint = OnVideo.Text, onVideo = true)
+            LabeledIconAction(Icons.Filled.Home, "Browse", onHome, tint = OnVideo.Text, onVideo = true)
+            LabeledIconAction(Icons.AutoMirrored.Filled.Logout, "Exit", { container.exitApp() }, Modifier.testTag("player_exit"), tint = OnVideo.Text, onVideo = true)
         })
     }
 }
@@ -1048,21 +1073,26 @@ private fun PanelTabs(
             .focusGroup(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        val labels = LocalIconLabels.current
         panels.forEach { kind ->
             val current = kind == selected
-            Surface(
-                onClick = { onClickTab(kind) },
-                modifier = Modifier.size(48.dp).focusRequester(tabFocus.getValue(kind)).onFocusChanged { if (it.isFocused) onFocusTab(kind) }.testTag("panel_tab_${kind.name.lowercase()}"),
-                shape = ClickableSurfaceDefaults.shape(CircleShape),
-                colors = ClickableSurfaceDefaults.colors(
-                    containerColor = if (current) AppColors.Accent.copy(alpha = 0.25f) else Color.Transparent,
-                    contentColor = if (current) AppColors.Accent else AppColors.TextDim,
-                    focusedContainerColor = AppColors.Accent,
-                    focusedContentColor = AppColors.OnAccent,
-                ),
-                scale = ClickableSurfaceDefaults.scale(focusedScale = 1.1f),
-            ) {
-                Icon(kind.icon, contentDescription = kind.label, modifier = Modifier.align(Alignment.Center).size(26.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Surface(
+                    onClick = { onClickTab(kind) },
+                    modifier = Modifier.size(48.dp).focusRequester(tabFocus.getValue(kind)).onFocusChanged { if (it.isFocused) onFocusTab(kind) }.testTag("panel_tab_${kind.name.lowercase()}"),
+                    shape = ClickableSurfaceDefaults.shape(CircleShape),
+                    colors = ClickableSurfaceDefaults.colors(
+                        containerColor = if (current) AppColors.Accent.copy(alpha = 0.25f) else Color.Transparent,
+                        contentColor = if (current) AppColors.Accent else AppColors.TextDim,
+                        focusedContainerColor = AppColors.Accent,
+                        focusedContentColor = AppColors.OnAccent,
+                    ),
+                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1.1f),
+                ) {
+                    Icon(kind.icon, contentDescription = kind.label, modifier = Modifier.align(Alignment.Center).size(26.dp))
+                }
+                // With labels off, the open panel's name still shows under its tab, so it's plain which one this is.
+                if (labels || current) IconLabel(kind.short, if (current) AppColors.Accent else AppColors.TextDim)
             }
         }
     }

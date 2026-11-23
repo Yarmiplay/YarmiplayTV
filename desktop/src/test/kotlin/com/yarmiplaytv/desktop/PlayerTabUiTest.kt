@@ -144,7 +144,7 @@ class PlayerTabUiTest {
         onNodeWithTag("tab_Search").performClick()
         waitUntil(timeoutMillis = 5_000) { showing("search_field") }
         onNodeWithTag("tab_Room").performClick()
-        waitUntil(timeoutMillis = 5_000) { showing("public_8996") }
+        waitUntil(timeoutMillis = 5_000) { showing("public_servers") }
         onNodeWithTag("tab_Home").performClick()
         waitUntil(timeoutMillis = 5_000) { showing("home") }
 

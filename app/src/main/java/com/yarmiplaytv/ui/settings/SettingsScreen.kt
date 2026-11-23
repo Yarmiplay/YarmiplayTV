@@ -21,7 +21,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -92,6 +92,10 @@ import com.yarmiplaytv.ui.shared.updateStateLine
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.AppTheme
 import com.yarmiplaytv.ui.theme.THEME_NOTE
+import com.yarmiplaytv.ui.theme.ICON_LABELS_NOTE
+import com.yarmiplaytv.ui.theme.ICON_LABELS_TITLE
+import com.yarmiplaytv.ui.theme.PLAYBACK_DETAILS_NOTE
+import com.yarmiplaytv.ui.theme.PLAYBACK_DETAILS_TITLE
 import com.yarmiplaytv.update.UpdateCheck
 import com.yarmiplaytv.update.UpdateState
 import com.yarmiplaytv.update.openStoreApp
@@ -396,6 +400,7 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                     }
                     TvSettingsCategory.PLAYBACK -> {
                 ToggleRow("Hardware decoding", pb.hardwareDecoding, { savePlayback(pb.copy(hardwareDecoding = !pb.hardwareDecoding)) }, subtitle = "MediaCodec with software fallback. Takes effect after restarting the app")
+                ToggleRow(PLAYBACK_DETAILS_TITLE, pb.showPlaybackStats, { savePlayback(pb.copy(showPlaybackStats = !pb.showPlaybackStats)) }, Modifier.testTag("toggle_playback_stats"), subtitle = PLAYBACK_DETAILS_NOTE)
                 ToggleRow(
                     "Picture-in-picture when leaving the app",
                     pb.pictureInPicture,
@@ -445,6 +450,7 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                             )
                         }
                         Text(THEME_NOTE, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                        ToggleRow(ICON_LABELS_TITLE, settings.iconLabels, { container.scope.launch { container.settingsStore.saveIconLabels(!settings.iconLabels) } }, Modifier.testTag("toggle_icon_labels"), subtitle = ICON_LABELS_NOTE)
                         PlayerScaleSetting(pb, ::savePlayback)
                     }
                     TvSettingsCategory.UPDATES -> UpdatesSection(container) { qr = it }
@@ -466,7 +472,7 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
 /** The groups of settings on TV, in the same order as on phones and desktop. */
 private enum class TvSettingsCategory(val title: String, val icon: ImageVector) {
     MEDIA("Media", Icons.Filled.VideoLibrary),
-    MAL("MyAnimeList", Icons.Filled.Tv),
+    MAL("MyAnimeList", Icons.Filled.Bookmarks),
     SYNCING("Syncing", Icons.Filled.Sync),
     VOICE("Voice", Icons.Filled.Mic),
     PLAYBACK("Playback", Icons.Filled.PlayCircle),

@@ -26,6 +26,15 @@ for dir in "${ext_root}"/*; do
   fi
 done
 
+# GitHub-hosted runners sit next to Azure's Ubuntu mirror; archive.ubuntu.com from them has taken from 15 s to
+# 27 min for the same stage-packages. Local builds leave UBUNTU_MIRROR unset and keep the image's sources.
+if [[ -n "${UBUNTU_MIRROR:-}" ]]; then
+  for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
+    [[ -f "$f" ]] && sed -i -E "s#https?://(archive|security)\.ubuntu\.com/ubuntu/?#${UBUNTU_MIRROR}#g" "$f"
+  done
+  apt-get update -qq
+fi
+
 seed=/project/snap-seed
 if compgen -G "${seed}/*.snap" > /dev/null; then
   export DEBIAN_FRONTEND=noninteractive

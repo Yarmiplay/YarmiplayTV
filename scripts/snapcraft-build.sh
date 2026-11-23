@@ -40,10 +40,16 @@ image="${SNAPCRAFT_IMAGE:-ghcr.io/canonical/snapcraft:8_core24}"
 info="{\"build_url\":\"https://github.com/${GITHUB_REPOSITORY:-local}/actions/runs/${GITHUB_RUN_ID:-0}\"}"
 echo "Building the snap with ${image}"
 
+# Snapcraft keeps the stage-packages' .debs under /root/.cache/snapcraft; CI mounts a cached folder there.
+cache_dir="${SNAPCRAFT_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/snapcraft-cache}"
+mkdir -p "$cache_dir"
+
 run_pack() {
   docker run --rm --privileged --network host \
     -v "$PWD:/project" \
+    -v "$cache_dir:/root/.cache/snapcraft" \
     -w /project \
+    -e UBUNTU_MIRROR="${UBUNTU_MIRROR:-}" \
     -e SNAPCRAFT_BUILD_ENVIRONMENT=host \
     -e SNAPCRAFT_BUILD_INFO=1 \
     -e "SNAPCRAFT_IMAGE_INFO=${info}" \

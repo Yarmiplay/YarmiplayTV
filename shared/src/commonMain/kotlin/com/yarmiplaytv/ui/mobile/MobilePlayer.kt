@@ -125,6 +125,8 @@ import com.yarmiplaytv.ui.nav.Navigator
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.player.formatClock
 import com.yarmiplaytv.ui.player.playbackInfo
+import com.yarmiplaytv.ui.player.playerTitle
+import com.yarmiplaytv.ui.theme.LocalIconLabels
 import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.SurfaceInk
 import com.yarmiplaytv.ui.theme.OnVideo
@@ -141,8 +143,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.ui.graphics.vector.ImageVector
 
-private enum class PlayerSheet(val label: String, val icon: ImageVector) {
-    PLAYLIST("Shared playlist", Icons.AutoMirrored.Filled.PlaylistPlay),
+private enum class PlayerSheet(val label: String, val icon: ImageVector, val short: String = label) {
+    PLAYLIST("Shared playlist", Icons.AutoMirrored.Filled.PlaylistPlay, "Playlist"),
     ROOM("Room", Icons.Filled.Groups),
     CHAT("Chat", Icons.Filled.Forum),
     AUDIO("Audio", Icons.Filled.Audiotrack),
@@ -303,7 +305,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                             player,
                             state,
                             fileName = nowPlaying?.fileName ?: state.url.orEmpty(),
-                            title = nowPlaying?.title ?: FileNames.baseName(state.url.orEmpty()),
+                            title = nowPlaying?.let(::playerTitle) ?: FileNames.baseName(state.url.orEmpty()),
                             subtitle = nowPlaying?.episode?.seriesName,
                             compact = isPortrait,
                         )
@@ -357,7 +359,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                     if (isPortrait) {
                                         Spacer(Modifier.weight(1f))
                                     } else {
-                                        Text(nowPlaying?.title ?: "Nothing playing", color = OnVideo.Text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                        Text(nowPlaying?.let(::playerTitle) ?: "Nothing playing", color = OnVideo.Text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                                     }
                                     if (!isPortrait) {
                                         // Status cluster (room · ready · ping · compact mic); hides with HUD — no video Mic badge.
@@ -464,7 +466,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                     ) {
                                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                             Text(
-                                                nowPlaying?.title ?: "No media loaded",
+                                                nowPlaying?.let(::playerTitle) ?: "No media loaded",
                                                 style = MaterialTheme.typography.titleMedium,
                                                 color = AppColors.Text,
                                                 maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
@@ -495,7 +497,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                     }
                                     if (titleExpanded) {
                                         val fileName = nowPlaying?.fileName
-                                        if (!fileName.isNullOrBlank() && fileName != nowPlaying?.title) {
+                                        if (!fileName.isNullOrBlank() && fileName != nowPlaying?.let(::playerTitle)) {
                                             Text(
                                                 fileName,
                                                 style = MaterialTheme.typography.bodySmall,
@@ -564,7 +566,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                             val subtitleText = if (inRoom) {
                                                 val readyCount = room.users.count { it.isReady == true }
                                                 val streamingPeer = playerStreamingLabel(container, controlsVisible = true, state.fileLoaded)
-                                                val memberSummary = "${room.users.size} in room · $readyCount ready"
+                                                val memberSummary = "${room.users.size} watching · $readyCount ready"
                                                 if (streamingPeer != null) "$memberSummary · $streamingPeer" else memberSummary
                                             } else {
                                                 "Connecting…"
@@ -685,6 +687,10 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
 
                                     // One row: shrinking volume left, screenshot/Menus (or desktop sheets) right.
                                     // Mic stays beside Ready on the room card (or here when disconnected) — leave its size alone.
+                                    // Labels under icons only when the row has room for them beside a usable volume slider
+                                    // (a 360dp-wide window doesn't); otherwise these stay icons.
+                                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                                    CompositionLocalProvider(LocalIconLabels provides (LocalIconLabels.current && maxWidth >= PortraitLabelsMinWidth)) {
                                     Row(
                                         Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
@@ -721,32 +727,30 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                         )
                                         rememberRelaySave(container)?.let { RelaySaveButton(it, ::touch, tint = AppColors.Text) }
                                         container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
-                                            IconButton(
+                                            LabeledIconButton(
+                                                Icons.Filled.PhotoCamera,
+                                                "Screenshot",
                                                 { screenshots.take(); touch() },
-                                                Modifier.size(48.dp).testTag("screenshot"),
-                                            ) {
-                                                Icon(Icons.Filled.PhotoCamera, contentDescription = "Screenshot", tint = AppColors.Text)
-                                            }
+                                                Modifier.testTag("screenshot"),
+                                                tint = AppColors.Text,
+                                            )
                                         }
                                         // Menus (TV-style) is phone/tablet only; desktop keeps direct sheet buttons.
                                         if (container.deviceKind == DeviceKind.PHONE || container.deviceKind == DeviceKind.TABLET) {
-                                            IconButton(
+                                            LabeledIconButton(
+                                                Icons.Filled.Menu,
+                                                "Menus",
                                                 { openMenus(); touch() },
-                                                Modifier.size(48.dp).testTag("player_menus"),
-                                            ) {
-                                                Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = AppColors.Text)
-                                            }
+                                                Modifier.testTag("player_menus"),
+                                                tint = AppColors.Text,
+                                            )
                                         } else {
-                                            if (!roomElsewhere) {
-                                                SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist", tint = AppColors.Text) { openSheet(PlayerSheet.PLAYLIST) }
-                                                SheetButton(Icons.Filled.Groups, "Room", tint = AppColors.Text) { openSheet(PlayerSheet.ROOM) }
-                                                SheetButton(Icons.Filled.Forum, "Chat", tint = AppColors.Text) { openSheet(PlayerSheet.CHAT) }
-                                            }
-                                            SheetButton(Icons.Filled.Audiotrack, "Audio", tint = AppColors.Text) { openSheet(PlayerSheet.AUDIO) }
-                                            SheetButton(Icons.Filled.Subtitles, "Subtitles", tint = AppColors.Text) { openSheet(PlayerSheet.SUBTITLES) }
-                                            SheetButton(Icons.Filled.Tune, "Video", tint = AppColors.Text) { openSheet(PlayerSheet.VIDEO) }
-                                            if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList", tint = AppColors.Text) { openSheet(PlayerSheet.MAL) }
+                                            PlayerSheet.entries
+                                                .filter { (!roomElsewhere || it.inPlayerWindow) && (it != PlayerSheet.MAL || container.mal.client.configured) }
+                                                .forEach { SheetButton(it, tint = AppColors.Text, onVideo = false) { openSheet(it) } }
                                         }
+                                    }
+                                    }
                                     }
                                 }
                             }
@@ -827,16 +831,14 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                     ) {
                         menuTabs.forEach { tab ->
                             val selected = tab == kind
-                            IconButton(
+                            LabeledIconButton(
+                                tab.icon,
+                                tab.label,
                                 onClick = { openSheet(tab) },
                                 modifier = Modifier.testTag("sheet_tab_${tab.name.lowercase()}"),
-                            ) {
-                                Icon(
-                                    tab.icon,
-                                    contentDescription = tab.label,
-                                    tint = if (selected) AppColors.Accent else AppColors.TextDim,
-                                )
-                            }
+                                tint = if (selected) AppColors.Accent else AppColors.TextDim,
+                                shortLabel = tab.short,
+                            )
                         }
                     }
                 }
@@ -913,25 +915,16 @@ private fun BottomControls(
             Spacer(Modifier.weight(1f))
             rememberRelaySave(container)?.let { RelaySaveButton(it, onInteract) }
             container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
-                IconButton({ screenshots.take(); onInteract() }, Modifier.testTag("screenshot")) {
-                    Icon(Icons.Filled.PhotoCamera, contentDescription = "Screenshot", tint = Color.White)
-                }
+                LabeledIconButton(Icons.Filled.PhotoCamera, "Screenshot", { screenshots.take(); onInteract() }, Modifier.testTag("screenshot"), tint = Color.White, onVideo = true)
             }
             if (useMenus) {
-                IconButton({ onMenus(); onInteract() }, Modifier.size(48.dp).testTag("player_menus")) {
-                    Icon(Icons.Filled.Menu, contentDescription = "Menus", tint = Color.White)
-                }
+                LabeledIconButton(Icons.Filled.Menu, "Menus", { onMenus(); onInteract() }, Modifier.testTag("player_menus"), tint = Color.White, onVideo = true)
             } else {
                 // The Syncplay-style room window has these; its player window leaves them out.
-                if (!LocalRoomElsewhere.current) {
-                    SheetButton(Icons.AutoMirrored.Filled.PlaylistPlay, "Shared playlist") { onSheet(PlayerSheet.PLAYLIST) }
-                    SheetButton(Icons.Filled.Groups, "Room") { onSheet(PlayerSheet.ROOM) }
-                    SheetButton(Icons.Filled.Forum, "Chat") { onSheet(PlayerSheet.CHAT) }
-                }
-                SheetButton(Icons.Filled.Audiotrack, "Audio") { onSheet(PlayerSheet.AUDIO) }
-                SheetButton(Icons.Filled.Subtitles, "Subtitles") { onSheet(PlayerSheet.SUBTITLES) }
-                SheetButton(Icons.Filled.Tune, "Video") { onSheet(PlayerSheet.VIDEO) }
-                if (container.mal.client.configured) SheetButton(Icons.Filled.Bookmarks, "MyAnimeList") { onSheet(PlayerSheet.MAL) }
+                val roomElsewhere = LocalRoomElsewhere.current
+                PlayerSheet.entries
+                    .filter { (!roomElsewhere || it.inPlayerWindow) && (it != PlayerSheet.MAL || container.mal.client.configured) }
+                    .forEach { SheetButton(it) { onSheet(it) } }
             }
         }
     }
@@ -1062,14 +1055,22 @@ private fun PlayerVoiceMembershipButton(
     }
 }
 
+/** The portrait controls row is at least this wide before its icons get labels. */
+private val PortraitLabelsMinWidth = 330.dp
+
+/** The playlist, room and chat are in the Syncplay-style room window; its player window has only these. */
+private val PlayerSheet.inPlayerWindow: Boolean
+    get() = this != PlayerSheet.PLAYLIST && this != PlayerSheet.ROOM && this != PlayerSheet.CHAT
+
+/** One of the desktop bar's sheet buttons, named under the icon while Labels under icons is on. */
 @Composable
 private fun SheetButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
+    sheet: PlayerSheet,
     tint: Color = Color.White,
+    onVideo: Boolean = true,
     onClick: () -> Unit,
 ) {
-    IconButton(onClick, Modifier.testTag("sheet_$label")) { Icon(icon, contentDescription = label, tint = tint) }
+    LabeledIconButton(sheet.icon, sheet.label, onClick, Modifier.testTag("sheet_${sheet.label}"), tint = tint, onVideo = onVideo, shortLabel = sheet.short)
 }
 
 /** The player as Android's picture-in-picture window: only the video (the system adds its own controls). */
@@ -1139,7 +1140,7 @@ private fun RoomStatusChip(
                 modifier = if (micLive) Modifier.testTag("status_mic_live") else Modifier,
             ) {
                 Chip(
-                    "${ManagedRooms.label(room.room)} · ${room.users.size} · $ready ready$via",
+                    "${ManagedRooms.label(room.room)} · ${room.users.size} watching · $ready ready$via",
                     AppColors.Ready,
                     if (streaming != null) Modifier.widthIn(max = 420.dp).testTag("relay_streaming") else Modifier,
                 )

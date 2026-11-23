@@ -111,7 +111,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-24.04-arm, windows-latest]
+        # macOS left out: its runner sometimes queues 5-15 minutes and holds the snap job back, and it was never
+        # the only leg that reached the store.
+        os: [ubuntu-24.04-arm, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -141,7 +143,11 @@ jobs:
     needs: [deb, snap-seed]
     if: always() && needs.deb.result == 'success' && needs.snap-seed.result != 'cancelled'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # A stuck stage-package download fails in half an hour instead of holding the run for ninety minutes.
+    timeout-minutes: 30
+    env:
+      # Next to GitHub's runners; archive.ubuntu.com has taken from 15 s to 27 min for the same stage-packages.
+      UBUNTU_MIRROR: http://azure.archive.ubuntu.com/ubuntu/
     steps:
       - uses: actions/checkout@v7
 
@@ -152,13 +158,23 @@ jobs:
 
       - run: cp deb/*.deb yarmiplaytv.deb
 
-      - name: Content snaps from a runner that can reach the store
-        id: seed
+      # One set is enough: the Arm runner's, or Windows' when Arm couldn't reach the store (each set is several
+      # hundred MB, so downloading both cost a minute or two).
+      - name: Content snaps (ubuntu-24.04-arm)
+        id: seed-arm
         continue-on-error: true
         uses: actions/download-artifact@v8
         with:
-          pattern: content-snaps-*
-          path: snap-seeds
+          name: content-snaps-ubuntu-24.04-arm
+          path: snap-seeds/arm
+
+      - name: Content snaps (windows-latest)
+        if: steps.seed-arm.outcome != 'success'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: content-snaps-windows-latest
+          path: snap-seeds/win
 
       - name: Choose one content-snap set
         run: |
@@ -188,9 +204,23 @@ jobs:
       # Packs with the fetched content snaps, so the store API is not required during the build.
       # A skip remains only when every fetch failed and the probe still gets nothing. This pull
       # request fails the job unless a .snap was produced.
+      # The stage-packages' .debs, kept a week; apt checks each against the current index, so a stale one is
+      # downloaded again rather than used.
+      - id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/snapcraft-cache/download
+          key: snapcraft-debs-${{ hashFiles('snap/snapcraft.yaml') }}-${{ steps.week.outputs.week }}
+          restore-keys: snapcraft-debs-
+
       - id: build
         run: |
+          export SNAPCRAFT_CACHE_DIR="$RUNNER_TEMP/snapcraft-cache"
           bash scripts/snapcraft-build.sh
+          # Written as root in the container; the cache step reads it as the runner user.
+          sudo chown -R "$(id -u):$(id -g)" "$SNAPCRAFT_CACHE_DIR" || true
           shopt -s nullglob
           snaps=(*.snap)
           if ((${#snaps[@]} > 0)); then
@@ -220,19 +250,28 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # A build with an empty Gradle home downloads exactly what the Flatpak build needs.
+  # A build with an empty Gradle home downloads exactly what the Flatpak build needs. The list only changes with
+  # the Gradle files, so it's cached on them and the build is skipped when they haven't changed.
   flatpak-sources:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
+      - id: cache
+        uses: actions/cache@v6
+        with:
+          path: gradle-sources.json
+          key: gradle-sources-v1-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'scripts/flatpak_gradle_sources.py') }}
+
       - uses: actions/setup-java@v6
+        if: steps.cache.outputs.cache-hit != 'true'
         with:
           distribution: temurin
           java-version: 17
 
       - name: List the Gradle files
+        if: steps.cache.outputs.cache-hit != 'true'
         env:
           GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
         run: |
@@ -298,7 +337,8 @@ jobs:
       - uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6
         with:
           manifest-path: packaging/flatpak/com.yarmiplay.TV.yml
-          bundle: yarmiplaytv.flatpak
+          # Nothing here uses a .flatpak bundle (the linter checks the repo), and making one took two minutes.
+          build-bundle: false
           # Cached by the steps around this one: the action's own cache only takes an exact key.
           cache: false
           # As Flathub's builder does; its linter checks for the mirrored screenshots.

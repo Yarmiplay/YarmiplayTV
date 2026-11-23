@@ -126,6 +126,7 @@ class RoomScreenUiTest {
         onNodeWithTag("known_room_movie-night").assertIsDisplayed()
         screenshot("join_wide")
 
+        onNodeWithTag("public_servers").performClick()
         onNodeWithTag("public_8996").performClick()
         onNodeWithTag("field_host").assertTextEquals("Server", "syncplay.pl", includeEditableText = true)
         onNodeWithTag("field_port").assertTextEquals("Port", "8996", includeEditableText = true)
