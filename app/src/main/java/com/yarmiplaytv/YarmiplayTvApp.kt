@@ -31,6 +31,12 @@ class YarmiplayTvApp : Application() {
      */
     val screens: SnapshotStateList<Screen> = mutableStateListOf(Screen.Home)
 
+    /**
+     * Set on the first activity creation this process. A cold start plays the intro; coming back from
+     * the background, or a rotation that recreates the activity, does not.
+     */
+    var launchSplashPlayed: Boolean = false
+
     override fun onCreate() {
         super.onCreate()
         DevicePlatform.init(this)

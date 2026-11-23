@@ -59,4 +59,9 @@ val openSourceComponents = listOf(
     OpenSourceComponent("JNA (desktop)", "Apache 2.0 or LGPL 2.1", "https://github.com/java-native-access/jna"),
     OpenSourceComponent("LWJGL, GLFW (desktop)", "BSD 3-Clause, zlib", "https://www.lwjgl.org"),
     OpenSourceComponent("ZXing (Android TV)", "Apache 2.0", "https://github.com/zxing/zxing"),
+    OpenSourceComponent(
+        "Inter (Android launch wordmark)",
+        "SIL Open Font License 1.1",
+        "https://github.com/rsms/inter",
+    ),
 )
