@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.2.2" date="2026-11-23">
+      <description>
+        <p>In the Syncplay-style windows, settings and the other screens shown over the room have readable text again instead of dark text on a dark background.</p>
+      </description>
+    </release>
     <release version="3.2.1" date="2026-11-23">
       <description>
         <p>Smoother on computers: screens no longer rebuild every second while you're in a room, and the picture-in-picture window no longer redraws with every tick of the clock.</p>

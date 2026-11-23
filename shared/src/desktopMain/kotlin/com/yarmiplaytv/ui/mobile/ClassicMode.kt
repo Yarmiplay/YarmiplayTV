@@ -220,24 +220,28 @@ fun ClassicRoomWindow(container: AppContainer, onRegularView: () -> Unit) {
     }
 
     val over = nav.current.takeIf { it != Screen.Room && it != Screen.SyncplayConnect && it != Screen.Player }
-    Column(Modifier.fillMaxSize().background(AppColors.Background).testTag("classic_window")) {
-        ClassicMenuBar(container, inRoom, state.fileLoaded, onRegularView)
-        // A new version: the regular view shows this on Home, which this window doesn't have. Nothing when there's none.
-        if (over == null) UpdateBanner(container, Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp))
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            when {
-                over != null -> Column(Modifier.fillMaxSize()) {
-                    TextButton({ nav.popTo(Screen.Room) }, Modifier.padding(start = 8.dp, top = 4.dp).testTag("classic_back")) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (inRoom) "Back to the room" else "Back to joining")
+    // The window paints its own background, so it also sets the text colour on it: the screens shown over the room
+    // (settings, the library, …) leave plain text to that colour, which is black otherwise.
+    CompositionLocalProvider(LocalContentColor provides AppColors.Text) {
+        Column(Modifier.fillMaxSize().background(AppColors.Background).testTag("classic_window")) {
+            ClassicMenuBar(container, inRoom, state.fileLoaded, onRegularView)
+            // A new version: the regular view shows this on Home, which this window doesn't have. Nothing when there's none.
+            if (over == null) UpdateBanner(container, Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp))
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    over != null -> Column(Modifier.fillMaxSize()) {
+                        TextButton({ nav.popTo(Screen.Room) }, Modifier.padding(start = 8.dp, top = 4.dp).testTag("classic_back")) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (inRoom) "Back to the room" else "Back to joining")
+                        }
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            saveable.SaveableStateProvider(over.key) { AppScreen(container, nav, over, DeviceKind.DESKTOP) }
+                        }
                     }
-                    Box(Modifier.weight(1f).fillMaxWidth()) {
-                        saveable.SaveableStateProvider(over.key) { AppScreen(container, nav, over, DeviceKind.DESKTOP) }
-                    }
+                    inRoom -> ClassicRoom(container)
+                    else -> ClassicJoin(container)
                 }
-                inRoom -> ClassicRoom(container)
-                else -> ClassicJoin(container)
             }
         }
     }
