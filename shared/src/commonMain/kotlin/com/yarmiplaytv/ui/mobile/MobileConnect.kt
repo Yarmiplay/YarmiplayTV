@@ -99,7 +99,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun MobileRoomScreen(container: AppContainer, nav: Navigator) {
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     val model = rememberSyncplayConnectModel(container)
     var editing by remember { mutableStateOf(false) }
     val connected = room.status == ConnectionStatus.CONNECTED
@@ -183,7 +183,7 @@ private fun RoomColumn(container: AppContainer, model: SyncplayConnectModel, onE
 @Composable
 internal fun SaveCurrentRoom(container: AppContainer, modifier: Modifier = Modifier) {
     val settings by container.settings.collectAsStateWithLifecycle()
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     val server = container.sync.server ?: return
     val key = "$server/${room.room}"
     val entry = settings.savedRooms.firstOrNull { it.key == key }

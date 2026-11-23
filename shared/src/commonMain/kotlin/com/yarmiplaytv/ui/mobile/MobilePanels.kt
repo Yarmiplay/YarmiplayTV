@@ -138,7 +138,7 @@ private fun SheetTitle(title: String, subtitle: String? = null) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Modifier = Modifier, maxHeight: androidx.compose.ui.unit.Dp = 480.dp) {
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         SheetTitle("Shared playlist", if (room.status == ConnectionStatus.CONNECTED) "Everyone in '${ManagedRooms.label(room.room)}' sees these changes" else null)
@@ -439,7 +439,7 @@ private fun RoomSkipToggle(skip: RoomSkip, onChange: (Boolean) -> Unit) {
 
 @Composable
 fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, showChangeRoom: Boolean = true) {
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (room.status != ConnectionStatus.CONNECTED) {
             SheetTitle("Room")
@@ -624,7 +624,7 @@ fun RoomUsersContent(container: AppContainer, modifier: Modifier = Modifier, sho
 /** Switching rooms and the managed-room options, while connected; nothing otherwise. */
 @Composable
 fun RoomSwitchContent(container: AppContainer, modifier: Modifier = Modifier) {
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     if (room.status != ConnectionStatus.CONNECTED) return
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         RoomSwitchOptions(container, room)
@@ -742,7 +742,7 @@ private var mobileChatDraft by mutableStateOf("")
 fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeight: androidx.compose.ui.unit.Dp = 420.dp, fill: Boolean = false) {
     val feed by container.sync.feed.collectAsStateWithLifecycle()
     val settings by container.settings.collectAsStateWithLifecycle()
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     val showChat = settings.showRoomChat
     var message by remember { mutableStateOf(mobileChatDraft) }
     val listState = rememberLazyListState()

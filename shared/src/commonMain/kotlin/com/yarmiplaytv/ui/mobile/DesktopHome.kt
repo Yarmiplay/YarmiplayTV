@@ -101,7 +101,7 @@ private val PosterWidth = 240.dp
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DesktopHomeScreen(container: AppContainer, nav: Navigator) {
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     val settings by container.settings.collectAsStateWithLifecycle()
     val source by container.mediaSource.collectAsStateWithLifecycle()
     val jellyfin by container.jellyfinServers.collectAsStateWithLifecycle()

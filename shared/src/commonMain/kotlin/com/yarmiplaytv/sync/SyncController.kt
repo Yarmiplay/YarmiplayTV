@@ -27,8 +27,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -72,6 +74,18 @@ class SyncController(
         if (test != null) flowOf(test)
         else clientFlow.flatMapLatest { it?.state ?: flowOf(RoomState()) }
     }.stateIn(scope, SharingStarted.Eagerly, RoomState())
+
+    /**
+     * [room] for screens: without the server's clock ([RoomState.globalPosition]) and the ping ([RoomState.rttMillis]),
+     * which change with every State message (about once a second while in a room). A screen that follows this is
+     * rebuilt only when something it shows changes; the ping has its own [pingMillis].
+     */
+    val roomView: StateFlow<RoomState> = room.map { it.withoutClock() }.distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, RoomState())
+
+    /** The round trip to the server in whole milliseconds, for the small readouts that show it; 0 before one is known. */
+    val pingMillis: StateFlow<Double> = room.map { kotlin.math.round(it.rttMillis) }.distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, 0.0)
 
     fun setTestRoom(room: RoomState?) {
         testRoom.value = room
@@ -352,3 +366,7 @@ class SyncController(
         const val DEFAULT_MAX_CHAT_LENGTH = 150
     }
 }
+
+/** [RoomState] with the fields that tick every State message left out (see [SyncController.roomView]). */
+fun RoomState.withoutClock(): RoomState =
+    if (globalPosition == 0.0 && rttMillis == 0.0) this else copy(globalPosition = 0.0, rttMillis = 0.0)

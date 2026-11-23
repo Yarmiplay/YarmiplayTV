@@ -163,7 +163,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
     val player = container.player
     // Without the clock: the seek bar polls the position itself, so its ticks don't rebuild the whole screen.
     val state by player.collectStateWithoutClock()
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     val status by container.playlist.status.collectAsStateWithLifecycle()
     val settings by container.settings.collectAsStateWithLifecycle()
@@ -559,13 +559,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
                                                 )
-                                                if (inRoom && room.rttMillis > 0) {
-                                                    Text(
-                                                        "%.0f ms".format(room.rttMillis),
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = AppColors.TextDim,
-                                                    )
-                                                }
+                                                if (inRoom) RoomPing(container)
                                             }
                                             val subtitleText = if (inRoom) {
                                                 val readyCount = room.users.count { it.isReady == true }
@@ -948,7 +942,21 @@ private fun BottomControls(
 private fun LiveRoomStatus(container: AppContainer, room: RoomState, streaming: String?) {
     val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
     val level by container.voice.captureLevel.collectAsStateWithLifecycle()
-    RoomStatusChip(room, streaming, micLive = voiceUi.micControlLive(), micLevel = level)
+    val ping by container.sync.pingMillis.collectAsStateWithLifecycle()
+    RoomStatusChip(room, streaming, ping, micLive = voiceUi.micControlLive(), micLevel = level)
+}
+
+/** Our ping, in its own composable: it changes about once a second, and the header around it shouldn't. */
+@Composable
+private fun RoomPing(container: AppContainer) {
+    val ping by container.sync.pingMillis.collectAsStateWithLifecycle()
+    if (ping > 0) {
+        Text(
+            "%.0f ms".format(ping),
+            style = MaterialTheme.typography.labelSmall,
+            color = AppColors.TextDim,
+        )
+    }
 }
 
 /** Mic button that follows the capture meter without recomposing the player. */
@@ -1118,13 +1126,14 @@ private fun Chip(text: String, color: Color, modifier: Modifier = Modifier) {
 private fun RoomStatusChip(
     room: RoomState,
     streaming: String? = null,
+    pingMillis: Double = 0.0,
     micLive: Boolean = false,
     micLevel: Float = 0f,
 ) {
     when (room.status) {
         ConnectionStatus.CONNECTED -> {
             val ready = room.users.count { it.isReady == true }
-            val via = streaming?.let { " · ${it.withPing(room.rttMillis)}" }.orEmpty()
+            val via = streaming?.let { " · ${it.withPing(pingMillis)}" }.orEmpty()
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = if (micLive) Modifier.testTag("status_mic_live") else Modifier,
@@ -1203,11 +1212,11 @@ private fun BoxScope.RelayOnPlayer(
 ) {
     val relay = container.relay ?: return
     val relayStatus by relay.status.collectAsStateWithLifecycle()
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val ping by container.sync.pingMillis.collectAsStateWithLifecycle()
     val status = relayStatus ?: return
     when {
         !isPortrait && status.streamingLineVisible(controlsVisible, fileLoaded) && !controlsVisible -> Chip(
-            status.text.withPing(room.rttMillis),
+            status.text.withPing(ping),
             AppColors.Ready,
             Modifier.align(Alignment.TopCenter).padding(top = 24.dp).widthIn(max = 280.dp).testTag("relay_streaming"),
         )

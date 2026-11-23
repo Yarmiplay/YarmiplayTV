@@ -493,7 +493,7 @@ private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
 @Composable
 internal fun DesktopChat(container: AppContainer, modifier: Modifier) {
     val feed by container.sync.feed.collectAsState()
-    val room by container.sync.room.collectAsState()
+    val room by container.sync.roomView.collectAsState()
     val settings by container.settings.collectAsState()
     val showChat = settings.showRoomChat
     val panel = DesktopRoomPanel

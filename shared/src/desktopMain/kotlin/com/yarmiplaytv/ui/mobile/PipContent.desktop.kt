@@ -63,7 +63,8 @@ fun PipContent(
     onResize: (start: PipScreenPointer, current: PipScreenPointer) -> Unit,
 ) {
     val player = container.player
-    val state by player.state.collectAsState()
+    // The seek bar keeps its own clock; the rest changes only with play/pause, the file and the like.
+    val state by player.collectStateWithoutClockAlways()
     val nowPlaying by container.playlist.nowPlaying.collectAsState()
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()

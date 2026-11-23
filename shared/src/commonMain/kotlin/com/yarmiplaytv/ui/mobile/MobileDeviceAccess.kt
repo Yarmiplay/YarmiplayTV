@@ -31,7 +31,7 @@ import com.yarmiplaytv.ui.theme.AppColors
 /** Shown over any screen while a YarmiplayServerTV host decides about this device, or after they said no. */
 @Composable
 fun MobileDeviceAccessDialog(container: AppContainer) {
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     val prompt = deviceAccessPrompt(room.yarmiplay, container.deviceDisplayName) ?: return
     val close = { closeDeviceAccess(container) }
     AlertDialog(

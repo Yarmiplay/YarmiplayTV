@@ -346,7 +346,7 @@ private fun MiniPlayerBar(container: AppContainer, onOpenPlayer: () -> Unit) {
     if (!state.fileLoaded) return
 
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     var position by remember { mutableDoubleStateOf(container.player.currentPosition()) }
     LaunchedEffect(state.fileLoaded, state.paused) {
         while (state.fileLoaded) {

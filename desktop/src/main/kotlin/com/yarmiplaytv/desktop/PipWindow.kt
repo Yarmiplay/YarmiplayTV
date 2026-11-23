@@ -34,6 +34,8 @@ import java.awt.Rectangle
 import java.awt.Toolkit
 import java.awt.Window as AwtWindow
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 /** Where the picture-in-picture window was last: its top-left corner and width, in screen pixels. */
 internal data class MiniBounds(val x: Int, val y: Int, val width: Int)
@@ -52,8 +54,10 @@ internal fun PipWindow(
     onBack: () -> Unit,
     onClose: () -> Unit,
 ) {
-    val aspect by container.player.state.collectAsState()
-    val initial = remember { PipPlacement.bounds(PipPlacement.workArea(near, remembered), aspect.displayAspect, remembered) }
+    // Only the shape: the whole state moves with the clock, which would rebuild this window four times a second.
+    val aspectFlow = remember(container) { container.player.state.map { it.displayAspect }.distinctUntilChanged() }
+    val displayAspect by aspectFlow.collectAsState(container.player.state.value.displayAspect)
+    val initial = remember { PipPlacement.bounds(PipPlacement.workArea(near, remembered), displayAspect, remembered) }
     val state = rememberWindowState(position = WindowPosition(initial.x.dp, initial.y.dp), size = DpSize(initial.width.dp, initial.height.dp))
     val scaleSpace = remember { PipDrag.scaleSpace(System.getProperty("os.name").orEmpty()) }
     val drag = remember { PipWindowDrag() }
@@ -82,8 +86,8 @@ internal fun PipWindow(
         LaunchedEffect(Unit) { runCatching { awt.iconImages = LaunchUpdateWindow.windowIcons() } }
         fun keepBounds() = onBounds(MiniBounds(awt.x, awt.y, awt.width))
         // Keep the video's shape when it changes (another file).
-        LaunchedEffect(aspect.displayAspect) {
-            val ratio = PipPlacement.ratio(aspect.displayAspect)
+        LaunchedEffect(displayAspect) {
+            val ratio = PipPlacement.ratio(displayAspect)
             awt.setSize(awt.width, (awt.width / ratio).roundToInt())
         }
         // All video: what's on it is white whatever the theme, and the seek bar takes the theme's accent.

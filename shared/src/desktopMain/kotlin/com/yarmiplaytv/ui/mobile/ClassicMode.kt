@@ -183,7 +183,7 @@ object ClassicWindows {
  */
 @Composable
 fun ClassicRoomWindow(container: AppContainer, onRegularView: () -> Unit) {
-    val room by container.sync.room.collectAsState()
+    val room by container.sync.roomView.collectAsState()
     val state by container.player.collectStateWithoutClock()
     val nav = ClassicWindows.nav
     val inRoom = room.status == ConnectionStatus.CONNECTED || room.status == ConnectionStatus.RECONNECTING
@@ -277,7 +277,7 @@ fun ClassicPlayerContent(container: AppContainer) {
 
 @Composable
 private fun ClassicMenuBar(container: AppContainer, inRoom: Boolean, fileLoaded: Boolean, onRegularView: () -> Unit) {
-    val room by container.sync.room.collectAsState()
+    val room by container.sync.roomView.collectAsState()
     val uri = LocalUriHandler.current
     val openVideo = rememberVideoPicker { container.playlist.playLocal(it, inRoom = false) }
     Surface(color = AppColors.Surface, contentColor = AppColors.OnSurface, modifier = Modifier.fillMaxWidth().testTag("classic_menu_bar")) {
@@ -453,7 +453,7 @@ private fun VoiceControls(container: AppContainer) {
 /** Syncplay's "List of who is playing what": the room, then each person with their ready state and file. */
 @Composable
 private fun PeopleTable(container: AppContainer, modifier: Modifier = Modifier) {
-    val room by container.sync.room.collectAsState()
+    val room by container.sync.roomView.collectAsState()
     val voiceUi by container.voice.ui.collectAsState()
     val blocked by container.sync.blocked.collectAsState()
     val settings by container.settings.collectAsState()
@@ -590,7 +590,7 @@ private fun PersonRow(
 /** Switching rooms: the room's name (with the rooms you know on this server) and Join room; saving this room. */
 @Composable
 private fun RoomBar(container: AppContainer) {
-    val room by container.sync.room.collectAsState()
+    val room by container.sync.roomView.collectAsState()
     val settings by container.settings.collectAsState()
     var text by remember(room.room) { mutableStateOf(room.room) }
     var pick by remember { mutableStateOf(false) }
@@ -626,7 +626,7 @@ private fun RoomBar(container: AppContainer) {
 /** Syncplay's "I'm ready to watch!", across the bottom. */
 @Composable
 private fun ReadyToWatch(container: AppContainer) {
-    val room by container.sync.room.collectAsState()
+    val room by container.sync.roomView.collectAsState()
     val ready = room.isReady == true
     Surface(
         onClick = { container.sync.toggleReady() },
@@ -665,7 +665,7 @@ internal fun formatFileSize(bytes: Long): String = when {
 private fun ClassicJoin(container: AppContainer) {
     val model = rememberSyncplayConnectModel(container)
     val settings by container.settings.collectAsState()
-    val room by container.sync.room.collectAsState()
+    val room by container.sync.roomView.collectAsState()
     val showMore = ClassicWindows.showMoreSettings
     var section by remember { mutableStateOf<SettingsCategory?>(null) }
     val categories = remember(container) { SettingsCategory.entries.filter { it != SettingsCategory.MAL || container.mal.client.configured } }
@@ -772,7 +772,7 @@ private fun JoinBasics(
     onJoin: () -> Unit,
 ) {
     val settings by container.settings.collectAsState()
-    val room by container.sync.room.collectAsState()
+    val room by container.sync.roomView.collectAsState()
     val connectionError by container.sync.connectionError.collectAsState()
     val pickVideo = rememberVideoPicker { onVideo(it) }
     val enter = KeyboardActions(onGo = { onJoin() })

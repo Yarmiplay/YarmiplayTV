@@ -215,7 +215,7 @@ fun MobileSearchScreen(container: AppContainer, nav: Navigator, initialQuery: St
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MobileItemActionsSheet(container: AppContainer, item: MediaItem, onDismiss: () -> Unit, onMal: (() -> Unit)? = null) {
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     val inRoom = room.status == ConnectionStatus.CONNECTED
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = AppColors.Surface, contentColor = AppColors.OnSurface, modifier = Modifier.exposeTestTags()) {
         SurfaceInk {

@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.2.1" date="2026-11-23">
+      <description>
+        <p>Smoother on computers: screens no longer rebuild every second while you're in a room, and the picture-in-picture window no longer redraws with every tick of the clock.</p>
+      </description>
+    </release>
     <release version="3.2.0" date="2026-11-23">
       <description>
         <p>The Play build asks you to choose a folder or USB drive instead of all-files access. The website APK can still scan storage. FTP, SMB, links and Syncplay are unchanged.</p>

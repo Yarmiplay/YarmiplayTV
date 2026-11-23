@@ -184,7 +184,7 @@ internal fun playlistSourceHint(kind: PlaylistSourceKind): String = when (kind) 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
-    val room by container.sync.room.collectAsState()
+    val room by container.sync.roomView.collectAsState()
     val settings by container.settings.collectAsState()
     val localFiles by container.local.files.collectAsState()
     val nowPlaying by container.playlist.nowPlaying.collectAsState()

@@ -632,7 +632,7 @@ private fun MalListRow(container: AppContainer, anime: MalAnime, list: MalListSt
     LaunchedEffect(anime.id, lookUp || picking) {
         if ((lookUp || picking) && episodes == null) episodes = container.malEpisodes.of(anime)
     }
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     val inRoom = room.status == ConnectionStatus.CONNECTED
     val next = episodes?.let { nextEpisode(it, list.watchedEpisodes) }
     Column(Modifier.fillMaxWidth()) {

@@ -21,6 +21,7 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -527,6 +528,8 @@ class PlayerControlsUiTest {
 
         // Room card and ready button exist in the portrait bottom section
         onNodeWithTag("portrait_room_card").assertExists()
+        // The ping has its own flow, out of the room state the card follows.
+        assertTrue("ping shown", onAllNodesWithText("42 ms", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
         onNodeWithTag("player_ready").assertExists()
 
         // Toggling ready works from this dedicated position

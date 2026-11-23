@@ -69,7 +69,7 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
         DesktopHomeScreen(container, nav)
         return
     }
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     val source by container.mediaSource.collectAsStateWithLifecycle()
     val jellyfin by container.jellyfinServers.collectAsStateWithLifecycle()
     val plex by container.plexServers.collectAsStateWithLifecycle()

@@ -80,7 +80,7 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
     val folders by container.local.folders.collectAsStateWithLifecycle()
     val files by container.local.files.collectAsStateWithLifecycle()
     val indexing by container.local.indexing.collectAsStateWithLifecycle()
-    val room by container.sync.room.collectAsStateWithLifecycle()
+    val room by container.sync.roomView.collectAsStateWithLifecycle()
     val inRoom = room.status == ConnectionStatus.CONNECTED
     val scope = rememberCoroutineScope()
     var picked by remember { mutableStateOf<String?>(null) }
