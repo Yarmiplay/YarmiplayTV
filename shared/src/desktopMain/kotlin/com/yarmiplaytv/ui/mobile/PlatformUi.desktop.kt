@@ -324,7 +324,7 @@ actual fun rememberFolderPicker(container: AppContainer): () -> Unit =
     remember(container) { { DesktopDialogs.pickFolder()?.let { container.local.addFolder(FileLocalLibrary.uriOf(it)) } } }
 
 @Composable
-actual fun rememberStorageScan(container: AppContainer): (() -> Unit)? = null
+actual fun rememberStorageScan(container: AppContainer, onUnavailable: (String) -> Unit): StorageScan? = null
 
 @Composable
 actual fun rememberSavePicker(container: AppContainer): (String, (SaveTarget) -> Unit) -> Unit =

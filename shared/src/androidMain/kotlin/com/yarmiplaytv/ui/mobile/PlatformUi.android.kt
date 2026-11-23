@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -41,6 +42,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.local.StorageAccess
+import com.yarmiplaytv.local.StorageAccessPolicy
 import com.yarmiplaytv.local.storageFolderUris
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.SurfacePlayer
@@ -181,15 +184,28 @@ actual fun rememberSubtitlePicker(onPicked: (String) -> Unit): () -> Unit {
 
 @Composable
 actual fun rememberFolderPicker(container: AppContainer): () -> Unit {
+    val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) container.local.addFolder(uri.toString())
     }
-    return { launcher.launch(null) }
+    return {
+        try {
+            launcher.launch(null)
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(context, StorageAccessPolicy.NO_DOCUMENTS_UI, Toast.LENGTH_LONG).show()
+        }
+    }
 }
 
 @Composable
-actual fun rememberStorageScan(container: AppContainer): (() -> Unit)? {
+actual fun rememberStorageScan(container: AppContainer, onUnavailable: (String) -> Unit): StorageScan? {
     val context = LocalContext.current
+    val allFiles = remember { context.declaresAllFilesAccess() }
+    val access = if (allFiles) StorageAccess.AllFiles else StorageAccess.FolderPicker
+    val reportUnavailable by rememberUpdatedState(onUnavailable)
+    val tree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) container.local.addFolder(uri.toString())
+    }
     fun addWhatIsReadable() {
         container.local.addFolders(storageFolderUris(context))
     }
@@ -199,7 +215,17 @@ actual fun rememberStorageScan(container: AppContainer): (() -> Unit)? {
     val read = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         addWhatIsReadable()
     }
-    return {
+    return StorageScan(StorageAccessPolicy.actionLabel(access)) {
+        if (access == StorageAccess.FolderPicker) {
+            // DocumentsUI lists volumes, including USB, and takes the D-pad on Android TV.
+            try {
+                tree.launch(null)
+            } catch (_: ActivityNotFoundException) {
+                reportUnavailable(StorageAccessPolicy.NO_DOCUMENTS_UI)
+                Toast.makeText(context, StorageAccessPolicy.NO_DOCUMENTS_UI, Toast.LENGTH_LONG).show()
+            }
+            return@StorageScan
+        }
         when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager() -> {
                 val intent = Intent(
@@ -218,6 +244,12 @@ actual fun rememberStorageScan(container: AppContainer): (() -> Unit)? {
             else -> addWhatIsReadable()
         }
     }
+}
+
+/** True only for the website APK, whose debug manifest declares all-files access. The Play bundle does not. */
+private fun Context.declaresAllFilesAccess(): Boolean {
+    val info = packageManager.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS)
+    return info.requestedPermissions?.contains(Manifest.permission.MANAGE_EXTERNAL_STORAGE) == true
 }
 
 @Composable
@@ -285,7 +317,7 @@ actual fun rememberDirectoryPicker(title: String, onPicked: (String) -> Unit): (
         try {
             launcher.launch(null)
         } catch (e: ActivityNotFoundException) {
-            Toast.makeText(context, "This device has no folder picker", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, StorageAccessPolicy.NO_DOCUMENTS_UI, Toast.LENGTH_LONG).show()
         }
     }
 }
