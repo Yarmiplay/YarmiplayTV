@@ -1,5 +1,6 @@
 package com.yarmiplaytv.desktop
 
+import com.yarmiplaytv.ui.theme.appIconLabels
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -91,7 +92,7 @@ internal fun PipWindow(
             awt.setSize(awt.width, (awt.width / ratio).roundToInt())
         }
         // All video: what's on it is white whatever the theme, and the seek bar takes the theme's accent.
-        MobileTheme(appPalette(container)) {
+        MobileTheme(appPalette(container), appIconLabels(container)) {
             PipContent(
                 container,
                 onBack = { keepBounds(); onBack() },

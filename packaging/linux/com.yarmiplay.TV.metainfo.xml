@@ -86,6 +86,23 @@
   </content_rating>
 
   <releases>
+    <release version="3.2.5" date="2026-11-24">
+      <description>
+        <p>A round of polish across TV, phones, tablets and computers.</p>
+        <ul>
+          <li>Labels under icons: the player's buttons, the menu tabs, the playlist tools and the people in a room show a short name under their icon. Settings &gt; Appearance &gt; Labels under icons turns them off if you'd rather see only the icons.</li>
+          <li>Settings on phones and tablets: the categories, and the rows that open another page, are cards like the ones on Home, in every theme.</li>
+          <li>Home: Jellyfin and Plex have icons of their own, and a card shows a dot only once it's connected or signed in. TV, phones and computers now build their home cards from one shared list.</li>
+          <li>Shared playlist: each entry's actions (play for everyone, move to the top, up or down, remove) are behind one button, so the file names have the room.</li>
+          <li>Chat: each name has its own colour, and joins, leaves and what people are playing are smaller and quieter than what people say.</li>
+          <li>Player: the heading leaves off the file extension, the seek bar always shows a dot where playback is, and the buffered part no longer makes a short clip look finished. The codec line under the seek bar is now Settings &gt; Playback &gt; Show playback details, on every device.</li>
+          <li>The room's status reads "3 watching · 2 ready" everywhere, and the TV player drops the extra "Menus" hint.</li>
+          <li>Joining a room: Syncplay's public servers are in one menu with their host and port, and the form no longer repeats its field names above them.</li>
+          <li>On TV, on/off settings look like switches, and MyAnimeList has the same icon in Settings as everywhere else.</li>
+          <li>Linux and release builds finish much sooner: snaps fetch their packages from a nearby mirror and keep them between builds.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.4" date="2026-11-23">
       <description>
         <p>On phones, tablets and Android TV, opening the app plays a short switch-on animation.</p>

@@ -201,9 +201,9 @@ class TvNavigationTest {
         launch()
         tv.await("Libraries")
         tv.awaitFocus("Join a Syncplay room")
-        // The tiles' second row (MyAnimeList) is on the way down to the libraries.
+        // The tiles' second row (Player, under the room tile) is on the way down to the libraries.
         tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
-        tv.awaitFocus("MyAnimeList")
+        tv.awaitFocus("Open player")
         tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
         tv.awaitFocus("Shows")
         tv.key(KeyEvent.KEYCODE_DPAD_CENTER)
@@ -274,9 +274,9 @@ class TvNavigationTest {
         launch()
         tv.await("Libraries")
         tv.awaitFocus("Join a Syncplay room")
-        // The tiles' second row (MyAnimeList) is on the way down to the libraries.
+        // The tiles' second row (Player, under the room tile) is on the way down to the libraries.
         tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
-        tv.awaitFocus("MyAnimeList")
+        tv.awaitFocus("Open player")
         tv.key(KeyEvent.KEYCODE_DPAD_DOWN)
         tv.awaitFocus("Shows")
         tv.key(KeyEvent.KEYCODE_DPAD_RIGHT, times = 2)
@@ -383,7 +383,9 @@ class TvNavigationTest {
         scenarios.clipPlayingInRoom()
         launch()
         waitUntil(10_000) { container.player.state.value.fileLoaded }
+        // Up opens the menus on the room panel's first button; Up from there reaches its tab.
         tv.key(KeyEvent.KEYCODE_DPAD_UP)
+        tv.awaitFocus("I'm ready")
         tv.key(KeyEvent.KEYCODE_DPAD_UP)
         tv.awaitFocus("Room")
         tv.key(KeyEvent.KEYCODE_DPAD_RIGHT, times = 4)

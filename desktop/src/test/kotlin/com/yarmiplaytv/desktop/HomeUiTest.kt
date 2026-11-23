@@ -158,7 +158,7 @@ class HomeUiTest {
             "Join a Syncplay room", "Connect Jellyfin", "Connect Plex", "Files on this device",
         ).forEach { assertOneLine(it) }
         listOf(
-            "Browse your media server",
+            "Browse your Jellyfin server",
             "Browse your Plex server",
             "Open a video or add media folders",
             "Rejoin Saturday anime night on syncplay.example-friends-server.net",

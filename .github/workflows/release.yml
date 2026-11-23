@@ -580,7 +580,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-24.04-arm, windows-latest]
+        # macOS left out: its runner sometimes queues 5-15 minutes and holds the snap job back, and it was never
+        # the only leg that reached the store.
+        os: [ubuntu-24.04-arm, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -613,7 +615,11 @@ jobs:
     needs: [linux-installers, snap-seed]
     if: always() && (github.ref_type == 'tag' || inputs.snap) && vars.SNAP_NAME != '' && needs.linux-installers.result == 'success' && needs.snap-seed.result != 'cancelled'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # A stuck stage-package download fails in half an hour instead of holding the run for ninety minutes.
+    timeout-minutes: 30
+    env:
+      # Next to GitHub's runners; archive.ubuntu.com has taken from 15 s to 27 min for the same stage-packages.
+      UBUNTU_MIRROR: http://azure.archive.ubuntu.com/ubuntu/
     outputs:
       built: ${{ steps.build.outputs.built }}
     steps:
@@ -626,12 +632,23 @@ jobs:
           bash scripts/release-deb.sh
           cp deb/*.deb yarmiplaytv.deb
 
-      - name: Content snaps from a runner that can reach the store
+      # One set is enough: the Arm runner's, or Windows' when Arm couldn't reach the store (each set is several
+      # hundred MB, so downloading both cost a minute or two).
+      - name: Content snaps (ubuntu-24.04-arm)
+        id: seed-arm
         continue-on-error: true
         uses: actions/download-artifact@v8
         with:
-          pattern: content-snaps-*
-          path: snap-seeds
+          name: content-snaps-ubuntu-24.04-arm
+          path: snap-seeds/arm
+
+      - name: Content snaps (windows-latest)
+        if: steps.seed-arm.outcome != 'success'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: content-snaps-windows-latest
+          path: snap-seeds/win
 
       - name: Choose one content-snap set
         run: |
@@ -657,9 +674,23 @@ jobs:
       - name: Diagnose the Snap Store route
         run: bash scripts/snap-store-route.sh
 
+      # The stage-packages' .debs, kept a week; apt checks each against the current index, so a stale one is
+      # downloaded again rather than used.
+      - id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/snapcraft-cache/download
+          key: snapcraft-debs-${{ hashFiles('snap/snapcraft.yaml') }}-${{ steps.week.outputs.week }}
+          restore-keys: snapcraft-debs-
+
       - id: build
         run: |
+          export SNAPCRAFT_CACHE_DIR="$RUNNER_TEMP/snapcraft-cache"
           bash scripts/snapcraft-build.sh
+          # Written as root in the container; the cache step reads it as the runner user.
+          sudo chown -R "$(id -u):$(id -g)" "$SNAPCRAFT_CACHE_DIR" || true
           shopt -s nullglob
           snaps=(*.snap)
           if ((${#snaps[@]} > 0)); then

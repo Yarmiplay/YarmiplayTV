@@ -18,8 +18,8 @@ class PlaybackShowsVideoTest {
             displayAspect = 16.0 / 9.0,
         )
         assertFalse(playbackShowsVideo(music))
-        assertFalse(playbackInfo(music).contains("960"))
-        assertFalse(playbackInfo(music).contains("SW"))
+        assertFalse(playbackInfo(music, showStats = true).contains("960"))
+        assertFalse(playbackInfo(music, showStats = true).contains("SW"))
     }
 
     @Test

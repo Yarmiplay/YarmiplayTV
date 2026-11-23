@@ -8,7 +8,11 @@ import androidx.tv.material3.lightColorScheme
 
 /** TV Material's colours from [palette] (by default the one already in use), which [content] also draws with. */
 @Composable
-fun YarmiplayTvTheme(palette: Palette = LocalPalette.current, content: @Composable () -> Unit) {
+fun YarmiplayTvTheme(
+    palette: Palette = LocalPalette.current,
+    iconLabels: Boolean = LocalIconLabels.current,
+    content: @Composable () -> Unit,
+) {
     val scheme = with(palette) {
         if (isLight) {
             lightColorScheme(
@@ -22,7 +26,7 @@ fun YarmiplayTvTheme(palette: Palette = LocalPalette.current, content: @Composab
             )
         }
     }
-    CompositionLocalProvider(LocalPalette provides palette) {
+    CompositionLocalProvider(LocalPalette provides palette, LocalIconLabels provides iconLabels) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
 }

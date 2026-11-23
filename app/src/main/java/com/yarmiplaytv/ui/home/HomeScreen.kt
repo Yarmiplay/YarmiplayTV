@@ -83,6 +83,7 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.settings.TvWhatsNewCard
 import com.yarmiplaytv.ui.settings.whatsNewCardVersion
 import com.yarmiplaytv.ui.shared.ServerRecent
+import com.yarmiplaytv.ui.shared.homeCards
 import com.yarmiplaytv.ui.shared.readyButtonLabel
 import com.yarmiplaytv.ui.shared.recentByServer
 import com.yarmiplaytv.ui.shared.savedRoomLabel
@@ -174,63 +175,14 @@ fun HomeScreen(container: AppContainer, nav: Navigator) {
         item(key = "tiles") {
             // Three to a row, sharing its width inside the TV-safe area, so their text has room to show in full.
             TileGrid(Modifier.fillMaxWidth().padding(horizontal = 48.dp, vertical = 8.dp)) {
-                val (title, detail, color) = when (room.status) {
-                    ConnectionStatus.CONNECTED -> Triple(
-                        "Room: ${ManagedRooms.label(room.room)}",
-                        "${room.users.size} watching · ${room.users.count { it.isReady == true }} ready",
-                        AppColors.Ready,
-                    )
-                    ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> Triple("Connecting…", container.sync.client?.config?.host ?: "", AppColors.NotReady)
-                    ConnectionStatus.DISCONNECTED -> Triple(
-                        "Join a Syncplay room",
-                        container.settings.value.savedRooms.firstOrNull()?.let { "Rejoin ${savedRoomLabel(it)}" } ?: "Watch in sync with friends",
-                        AppColors.TextDim,
+                homeCards(container, nav, tv = true).forEachIndexed { i, card ->
+                    StatusTile(
+                        card.icon, card.title, card.detail, card.dot,
+                        Modifier.testTag(card.kind.tag).then(if (i == 0) Modifier.focusRequester(firstFocus) else Modifier),
+                        warning = card.warning,
+                        onClick = card.onClick,
                     )
                 }
-                StatusTile(Icons.Filled.Groups, title, detail, color, Modifier.focusRequester(firstFocus)) {
-                    nav.push(if (room.status == ConnectionStatus.CONNECTED) Screen.Room else Screen.SyncplayConnect)
-                }
-                nowPlaying?.let { np ->
-                    StatusTile(Icons.Filled.PlayCircle, "Now playing", np.title, AppColors.Accent) { nav.push(Screen.Player) }
-                }
-                StatusTile(
-                    Icons.Filled.Cloud,
-                    serversTitle(JellyfinSource.KIND, jellyfin),
-                    if (jellyfin.isNotEmpty()) serversDetail(jellyfin) else "Browse your media server",
-                    if (jellyfin.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
-                ) { nav.push(if (jellyfin.isEmpty()) Screen.JellyfinLogin else Screen.Servers) }
-                StatusTile(
-                    Icons.Filled.Cloud,
-                    serversTitle(PlexSource.KIND, plex),
-                    if (plex.isNotEmpty()) serversDetail(plex) else "Browse your Plex server",
-                    if (plex.isNotEmpty()) AppColors.Ready else AppColors.TextDim,
-                ) { nav.push(if (plex.isEmpty()) Screen.PlexLogin else Screen.Servers) }
-                if (nowPlaying == null) {
-                    StatusTile(
-                        Icons.Filled.PlayCircle,
-                        "Player",
-                        "Open player",
-                        AppColors.TextDim,
-                    ) { nav.push(Screen.Player) }
-                }
-                if (container.mal.client.configured) {
-                    val malAccount by container.settings.map { it.mal?.userName }.collectAsStateWithLifecycle(container.settings.value.mal?.userName)
-                    val user = malAccount
-                    StatusTile(
-                        Icons.Filled.Bookmarks,
-                        "MyAnimeList",
-                        user?.let { "Signed in as $it" } ?: "Keep your anime list up to date",
-                        if (user != null) AppColors.Ready else AppColors.TextDim,
-                        Modifier.testTag("card_mal"),
-                    ) { nav.push(if (user == null) Screen.MalLogin else Screen.Mal) }
-                }
-                StatusTile(
-                    Icons.AutoMirrored.Filled.Logout,
-                    "Exit YarmiplayTV",
-                    "Close the app completely",
-                    AppColors.NotReady,
-                    Modifier.testTag("card_exit"),
-                ) { container.exitApp() }
             }
         }
         if (loadError != null) {
@@ -452,15 +404,17 @@ private fun StoreUpdateNotice(container: AppContainer, store: StoreUpdates, onDi
 }
 
 @Composable
-private fun StatusTile(icon: ImageVector, title: String, detail: String, color: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun StatusTile(icon: ImageVector, title: String, detail: String, dot: Color?, modifier: Modifier = Modifier, warning: Boolean = false, onClick: () -> Unit) {
     TvTile(onClick = onClick, modifier = modifier.heightIn(min = 120.dp)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = AppColors.Accent, modifier = Modifier.size(28.dp))
-                Spacer(Modifier.width(10.dp))
-                Dot(color)
+                Icon(icon, contentDescription = null, tint = if (warning) AppColors.NotReady else AppColors.Accent, modifier = Modifier.size(28.dp))
+                if (dot != null) {
+                    Spacer(Modifier.width(10.dp))
+                    Dot(dot)
+                }
             }
-            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(title, style = MaterialTheme.typography.titleMedium, color = if (warning) AppColors.NotReady else Color.Unspecified)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = AppColors.TextDim)
         }
     }

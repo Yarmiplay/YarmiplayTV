@@ -108,7 +108,9 @@ class TvScreenshotTest {
         tv.click("Search"); tv.await("Type to search")
         shot("search")
         tv.back()
-        tv.click("Room: ${FakeSyncplayServer.ROOM}"); tv.await("Connected to")
+        // The room tile opens the room; its Connection button opens the join form, which says where we are.
+        tv.click("Room: ${FakeSyncplayServer.ROOM}"); tv.await("Connection")
+        tv.click("Connection"); tv.await("Connected to")
         shot("connect_connected")
         Screenshots.assertAllMatched()
     }

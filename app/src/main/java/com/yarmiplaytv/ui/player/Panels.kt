@@ -70,6 +70,7 @@ import com.yarmiplaytv.syncplay.RoomState
 import com.yarmiplaytv.ui.components.ActionButton
 import com.yarmiplaytv.ui.components.Dot
 import com.yarmiplaytv.ui.components.IconAction
+import com.yarmiplaytv.ui.components.LabeledIconAction
 import com.yarmiplaytv.ui.components.ToggleRow
 import com.yarmiplaytv.ui.components.TvTextField
 import com.yarmiplaytv.ui.components.TvTile
@@ -326,24 +327,27 @@ private fun RoomUserRow(
             if (user.name in blocked) Text(BLOCKED_NOTE, color = AppColors.Error, style = MaterialTheme.typography.labelSmall)
         }
         if (voiceUi.showUi && !isMe) {
-            IconAction(
+            LabeledIconAction(
                 if (prefs.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                 if (prefs.muted) "Unmute ${user.name}'s voice" else "Mute ${user.name}'s voice (local only)",
                 { container.voice.setPeerMuted(user.name, !prefs.muted) },
                 Modifier.testTag("voice_mute_${user.name}"),
                 tint = if (prefs.muted) AppColors.Error else AppColors.TextDim,
+                label = if (prefs.muted) "Unmute" else "Mute",
             )
-            IconAction(
+            LabeledIconAction(
                 Icons.Filled.ArrowUpward,
                 "Louder ${user.name}",
                 { container.voice.setPeerVolume(user.name, steppedVoiceVolume(prefs.volume, up = true)) },
                 tint = AppColors.TextDim,
+                label = "Louder",
             )
-            IconAction(
+            LabeledIconAction(
                 Icons.Filled.ArrowDownward,
                 "Quieter ${user.name}",
                 { container.voice.setPeerVolume(user.name, steppedVoiceVolume(prefs.volume, up = false)) },
                 tint = AppColors.TextDim,
+                label = "Quieter",
             )
         }
         if (isMe && voiceUi.showMicButton) {
@@ -357,20 +361,22 @@ private fun RoomUserRow(
         }
         if (!isMe && room.isOperator) {
             val markReady = user.isReady != true
-            IconAction(
+            LabeledIconAction(
                 if (markReady) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
                 if (markReady) "Mark ${user.name} ready" else "Mark ${user.name} not ready",
                 { container.sync.setOthersReady(user.name, markReady) },
                 tint = if (markReady) AppColors.Ready else AppColors.NotReady,
+                label = if (markReady) "Set ready" else "Set not ready",
             )
         }
         if (!isMe) {
             val isBlocked = user.name in blocked
-            IconAction(
+            LabeledIconAction(
                 Icons.Filled.Block,
                 if (isBlocked) "Unblock ${user.name}" else "Block ${user.name} (hide their messages)",
                 { if (isBlocked) container.sync.unblock(user.name) else container.sync.block(user.name) },
                 tint = if (isBlocked) AppColors.Error else AppColors.TextDim,
+                label = if (isBlocked) "Unblock" else "Block chat",
             )
         }
     }

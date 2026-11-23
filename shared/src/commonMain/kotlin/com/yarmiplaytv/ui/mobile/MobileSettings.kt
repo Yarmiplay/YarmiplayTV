@@ -35,7 +35,7 @@ import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Slider
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -99,6 +99,10 @@ import com.yarmiplaytv.ui.theme.AppColors
 import com.yarmiplaytv.ui.theme.AppTheme
 import com.yarmiplaytv.ui.theme.Palette
 import com.yarmiplaytv.ui.theme.THEME_NOTE
+import com.yarmiplaytv.ui.theme.ICON_LABELS_NOTE
+import com.yarmiplaytv.ui.theme.ICON_LABELS_TITLE
+import com.yarmiplaytv.ui.theme.PLAYBACK_DETAILS_NOTE
+import com.yarmiplaytv.ui.theme.PLAYBACK_DETAILS_TITLE
 import com.yarmiplaytv.voice.DiscordSdkAudio
 import com.yarmiplaytv.voice.VoiceAudioDevice
 import kotlinx.coroutines.delay
@@ -110,11 +114,11 @@ import kotlinx.coroutines.launch
  */
 internal enum class SettingsCategory(val title: String, val icon: ImageVector, val summary: String) {
     MEDIA("Media", Icons.Filled.VideoLibrary, "Media servers, media folders, sharing your files, where files are saved"),
-    MAL("MyAnimeList", Icons.Filled.Tv, "Your account and list updates"),
+    MAL("MyAnimeList", Icons.Filled.Bookmarks, "Your account and list updates"),
     SYNCING("Syncing", Icons.Filled.Sync, "Unpausing, catching up, readiness, playlists, chat, your device's name"),
     VOICE("Voice", Icons.Filled.Mic, "Room voice, auto-join, auto-mute, devices, volume, mic test, join/leave sounds"),
     PLAYBACK("Playback", Icons.Filled.PlayCircle, "Decoding, picture-in-picture, openings and endings, seeking, languages"),
-    APPEARANCE("Appearance", Icons.Filled.Palette, "Theme: dark, noire, monochrome, light, or as your device is set"),
+    APPEARANCE("Appearance", Icons.Filled.Palette, "Theme and colours, labels under icons"),
     UPDATES("Updates", Icons.Filled.SystemUpdate, "Checking for and installing new versions"),
     ABOUT("About", Icons.Filled.Info, "Version, what's new, the manual, privacy, licenses"),
 }
@@ -176,9 +180,14 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                     }
                 }
             } else {
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp).testTag("settings")) {
+                // Home's cards and spacing; the bottom padding keeps the last card clear of the mini player and the bar.
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                        .padding(start = HomeCardSidePadding, end = HomeCardSidePadding, top = 4.dp, bottom = 24.dp).testTag("settings"),
+                    verticalArrangement = Arrangement.spacedBy(HomeCardGap),
+                ) {
                     categories.forEach { c -> CategoryRow(c, { page = c.name }, Modifier.testTag("settings_category_${c.name.lowercase()}")) }
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(6.dp))
                     ExitAppRow(container)
                 }
             }
@@ -186,38 +195,46 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
     }
 }
 
-/** A category on the phone's list: its icon, name and what's in it; opens its page. */
+/** A category on the phone's list, as a Home card: its icon, name and what's in it; opens its page. */
 @Composable
 private fun CategoryRow(category: SettingsCategory, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(onClick = onClick, color = Color.Transparent, shape = RoundedCornerShape(16.dp), modifier = modifier.fillMaxWidth()) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(category.icon, contentDescription = null, tint = AppColors.Accent)
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text(category.title, style = MaterialTheme.typography.titleMedium)
-                Text(category.summary, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
-            }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = AppColors.TextDim)
-        }
+    HomeCard(category.icon, category.title, category.summary, onClick, modifier.fillMaxWidth()) {
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = AppColors.TextDim)
     }
 }
 
 @Composable
 private fun ExitAppRow(container: AppContainer, modifier: Modifier = Modifier) {
-    Surface(
-        onClick = { container.exitApp() },
-        color = Color.Transparent,
-        shape = RoundedCornerShape(16.dp),
-        modifier = modifier.fillMaxWidth().testTag("settings_exit_app_button"),
+    HomeCard(
+        Icons.AutoMirrored.Filled.Logout,
+        "Exit YarmiplayTV",
+        "Stop background playback and close app",
+        { container.exitApp() },
+        modifier.fillMaxWidth().testTag("settings_exit_app_button"),
+        iconTint = AppColors.NotReady,
+        titleColor = AppColors.NotReady,
+    )
+}
+
+/**
+ * A row in a settings page that opens another screen or a web page ([external]), as a Home card, so it looks like
+ * the category list it came from. Settings that change a value in place stay plain rows.
+ */
+@Composable
+private fun MenuCard(title: String, detail: String?, modifier: Modifier = Modifier, external: Boolean = false, onClick: () -> Unit) {
+    HomeCard(
+        null,
+        title,
+        detail,
+        onClick,
+        modifier.fillMaxWidth().padding(horizontal = HomeCardSidePadding, vertical = HomeCardGap / 2),
     ) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = AppColors.NotReady)
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Exit YarmiplayTV", style = MaterialTheme.typography.titleMedium, color = AppColors.NotReady)
-                Text("Stop background playback and close app", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
-            }
-        }
+        Icon(
+            if (external) Icons.AutoMirrored.Filled.OpenInNew else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = AppColors.TextDim,
+            modifier = if (external) Modifier.size(18.dp) else Modifier,
+        )
     }
 }
 
@@ -242,12 +259,12 @@ private fun MediaSettings(container: AppContainer, nav: Navigator) {
     val servers by container.servers.collectAsStateWithLifecycle()
     fun saveServerPrefs(preferred: String = settings.preferredServer, report: Boolean = settings.reportPlayback) =
         container.scope.launch { container.settingsStore.saveServerPrefs(preferred, report) }
-    ValueSetting(
+    MenuCard(
         "Media servers",
         servers.joinToString { it.displayName }.ifEmpty { "Add a Jellyfin or Plex server" },
-        Modifier.testTag("settings_servers"),
+        Modifier.padding(top = 4.dp).testTag("settings_servers"),
     ) { nav.push(Screen.Servers) }
-    ValueSetting("Media folders on this device", if (folders.isEmpty()) "None" else folders.joinToString { it.name }) { nav.push(Screen.LocalFiles) }
+    MenuCard("Media folders on this device", if (folders.isEmpty()) "None" else folders.joinToString { it.name }) { nav.push(Screen.LocalFiles) }
     preferredOf(servers, settings.preferredServer)?.takeIf { servers.size > 1 }?.let { preferred ->
         ValueSetting(
             "Preferred server",
@@ -291,9 +308,9 @@ private fun MalSettings(container: AppContainer, nav: Navigator) {
     val settings by container.settings.collectAsStateWithLifecycle()
     val account = settings.mal
     if (account == null) {
-        ValueSetting("MyAnimeList account", "Sign in to update your list as you watch", Modifier.testTag("settings_mal_sign_in")) { nav.push(Screen.MalLogin) }
+        MenuCard("MyAnimeList account", "Sign in to update your list as you watch", Modifier.testTag("settings_mal_sign_in")) { nav.push(Screen.MalLogin) }
     } else {
-        ValueSetting(
+        MenuCard(
             "MyAnimeList",
             "Signed in as ${account.userName} · your list, list updates and matched shows",
             Modifier.testTag("settings_mal_account"),
@@ -687,6 +704,12 @@ private fun AppearanceSettings(container: AppContainer) {
         }
     }
     Text(THEME_NOTE, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+    SettingsToggle(
+        ICON_LABELS_TITLE,
+        ICON_LABELS_NOTE,
+        settings.iconLabels,
+        Modifier.padding(top = 8.dp).testTag("toggle_icon_labels"),
+    ) { on -> container.scope.launch { container.settingsStore.saveIconLabels(on) } }
     if (container.deviceKind == DeviceKind.DESKTOP) {
         SettingsToggle(
             CLASSIC_MODE_TITLE,
@@ -739,13 +762,13 @@ private fun PlaybackSettings(container: AppContainer) {
             pb.lowEndPerformance,
             Modifier.testTag("toggle_low_end"),
         ) { on -> savePlayback { it.copy(lowEndPerformance = on) } }
-        SettingsToggle(
-            "Show playback stats",
-            "Dropped frames, A/V offset, and display latency under the seek bar",
-            pb.showPlaybackStats,
-            Modifier.testTag("toggle_playback_stats"),
-        ) { on -> savePlayback { it.copy(showPlaybackStats = on) } }
     }
+    SettingsToggle(
+        PLAYBACK_DETAILS_TITLE,
+        if (container.deviceKind == DeviceKind.DESKTOP) "$PLAYBACK_DETAILS_NOTE, dropped frames, A/V offset and display latency" else PLAYBACK_DETAILS_NOTE,
+        pb.showPlaybackStats,
+        Modifier.testTag("toggle_playback_stats"),
+    ) { on -> savePlayback { it.copy(showPlaybackStats = on) } }
     if (autoPictureInPictureSetting) {
         SettingsToggle(
             autoPictureInPictureTitle,
@@ -801,13 +824,13 @@ private fun AboutSettings(container: AppContainer, nav: Navigator) {
         style = MaterialTheme.typography.bodySmall,
         modifier = Modifier.padding(horizontal = 16.dp),
     )
-    Spacer(Modifier.size(4.dp))
-    ValueSetting("What's new", "This version's changes", Modifier.testTag("about_whats_new")) { nav.push(Screen.WhatsNew) }
+    Spacer(Modifier.size(8.dp))
+    MenuCard("What's new", "This version's changes", Modifier.testTag("about_whats_new")) { nav.push(Screen.WhatsNew) }
     aboutLinks.forEach { link ->
-        LinkSetting(link.title, link.subtitle, Modifier.testTag(link.tag)) { uriHandler.openUri(link.url) }
+        MenuCard(link.title, link.subtitle, Modifier.testTag(link.tag), external = true) { uriHandler.openUri(link.url) }
     }
-    ValueSetting("Open-source licenses", "mpv, FFmpeg and the other parts this app is built on") { nav.push(Screen.Licenses) }
-    ValueSetting("Exit YarmiplayTV", "Close the app and stop background playback", Modifier.testTag("about_exit_app")) { container.exitApp() }
+    MenuCard("Open-source licenses", "mpv, FFmpeg and the other parts this app is built on") { nav.push(Screen.Licenses) }
+    MenuCard("Exit YarmiplayTV", "Close the app and stop background playback", Modifier.testTag("about_exit_app")) { container.exitApp() }
 }
 
 /**
@@ -839,22 +862,6 @@ private fun ValueSetting(title: String, value: String, modifier: Modifier = Modi
     Column(modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         Text(value, color = AppColors.Accent, style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
-/** A row that opens a web page. */
-@Composable
-private fun LinkSetting(title: String, subtitle: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Row(
-        modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(subtitle, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
-        }
-        Icon(Icons.AutoMirrored.Filled.OpenInNew, null, tint = AppColors.TextDim, modifier = Modifier.size(18.dp))
     }
 }
 

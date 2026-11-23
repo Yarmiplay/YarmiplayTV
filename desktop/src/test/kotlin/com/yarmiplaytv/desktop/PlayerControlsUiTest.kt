@@ -765,9 +765,9 @@ class PlayerControlsUiTest {
         listOf("mute" to mute, "save" to save).forEach { (name, box) ->
             assertTrue("$name keeps a 40dp target (${box.width}x${box.height})", box.width >= 40f * density - 1f && box.height >= 40f * density - 1f)
         }
+        // At least 48dp; with Labels under icons on (the default) the name under the icon makes them a little wider.
         listOf("screenshot" to shot, "menu" to menus).forEach { (name, box) ->
-            assertEquals("$name stays 48dp tall", 48f * density, box.height, 1.5f)
-            assertEquals("$name stays 48dp wide", 48f * density, box.width, 1.5f)
+            assertTrue("$name keeps a 48dp target (${box.width}x${box.height})", box.width >= 48f * density - 1.5f && box.height >= 48f * density - 1.5f)
         }
         val centers = listOf(mute, slider, label, save, shot, menus).map { (it.top + it.bottom) / 2f }
         assertTrue("volume row stays on one line", centers.max() - centers.min() < 24f * density)

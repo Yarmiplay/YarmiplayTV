@@ -264,6 +264,7 @@ internal fun PlayerTrack(
     var pressed by remember { mutableStateOf(false) }
     var width by remember { mutableIntStateOf(0) }
     val knob = with(LocalDensity.current) { KNOB.toPx() }
+    val knobIdle = with(LocalDensity.current) { KNOB_IDLE.toPx() }
     val fraction = fractionOf(value)
     val trackBaseColor = if (onVideo) Color.White else AppColors.Text
 
@@ -318,15 +319,19 @@ internal fun PlayerTrack(
         contentAlignment = Alignment.CenterStart,
     ) {
         Box(Modifier.fillMaxWidth().height(TRACK).clip(RoundedCornerShape(TRACK / 2)).background(trackBaseColor.copy(alpha = 0.2f))) {
-            buffered?.let { Box(Modifier.fillMaxWidth(fractionOf(it)).fillMaxHeight().background(trackBaseColor.copy(alpha = 0.25f))) }
+            // Quieter than the played part, so a short clip that's all buffered doesn't read as finished.
+            buffered?.let { Box(Modifier.fillMaxWidth(fractionOf(it)).fillMaxHeight().background(trackBaseColor.copy(alpha = 0.14f))) }
             Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(AppColors.Accent))
             marks()
         }
-        if (enabled && (hovered || pressed)) {
+        // A small dot always marks where playback is (even at 0:00); it grows under the mouse or a finger.
+        if (enabled) {
+            val big = hovered || pressed
+            val dot = if (big) knob else knobIdle
             Box(
                 Modifier
-                    .offset { IntOffset((fraction * width - knob / 2).roundToInt(), 0) }
-                    .size(KNOB)
+                    .offset { IntOffset((fraction * width - dot / 2).roundToInt().coerceIn(0, (width - dot.roundToInt()).coerceAtLeast(0)), 0) }
+                    .size(if (big) KNOB else KNOB_IDLE)
                     .clip(CircleShape)
                     .background(AppColors.Accent),
             )
@@ -355,6 +360,7 @@ private val SKIP_MARK = Color(0xFFFFC14D).copy(alpha = 0.75f)
 
 private val TRACK = 6.dp
 private val KNOB = 14.dp
+private val KNOB_IDLE = 10.dp
 private val PREVIEW_WIDTH = 176.dp
 /** Wider frames take longer to decode and look no sharper at this size. */
 private const val MAX_PREVIEW_PIXELS = 360

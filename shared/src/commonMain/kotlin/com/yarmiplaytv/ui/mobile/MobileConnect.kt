@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -44,7 +46,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -373,6 +374,30 @@ private val COMPACT_FORM_WIDTH = 480.dp
  * The form: server, you, room, then the buttons; passwords and auto-connect under "More options". [compact]
  * (phones): the server gets the whole width, with the port and TLS under it.
  */
+/**
+ * Syncplay's own public servers in one menu, each with its host and port spelled out, instead of a row of bare port
+ * numbers; picking one fills in the server and port.
+ */
+@Composable
+private fun PublicServerPicker(model: SyncplayConnectModel) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        TextButton({ open = true }, Modifier.testTag("public_servers")) {
+            Text("Use a public server")
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+        }
+        DropdownMenu(open, { open = false }) {
+            (8995..8999).forEach { port ->
+                DropdownMenuItem(
+                    { Text("syncplay.pl : $port") },
+                    { open = false; model.host = "syncplay.pl"; model.port = port.toString() },
+                    modifier = Modifier.testTag("public_$port"),
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun JoinCard(container: AppContainer, model: SyncplayConnectModel, status: ConnectionStatus, onConnected: () -> Unit, modifier: Modifier, compact: Boolean = false) {
@@ -382,7 +407,6 @@ private fun JoinCard(container: AppContainer, model: SyncplayConnectModel, statu
         Column(Modifier.padding(if (compact) 14.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (!compact) Text("Join a room", style = MaterialTheme.typography.titleLarge)
 
-            FormLabel("Server")
             val host = @Composable { m: Modifier ->
                 OutlinedTextField(model.host, { model.host = it.trim() }, label = { Text("Server") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = m.testTag("field_host"))
@@ -409,22 +433,10 @@ private fun JoinCard(container: AppContainer, model: SyncplayConnectModel, statu
                     }
                 }
             }
-            // Wraps rather than running off the side on narrow screens.
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-                Text("Public servers:", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(end = 4.dp))
-                (8995..8999).forEach { port ->
-                    SuggestionChip(
-                        onClick = { model.host = "syncplay.pl"; model.port = port.toString() },
-                        label = { Text("$port") },
-                        modifier = Modifier.testTag("public_$port"),
-                    )
-                }
-            }
+            PublicServerPicker(model)
 
-            FormLabel("You")
+            Spacer(Modifier.height(2.dp))
             OutlinedTextField(model.username, { model.username = it.take(16) }, label = { Text("Your name") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("field_name"))
-
-            FormLabel("Room")
             OutlinedTextField(model.room, { model.room = it.take(60) }, label = { Text("Room") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("field_room"))
             if (model.showsOperatorPassword) {
                 OutlinedTextField(
@@ -489,11 +501,6 @@ private fun JoinCard(container: AppContainer, model: SyncplayConnectModel, statu
             )
         }
     }
-}
-
-@Composable
-private fun FormLabel(text: String) {
-    Text(text.uppercase(), color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
 }
 
 @Composable
