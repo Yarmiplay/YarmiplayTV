@@ -14,15 +14,27 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import com.yarmiplaytv.ui.player.playbackShowsVideo
 import com.yarmiplaytv.playback.PlaybackService
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.TvRoot
+import com.yarmiplaytv.ui.splash.LaunchSplash
+import com.yarmiplaytv.ui.splash.SplashKeyAction
+import com.yarmiplaytv.ui.splash.shouldShowLaunchSplash
+import com.yarmiplaytv.ui.splash.splashForm
+import com.yarmiplaytv.ui.splash.splashKeyAction
 import com.yarmiplaytv.ui.mobile.ACTION_PIP_EXIT
 import com.yarmiplaytv.ui.mobile.ACTION_PIP_PLAY_PAUSE
 import com.yarmiplaytv.ui.mobile.MobileRoot
@@ -40,6 +52,12 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val container get() = (application as YarmiplayTvApp).container
+
+    /** Cold-start intro. The activity draws the real UI underneath the whole time. */
+    private var launchSplashActive by mutableStateOf(false)
+
+    /** The key that dismissed the intro; its up must not activate the control that then has focus. */
+    private var swallowSplashKeyUp = false
 
     /** Attached to the mic-permission bridge in onCreate; results arrive via [onRequestPermissionsResult]. */
     private val androidMicPermissions = AndroidMicPermissions(this)
@@ -65,7 +83,10 @@ class MainActivity : ComponentActivity() {
         private set
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Android 12+ system splash stays a flat #0E1116 (theme). The intro is drawn after this returns.
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        splashScreen.setKeepOnScreenCondition { false }
         activeActivity = this
         isExiting = false
         container.onExitApp = { exit(this) }
@@ -73,6 +94,19 @@ class MainActivity : ComponentActivity() {
         deviceKind = DeviceUi.kind(this, intent)
         container.deviceKind = deviceKind
         container.micPermissions.delegate = androidMicPermissions
+        val app = application as YarmiplayTvApp
+        val underTest = System.getProperty("yarmiplaytv.noUpdateCheck") != null
+        // Intents are handled below whether or not the intro plays, so open-with and stream links aren't held back.
+        launchSplashActive = shouldShowLaunchSplash(
+            restoredInstance = savedInstanceState != null,
+            alreadyPlayed = app.launchSplashPlayed,
+            underTest = underTest,
+        )
+        if (!underTest) app.launchSplashPlayed = true
+        if (launchSplashActive && deviceKind != DeviceKind.TV) {
+            val transparent = android.graphics.Color.TRANSPARENT
+            enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(transparent), navigationBarStyle = SystemBarStyle.dark(transparent))
+        }
         // Like saved instance state: a recreated activity carries on where it was, a new one starts at Home.
         val screens = (application as YarmiplayTvApp).screens
         if (savedInstanceState == null) {
@@ -81,7 +115,14 @@ class MainActivity : ComponentActivity() {
         }
         if (deviceKind == DeviceKind.TV) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            setContent { YarmiplayTvTheme(appPalette(container)) { TvRoot(container, screens) } }
+            setContent {
+                YarmiplayTvTheme(appPalette(container)) {
+                    Box(Modifier.fillMaxSize()) {
+                        TvRoot(container, screens)
+                        if (launchSplashActive) LaunchSplash(splashForm(deviceKind)) { launchSplashActive = false }
+                    }
+                }
+            }
         } else {
             setContent {
                 val palette = appPalette(container)
@@ -95,13 +136,17 @@ class MainActivity : ComponentActivity() {
                     // What shows before the first frame and around it, e.g. while the keyboard animates.
                     window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(palette.background.toArgb()))
                 }
-                MobileTheme(palette) { MobileRoot(container, deviceKind, screens) }
+                MobileTheme(palette) {
+                    Box(Modifier.fillMaxSize()) {
+                        MobileRoot(container, deviceKind, screens)
+                        if (launchSplashActive) LaunchSplash(splashForm(deviceKind)) { launchSplashActive = false }
+                    }
+                }
             }
         }
         if (savedInstanceState == null) handleIntent(intent)
 
-        val isTest = System.getProperty("yarmiplaytv.noUpdateCheck") != null
-        if (!isTest && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (!underTest && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
             }
@@ -131,6 +176,22 @@ class MainActivity : ComponentActivity() {
      * The focusable Mic button remains tap-to-toggle for remotes that never deliver these keys.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (launchSplashActive || swallowSplashKeyUp) {
+            val action = if (::deviceKind.isInitialized) {
+                splashKeyAction(splashForm(deviceKind), event.keyCode == KeyEvent.KEYCODE_BACK)
+            } else {
+                SplashKeyAction.Ignore
+            }
+            if (action == SplashKeyAction.Pass && !swallowSplashKeyUp) return super.dispatchKeyEvent(event)
+            if (launchSplashActive && action == SplashKeyAction.Skip &&
+                event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0
+            ) {
+                launchSplashActive = false
+            }
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) swallowSplashKeyUp = true
+            if (event.action == KeyEvent.ACTION_UP) swallowSplashKeyUp = false
+            return true
+        }
         if (deviceKind == DeviceKind.TV && TvVoiceKeys.isVoiceHoldKey(event.keyCode)) {
             val voice = container.voice.ui.value
             if (voice.showMicButton) {

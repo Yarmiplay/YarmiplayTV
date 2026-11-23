@@ -6,4 +6,17 @@
         <item name="android:colorAccent">@color/accent</item>
         <item name="android:windowNoTitle">true</item>
     </style>
+
+    <!--
+      Android 12+ system splash: flat #0E1116, no icon. installSplashScreen() dismisses it on the first
+      frame and the Compose intro (LaunchSplash) plays from there. pre-12 uses the same window background.
+    -->
+    <style name="Theme.YarmiplayTV.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_empty_icon</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/background</item>
+        <item name="windowSplashScreenAnimationDuration">0</item>
+        <item name="postSplashScreenTheme">@style/Theme.YarmiplayTV</item>
+        <item name="android:windowBackground">@color/background</item>
+    </style>
 </resources>
