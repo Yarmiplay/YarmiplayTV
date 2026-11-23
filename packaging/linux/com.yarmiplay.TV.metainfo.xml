@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.2.3" date="2026-11-23">
+      <description>
+        <p>On a TV, the card shown when a playlist file can't be found has Browse, Room and Playlist on a second row. Browse opens the file browser, Room opens the room, and Playlist opens the shared playlist.</p>
+      </description>
+    </release>
     <release version="3.2.2" date="2026-11-23">
       <description>
         <p>In the Syncplay-style windows, settings and the other screens shown over the room have readable text again instead of dark text on a dark background.</p>

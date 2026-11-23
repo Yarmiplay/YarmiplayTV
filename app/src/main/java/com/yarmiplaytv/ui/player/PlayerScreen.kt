@@ -403,7 +403,10 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                 )
 
                 // Status in the middle of the screen (resolving/loading/nothing playing).
-                CenterStatus(container, nav, status, room, nowPlaying == null, state.fileLoaded, inRoom, overlay == Overlay.Hidden)
+                CenterStatus(
+                    container, nav, status, room, nowPlaying == null, state.fileLoaded, inRoom,
+                    overlay == Overlay.Hidden, overlay is Overlay.Side,
+                ) { openPanel(it) }
                 RelayOnPlayer(container, state.fileLoaded, overlay != Overlay.Hidden)
 
                 if (state.buffering && state.fileLoaded) {
@@ -616,6 +619,130 @@ private fun RowScope.SearchAgainButton(container: AppContainer, modifier: Modifi
         expand = expand,
     )
 
+/**
+ * Columns in the missing-file card's button grid. Both rows share them, so a shorter row's buttons stay the
+ * same width as the row above instead of stretching.
+ */
+internal fun missingFileButtonColumns(topCount: Int, bottomCount: Int): Int = maxOf(topCount, bottomCount)
+
+/**
+ * The button a vertical D-pad press lands on in the other row: the same column, or that row's last button when
+ * this row is longer (Dismiss, with no library, steps down onto Playlist).
+ */
+internal fun missingFileVerticalTarget(index: Int, destinationCount: Int): Int =
+    index.coerceIn(0, destinationCount - 1)
+
+/** D-pad stays on these buttons: neighbours in the row, [above] and [below] between the rows, and nowhere else. */
+private fun statusCardLink(
+    row: List<FocusRequester>,
+    index: Int,
+    above: FocusRequester? = null,
+    below: FocusRequester? = null,
+): Modifier = Modifier.focusRequester(row[index]).focusProperties {
+    left = row.getOrNull(index - 1) ?: FocusRequester.Cancel
+    right = row.getOrNull(index + 1) ?: FocusRequester.Cancel
+    up = above ?: FocusRequester.Cancel
+    down = below ?: FocusRequester.Cancel
+}
+
+/**
+ * The "Couldn't find this file" actions: the card's own buttons, then Browse, Room and Playlist. Every button is
+ * the same width and [StatusButtonHeight]. Browse is the file browser; Room and Playlist open those panels.
+ */
+@Composable
+private fun MissingFileActions(
+    container: AppContainer,
+    nav: Navigator,
+    file: String,
+    hasLibrary: Boolean,
+    initialFocus: FocusRequester,
+    onOpenPanel: (PanelKind) -> Unit,
+) {
+    val pick = remember { FocusRequester() }
+    val jellyfin = remember { FocusRequester() }
+    val plex = remember { FocusRequester() }
+    val dismiss = remember { FocusRequester() }
+    val browse = remember { FocusRequester() }
+    val room = remember { FocusRequester() }
+    val playlist = remember { FocusRequester() }
+    val top = if (hasLibrary) listOf(initialFocus, pick, dismiss) else listOf(initialFocus, jellyfin, plex, dismiss)
+    val bottom = listOf(browse, room, playlist)
+    fun below(index: Int) = bottom[missingFileVerticalTarget(index, bottom.size)]
+    fun above(index: Int) = top[missingFileVerticalTarget(index, top.size)]
+    Column(
+        Modifier
+            .padding(top = 8.dp)
+            .fillMaxWidth()
+            // One group, so the remote can't walk off the card onto the video.
+            .focusProperties { onExit = { cancelFocusChange() } }
+            .focusGroup(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            SearchAgainButton(container, statusCardLink(top, 0, below = below(0)), expand = true)
+            if (hasLibrary) {
+                StatusButton(
+                    "Pick manually",
+                    { nav.push(Screen.Search(pickFor = file)) },
+                    statusCardLink(top, 1, below = below(1)),
+                    icon = Icons.Filled.Search,
+                    expand = true,
+                )
+                StatusButton(
+                    "Dismiss",
+                    { container.playlist.dismissStatus() },
+                    statusCardLink(top, 2, below = below(2)),
+                    expand = true,
+                )
+            } else {
+                StatusButton(
+                    "Connect Jellyfin",
+                    { nav.push(Screen.JellyfinLogin) },
+                    statusCardLink(top, 1, below = below(1)),
+                    expand = true,
+                )
+                StatusButton(
+                    "Connect Plex",
+                    { nav.push(Screen.PlexLogin) },
+                    statusCardLink(top, 2, below = below(2)),
+                    expand = true,
+                )
+                StatusButton(
+                    "Dismiss",
+                    { container.playlist.dismissStatus() },
+                    statusCardLink(top, 3, below = below(3)),
+                    expand = true,
+                )
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            StatusButton(
+                "Browse",
+                { nav.push(Screen.LocalFiles) },
+                statusCardLink(bottom, 0, above = above(0)).testTag("status_browse"),
+                icon = Icons.Filled.Home,
+                expand = true,
+            )
+            StatusButton(
+                "Room",
+                { onOpenPanel(PanelKind.ROOM) },
+                statusCardLink(bottom, 1, above = above(1)).testTag("status_room"),
+                icon = Icons.Filled.Groups,
+                expand = true,
+            )
+            StatusButton(
+                "Playlist",
+                { onOpenPanel(PanelKind.PLAYLIST) },
+                statusCardLink(bottom, 2, above = above(2)).testTag("status_playlist"),
+                icon = Icons.AutoMirrored.Filled.PlaylistPlay,
+                expand = true,
+            )
+            // The empty column is the width of one button, so this row matches the one above.
+            repeat(missingFileButtonColumns(top.size, bottom.size) - bottom.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+}
+
 @Composable
 private fun CenterStatus(
     container: AppContainer,
@@ -626,6 +753,8 @@ private fun CenterStatus(
     fileLoaded: Boolean,
     inRoom: Boolean,
     canFocus: Boolean,
+    sideOpen: Boolean,
+    onOpenPanel: (PanelKind) -> Unit,
 ) {
     val focus = remember { FocusRequester() }
     val mediaSource by container.mediaSource.collectAsStateWithLifecycle()
@@ -645,23 +774,27 @@ private fun CenterStatus(
                 }
                 // A file that wasn't found starts on Search again; one that failed to play, on Dismiss.
                 val notFound = status is PlaylistStatus.NotFound
-                LaunchedEffect(status, canFocus) { if (canFocus) runCatching { delay(50); focus.requestFocus() } }
-                Panel(Modifier.width(820.dp)) {
-                    Column(Modifier.padding(32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(if (notFound) "Couldn't find this file" else "Couldn't play this file", style = MaterialTheme.typography.headlineSmall)
-                        Text(file, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text(reason, color = AppColors.TextDim)
-                        StatusActions(Modifier.padding(top = 8.dp), expand = true) {
+                // Room and Playlist open over this card. Drawing it as well would cover the panel.
+                if (!(notFound && sideOpen)) {
+                    LaunchedEffect(status, canFocus) { if (canFocus) runCatching { delay(50); focus.requestFocus() } }
+                    Panel(Modifier.width(820.dp)) {
+                        Column(Modifier.padding(32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(if (notFound) "Couldn't find this file" else "Couldn't play this file", style = MaterialTheme.typography.headlineSmall)
+                            Text(file, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(reason, color = AppColors.TextDim)
                             if (notFound) {
-                                SearchAgainButton(container, Modifier.focusRequester(focus), expand = true)
-                            }
-                            if (mediaSource != null) {
-                                StatusButton("Pick manually", { nav.push(Screen.Search(pickFor = file)) }, icon = Icons.Filled.Search, primary = !notFound, expand = true)
+                                MissingFileActions(container, nav, file, mediaSource != null, focus, onOpenPanel)
                             } else {
-                                StatusButton("Connect Jellyfin", { nav.push(Screen.JellyfinLogin) }, primary = !notFound, expand = true)
-                                StatusButton("Connect Plex", { nav.push(Screen.PlexLogin) }, expand = true)
+                                StatusActions(Modifier.padding(top = 8.dp), expand = true) {
+                                    if (mediaSource != null) {
+                                        StatusButton("Pick manually", { nav.push(Screen.Search(pickFor = file)) }, icon = Icons.Filled.Search, primary = true, expand = true)
+                                    } else {
+                                        StatusButton("Connect Jellyfin", { nav.push(Screen.JellyfinLogin) }, primary = true, expand = true)
+                                        StatusButton("Connect Plex", { nav.push(Screen.PlexLogin) }, expand = true)
+                                    }
+                                    StatusButton("Dismiss", { container.playlist.dismissStatus() }, Modifier.focusRequester(focus), expand = true)
+                                }
                             }
-                            StatusButton("Dismiss", { container.playlist.dismissStatus() }, if (notFound) Modifier else Modifier.focusRequester(focus), expand = true)
                         }
                     }
                 }
