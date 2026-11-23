@@ -86,7 +86,8 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
     var picked by remember { mutableStateOf<String?>(null) }
     val pickFolder = rememberFolderPicker(container)
     val pickVideo = rememberVideoPicker { uri -> if (inRoom) picked = uri else container.playlist.playLocal(uri, inRoom = false) }
-    val scanStorage = rememberStorageScan(container)
+    var storageNote by remember { mutableStateOf<String?>(null) }
+    val scanStorage = rememberStorageScan(container) { storageNote = it }
     // The media folder being browsed and the path inside it; none shows the media folders themselves.
     var openUri by rememberSaveable { mutableStateOf<String?>(null) }
     var path by rememberSaveable { mutableStateOf("") }
@@ -176,9 +177,17 @@ fun MobileLocalFilesScreen(container: AppContainer, nav: Navigator) {
                         }
                     }
                     if (scanStorage != null) {
-                        FilledTonalButton(scanStorage, Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
-                            Text("Scan USB and internal storage")
+                        FilledTonalButton(scanStorage.run, Modifier.padding(horizontal = 16.dp).fillMaxWidth().testTag("scan_storage")) {
+                            Text(scanStorage.label)
                         }
+                    }
+                    storageNote?.let { note ->
+                        Text(
+                            note,
+                            color = AppColors.TextDim,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("storage_note"),
+                        )
                     }
                     Text(
                         "Media folders work like Syncplay's media directories: when the room's playlist moves to a file, " +

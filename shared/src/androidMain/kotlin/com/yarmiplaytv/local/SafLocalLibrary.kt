@@ -73,9 +73,22 @@ class SafLocalLibrary(
     override fun scan(folder: LocalFolder): List<LocalFile> {
         val treeUri = Uri.parse(folder.uri)
         if (treeUri.scheme == "file") return scanFiles(folder, treeUri.path?.let(::File))
-        val out = ArrayList<LocalFile>()
-        // Document id and its path under the media folder.
-        val pending = ArrayDeque<Pair<String, String>>().apply { add(DocumentsContract.getTreeDocumentId(treeUri) to "") }
+        val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+        return browseSaf(rootId, childrenOf = { parent -> queryChildren(treeUri, parent) }).map { step ->
+            LocalFile(
+                step.name,
+                step.size,
+                DocumentsContract.buildDocumentUriUsingTree(treeUri, step.id).toString(),
+                folder.name,
+                step.modified,
+                step.directory,
+                folder.uri,
+            )
+        }
+    }
+
+    private fun queryChildren(treeUri: Uri, parentId: String): List<SafEntry> {
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
         val columns = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
@@ -83,26 +96,20 @@ class SafLocalLibrary(
             DocumentsContract.Document.COLUMN_SIZE,
             DocumentsContract.Document.COLUMN_LAST_MODIFIED,
         )
-        while (pending.isNotEmpty() && out.size < MAX_FILES) {
-            val (parent, directory) = pending.removeFirst()
-            val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parent)
-            resolver.query(children, columns, null, null, null)?.use { c ->
-                while (c.moveToNext()) {
-                    val id = c.getString(0)
-                    val name = c.getString(1) ?: continue
-                    val mime = c.getString(2)
-                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                        if (!name.startsWith(".")) pending.add(id to if (directory.isEmpty()) name else "$directory/$name")
-                    } else if (LocalMatcher.isMedia(name, mime)) {
-                        val size = if (c.isNull(3)) 0L else c.getLong(3)
-                        val modified = if (c.isNull(4)) 0L else c.getLong(4)
-                        val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id).toString()
-                        out += LocalFile(name, size, uri, folder.name, modified, directory, folder.uri)
-                    }
-                }
+        val rows = ArrayList<SafEntry>()
+        resolver.query(children, columns, null, null, null)?.use { c ->
+            while (c.moveToNext()) {
+                val name = c.getString(1) ?: continue
+                rows += SafEntry(
+                    id = c.getString(0),
+                    name = name,
+                    mime = c.getString(2),
+                    size = if (c.isNull(3)) 0L else c.getLong(3),
+                    modified = if (c.isNull(4)) 0L else c.getLong(4),
+                )
             }
         }
-        return out
+        return rows
     }
 
     override fun sidecarsBeside(videoUri: String, videoName: String): List<ExternalSubtitle> {
@@ -204,9 +211,7 @@ class SafLocalLibrary(
             return LocalFolder(uri, name)
         }
         val docId = runCatching { DocumentsContract.getTreeDocumentId(parsed) }.getOrDefault(uri)
-        val path = docId.substringAfter(':', docId)
-        val name = path.trimEnd('/').substringAfterLast('/').ifEmpty { docId.substringBefore(':').let { if (it == "primary") "Internal storage" else it } }
-        return LocalFolder(uri, name)
+        return LocalFolder(uri, documentTreeLabel(docId))
     }
 
     private companion object {

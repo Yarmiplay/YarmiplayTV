@@ -81,6 +81,10 @@ jobs:
           [ -f "$release" ] && [ -f "$debug" ] && [ -f "$config" ] || fail "The merged manifests or BuildConfig moved; update this step"
           ! grep -q REQUEST_INSTALL_PACKAGES "$release" || fail "The Play build asks to install apps (REQUEST_INSTALL_PACKAGES)"
           ! grep -q ApkInstallReceiver "$release" || fail "The Play build carries the APK installer"
+          for perm in MANAGE_EXTERNAL_STORAGE READ_EXTERNAL_STORAGE READ_MEDIA_IMAGES READ_MEDIA_VIDEO READ_MEDIA_AUDIO READ_MEDIA_VISUAL_USER_SELECTED ACCESS_MEDIA_LOCATION; do
+            ! grep -q "$perm" "$release" || fail "The Play build declares $perm"
+          done
+          grep -q MANAGE_EXTERNAL_STORAGE "$debug" || fail "The download page's APK lost all-files access"
           grep -q "UPDATE_CHECK = false" "$config" || fail "The Play build checks the download page for updates"
           grep -q REQUEST_INSTALL_PACKAGES "$debug" || fail "The download page's APK can't install its updates"
           ./gradlew -q :app:dependencies --configuration debugRuntimeClasspath > "$RUNNER_TEMP/debug-deps.txt"

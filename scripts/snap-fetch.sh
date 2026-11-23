@@ -7,8 +7,15 @@ set -euo pipefail
 out=${1:-snap-seed}
 mkdir -p "$out"
 
-echo "Snap Store fetch on $(uname -srm)"
-if ! curl -fsS --connect-timeout 15 --max-time 30 -o /dev/null \
+# shellcheck source=snap-store-route.sh
+source "$(dirname "$0")/snap-store-route.sh"
+flags=()
+if [[ -n "${STORE_CURL_FLAGS:-}" ]]; then
+  flags=("${STORE_CURL_FLAGS}")
+fi
+
+echo "Snap Store fetch on $(uname -srm) ${STORE_CURL_FLAGS:-}"
+if ! curl "${flags[@]}" -fsS --connect-timeout 15 --max-time 30 -o /dev/null \
   -H 'Snap-Device-Series: 16' \
   -H 'Snap-Device-Architecture: amd64' \
   -A 'yarmiplaytv-snap-fetch' \
@@ -26,10 +33,24 @@ fi
 "$py" - "$out" <<'PY'
 import hashlib
 import json
+import os
+import socket
 import sys
 import time
 import urllib.request
 from pathlib import Path
+
+# The host may have pinned curl to one address family. urllib has to follow that, or a black-holed
+# IPv6 route stalls the content-snap download after the info API already answered.
+family = os.environ.get("STORE_CURL_FLAGS")
+if family in ("-4", "-6"):
+    wanted = socket.AF_INET if family == "-4" else socket.AF_INET6
+    _orig = socket.getaddrinfo
+
+    def _family_only(host, port, family=0, type=0, proto=0, flags=0):  # noqa: A002
+        return _orig(host, port, wanted, type, proto, flags)
+
+    socket.getaddrinfo = _family_only
 
 out = Path(sys.argv[1])
 names = ["bare", "core24", "gtk-common-themes", "gnome-46-2404", "mesa-2404"]

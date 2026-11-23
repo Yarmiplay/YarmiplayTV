@@ -136,11 +136,18 @@ expect fun rememberSubtitlePicker(onPicked: (String) -> Unit): () -> Unit
 expect fun rememberFolderPicker(container: AppContainer): () -> Unit
 
 /**
- * On Android, asks for storage access if needed and adds USB and shared internal storage.
- * Null where the platform has no separate volume scan (desktop already picks folders; the browser cannot).
+ * A storage action on the Files screen. [label] is the button. [run] scans mounted volumes (website APK)
+ * or opens the system folder picker (Play).
+ */
+data class StorageScan(val label: String, val run: () -> Unit)
+
+/**
+ * On Android, either scans USB and shared storage (website APK, after all-files access) or opens the
+ * folder picker (Play). [onUnavailable] gets a note when the device has no documents UI.
+ * Null where the platform has no separate volume action (desktop already picks folders).
  */
 @Composable
-expect fun rememberStorageScan(container: AppContainer): (() -> Unit)?
+expect fun rememberStorageScan(container: AppContainer, onUnavailable: (String) -> Unit): StorageScan?
 
 /**
  * Asks where to save a copy of a relayed file named `fileName`, or uses the download folder from settings without
