@@ -106,6 +106,7 @@ jobs:
   # api.snapcraft.io (185.125.188.54-60) does not accept a connection from GitHub-hosted Ubuntu.
   # These runners try the API and, when one can, upload the content snaps the pack step unpacks.
   # A leg that cannot reach the API fails this job only; continue-on-error keeps the workflow going.
+  # A leg GitHub never assigns a runner is cancelled instead, and that still fails the run.
   snap-seed:
     continue-on-error: true
     strategy:
