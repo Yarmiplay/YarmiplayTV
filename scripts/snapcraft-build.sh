@@ -26,6 +26,14 @@ else
   if ! probe_store; then
     skip_store "The Snap Store did not answer on IPv4 or IPv6 after retries, and no content snaps were fetched from another runner, so this run did not build the snap."
   fi
+  # The store answers from this host, but snap install inside the image calls systemctl and fails
+  # when the container has no systemd. Download the snaps here and let the image unpack them.
+  echo "No content snaps were fetched from another runner. Downloading them on this host."
+  if bash scripts/snap-fetch.sh snap-seed; then
+    seed=1
+  else
+    echo "Downloading the content snaps on this host failed. The image will try snap install." >&2
+  fi
 fi
 
 image="${SNAPCRAFT_IMAGE:-ghcr.io/canonical/snapcraft:8_core24}"
