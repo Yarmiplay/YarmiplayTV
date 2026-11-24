@@ -14,6 +14,7 @@ import com.yarmiplaytv.media.jellyfin.DiscoveredServer
 import com.yarmiplaytv.media.jellyfin.JellyfinDiscovery
 import com.yarmiplaytv.media.mal.MalClient
 import com.yarmiplaytv.sync.FeedMessage
+import com.yarmiplaytv.sync.PlaylistController
 import com.yarmiplaytv.sync.SyncController
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.SyncSettings
@@ -32,11 +33,13 @@ class AppState {
     private val container: AppContainer get() = TestSupport.container
     private lateinit var saved: AppSettings
     private var savedRoomPlaylists = emptyMap<String, List<String>>()
+    private var savedSeekPositions = emptyMap<String, Double>()
     private var wasConnected = false
 
     fun snapshot() {
         saved = container.settings.value
         savedRoomPlaylists = runBlocking { container.settingsStore.roomPlaylists() }
+        savedSeekPositions = runBlocking { container.settingsStore.allSeekPositions() }
         wasConnected = container.sync.isActive
     }
 
@@ -63,6 +66,7 @@ class AppState {
             store.saveDownloadDirectory(saved.downloadDirectory)
             store.saveScreenshotDirectory(saved.screenshotDirectory)
             store.replaceRoomPlaylists(savedRoomPlaylists)
+            replaceSeekPositions(savedSeekPositions)
             replaceSavedRooms(saved.savedRooms)
             store.saveMalAccount(saved.mal)
         }
@@ -102,6 +106,9 @@ class AppState {
             store.saveDownloadDirectory("")
             store.saveScreenshotDirectory("")
             store.replaceRoomPlaylists(emptyMap())
+            // A spot remembered from an earlier run would start a test's file there: SyncCheckTest's leader then
+            // resumed at 30-odd seconds on every run after the first one.
+            replaceSeekPositions(emptyMap())
             // What's new in this version would push the home screen's rows down.
             store.saveLastSeenVersion(container.appVersion)
             // Rooms joined by earlier tests would show as "Rejoin …" on the home screen and in the join form's lists.
@@ -150,6 +157,16 @@ class AppState {
     }
 
     private fun removeAllServers() = container.servers.value.forEach { container.removeServer(it.key) }
+
+    /** The settings file and the playlist's in-memory copy, which it read at start-up. */
+    private suspend fun replaceSeekPositions(positions: Map<String, Double>) {
+        @Suppress("UNCHECKED_CAST")
+        val remembered = PlaylistController::class.java.getDeclaredField("seekPositions").apply { isAccessible = true }
+            .get(container.playlist) as MutableMap<String, Double>
+        remembered.clear()
+        remembered.putAll(positions)
+        container.settingsStore.replaceSeekPositions(positions)
+    }
 
     fun joinRoom(server: FakeSyncplayServer, room: String = server.room) {
         container.sync.connect(PROFILE.copy(host = "127.0.0.1", port = server.port, room = room).toConfig())

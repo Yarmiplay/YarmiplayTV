@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.2.6" date="2026-11-24">
+      <description>
+        <p>Android no longer tries to start youtube-dl, which it doesn't have, whenever it opens a stream. Starting it and failing could now and then crash the app.</p>
+      </description>
+    </release>
     <release version="3.2.5" date="2026-11-24">
       <description>
         <p>A round of polish across TV, phones, tablets and computers.</p>
