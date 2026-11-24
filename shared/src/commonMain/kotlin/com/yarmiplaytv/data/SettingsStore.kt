@@ -1052,6 +1052,12 @@ class SettingsStore(
         return dataStore.data.first()[Keys.seekPosition(fileName)] ?: 0.0
     }
 
+    /** Replaces every remembered position with [positions] (by file name), like [replaceRoomPlaylists]. */
+    suspend fun replaceSeekPositions(positions: Map<String, Double>) = dataStore.edit { prefs ->
+        prefs.asMap().keys.filter { it.name.startsWith(Keys.SEEK_POSITION_PREFIX) }.forEach { prefs.remove(it) }
+        positions.filterValues { it > 0.0 }.forEach { (name, pos) -> prefs[Keys.seekPosition(name)] = pos }
+    }
+
     suspend fun allSeekPositions(): Map<String, Double> {
         val p = dataStore.data.first()
         val result = mutableMapOf<String, Double>()

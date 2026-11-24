@@ -156,6 +156,9 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             setOptionString("sub-scale-with-window", "yes")
             setOptionString("osd-duration", "2500")
             setOptionString("user-agent", "YarmiplayTV")
+            // Android has no youtube-dl, so mpv's ytdl hook only starts a process that fails. That start-and-fail
+            // came just before an fdsan abort on a binder thread in PlayerSkipTest, so it isn't tried at all.
+            setOptionString("ytdl", "no")
             if (options.audioLanguages.isNotBlank()) setOptionString("alang", options.audioLanguages)
             if (options.subtitleLanguages.isNotBlank()) setOptionString("slang", options.subtitleLanguages)
             init()

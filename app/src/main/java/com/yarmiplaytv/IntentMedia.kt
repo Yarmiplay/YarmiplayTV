@@ -2,6 +2,9 @@ package com.yarmiplaytv
 
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.InvalidPathException
+import java.nio.file.Path
 
 /**
  * What another app may ask MainActivity to play. Any app can send it a VIEW intent or a `url` extra, so a file
@@ -29,11 +32,25 @@ internal object IntentMedia {
         return roots.any { root -> target == root || target.startsWith(root.trimEnd(File.separatorChar) + File.separator) }
     }
 
+    /**
+     * The path with `..` and every symbolic link resolved. canonicalPath alone follows links on Android but not
+     * on Windows, so the deepest part that exists also goes through toRealPath; the rest (a file that isn't there
+     * yet) is added back as written.
+     */
     private fun canonical(path: String): String? = try {
-        File(path).canonicalPath
+        var existing: Path? = File(File(path).canonicalPath).toPath()
+        val missing = ArrayDeque<String>()
+        while (existing != null && !Files.exists(existing)) {
+            existing.fileName?.let { missing.addFirst(it.toString()) }
+            existing = existing.parent
+        }
+        val real = existing?.toRealPath() ?: File(path).canonicalFile.toPath()
+        missing.fold(real) { p, name -> p.resolve(name) }.toString()
     } catch (e: IOException) {
         null
     } catch (e: SecurityException) {
+        null
+    } catch (e: InvalidPathException) {
         null
     }
 }
