@@ -151,6 +151,17 @@ class PlaylistController(
 
     fun getSeekPosition(fileName: String): Double = seekPositions[fileName.lowercase()] ?: 0.0
 
+    /**
+     * Where [media] opens. In a room a playlist switch ([resetPosition]) starts everyone at 0, as in Syncplay: a spot
+     * this device remembers isn't the room's, and jumping there alone would leave this player somewhere the room
+     * doesn't know about. Outside a room, and when a file is reopened without a switch (a reconnect), it resumes.
+     */
+    private fun startPosition(media: NowPlaying, resetPosition: Boolean): Double = when {
+        media.growing -> 0.0
+        resetPosition && sync.isActive -> 0.0
+        else -> getSeekPosition(media.fileName)
+    }
+
     private var seekDiskKey: String? = null
     private var seekDiskAt = 0L
     private var seekDiskPos = Double.NaN
@@ -173,7 +184,8 @@ class PlaylistController(
         }
     }
 
-    private data class PendingLoad(val media: NowPlaying, val resetPosition: Boolean, val fromRoom: Boolean)
+    /** [startAt]: where the file opens, the remembered spot or 0 (see [startPosition]). */
+    private data class PendingLoad(val media: NowPlaying, val resetPosition: Boolean, val fromRoom: Boolean, val startAt: Double)
 
     private var pending: PendingLoad? = null
     /** Asks whether to play a file whose server's certificate couldn't be verified; another load takes it away. */
@@ -301,11 +313,10 @@ class PlaylistController(
                 pending = null
                 val duration = if (p.media.growing) p.media.durationHint else event.duration.takeIf { it > 0 } ?: p.media.durationHint
                 _status.value = PlaylistStatus.Idle
-                val savedPos = if (p.media.growing) 0.0 else getSeekPosition(p.media.fileName)
+                val savedPos = p.startAt
                 sync.reportFile(FileInfo(p.media.fileName, duration, p.media.sizeBytes), p.resetPosition, savedPos)
-                if (savedPos > 0.0 && (!sync.isActive || p.resetPosition || player.currentPosition() == 0.0)) {
-                    player.seek(savedPos)
-                }
+                // In a room the sync engine places the player (and keeps what it reports in step with it).
+                if (savedPos > 0.0 && !sync.isActive) player.seek(savedPos)
                 if (p.fromRoom && autoReady && sync.isActive) sync.setReady(true)
                 val isAudio = FileNames.isAudio(p.media.fileName)
                 val isEpisodeSwitch = previousMedia != null && (
@@ -375,8 +386,7 @@ class PlaylistController(
     private fun reopen(p: PendingLoad) {
         val media = p.media
         _status.value = PlaylistStatus.Loading(media.fileName)
-        val savedPos = if (media.growing) 0.0 else getSeekPosition(media.fileName)
-        player.load(media.url, media.title, startPaused = true, startPosition = savedPos)
+        player.load(media.url, media.title, startPaused = true, startPosition = p.startAt)
         // The subtitles found for the first try are still queued; they're added once it's open.
         scope.launch {
             withTimeoutOrNull(20_000) {
@@ -554,7 +564,8 @@ class PlaylistController(
             Filenames.same(_nowPlaying.value?.fileName.orEmpty(), media.fileName)
         givenUp = null
         if (pending?.media?.url != media.url) certificateQuestion?.cancel()
-        pending = PendingLoad(media, resetPosition, fromRoom)
+        val savedPos = startPosition(media, resetPosition)
+        pending = PendingLoad(media, resetPosition, fromRoom, savedPos)
         // E.g. a reconnect replays the room's selection while a manual pick of the same file is opening,
         // or the exact same file is already playing.
         if (alreadyLoading || alreadyLoaded) {
@@ -567,7 +578,6 @@ class PlaylistController(
         _nowPlaying.value = media
         _status.value = PlaylistStatus.Loading(media.fileName)
         sync.reportLoading()
-        val savedPos = if (media.growing) 0.0 else getSeekPosition(media.fileName)
         val remembered = sidecarsForUrl.remove(media.url).orEmpty()
         synchronized(queuedSubs) {
             queuedSubs.clear()

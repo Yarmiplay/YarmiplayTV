@@ -288,8 +288,9 @@ export class SyncEngine {
   // --- File switching -------------------------------------------------------
 
   /**
-   * Call once the player has loaded a new file. With [resetPosition] playback starts from 0 (a playlist switch);
-   * otherwise it jumps to the room's position.
+   * Call once the player has loaded a new file. With [resetPosition] (a playlist switch) playback starts from 0 for
+   * everyone, as in Syncplay: a spot this device remembers ([initialPosition]) isn't the room's, so it's ignored.
+   * Otherwise the player jumps to the room's position, or to [initialPosition] while the room has none to give.
    */
   onFileLoaded(resetPosition: boolean, initialPosition = 0): void {
     this.fileReady = true;
@@ -298,25 +299,32 @@ export class SyncEngine {
     const playPressed = this.player.isFileLoaded && !this.player.isPaused;
     this.lastFileLoadTime = now;
     if (resetPosition) {
-      const target = initialPosition > 0 ? initialPosition : 0;
+      // A playlist switch starts everyone at 0, as in Syncplay: a spot this device remembers isn't the room's.
       this.resetIgnoreUntil = now + Constants.NEWFILE_IGNORE_TIME;
-      this.player.seek(target);
+      this.seekForFile(0);
       this.lastRewindTime = now;
-      this.playerPosition = target;
       if (this.lastGlobalUpdate !== null) this.setPlayerPaused(this.globalPaused);
     } else if (this.lastGlobalUpdate !== null) {
       const global = this.getGlobalPosition();
-      const target = global > 0 ? global : initialPosition > 0 ? initialPosition : 0;
-      this.player.seek(target);
+      this.seekForFile(global > 0 ? global : initialPosition > 0 ? initialPosition : 0);
       this.setPlayerPaused(this.getGlobalPaused());
     } else if (initialPosition > 0) {
-      this.player.seek(initialPosition);
-      this.playerPosition = initialPosition;
+      this.seekForFile(initialPosition);
     }
     if (this.lastPlayerUpdate !== null) this.lastPlayerUpdate = now;
     // The room's pause wins for now; the press counts once the switch can no longer be mistaken for it.
     this.unpauseAt =
       playPressed && this.lastGlobalUpdate !== null && this.getGlobalPaused() ? now + REWIND_GUARD_AFTER_LOAD + 0.1 : null;
+  }
+
+  /**
+   * Moves the player for a file that just loaded and takes [position] as where it now is. Unless it's recorded here,
+   * updatePlayerStatus could take the jump for one the user didn't make and go on reporting the room's position
+   * while the player is really at [position].
+   */
+  private seekForFile(position: number): void {
+    this.player.seek(position);
+    this.playerPosition = position;
   }
 
   /** Call when the player starts opening a new file; it's ignored until onFileLoaded. */

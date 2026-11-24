@@ -286,6 +286,55 @@ describe("SyncEngine", () => {
     expect(player.position).toBeLessThan(5);
   });
 
+  /** The engine's own seeks aren't the user's, as with mpv's seekFromSync. */
+  function engineSeeksAreNotTheUsers() {
+    (player as FakePlayer & { userSeeked?: boolean }).userSeeked = false;
+  }
+
+  it("a playlist switch starts at 0 even with a remembered spot, and reports 0", () => {
+    serverState(900, true);
+    step(1);
+    engineSeeksAreNotTheUsers();
+    engine.onFileLoaded(true, 36.5);
+    expect(player.position).toBeCloseTo(0, 2);
+    serverState(0, true);
+    step(3);
+    expect(player.position).toBeCloseTo(0, 2);
+    expect(engine.getPlayerPosition()).toBeCloseTo(0, 2);
+    expect(engine.getLocalState()!.position).toBeCloseTo(0, 2);
+  });
+
+  it("the engine reports where its own file-load seek put the player", () => {
+    // Joined a room that's paused at 0 because nobody has played yet; the file opens at our remembered spot.
+    serverState(0, true, false, null);
+    step(1);
+    host.sent.length = 0;
+    engineSeeksAreNotTheUsers();
+    engine.onFileLoaded(false, 36.5);
+    step(2);
+    expect(player.position).toBeCloseTo(36.5, 2);
+    expect(engine.getPlayerPosition()).toBeCloseTo(player.position, 2);
+    expect(engine.getLocalState()!.position).toBeCloseTo(36.5, 2);
+    expect(host.sent.some((s) => s.doSeek)).toBe(false);
+    // Whatever the room makes of it next, the player and what the engine reports stay together.
+    serverState(0, true, false, null);
+    step(1);
+    expect(engine.getPlayerPosition()).toBeCloseTo(player.position, 2);
+  });
+
+  it("a file loaded at a remembered spot goes back to the room's 0 when someone else set it", () => {
+    serverState(0, true, false, "alice");
+    step(1);
+    engineSeeksAreNotTheUsers();
+    engine.onFileLoaded(false, 36.5);
+    step(2);
+    expect(engine.getPlayerPosition()).toBeCloseTo(36.5, 2);
+    serverState(0, true, false, "alice");
+    step(1);
+    expect(player.position).toBeCloseTo(0, 2);
+    expect(engine.getPlayerPosition()).toBeCloseTo(0, 2);
+  });
+
   it("play pressed a moment after a switched file appears plays it", () => {
     host.othersReady = true;
     switchToNewFile(3);
