@@ -71,6 +71,14 @@ class SyncCheckTest {
 
         val a = insertClip(CLIP_A)
         val b = insertClip(CLIP_B)
+        // Each device stopped somewhere different in both clips before. That spot must never put a player
+        // somewhere the room doesn't know about: the pause and seek steps compare where each one really is,
+        // and the switch to clip B must start both at 0, as in Syncplay.
+        val remembered = if (role == "leader") LEADER_REMEMBERED_S else FOLLOWER_REMEMBERED_S
+        onMain {
+            container.playlist.saveSeekPosition(CLIP_A, remembered, force = true)
+            container.playlist.saveSeekPosition(CLIP_B, remembered, force = true)
+        }
         activity = ActivityScenario.launch(MainActivity::class.java)
         // Registers both files with the playlist controller so the room's choice resolves to them.
         container.playlist.addLocalToRoomPlaylist(a.toString())
@@ -122,7 +130,11 @@ class SyncCheckTest {
 
         container.playlist.selectIndex(container.sync.room.value.playlist.indexOf(CLIP_B))
         await(20_000, "clip B loaded here") { loaded(CLIP_B) }
+        await(5_000, "clip B at its start here, not at the remembered spot (here %.2f)".format(player.currentPosition())) {
+            player.currentPosition() < SWITCH_START_MAX_S
+        }
         step("file", "name=$CLIP_B")
+        step("start")
         step("done")
     }
 
@@ -179,6 +191,9 @@ class SyncCheckTest {
             val error: String? = runCatching {
                 when (kind) {
                     "file" -> await(20_000, "loaded $value") { loaded(value!!) }
+                    "start" -> await(5_000, "at the start of the switched file (here %.2f)".format(player.currentPosition())) {
+                        player.currentPosition() < SWITCH_START_MAX_S
+                    }
                     "playing" -> await(5_000, "playing") { !player.state.value.paused && player.currentPosition() > 0.5 }
                     "pause", "seek" -> {
                         val target = value!!.toDouble()
@@ -245,5 +260,9 @@ class SyncCheckTest {
         private const val CLIP_B = "YarmiplayTV Sync Check B.mp4"
         private const val MAX_DRIFT_S = 0.5
         private const val RESEND_MS = 5_000L
+        private const val LEADER_REMEMBERED_S = 20.0
+        private const val FOLLOWER_REMEMBERED_S = 25.0
+        /** A switched file starts at 0; this allows for its first seconds playing (it may start right away). */
+        private const val SWITCH_START_MAX_S = 5.0
     }
 }
