@@ -86,6 +86,8 @@ fun TvRoot(container: AppContainer, stack: SnapshotStateList<Screen> = remember 
                     Screen.WhatsNew -> WhatsNewScreen(container)
                     is Screen.MalEntry -> MalEntryScreen(container, nav, screen.item)
                     is Screen.Browse -> BrowseScreen(container, nav, screen.item)
+                    // Phones, tablets and desktop have a Library tab. TV keeps its libraries on Home.
+                    is Screen.Library -> HomeScreen(container, nav)
                     is Screen.Search -> SearchScreen(container, nav, screen.initialQuery, screen.pickFor)
                 }
             }

@@ -145,6 +145,7 @@ fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
                 nav,
                 showBack = false,
                 actions = {
+                    TopSearchButton(onClick = { nav.push(Screen.Search()) })
                     IconButton(onClick = { container.exitApp() }, modifier = Modifier.testTag("settings_exit_app")) {
                         Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Exit YarmiplayTV", tint = AppColors.TextDim)
                     }

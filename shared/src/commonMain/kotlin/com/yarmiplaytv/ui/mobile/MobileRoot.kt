@@ -34,8 +34,8 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.HorizontalDivider
@@ -99,7 +99,7 @@ private val tabs = listOf(
     Tab(Screen.Home, "Home", Icons.Filled.Home),
     // Opens the player over the current screen from anywhere, whether something is playing or not.
     Tab(Screen.Player, "Player", Icons.Filled.PlayCircle),
-    Tab(Screen.Search(), "Search", Icons.Filled.Search),
+    Tab(Screen.Library(), "Library", Icons.Filled.VideoLibrary),
     Tab(Screen.SyncplayConnect, "Room", Icons.Filled.Groups),
     Tab(Screen.Settings, "Settings", Icons.Filled.Settings),
 )
@@ -230,6 +230,7 @@ internal fun AppScreen(container: AppContainer, nav: Navigator, screen: Screen, 
         Screen.WhatsNew -> MobileWhatsNewScreen(container, nav)
         is Screen.MalEntry -> MobileMalEntryScreen(container, nav, screen.item)
         is Screen.Browse -> MobileBrowseScreen(container, nav, screen.item, kind)
+        is Screen.Library -> MobileLibraryScreen(container, nav, screen.libraryKey, kind)
         is Screen.Search -> MobileSearchScreen(container, nav, screen.initialQuery, screen.pickFor, kind)
         Screen.Player -> Unit
     }

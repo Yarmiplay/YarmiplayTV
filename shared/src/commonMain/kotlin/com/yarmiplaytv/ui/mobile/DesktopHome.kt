@@ -25,20 +25,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.Bookmarks
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.SdStorage
-import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -64,6 +58,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -110,15 +105,18 @@ fun DesktopHomeScreen(container: AppContainer, nav: Navigator) {
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     val localFiles by container.local.files.collectAsStateWithLifecycle()
     val folders by container.local.folders.collectAsStateWithLifecycle()
-    var libraries by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var previews by remember { mutableStateOf<List<LibrarySection>>(emptyList()) }
     var recent by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var serverRecents by remember { mutableStateOf<List<ServerRecent>>(emptyList()) }
     var loadError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(source) {
-        val s = source ?: run { libraries = emptyList(); recent = emptyList(); serverRecents = emptyList(); return@LaunchedEffect }
+        val s = source ?: run { previews = emptyList(); recent = emptyList(); serverRecents = emptyList(); return@LaunchedEffect }
         loadError = null
-        runCatching { libraries = s.libraries() }.onFailure { loadError = it.message }
+        previews = runCatching { loadLibrarySections(s) }.getOrElse {
+            loadError = it.message
+            emptyList()
+        }
         if (s is CompositeMediaSource) {
             recent = emptyList()
             serverRecents = recentByServer(s.sources)
@@ -167,6 +165,7 @@ fun DesktopHomeScreen(container: AppContainer, nav: Navigator) {
                                 color = AppColors.TextDim,
                             )
                         }
+                        TopSearchButton(onClick = { nav.push(Screen.Search()) }, tint = AppColors.Text)
                         TextButton(
                             onClick = { container.exitApp() },
                             modifier = Modifier.pointerHoverIcon(PointerIcon.Hand).testTag("home_exit_app"),
@@ -187,22 +186,11 @@ fun DesktopHomeScreen(container: AppContainer, nav: Navigator) {
                     loadError?.let { err ->
                         Text("Couldn't load libraries: $err", color = AppColors.Error, modifier = Modifier.padding(top = 16.dp))
                     }
-                    if (libraries.isNotEmpty()) {
-                        DesktopSectionTitle("Libraries")
-                        PosterFlow(libraries.map { lib ->
-                            PosterModel(
-                                key = lib.uniqueKey,
-                                title = lib.name,
-                                subtitle = (source as? CompositeMediaSource)?.sourceOf(lib)?.displayName,
-                                imageUrl = source?.imageUrl(lib, 480),
-                                placeholder = when (lib.collectionType) {
-                                    "tvshows" -> Icons.Filled.Tv
-                                    "movies" -> Icons.Filled.Movie
-                                    else -> Icons.Filled.Folder
-                                },
-                                onClick = { nav.push(Screen.Browse(lib)) },
-                            )
-                        })
+                    val libraryNames = previews.map { it.library }
+                    previews.forEach { section ->
+                        key(section.library.uniqueKey) {
+                            LibraryPreviewRow(container, nav, source, section, libraryNames)
+                        }
                     }
                     if (recent.isNotEmpty()) {
                         DesktopSectionTitle("Continue watching & recently added")
@@ -221,6 +209,53 @@ fun DesktopHomeScreen(container: AppContainer, nav: Navigator) {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** One row of a library, with the rest of it on the Library tab. */
+@Composable
+private fun LibraryPreviewRow(
+    container: AppContainer,
+    nav: Navigator,
+    source: MediaSource?,
+    section: LibrarySection,
+    libraries: List<MediaItem>,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (source == null) section.library.name else libraryTitle(section.library, source, libraries),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = AppColors.Text,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(
+            onClick = { nav.switchTab(Screen.Library(section.library.uniqueKey)) },
+            modifier = Modifier.pointerHoverIcon(PointerIcon.Hand).testTag(librarySeeAllTag(section.library)),
+            colors = ButtonDefaults.textButtonColors(contentColor = AppColors.Accent),
+        ) {
+            Text("See all", maxLines = 1, softWrap = false)
+        }
+    }
+    when {
+        section.error != null -> Text(
+            "Couldn't load ${section.library.name}: ${section.error}",
+            color = AppColors.Error,
+        )
+        section.items.isEmpty() -> Text("Nothing here", color = AppColors.TextDim)
+        else -> Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            section.items.take(LIBRARY_PREVIEW_COUNT).forEach { item ->
+                key(item.uniqueKey) { DesktopPoster(posterModel(container, nav, item, source)) }
             }
         }
     }

@@ -95,7 +95,7 @@ class PlayerTabUiTest {
     @Test
     fun `the Player entry opens the player over the current screen`() = runComposeUiTest {
         showApp()
-        listOf("Home", "Player", "Search", "Room", "Settings").forEach { onNodeWithTag("tab_$it").assertIsDisplayed() }
+        listOf("Home", "Player", "Library", "Room", "Settings").forEach { onNodeWithTag("tab_$it").assertIsDisplayed() }
 
         onNodeWithTag("tab_Settings").performClick()
         waitUntil(timeoutMillis = 5_000) { showing("settings") }
@@ -138,11 +138,11 @@ class PlayerTabUiTest {
         runOnUiThread { DesktopPip.toggle() }
         waitUntil(timeoutMillis = 5_000) { showing("settings") }
         assertFalse(showing("player_pip_elsewhere"))
-        listOf("Home", "Player", "Search", "Room", "Settings").forEach { onNodeWithTag("tab_$it").assertIsDisplayed() }
+        listOf("Home", "Player", "Library", "Room", "Settings").forEach { onNodeWithTag("tab_$it").assertIsDisplayed() }
 
         // Other menus can be browsed freely while picture-in-picture is active.
-        onNodeWithTag("tab_Search").performClick()
-        waitUntil(timeoutMillis = 5_000) { showing("search_field") }
+        onNodeWithTag("tab_Library").performClick()
+        waitUntil(timeoutMillis = 5_000) { showing("library") }
         onNodeWithTag("tab_Room").performClick()
         waitUntil(timeoutMillis = 5_000) { showing("public_servers") }
         onNodeWithTag("tab_Home").performClick()
@@ -151,7 +151,7 @@ class PlayerTabUiTest {
         // Even if the user clicks the Player tab while in PiP, the sidebar remains visible so they aren't stuck.
         onNodeWithTag("tab_Player").performClick()
         waitUntil(timeoutMillis = 5_000) { showing("player_pip_elsewhere") }
-        listOf("Home", "Player", "Search", "Room", "Settings").forEach { onNodeWithTag("tab_$it").assertIsDisplayed() }
+        listOf("Home", "Player", "Library", "Room", "Settings").forEach { onNodeWithTag("tab_$it").assertIsDisplayed() }
         onNodeWithTag("pip_back_here").performClick()
         waitUntil(timeoutMillis = 5_000) { !DesktopPip.open && showing("player") }
     }

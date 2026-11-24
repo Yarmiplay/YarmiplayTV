@@ -289,7 +289,7 @@ private fun ClassicMenuBar(container: AppContainer, inRoom: Boolean, fileLoaded:
             Row(Modifier.fillMaxWidth().heightIn(min = 36.dp).padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 MenuButton("File") { close ->
                     MenuItem("Open media file…") { close(); openVideo() }
-                    MenuItem("Browse your library") { close(); ClassicWindows.open(Screen.Home) }
+                    MenuItem("Browse your library") { close(); ClassicWindows.open(Screen.Library()) }
                     MenuItem("Search") { close(); ClassicWindows.open(Screen.Search()) }
                     HorizontalDivider()
                     MenuItem("Exit") { close(); container.exitApp() }

@@ -30,6 +30,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -103,6 +106,17 @@ fun HomeCard(
 /** The space between [HomeCard]s, and between them and the screen's sides. */
 val HomeCardGap = 10.dp
 val HomeCardSidePadding = 16.dp
+
+/** Search, moved out of the section tabs and into the top bar beside Exit. Opens the same search screen. */
+@Composable
+fun TopSearchButton(onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = AppColors.TextDim) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.pointerHoverIcon(PointerIcon.Hand).testTag("top_search"),
+    ) {
+        Icon(Icons.Filled.Search, contentDescription = "Search", tint = tint)
+    }
+}
 
 @Composable
 fun PosterTile(
