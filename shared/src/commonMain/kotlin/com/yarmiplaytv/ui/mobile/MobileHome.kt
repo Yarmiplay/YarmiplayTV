@@ -15,14 +15,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.Bookmarks
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.SdStorage
-import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -77,15 +70,12 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
     val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
     val localFiles by container.local.files.collectAsStateWithLifecycle()
     val folders by container.local.folders.collectAsStateWithLifecycle()
-    var libraries by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var recent by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var serverRecents by remember { mutableStateOf<List<ServerRecent>>(emptyList()) }
-    var loadError by remember { mutableStateOf<String?>(null) }
 
+    // Libraries live on the Library tab here. Desktop home keeps a short preview of each one.
     LaunchedEffect(source) {
-        val s = source ?: run { libraries = emptyList(); recent = emptyList(); serverRecents = emptyList(); return@LaunchedEffect }
-        loadError = null
-        runCatching { libraries = s.libraries() }.onFailure { loadError = it.message }
+        val s = source ?: run { recent = emptyList(); serverRecents = emptyList(); return@LaunchedEffect }
         if (s is CompositeMediaSource) {
             recent = emptyList()
             serverRecents = recentByServer(s.sources)
@@ -101,6 +91,7 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
             // Desktop has the app's name at the top of its side list; there Home is titled like the other sections.
             if (kind == DeviceKind.DESKTOP) {
                 MobileTopBar("Home", nav, showBack = false, actions = {
+                    TopSearchButton(onClick = { nav.push(Screen.Search()) })
                     IconButton(onClick = { container.exitApp() }, modifier = Modifier.testTag("home_exit_app")) {
                         Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Exit YarmiplayTV", tint = AppColors.TextDim)
                     }
@@ -111,6 +102,7 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
                     Spacer(Modifier.width(10.dp))
                     Text("YarmiplayTV", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.weight(1f))
+                    TopSearchButton(onClick = { nav.push(Screen.Search()) })
                     IconButton(onClick = { container.exitApp() }, modifier = Modifier.testTag("home_exit_app")) {
                         Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Exit YarmiplayTV", tint = AppColors.TextDim)
                     }
@@ -123,33 +115,6 @@ fun MobileHomeScreen(container: AppContainer, nav: Navigator, kind: DeviceKind) 
             CardGrid(multiColumn = kind != DeviceKind.PHONE, modifier = Modifier.padding(horizontal = 16.dp)) {
                 homeCards(container, nav, tv = false).forEach { card ->
                     StatusCard(card.icon, card.title, card.detail, card.dot, card.onClick, Modifier.fillMaxWidth().testTag(card.kind.tag))
-                }
-            }
-        }
-        loadError?.let { err ->
-            item { Text("Couldn't load libraries: $err", color = AppColors.Error, modifier = Modifier.padding(16.dp)) }
-        }
-        if (libraries.isNotEmpty()) {
-            item {
-                SectionHeader("Libraries", Modifier.padding(top = 12.dp))
-                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(libraries, key = { it.uniqueKey }) { lib ->
-                        PosterTile(
-                            title = lib.name,
-                            subtitle = (source as? CompositeMediaSource)?.sourceOf(lib)?.displayName,
-                            imageUrl = source?.imageUrl(lib, 480),
-                            aspectRatio = 16f / 9f,
-                            placeholder = when (lib.collectionType) {
-                                "tvshows" -> Icons.Filled.Tv
-                                "movies" -> Icons.Filled.Movie
-                                else -> Icons.Filled.Folder
-                            },
-                            onClick = { nav.push(Screen.Browse(lib)) },
-                            modifier = Modifier.width(cardWidth),
-                            titleLines = Int.MAX_VALUE,
-                            subtitleLines = Int.MAX_VALUE,
-                        )
-                    }
                 }
             }
         }

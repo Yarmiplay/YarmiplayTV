@@ -19,6 +19,14 @@ sealed interface Screen {
     data object Settings : Screen { override val key = "settings" }
     data object LocalFiles : Screen { override val key = "local" }
     data object Licenses : Screen { override val key = "licenses" }
+
+    /**
+     * Media libraries from the connected servers (Jellyfin, Plex).
+     * [libraryKey] opens one library, the way Home's "See all" does; null shows every library's items.
+     */
+    data class Library(val libraryKey: String? = null) : Screen {
+        override val key = "library"
+    }
     data class Browse(val item: MediaItem) : Screen { override val key = "browse/${item.uniqueKey}" }
     data object MalLogin : Screen { override val key = "mal-login" }
     /** MyAnimeList: the account, your list, matches and settings. */

@@ -123,7 +123,7 @@ class MobileScreenshotTest {
         shot("connect")
         tap("tab_Settings"); await("settings")
         shot("settings")
-        tap("tab_Search"); await("search_field")
+        tap("top_search"); await("search_field")
         shot("search_signed_out")
         tap("tab_Home"); await("home")
         tap("card_local"); await("open_video")
@@ -161,7 +161,7 @@ class MobileScreenshotTest {
             shot("home_full_landscape")
             Screenshots.rotate(landscape = false)
         }
-        tapText("Shows"); await("grid"); awaitText("Harbor Lights")
+        tap("tab_Library"); await("grid"); awaitText("Harbor Lights")
         shot("browse_shows")
         tapText("Orbit Station"); awaitText("Docking")
         shot("browse_series")
@@ -171,7 +171,8 @@ class MobileScreenshotTest {
         back()
         compose.waitUntilDoesNotExist(hasTestTag("action_play_room"), 5_000)
 
-        tap("tab_Search"); await("search_field")
+        tap("tab_Home"); await("home")
+        tap("top_search"); await("search_field")
         compose.onNodeWithTag("search_field").performTextInput("orbit")
         hideKeyboard()
         compose.mainClock.advanceTimeBy(1_000) // the search debounce runs on the test clock

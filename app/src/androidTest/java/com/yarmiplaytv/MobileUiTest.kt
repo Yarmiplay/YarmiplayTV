@@ -47,7 +47,7 @@ class MobileUiTest {
     @Test
     fun phoneGetsTouchUiWithBottomNavigation() {
         assertNotEquals(DeviceKind.TV, compose.activity.deviceKind)
-        listOf("Home", "Player", "Search", "Room", "Settings").forEach { compose.onNodeWithTag("tab_$it").assertIsDisplayed() }
+        listOf("Home", "Player", "Library", "Room", "Settings").forEach { compose.onNodeWithTag("tab_$it").assertIsDisplayed() }
         compose.onNodeWithTag("card_room").assertIsDisplayed()
         compose.onNodeWithTag("card_local").assertIsDisplayed()
     }
@@ -58,7 +58,11 @@ class MobileUiTest {
         compose.waitUntilExactlyOneExists(hasTestTag("settings"), 5_000)
         compose.onNodeWithTag("tab_Room").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("field_host"), 5_000)
-        compose.onNodeWithTag("tab_Search").performClick()
+        compose.onNodeWithTag("tab_Library").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("library"), 5_000)
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntilExactlyOneExists(hasTestTag("home"), 5_000)
+        compose.onNodeWithTag("top_search").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("search_field"), 5_000)
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.waitUntilExactlyOneExists(hasTestTag("home"), 5_000)

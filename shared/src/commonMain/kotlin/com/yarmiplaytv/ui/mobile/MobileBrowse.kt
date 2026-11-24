@@ -93,7 +93,7 @@ fun MobileTopBar(
 }
 
 @Composable
-private fun MobileItemGrid(container: AppContainer, items: List<MediaItem>, kind: DeviceKind, showServer: Boolean = false, onClick: (MediaItem) -> Unit) {
+internal fun MobileItemGrid(container: AppContainer, items: List<MediaItem>, kind: DeviceKind, showServer: Boolean = false, onClick: (MediaItem) -> Unit) {
     val source by container.mediaSource.collectAsStateWithLifecycle()
     val aspect = aspectFor(items)
     val min = when {
@@ -188,7 +188,7 @@ fun MobileSearchScreen(container: AppContainer, nav: Navigator, initialQuery: St
         searching = false
     }
     Column(Modifier.fillMaxSize()) {
-        MobileTopBar(if (pickFor != null) "Pick the item to play" else "Search", nav, subtitle = pickFor, showBack = pickFor != null)
+        MobileTopBar(if (pickFor != null) "Pick the item to play" else "Search", nav, subtitle = pickFor, showBack = nav.canGoBack)
         OutlinedTextField(
             query, { query = it },
             label = { Text("Title") },

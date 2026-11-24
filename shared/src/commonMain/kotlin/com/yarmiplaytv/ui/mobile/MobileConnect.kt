@@ -107,6 +107,7 @@ fun MobileRoomScreen(container: AppContainer, nav: Navigator) {
 
     Column(Modifier.fillMaxSize()) {
         MobileTopBar(if (connected && !editing) "Room" else "Join a Syncplay room", nav, showBack = editing) {
+            TopSearchButton(onClick = { nav.push(Screen.Search()) })
             if (editing) TextButton({ editing = false }) { Text("Cancel") }
         }
         if (connected && !editing) {

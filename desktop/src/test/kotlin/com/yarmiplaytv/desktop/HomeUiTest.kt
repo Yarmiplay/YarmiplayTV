@@ -154,7 +154,7 @@ class HomeUiTest {
     /** Labels that must stay on one line from the smallest window up to a maximized one. */
     private fun ComposeUiTest.assertHomeLabels() {
         listOf(
-            "YarmiplayTV", "Home", "Player", "Search", "Room", "Settings", "Exit",
+            "YarmiplayTV", "Home", "Player", "Library", "Room", "Settings", "Exit",
             "Join a Syncplay room", "Connect Jellyfin", "Connect Plex", "Files on this device",
         ).forEach { assertOneLine(it) }
         listOf(
