@@ -280,7 +280,9 @@ class SyncEngine(
 
     /**
      * Call once the player has loaded a new file.
-     * With [resetPosition] playback starts from 0 (a playlist switch); otherwise it jumps to the room's position.
+     * With [resetPosition] (a playlist switch) playback starts from 0 for everyone, as in Syncplay: a spot this device
+     * remembers ([initialPosition]) isn't the room's, so it's ignored. Otherwise the player jumps to the room's
+     * position, or to [initialPosition] (or where it already is) while the room has none to give.
      */
     fun onFileLoaded(resetPosition: Boolean, initialPosition: Double = 0.0) {
         fileReady = true
@@ -291,24 +293,30 @@ class SyncEngine(
         val current = if (player.isFileLoaded) max(player.position, 0.0) else 0.0
         val pos = if (initialPosition > 0.0) initialPosition else if (current > 0.0) current else 0.0
         if (resetPosition) {
-            val target = if (initialPosition > 0.0) initialPosition else 0.0
             resetIgnoreUntil = now + Constants.NEWFILE_IGNORE_TIME
-            player.seek(target)
+            seekForFile(0.0)
             lastRewindTime = now
-            playerPosition = target
             if (lastGlobalUpdate != null) setPlayerPaused(globalPaused)
         } else if (lastGlobalUpdate != null) {
             val global = getGlobalPosition()
-            val target = if (global > 0.0) global else pos
-            player.seek(target)
+            seekForFile(if (global > 0.0) global else pos)
             setPlayerPaused(getGlobalPaused())
         } else if (pos > 0.0) {
-            player.seek(pos)
-            playerPosition = pos
+            seekForFile(pos)
         }
         if (lastPlayerUpdate != null) lastPlayerUpdate = now
         // The room's pause wins for now; the press counts once the switch can no longer be mistaken for it.
         unpauseAt = if (playPressed && lastGlobalUpdate != null && getGlobalPaused()) now + REWIND_GUARD_AFTER_LOAD + 0.1 else null
+    }
+
+    /**
+     * Moves the player for a file that just loaded and takes [position] as where it now is. The player flags this seek
+     * as not the user's, and [updatePlayerStatus] puts any such jump down to the room's position, so unless it's
+     * recorded here the engine would go on reporting the room's position while the player is really at [position].
+     */
+    private fun seekForFile(position: Double) {
+        player.seek(position)
+        playerPosition = position
     }
 
     /** Call when the player starts opening a new file; it's ignored until [onFileLoaded]. */

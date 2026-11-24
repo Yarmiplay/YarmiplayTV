@@ -88,7 +88,11 @@
   <releases>
     <release version="3.2.6" date="2026-11-24">
       <description>
-        <p>Android no longer tries to start youtube-dl, which it doesn't have, whenever it opens a stream. Starting it and failing could now and then crash the app.</p>
+        <ul>
+          <li>Picking a file in a room now starts everyone at the beginning, as in Syncplay. Before, a file you had watched part of resumed where you stopped on your screen only, while the room went on at another point.</li>
+          <li>Outside a room, and after reconnecting, a file still picks up where you stopped, and the room now hears about it.</li>
+          <li>Android no longer tries to start youtube-dl, which it doesn't have, whenever it opens a stream. Starting it and failing could now and then crash the app.</li>
+        </ul>
       </description>
     </release>
     <release version="3.2.5" date="2026-11-24">

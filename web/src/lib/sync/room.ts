@@ -788,7 +788,9 @@ export class RoomSession {
     this.status.set({ kind: "loading", fileName: media.fileName });
     this.client?.fileLoading();
     // A growing file's timeline is new each time it is written: a position remembered from before means nothing.
-    const savedPos = media.growing ? 0 : getSeekPosition(media.fileName);
+    // In a room a playlist switch starts everyone at 0, as in Syncplay: a spot this device remembers isn't the room's,
+    // and jumping there alone would leave this player somewhere the room doesn't know about.
+    const savedPos = media.growing || (resetPosition && this.isActive) ? 0 : getSeekPosition(media.fileName);
     try {
       const prefs = this.settings.playback;
       await this.player.load(await media.open(), {
@@ -810,9 +812,8 @@ export class RoomSession {
     const file: FileInfo = { name: media.fileName, duration: reportedDuration(media, this.player.duration), size: media.size };
     this.reportedFile = file;
     this.client?.fileLoaded(file, resetPosition, savedPos);
-    if (savedPos > 0 && (!this.isActive || resetPosition || this.player.position === 0)) {
-      this.player.seek(savedPos);
-    }
+    // In a room the sync engine places the player (and keeps what it reports in step with it).
+    if (savedPos > 0 && !this.isActive) this.player.seek(savedPos);
     if (fromRoom && this.settings.autoReady && this.isActive) this.client?.setReady(true, false);
     const isAudio = FileNames.isAudio(media.fileName);
     const isEpisodeSwitch =

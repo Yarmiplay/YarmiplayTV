@@ -216,6 +216,56 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `a playlist switch starts at 0 even with a remembered spot, and reports 0`() {
+        serverState(900.0, paused = true)
+        step(1.0)
+        // The engine's own seeks aren't the user's, as with mpv's seekFromSync.
+        player.userSeeked = false
+        engine.onFileLoaded(resetPosition = true, initialPosition = 36.5)
+        assertEquals(0.0, player.position, 0.01)
+        // The room switches to the new file at 0, paused.
+        serverState(0.0, paused = true)
+        step(3.0)
+        assertEquals(0.0, player.position, 0.01)
+        assertEquals(0.0, engine.getPlayerPosition(), 0.01)
+        assertEquals(0.0, engine.getLocalState()!!.position, 0.01)
+    }
+
+    @Test
+    fun `the engine reports where its own file-load seek put the player`() {
+        // Joined a room that's paused at 0 because nobody has played yet; the file opens at our remembered spot.
+        serverState(0.0, paused = true, setBy = null)
+        step(1.0)
+        host.sent.clear()
+        player.userSeeked = false
+        engine.onFileLoaded(resetPosition = false, initialPosition = 36.5)
+        step(2.0)
+        assertEquals(36.5, player.position, 0.01)
+        assertEquals("what the engine reports matches the player", player.position, engine.getPlayerPosition(), 0.01)
+        assertEquals(36.5, engine.getLocalState()!!.position, 0.01)
+        assertTrue("the file load isn't sent as a seek: ${host.sent}", host.sent.none { it.doSeek })
+        // The empty room's default 0 then takes our position rather than rewinding us.
+        serverState(0.0, paused = true, setBy = null)
+        assertEquals(36.5, player.position, 0.01)
+        assertEquals(36.5, engine.getGlobalPosition(), 0.01)
+    }
+
+    @Test
+    fun `a file loaded at a remembered spot goes back to the room's 0 when someone else set it`() {
+        serverState(0.0, paused = true, setBy = "alice")
+        step(1.0)
+        player.userSeeked = false
+        engine.onFileLoaded(resetPosition = false, initialPosition = 36.5)
+        step(2.0)
+        assertEquals(36.5, engine.getPlayerPosition(), 0.01)
+        // Alice's room is at 0: we're rewound to it, and player and engine agree again.
+        serverState(0.0, paused = true, setBy = "alice")
+        step(1.0)
+        assertEquals(0.0, player.position, 0.01)
+        assertEquals(0.0, engine.getPlayerPosition(), 0.01)
+    }
+
+    @Test
     fun `play pressed a moment after a switched file appears plays it`() {
         host.othersReady = true
         switchToNewFile(opening = 3.0)
