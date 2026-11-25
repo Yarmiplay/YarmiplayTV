@@ -89,6 +89,7 @@ class ClassicModeUiTest {
         )
         ClassicWindows.nav.popTo(Screen.Room)
         ClassicWindows.playerOpen = false
+        ClassicWindows.roomHidden = false
         ClassicWindows.showMoreSettings = false
     }
 
@@ -102,6 +103,7 @@ class ClassicModeUiTest {
         if (::main.isInitialized) main.close()
         ClassicWindows.nav.popTo(Screen.Room)
         ClassicWindows.playerOpen = false
+        ClassicWindows.roomHidden = false
         ClassicWindows.showMoreSettings = false
     }
 
@@ -115,6 +117,32 @@ class ClassicModeUiTest {
             }
         }
         waitForIdle()
+    }
+
+    @Test
+    fun `closing either window quits by default, like Syncplay`() {
+        assertTrue("on unless turned off", app.settings.value.classicCloseTogether)
+        ClassicWindows.playerOpen = true
+        assertTrue("closing the room window quits", ClassicWindows.closeRoom(closeTogether = true))
+        assertFalse(ClassicWindows.roomHidden)
+        assertTrue("closing the player window quits", ClassicWindows.closePlayer(closeTogether = true))
+    }
+
+    @Test
+    fun `with closing together off, each window hides and the other brings it back`() {
+        ClassicWindows.playerOpen = true
+        assertFalse("the player window closes alone", ClassicWindows.closePlayer(closeTogether = false))
+        assertFalse(ClassicWindows.playerOpen)
+        ClassicWindows.showPlayer()
+
+        assertFalse("the room window hides while the player stays", ClassicWindows.closeRoom(closeTogether = false))
+        assertTrue(ClassicWindows.roomHidden)
+        assertTrue("closing the last window quits", ClassicWindows.closePlayer(closeTogether = false))
+        ClassicWindows.showRoom()
+        assertFalse(ClassicWindows.roomHidden)
+
+        ClassicWindows.playerOpen = false
+        assertTrue("without the player window, closing the room quits", ClassicWindows.closeRoom(closeTogether = false))
     }
 
     @Test
