@@ -86,6 +86,11 @@
   </content_rating>
 
   <releases>
+    <release version="3.2.7" date="2026-11-25">
+      <description>
+        <p>In the Syncplay-style windows, closing the player window now quits like closing the room window does, as in Syncplay. A new setting, "Closing either window quits" (on by default, also in the room window's View menu), lets you close one window and keep the other: the room window's menus bring the player back, and the player's Room window button brings the room back.</p>
+      </description>
+    </release>
     <release version="3.2.6" date="2026-11-24">
       <description>
         <ul>

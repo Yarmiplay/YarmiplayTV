@@ -89,6 +89,7 @@ import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -158,6 +159,9 @@ private enum class PlayerSheet(val label: String, val icon: ImageVector, val sho
  * player leaves out their buttons and side panel.
  */
 val LocalRoomElsewhere = staticCompositionLocalOf { false }
+
+/** In that player window while the room window is hidden: brings the room window back (a "Room window" button). */
+val LocalShowRoomWindow = compositionLocalOf<(() -> Unit)?> { null }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -916,6 +920,9 @@ private fun BottomControls(
             rememberRelaySave(container)?.let { RelaySaveButton(it, onInteract) }
             container.screenshots?.takeIf { state.fileLoaded }?.let { screenshots ->
                 LabeledIconButton(Icons.Filled.PhotoCamera, "Screenshot", { screenshots.take(); onInteract() }, Modifier.testTag("screenshot"), tint = Color.White, onVideo = true)
+            }
+            LocalShowRoomWindow.current?.let { showRoom ->
+                LabeledIconButton(Icons.Filled.Groups, "Room window", { showRoom(); onInteract() }, Modifier.testTag("player_show_room"), tint = Color.White, onVideo = true)
             }
             if (useMenus) {
                 LabeledIconButton(Icons.Filled.Menu, "Menus", { onMenus(); onInteract() }, Modifier.testTag("player_menus"), tint = Color.White, onVideo = true)

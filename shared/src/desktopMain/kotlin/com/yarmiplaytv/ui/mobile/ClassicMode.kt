@@ -127,8 +127,14 @@ import kotlinx.coroutines.launch
  * player in a window of its own. This is what both windows share; the desktop app opens them.
  */
 object ClassicWindows {
-    /** The player window is open. It opens with the room and for anything played; closing it only hides it. */
+    /**
+     * The player window is open. It opens with the room and for anything played. Closing it quits, or only hides it
+     * when closing one window doesn't close both ([closePlayer]).
+     */
     var playerOpen by mutableStateOf(false)
+
+    /** The room window is hidden: closed while the player window stays open ([closeRoom]). [showRoom] brings it back. */
+    var roomHidden by mutableStateOf(false)
 
     /** Brings the player window to the front; the player window sets this while it's open. */
     var raisePlayer: () -> Unit = {}
@@ -149,6 +155,32 @@ object ClassicWindows {
     fun showPlayer() {
         playerOpen = true
         raisePlayer()
+    }
+
+    /** Shows the room window again after [closeRoom] hid it, in front. */
+    fun showRoom() {
+        roomHidden = false
+        raiseRoom()
+    }
+
+    /**
+     * The room window's close button. Like Syncplay, closing either window quits ([closeTogether], the default). Off,
+     * it only hides the room window while the player window is open. True when the app should quit.
+     */
+    fun closeRoom(closeTogether: Boolean): Boolean {
+        if (closeTogether || !playerOpen) return true
+        roomHidden = true
+        return false
+    }
+
+    /**
+     * The player window's close button: quits like [closeRoom], or with [closeTogether] off only hides the player
+     * window, unless the room window is hidden too and nothing would be left. True when the app should quit.
+     */
+    fun closePlayer(closeTogether: Boolean): Boolean {
+        if (closeTogether || roomHidden) return true
+        playerOpen = false
+        return false
     }
 
     /** Shows [screen] in the room window over the room, or the player window for the player. */
@@ -272,7 +304,9 @@ fun ClassicPlayerContent(container: AppContainer) {
             ClassicWindows.open(screen)
         }
     }
-    CompositionLocalProvider(LocalRoomElsewhere provides true, LocalContentColor provides AppColors.Text) {
+    // With the room window hidden, the player offers to bring it back.
+    val showRoom = if (ClassicWindows.roomHidden) ClassicWindows::showRoom else null
+    CompositionLocalProvider(LocalRoomElsewhere provides true, LocalShowRoomWindow provides showRoom, LocalContentColor provides AppColors.Text) {
         MobilePlayerScreen(container, nav)
     }
 }
@@ -327,8 +361,12 @@ private fun ClassicMenuBar(container: AppContainer, inRoom: Boolean, fileLoaded:
                     if (details) RoomDetailsDialog(container) { details = false }
                 }
                 MenuButton("View") { close ->
+                    val closeTogether = container.settings.value.classicCloseTogether
                     MenuItem("Settings…") { close(); ClassicWindows.open(Screen.Settings) }
                     MenuItem("Show the player window") { close(); ClassicWindows.showPlayer() }
+                    CheckItem(CLASSIC_CLOSE_TOGETHER_TITLE, closeTogether) {
+                        close(); container.scope.launch { container.settingsStore.saveClassicCloseTogether(!closeTogether) }
+                    }
                     HorizontalDivider()
                     MenuItem("Switch to the regular view", Modifier.testTag("classic_regular_view")) { close(); onRegularView() }
                 }
