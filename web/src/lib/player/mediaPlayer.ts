@@ -614,7 +614,9 @@ export class MediaPlayer implements PlayerAdapter {
           continue;
         }
         // Held video goes in after the file is read too: a short file is read to its end long before it plays.
-        if (!this.state.error && this.heldVideo.length && this.video && this.video.queued < MAX_QUEUED) {
+        // Only while the frame queue has room, as for reading: after the end of the file nothing else holds it back,
+        // and the decoder would make a frame for every packet left, a short file's worth at once.
+        if (!this.state.error && this.heldVideo.length && this.video && this.video.queued < MAX_QUEUED && this.frames.length < MAX_FRAMES) {
           const batch = this.heldVideo.splice(0, MAX_QUEUED - this.video.queued);
           await this.video.decode(batch);
         }
@@ -653,7 +655,8 @@ export class MediaPlayer implements PlayerAdapter {
   private async route(packets: TimedPacket[]) {
     const video: TimedPacket[] = [];
     const audio: TimedPacket[] = [];
-    const room = this.video ? Math.max(0, MAX_QUEUED - this.video.queued) : 0;
+    // Behind packets still held, so the decoder gets them in order: one skipped ahead of breaks the frames after it.
+    const room = this.video && !this.heldVideo.length ? Math.max(0, MAX_QUEUED - this.video.queued) : 0;
     for (const packet of packets) {
       if (packet.stream === this.videoStream?.index) {
         if (video.length < room) video.push(packet);

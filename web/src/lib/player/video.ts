@@ -72,7 +72,11 @@ class WebCodecsVideo implements VideoDecoding {
   }
 
   async decode(packets: TimedPacket[]) {
-    if (this.decoder.state === "closed") this.decoder = this.make();
+    if (this.decoder.state === "closed") {
+      // A new decoder starts at a keyframe too.
+      this.decoder = this.make();
+      this.needKey = true;
+    }
     try {
       for (const p of packets) {
         if (this.needKey && !p.key) continue;
