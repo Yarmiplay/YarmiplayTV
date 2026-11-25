@@ -45,7 +45,8 @@ import java.io.File
 /**
  * The Syncplay-style player window: the app's player on its own, beside the room window (like mpv beside Syncplay).
  * It has its own full screen ([onFullscreen] hands it to the room window's F key) and remembers where it was in
- * [boundsFile]. Closing it pauses and hides it; the room window's menus bring it back, and so does playing anything.
+ * [boundsFile]. Closing it quits, like Syncplay; with "Closing either window quits" off it pauses and hides instead,
+ * and the room window's menus bring it back, as does playing anything.
  * Minimizing it while a video plays opens picture-in-picture through [setPip] when that setting is on.
  * [onGone] runs when it goes, so the video's mouse actions go back to the main window.
  */
@@ -73,8 +74,12 @@ internal fun ClassicPlayerWindow(
         onCloseRequest = {
             fullscreen.set(false)
             saveBounds()
-            if (container.player.state.value.fileLoaded) container.player.setPaused(true)
-            ClassicWindows.playerOpen = false
+            // Like Syncplay, closing the player quits; with that setting off it pauses and hides.
+            if (ClassicWindows.closePlayer(container.settings.value.classicCloseTogether)) {
+                container.exitApp()
+            } else if (container.player.state.value.fileLoaded) {
+                container.player.setPaused(true)
+            }
         },
         state = state,
         title = (nowPlaying?.title?.takeIf { it.isNotBlank() } ?: "No file") + " - YarmiplayTV",

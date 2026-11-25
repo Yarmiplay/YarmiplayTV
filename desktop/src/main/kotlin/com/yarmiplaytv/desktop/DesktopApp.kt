@@ -78,6 +78,7 @@ import java.util.concurrent.TimeUnit
 import javax.swing.JOptionPane
 import javax.swing.SwingUtilities
 import kotlin.system.exitProcess
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
@@ -359,6 +360,15 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
     }
     container.onExitApp = close
     container.updates.exitApp = close
+    /** Like Syncplay, closing the room window quits; with that setting off it only hides while the player stays. */
+    val closeRequest = {
+        if (!container.settings.value.classicMode || ClassicWindows.closeRoom(container.settings.value.classicCloseTogether)) {
+            close()
+        } else {
+            fullscreen.set(false)
+            WindowBounds.save(boundsFile, state, pipBounds)
+        }
+    }
     fun useMainWindowForVideo(window: java.awt.Window) {
         DesktopPlayerInput.toggleFullscreen = { applyFullscreen(!fullscreen.isFullscreen) }
         DesktopPlayerInput.moveWindow = { dx, dy ->
@@ -368,8 +378,9 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
         }
     }
     Window(
-        onCloseRequest = close,
+        onCloseRequest = closeRequest,
         state = state,
+        visible = !(classic && ClassicWindows.roomHidden),
         title = "YarmiplayTV",
         icon = appLogoPainter(),
         onKeyEvent = { event ->
@@ -396,10 +407,15 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
             useMainWindowForVideo(window)
             DesktopPip.toggle = { setPip(!DesktopPip.open) }
             ClassicWindows.raiseRoom = {
+                ClassicWindows.roomHidden = false
                 state.isMinimized = false
                 window.toFront()
             }
             runCatching { window.iconImages = LaunchUpdateWindow.windowIcons() }
+        }
+        LaunchedEffect(Unit) {
+            // Shown again after being hidden: in front, not behind the player window.
+            snapshotFlow { ClassicWindows.roomHidden }.drop(1).collect { hidden -> if (!hidden) window.toFront() }
         }
         LaunchedEffect(Unit) {
             // Leaving the player leaves full screen. Picture-in-picture stays: browsing meanwhile is what it's for.
@@ -457,6 +473,11 @@ private fun ApplicationScope.MainWindow(container: AppContainer, boundsFile: Fil
     LaunchedEffect(classic) {
         // The room window has no player: whatever was in full screen leaves it.
         if (classic) fullscreen.set(false)
+    }
+    LaunchedEffect(Unit) {
+        // The room window stays hidden only beside the player window; the regular view always shows it.
+        snapshotFlow { ClassicWindows.roomHidden && !(container.settings.value.classicMode && ClassicWindows.playerOpen) }
+            .collect { if (it) ClassicWindows.roomHidden = false }
     }
     if (classic && ClassicWindows.playerOpen) {
         ClassicPlayerWindow(

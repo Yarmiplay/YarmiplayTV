@@ -718,6 +718,14 @@ private fun AppearanceSettings(container: AppContainer) {
             settings.classicMode,
             Modifier.padding(top = 8.dp).testTag("toggle_classic_mode"),
         ) { on -> container.scope.launch { container.settingsStore.saveClassicMode(on) } }
+        if (settings.classicMode) {
+            SettingsToggle(
+                CLASSIC_CLOSE_TOGETHER_TITLE,
+                CLASSIC_CLOSE_TOGETHER_SUBTITLE,
+                settings.classicCloseTogether,
+                Modifier.padding(top = 8.dp).testTag("toggle_classic_close_together"),
+            ) { on -> container.scope.launch { container.settingsStore.saveClassicCloseTogether(on) } }
+        }
     }
 }
 
@@ -725,6 +733,10 @@ internal const val CLASSIC_MODE_TITLE = "Syncplay-style windows"
 internal const val CLASSIC_MODE_SUBTITLE =
     "Like Syncplay: a join screen, then the room in this window (chat, who's playing what, the playlist) and the " +
         "player in a window of its own. The room window's View menu switches back"
+internal const val CLASSIC_CLOSE_TOGETHER_TITLE = "Closing either window quits"
+internal const val CLASSIC_CLOSE_TOGETHER_SUBTITLE =
+    "Like Syncplay: closing the room window or the player window closes both. Off, closing one only hides it: " +
+        "the room window's menus bring back the player, and the player's Room window button brings back the room"
 
 /** A theme in small: its background, a card, a line of text and its accent. */
 @Composable

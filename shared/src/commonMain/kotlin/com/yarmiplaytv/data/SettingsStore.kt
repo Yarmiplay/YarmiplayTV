@@ -266,6 +266,11 @@ data class AppSettings(
      */
     val classicMode: Boolean = false,
     /**
+     * Desktop only, with [classicMode]: closing either the room window or the player window quits, like Syncplay
+     * (default on). Off, closing one only hides it while the other stays, and the other brings it back.
+     */
+    val classicCloseTogether: Boolean = true,
+    /**
      * Client-side "Enable voice" master switch (default on). Off fully disables room voice:
      * no join, capture, remote audio, sounds, or voice UI. Preference key `voice_chat` unchanged.
      */
@@ -458,6 +463,7 @@ class SettingsStore(
         val syncplayPlainText = booleanPreferencesKey("syncplay_plain_text")
         val chatOnVideo = booleanPreferencesKey("chat_on_video")
         val classicMode = booleanPreferencesKey("classic_mode")
+        val classicCloseTogether = booleanPreferencesKey("classic_close_together")
         val voiceChat = booleanPreferencesKey("voice_chat")
         val voiceAutoJoin = booleanPreferencesKey("voice_auto_join")
         val voiceWaitToJoinEmptyRoom = booleanPreferencesKey("voice_wait_to_join_empty_room")
@@ -634,6 +640,7 @@ class SettingsStore(
             syncplayPlainText = p[Keys.syncplayPlainText] ?: false,
             chatOnVideo = p[Keys.chatOnVideo] ?: false,
             classicMode = p[Keys.classicMode] ?: false,
+            classicCloseTogether = p[Keys.classicCloseTogether] ?: true,
             voiceChat = p[Keys.voiceChat] ?: true,
             voiceAutoJoin = p[Keys.voiceAutoJoin] ?: true,
             voiceWaitToJoinEmptyRoom = p[Keys.voiceWaitToJoinEmptyRoom] ?: true,
@@ -933,6 +940,8 @@ class SettingsStore(
     suspend fun saveChatOnVideo(on: Boolean) = dataStore.edit { it[Keys.chatOnVideo] = on }
 
     suspend fun saveClassicMode(on: Boolean) = dataStore.edit { it[Keys.classicMode] = on }
+
+    suspend fun saveClassicCloseTogether(on: Boolean) = dataStore.edit { it[Keys.classicCloseTogether] = on }
 
     suspend fun saveVoiceChat(on: Boolean) = dataStore.edit { it[Keys.voiceChat] = on }
 
