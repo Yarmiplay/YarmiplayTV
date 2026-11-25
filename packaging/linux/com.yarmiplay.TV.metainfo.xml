@@ -86,6 +86,14 @@
   </content_rating>
 
   <releases>
+    <release version="3.2.7" date="2026-11-25">
+      <description>
+        <ul>
+          <li>Search moves to an icon next to Exit, and a new Library tab takes its place. On phones and tablets you browse your server libraries there; desktop Home keeps a short row of each library with See all.</li>
+          <li>In the web app, reconnecting to an empty room or opening a file where you stopped no longer sends you back to the start.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.6" date="2026-11-24">
       <description>
         <ul>

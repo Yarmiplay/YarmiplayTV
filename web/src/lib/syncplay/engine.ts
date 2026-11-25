@@ -217,12 +217,15 @@ export class SyncEngine {
     let madeChange = false;
     const pauseChanged = paused !== this.getGlobalPaused() || paused !== this.getPlayerPaused();
     const diff = this.getPlayerPosition() - position;
-    if (this.lastGlobalUpdate === null) madeChange = this.initPlayerState(position, paused);
+    const current = this.getPlayerPosition();
+    // An empty room (or one we last set) reports 0; keep our own position as the room's instead of rewinding.
+    const keepOwnPosition = this.isEmptyRoomDefault(position, setBy) && current > 0;
+    if (this.lastGlobalUpdate === null) madeChange = this.initPlayerState(position, paused, setBy);
     this.globalPaused = paused;
-    this.globalPosition = position;
+    this.globalPosition = keepOwnPosition ? current : position;
     this.lastGlobalUpdate = this.clock();
     if (doSeek) madeChange = this.serverSeeked(position, setBy) || madeChange;
-    if (diff > this.settings.rewindThreshold && !doSeek && this.settings.rewindOnDesync) {
+    if (diff > this.settings.rewindThreshold && !doSeek && this.settings.rewindOnDesync && !keepOwnPosition) {
       madeChange = this.rewindDueToTimeDifference(position, setBy) || madeChange;
     }
     if (!doSeek && !paused && this.settings.slowOnDesync) madeChange = this.slowDownToCoverTimeDifference(diff, setBy) || madeChange;
@@ -231,8 +234,19 @@ export class SyncEngine {
     return madeChange;
   }
 
-  private initPlayerState(position: number, paused: boolean): boolean {
+  /** A room State at 0 set by nobody or by ourselves: what an empty room sends on (re)join. */
+  private isEmptyRoomDefault(position: number, setBy: string | null): boolean {
+    return position === 0 && (setBy === null || setBy === this.host.username);
+  }
+
+  private initPlayerState(position: number, paused: boolean, setBy: string | null = null): boolean {
     if (!this.playerReady) return false;
+    const current = this.getPlayerPosition();
+    if (this.isEmptyRoomDefault(position, setBy) && current > 0) {
+      this.globalPosition = current;
+      this.setPlayerPaused(paused);
+      return true;
+    }
     this.setPosition(position);
     this.setPlayerPaused(paused);
     return true;
@@ -251,6 +265,7 @@ export class SyncEngine {
 
   private rewindDueToTimeDifference(position: number, setBy: string | null): boolean {
     if (this.host.username === setBy) return false;
+    if (this.isEmptyRoomDefault(position, setBy)) return false;
     this.setPosition(position);
     this.host.notify(`Rewinded due to time difference with ${setBy ?? "the room"}`);
     return true;
@@ -277,7 +292,10 @@ export class SyncEngine {
   }
 
   private serverPaused(setBy: string | null): boolean {
-    if (this.host.username !== setBy) this.setPosition(this.getGlobalPosition());
+    // An empty room's default (0, set by nobody) mustn't rewind us.
+    if (this.host.username !== setBy && !(this.getGlobalPosition() === 0 && setBy === null)) {
+      this.setPosition(this.getGlobalPosition());
+    }
     this.setPlayerPaused(true);
     if (setBy !== null && setBy !== this.host.username) {
       this.host.notify(`${setBy} paused at ${formatTime(this.getGlobalPosition())}`);
@@ -298,6 +316,9 @@ export class SyncEngine {
     // The file opens paused, so playing now means play was pressed while it opened (a slow stream).
     const playPressed = this.player.isFileLoaded && !this.player.isPaused;
     this.lastFileLoadTime = now;
+    // Reopening a file the player already has open keeps its spot when there's no remembered one.
+    const current = this.player.isFileLoaded ? Math.max(this.player.position, 0) : 0;
+    const pos = initialPosition > 0 ? initialPosition : current > 0 ? current : 0;
     if (resetPosition) {
       // A playlist switch starts everyone at 0, as in Syncplay: a spot this device remembers isn't the room's.
       this.resetIgnoreUntil = now + Constants.NEWFILE_IGNORE_TIME;
@@ -306,10 +327,10 @@ export class SyncEngine {
       if (this.lastGlobalUpdate !== null) this.setPlayerPaused(this.globalPaused);
     } else if (this.lastGlobalUpdate !== null) {
       const global = this.getGlobalPosition();
-      this.seekForFile(global > 0 ? global : initialPosition > 0 ? initialPosition : 0);
+      this.seekForFile(global > 0 ? global : pos);
       this.setPlayerPaused(this.getGlobalPaused());
-    } else if (initialPosition > 0) {
-      this.seekForFile(initialPosition);
+    } else if (pos > 0) {
+      this.seekForFile(pos);
     }
     if (this.lastPlayerUpdate !== null) this.lastPlayerUpdate = now;
     // The room's pause wins for now; the press counts once the switch can no longer be mistaken for it.
@@ -379,14 +400,21 @@ export class SyncEngine {
 
   getPlayerPosition(): number {
     const lpu = this.lastPlayerUpdate;
-    if (lpu === null) return this.lastGlobalUpdate !== null ? this.getGlobalPosition() : 0;
+    // Before the first poll (e.g. just after a reconnect) the player itself knows best where it is.
+    if (lpu === null) {
+      if (this.playerReady) return Math.max(this.player.position, 0);
+      return this.lastGlobalUpdate !== null ? this.getGlobalPosition() : 0;
+    }
     let position = this.playerPosition;
     if (!this.playerPaused) position += this.clock() - lpu;
     return position;
   }
 
   getPlayerPaused(): boolean {
-    if (this.lastPlayerUpdate === null) return this.lastGlobalUpdate !== null ? this.getGlobalPaused() : true;
+    if (this.lastPlayerUpdate === null) {
+      if (this.playerReady) return this.player.isPaused;
+      return this.lastGlobalUpdate !== null ? this.getGlobalPaused() : true;
+    }
     return this.playerPaused;
   }
 

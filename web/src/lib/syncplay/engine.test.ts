@@ -316,10 +316,10 @@ describe("SyncEngine", () => {
     expect(engine.getPlayerPosition()).toBeCloseTo(player.position, 2);
     expect(engine.getLocalState()!.position).toBeCloseTo(36.5, 2);
     expect(host.sent.some((s) => s.doSeek)).toBe(false);
-    // Whatever the room makes of it next, the player and what the engine reports stay together.
+    // The empty room's default 0 then takes our position rather than rewinding us.
     serverState(0, true, false, null);
-    step(1);
-    expect(engine.getPlayerPosition()).toBeCloseTo(player.position, 2);
+    expect(player.position).toBeCloseTo(36.5, 2);
+    expect(engine.getGlobalPosition()).toBeCloseTo(36.5, 2);
   });
 
   it("a file loaded at a remembered spot goes back to the room's 0 when someone else set it", () => {
@@ -406,6 +406,38 @@ describe("SyncEngine", () => {
     serverState(13, true);
     step(1);
     expect(host.sent.some((s) => s.stateChange)).toBe(false);
+  });
+
+  it("reconnecting to an empty room does not reset the player position to 0", () => {
+    player.isFileLoaded = true;
+    serverState(120, false);
+    step(2);
+    expect(Math.abs(player.position - 122)).toBeLessThan(0.2);
+
+    engine.onDisconnected();
+
+    // Reconnect: an empty room sends its default 0 with no user (setBy = null).
+    serverState(0, true, false, null);
+    step(1);
+
+    // The player must not be reset to 0, and the room position reports ours.
+    expect(Math.abs(player.position - 122)).toBeLessThan(0.2);
+    expect(Math.abs(engine.getGlobalPosition() - 122)).toBeLessThan(0.2);
+  });
+
+  it("reconnecting when another user is at a position syncs to their position", () => {
+    player.isFileLoaded = true;
+    serverState(120, false);
+    step(2);
+    expect(Math.abs(player.position - 122)).toBeLessThan(0.2);
+
+    engine.onDisconnected();
+
+    // Reconnect: Bob in the room is at 300.
+    serverState(300, false, false, "bob");
+    step(1);
+
+    expect(Math.abs(player.position - 301)).toBeLessThan(0.5);
   });
 
   it("uninitiated player jump from a partial file does not seek the room or report jumped position", () => {
