@@ -86,6 +86,15 @@
   </content_rating>
 
   <releases>
+    <release version="3.2.8" date="2026-11-25">
+      <description>
+        <ul>
+          <li>Search moves to an icon next to Exit, and a new Library tab takes its place. On phones and tablets you browse your server libraries there; desktop Home keeps a short row of each library with See all.</li>
+          <li>In the web app, reconnecting to an empty room or opening a file where you stopped no longer sends you back to the start.</li>
+          <li>The web app's player no longer freezes the picture in a short video file, or after jumping within one.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.7" date="2026-11-25">
       <description>
         <p>In the Syncplay-style windows, closing the player window now quits like closing the room window does, as in Syncplay. A new setting, "Closing either window quits" (on by default, also in the room window's View menu), lets you close one window and keep the other: the room window's menus bring the player back, and the player's Room window button brings the room back.</p>

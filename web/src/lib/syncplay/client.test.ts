@@ -103,6 +103,7 @@ describe("SyncplayClient", () => {
   let events: SyncplayEvent[];
   let logs: string[];
   let keys: TestDeviceAuth;
+  let player: StillPlayer;
 
   afterEach(() => clients.splice(0).forEach((c) => c.close()));
 
@@ -111,6 +112,7 @@ describe("SyncplayClient", () => {
     events = [];
     logs = [];
     keys = new TestDeviceAuth();
+    player = new StillPlayer();
     const factory: TransportFactory = async () => {
       const t = new ScriptedTransport();
       transports.push(t);
@@ -127,7 +129,7 @@ describe("SyncplayClient", () => {
         appVersion: "2.0.0",
         requestAccess: opts.requestAccess ?? true,
       },
-      new StillPlayer(),
+      player,
       undefined,
       () => Date.now() / 1000,
       factory,
@@ -492,6 +494,26 @@ describe("SyncplayClient", () => {
     t.receive(`{"Set":{"playlistIndex":{"user":"bob","index":0}}}`);
     expect(events.filter((e) => e.type === "switchToPlaylistItem").at(-1)).toMatchObject({ index: 0, filename: "a.mkv", resetPosition: true });
     expect(events).toContainEqual({ type: "notification", message: "bob selected 'a.mkv'", isError: false });
+  });
+
+  it("the room picking the file we have open reopens it where we were if the player lost it", async () => {
+    const c = client({ deviceAuth: null });
+    const t = await connect(c);
+    t.receive(`{"Set":{"playlistChange":{"user":"bob","files":["a.mkv","b.mkv"]}}}`);
+    t.receive(`{"Set":{"playlistIndex":{"user":"bob","index":0}}}`);
+    c.fileLoaded({ name: "a.mkv", duration: 1440, size: 0 });
+    const switches = () => events.filter((e) => e.type === "switchToPlaylistItem");
+    // Still open: nothing to do.
+    t.receive(`{"Set":{"playlistIndex":{"user":"bob","index":0}}}`);
+    expect(switches()).toHaveLength(1);
+    // The player unloaded it: it opens again, without going back to the start.
+    player.isFileLoaded = false;
+    t.receive(`{"Set":{"playlistIndex":{"user":"bob","index":0}}}`);
+    expect(switches()).toHaveLength(2);
+    expect(switches().at(-1)).toMatchObject({ index: 0, filename: "a.mkv", resetPosition: false });
+    // A different file is still a switch, which starts at 0.
+    t.receive(`{"Set":{"playlistIndex":{"user":"bob","index":1}}}`);
+    expect(switches().at(-1)).toMatchObject({ index: 1, filename: "b.mkv", resetPosition: true });
   });
 
   it("an empty room's playlist counts as received when the List answers", async () => {

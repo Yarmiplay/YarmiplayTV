@@ -1155,20 +1155,22 @@ export class SyncplayClient {
 
   private handlePlaylistIndex(indexObj: Json) {
     const by = str(indexObj, "user");
-    const resetPosition = this.hadFirstPlaylistIndex;
-    this.hadFirstPlaylistIndex = true;
     if (typeof indexObj.index !== "number") return;
     const index = indexObj.index;
     const files = this._state.playlist;
     if (files.length === 0) return;
-    this.lastPlaylistIndexChange = this.clock();
-    this.update({ playlistIndex: index });
-    if (!this.engine.settings.sharedPlaylists) return;
     const filename = files[index];
     if (filename === undefined) return;
     const current = this.currentFile;
+    // The file we already have (reopened after the player unloaded it, say) keeps its spot: only a switch starts at 0.
+    const isSameFile = current !== null && Filenames.same(filename, current.name);
+    const resetPosition = this.hadFirstPlaylistIndex && !isSameFile;
+    this.hadFirstPlaylistIndex = true;
+    this.lastPlaylistIndexChange = this.clock();
+    this.update({ playlistIndex: index });
+    if (!this.engine.settings.sharedPlaylists) return;
     const queued = this.queuedFilename;
-    if (current && Filenames.same(filename, current.name) && (queued === null || Filenames.same(queued, filename))) return;
+    if (isSameFile && this.player.isFileLoaded && (queued === null || Filenames.same(queued, filename))) return;
     if (by !== null && by !== this._state.username) this.notify(`${by} selected '${filename}'`);
     this.queuedFilename = filename;
     this.emit({ type: "switchToPlaylistItem", index, filename, setBy: by, resetPosition });
