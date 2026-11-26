@@ -96,6 +96,8 @@ data class YarmiplayCapabilities(
      * (`/yarmiplay/files/<id>/segments`). Servers without it never list such files.
      */
     val growingFiles: Boolean = false,
+    /** The server offers the `/yarmiplay/subs/...` online subtitle passthrough for browser clients. */
+    val subtitles: Boolean = false,
 ) {
     /** Vanilla mode: the host switched every extension off, and the session token is revoked. */
     val allOff: Boolean get() = !fileRelay && !jellyfin && !https

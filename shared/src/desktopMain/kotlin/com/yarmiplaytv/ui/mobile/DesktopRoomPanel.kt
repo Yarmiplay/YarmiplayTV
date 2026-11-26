@@ -102,6 +102,8 @@ import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.sync.FeedMessage
 import com.yarmiplaytv.ui.chat.ChatMessageText
 import com.yarmiplaytv.ui.chat.chatLineAnnotated
+import com.yarmiplaytv.ui.chat.formatChatTimestamp
+import com.yarmiplaytv.ui.chat.seekToChatTimestamp
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.ui.shared.HIDDEN_CHAT_NOTE
 import com.yarmiplaytv.ui.theme.AppColors
@@ -455,10 +457,7 @@ actual fun RoomSidePanel(container: AppContainer) {
                     RoomPanelTab.PLAYLIST -> DesktopPlaylist(container, Modifier.weight(1f))
                     RoomPanelTab.CHAT -> DesktopChat(container, Modifier.weight(1f))
                     RoomPanelTab.MAL -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
-                        val mal by container.mal.state.collectAsState()
-                        MalContent(container, mal)
-                        Spacer(Modifier.height(16.dp))
-                        MalFindSection(container)
+                        TrackerPanelContent(container)
                     }
                 }
             }
@@ -537,40 +536,68 @@ internal fun DesktopChat(container: AppContainer, modifier: Modifier) {
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), state = listState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(feed) { msg ->
-                ChatLine(msg, onBlock = msg.from?.takeIf { it != room.username }?.let { from -> { container.sync.block(from) } })
+                ChatLine(
+                    msg,
+                    onBlock = msg.from?.takeIf { it != room.username }?.let { from -> { container.sync.block(from) } },
+                    onTimestampClick = if (msg.from != null) ({ seekToChatTimestamp(container, it) }) else null,
+                )
             }
         }
         if (feed.isEmpty()) Text("No messages yet.", color = AppColors.TextDim, modifier = Modifier.padding(horizontal = 16.dp))
-        if (showChat) OutlinedTextField(
-            message, { message = it.copy(text = it.text.take(max)) },
-            placeholder = { Text(if (connected) "Message (Enter sends, Esc leaves)" else "Join a room to chat") },
-            singleLine = true,
-            enabled = connected,
-            supportingText = if (message.text.length > max - 20) ({ Text("${message.text.length}/$max") }) else null,
-            modifier = Modifier.fillMaxWidth().padding(12.dp).focusRequester(focus).testTag("chat_field")
-                .onPreviewKeyEvent { event ->
-                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    when (event.key) {
-                        Key.Enter, Key.NumPadEnter -> send()
-                        Key.Escape -> focusManager.clearFocus()
-                        Key.DirectionUp -> recall(-1)
-                        Key.DirectionDown -> recall(1)
-                        else -> return@onPreviewKeyEvent false
-                    }
-                    true
-                },
-        )
+        if (showChat) {
+            val playerLoaded by container.player.collectStateWithoutClock()
+            OutlinedTextField(
+                message, { message = it.copy(text = it.text.take(max)) },
+                placeholder = { Text(if (connected) "Message (Enter sends, Esc leaves)" else "Join a room to chat") },
+                singleLine = true,
+                enabled = connected,
+                supportingText = if (message.text.length > max - 20) ({ Text("${message.text.length}/$max") }) else null,
+                trailingIcon = if (connected && playerLoaded.fileLoaded) ({
+                    TextButton(
+                        onClick = {
+                            val stamp = formatChatTimestamp(container.player.currentPosition())
+                            val cur = message.text
+                            val sep = if (cur.isNotEmpty() && !cur.last().isWhitespace()) " " else ""
+                            val updated = (cur + sep + stamp + " ").take(max)
+                            message = TextFieldValue(updated, TextRange(updated.length))
+                        },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(end = 6.dp).testTag("chat_insert_timestamp"),
+                    ) { Text(formatChatTimestamp(container.player.currentPosition()), style = MaterialTheme.typography.labelMedium) }
+                }) else null,
+                modifier = Modifier.fillMaxWidth().padding(12.dp).focusRequester(focus).testTag("chat_field")
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        when (event.key) {
+                            Key.Enter, Key.NumPadEnter -> send()
+                            Key.Escape -> focusManager.clearFocus()
+                            Key.DirectionUp -> recall(-1)
+                            Key.DirectionDown -> recall(1)
+                            else -> return@onPreviewKeyEvent false
+                        }
+                        true
+                    },
+            )
+        }
     }
 }
 
 @Composable
-private fun ChatLine(msg: FeedMessage, onBlock: (() -> Unit)?) {
+private fun ChatLine(msg: FeedMessage, onBlock: (() -> Unit)?, onTimestampClick: ((Int) -> Unit)?) {
     val time = Instant.ofEpochMilli(msg.at).atZone(ZoneId.systemDefault()).format(timeFormat)
     val from = msg.from
     Row(Modifier.fillMaxWidth()) {
         Text(time, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(44.dp).padding(top = 2.dp))
         ChatMessageText(
-            chatLineAnnotated(from, msg.text, AppColors.Accent, openLinks = true, italic = from == null),
+            chatLineAnnotated(
+                from,
+                msg.text,
+                AppColors.Accent,
+                openLinks = true,
+                italic = from == null,
+                onTimestampClick = onTimestampClick,
+                timestampColor = AppColors.Accent,
+            ),
             Modifier.weight(1f),
             color = when {
                 msg.isError -> AppColors.Error

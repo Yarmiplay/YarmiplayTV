@@ -40,7 +40,15 @@ function buildInfo(): Plugin {
     resolveId: (source) => (source === id ? "\0" + id : null),
     load(loaded) {
       if (loaded !== "\0" + id) return null;
-      const info = { version, built, releases: releases(), malClientId: process.env.MAL_CLIENT_ID ?? "" };
+      const info = {
+        version,
+        built,
+        releases: releases(),
+        malClientId: process.env.MAL_CLIENT_ID ?? "",
+        anilistClientId: process.env.ANILIST_CLIENT_ID ?? "",
+        openSubtitlesApiKey: process.env.OPENSUBTITLES_API_KEY ?? "",
+        subdlApiKey: process.env.SUBDL_API_KEY ?? "",
+      };
       return `export default ${JSON.stringify(info)};`;
     },
     generateBundle() {

@@ -43,4 +43,21 @@ class ChatLinksTest {
         assertTrue(plain.getLinkAnnotations(0, plain.length).isEmpty())
         assertEquals("https://example.com", plain.text)
     }
+
+    @Test
+    fun findsClickableTimestampsWithoutTouchingUrlsOrBadRanges() {
+        val text = "check 0:45, @14:22 and 1:05:10! ignore https://example.com/12:34 and 12:99 and 1:60:00"
+        val spans = ChatSpans.find(text)
+        val timestamps = spans.filterIsInstance<ChatSpan.Timestamp>()
+        assertEquals(listOf(45, 14 * 60 + 22, 3600 + 5 * 60 + 10), timestamps.map { it.seconds })
+        assertEquals(1, spans.filterIsInstance<ChatSpan.Url>().size)
+
+        var clicked = -1
+        val line = chatLineAnnotated("Ada", "skip to 14:22", Color.Blue, openLinks = true, onTimestampClick = { clicked = it })
+        val clickable = line.getLinkAnnotations(0, line.length).single().item as LinkAnnotation.Clickable
+        clickable.linkInteractionListener?.onClick(clickable)
+        assertEquals(14 * 60 + 22, clicked)
+        assertEquals("14:22", formatChatTimestamp(862.0))
+        assertEquals("1:05:10", formatChatTimestamp(3910.0))
+    }
 }

@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val appVersion = "3.2.9"
+val appVersion = "3.3.0"
 
 /** Play needs an ever-increasing versionCode: major * 10000 + minor * 100 + patch. */
 fun versionCodeOf(name: String): Int {
@@ -58,6 +58,12 @@ android {
         // MyAnimeList's Client ID: from ~/.gradle/gradle.properties or the CI secret, never the repository.
         val malClientId = (findProperty("MAL_CLIENT_ID") as String?) ?: System.getenv("MAL_CLIENT_ID") ?: ""
         buildConfigField("String", "MAL_CLIENT_ID", "\"${malClientId.filter { it.isLetterOrDigit() }}\"")
+        val anilistClientId = (findProperty("ANILIST_CLIENT_ID") as String?) ?: System.getenv("ANILIST_CLIENT_ID") ?: ""
+        buildConfigField("String", "ANILIST_CLIENT_ID", "\"${anilistClientId.filter { it.isLetterOrDigit() }}\"")
+        val openSubtitlesKey = (findProperty("OPENSUBTITLES_API_KEY") as String?) ?: System.getenv("OPENSUBTITLES_API_KEY") ?: ""
+        buildConfigField("String", "OPENSUBTITLES_API_KEY", "\"${openSubtitlesKey.filter { it.isLetterOrDigit() || it == '_' || it == '-' }}\"")
+        val subdlKey = (findProperty("SUBDL_API_KEY") as String?) ?: System.getenv("SUBDL_API_KEY") ?: ""
+        buildConfigField("String", "SUBDL_API_KEY", "\"${subdlKey.filter { it.isLetterOrDigit() || it == '_' || it == '-' }}\"")
     }
 
     signingConfigs {

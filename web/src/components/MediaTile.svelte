@@ -62,6 +62,16 @@
         {#if connected}
           <button class="button small" onclick={() => act("room")}><Icon name="play_arrow" size={18} />Play in the room</button>
           <button class="button quiet small" onclick={() => act("add")}><Icon name="playlist_add" size={18} />Add to playlist</button>
+          {#if item.type === "EPISODE"}
+            <button
+              class="button quiet small"
+              onclick={() => source && session?.queueNextEpisode(source, item)}
+            ><Icon name="playlist_add" size={18} />Queue next episode</button>
+            <button
+              class="button quiet small"
+              onclick={() => source && session?.queueRestOfSeason(source, item, { playAnchor: false, includeAnchor: true })}
+            ><Icon name="playlist_add" size={18} />Queue rest of season</button>
+          {/if}
         {/if}
         <button class="button quiet small" onclick={() => act("here")}><Icon name="play_circle" size={18} />Play here</button>
       {/if}
@@ -103,7 +113,8 @@
   .row {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
+    padding-top: 2px;
   }
   .button.small {
     padding: 6px 12px;

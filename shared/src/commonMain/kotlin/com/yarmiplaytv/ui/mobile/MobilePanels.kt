@@ -105,6 +105,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yarmiplaytv.AppContainer
 import com.yarmiplaytv.media.sidecarLanguage
+import com.yarmiplaytv.media.subtitles.SubtitleLanguages
+import com.yarmiplaytv.media.subtitles.SubtitleSearchQuery
+import com.yarmiplaytv.media.subtitles.SubtitleSearchResult
 import com.yarmiplaytv.player.SubtitleScale
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.sync.RoomSkip
@@ -127,6 +130,8 @@ import com.yarmiplaytv.ui.shared.serverStatusLine
 import com.yarmiplaytv.ui.chat.ChatMessageText
 import com.yarmiplaytv.ui.chat.chatLineAnnotated
 import com.yarmiplaytv.ui.chat.chatNameColor
+import com.yarmiplaytv.ui.chat.formatChatTimestamp
+import com.yarmiplaytv.ui.chat.seekToChatTimestamp
 import com.yarmiplaytv.ui.theme.AppColors
 import kotlinx.coroutines.launch
 
@@ -180,6 +185,22 @@ fun PlaylistContent(container: AppContainer, onBrowse: () -> Unit, modifier: Mod
                     Icon(Icons.Filled.Add, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text("Add current")
+                }
+            }
+            if (np?.episode != null && !room.followsOperators) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { container.playlist.queueNextEpisodeForCurrent() },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("playlist_queue_next"),
+                ) {
+                    Text("Queue next episode")
+                }
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { container.playlist.queueRestOfSeasonForCurrent() },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("playlist_queue_season"),
+                ) {
+                    Text("Queue rest of season")
                 }
             }
             androidx.compose.material3.OutlinedButton(
@@ -829,7 +850,15 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
                 }
                 if (desktop) {
                     ChatMessageText(
-                        chatLineAnnotated(from, msg.text, from?.let { chatNameColor(it) } ?: AppColors.Accent, openLinks = true, italic = from == null),
+                        chatLineAnnotated(
+                            from,
+                            msg.text,
+                            from?.let { chatNameColor(it) } ?: AppColors.Accent,
+                            openLinks = true,
+                            italic = from == null,
+                            onTimestampClick = if (from != null) ({ seekToChatTimestamp(container, it) }) else null,
+                            timestampColor = AppColors.Accent,
+                        ),
                         color = color,
                         blockLabel = blockName?.let { "Block $it" },
                         onBlock = blockName?.let { name -> { container.sync.block(name) } },
@@ -851,7 +880,13 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
                                 Text(msg.text, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                             } else if (openLinks) {
                                 ChatMessageText(
-                                    chatLineAnnotated(null, msg.text, AppColors.Accent, openLinks = true),
+                                    chatLineAnnotated(
+                                        null,
+                                        msg.text,
+                                        AppColors.Accent,
+                                        openLinks = true,
+                                        onTimestampClick = if (from != null) ({ seekToChatTimestamp(container, it) }) else null,
+                                    ),
                                     color = color,
                                 )
                             } else {
@@ -869,16 +904,37 @@ fun ChatContent(container: AppContainer, modifier: Modifier = Modifier, maxHeigh
             }
         }
         if (feed.isEmpty()) Text("No messages yet.", color = AppColors.TextDim)
-        if (showChat) OutlinedTextField(
-            message, { message = it.take(container.sync.maxChatLength); mobileChatDraft = message },
-            label = { Text("Message") },
-            singleLine = true,
-            enabled = room.status == ConnectionStatus.CONNECTED,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            keyboardActions = KeyboardActions(onSend = { send() }),
-            trailingIcon = { IconButton(::send) { Icon(Icons.AutoMirrored.Filled.Send, "Send") } },
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("chat_field"),
-        )
+        if (showChat) {
+            val playerLoaded by container.player.collectStateWithoutClock()
+            Row(
+                Modifier.fillMaxWidth().padding(top = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    message, { message = it.take(container.sync.maxChatLength); mobileChatDraft = message },
+                    label = { Text("Message") },
+                    singleLine = true,
+                    enabled = room.status == ConnectionStatus.CONNECTED,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { send() }),
+                    trailingIcon = { IconButton(::send) { Icon(Icons.AutoMirrored.Filled.Send, "Send") } },
+                    modifier = Modifier.weight(1f).testTag("chat_field"),
+                )
+                if (playerLoaded.fileLoaded && room.status == ConnectionStatus.CONNECTED) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            val stamp = formatChatTimestamp(container.player.currentPosition())
+                            val sep = if (message.isNotEmpty() && !message.last().isWhitespace()) " " else ""
+                            message = (message + sep + stamp + " ").take(container.sync.maxChatLength)
+                            mobileChatDraft = message
+                        },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                        modifier = Modifier.testTag("chat_insert_timestamp"),
+                    ) { Text(formatChatTimestamp(container.player.currentPosition()), style = MaterialTheme.typography.labelMedium, maxLines = 1) }
+                }
+            }
+        }
     }
 }
 
@@ -904,7 +960,23 @@ fun SubtitleSizeControls(container: AppContainer, modifier: Modifier = Modifier)
 @Composable
 fun TracksContent(container: AppContainer, type: TrackType, onPicked: () -> Unit, modifier: Modifier = Modifier) {
     val tracks by container.player.tracks.collectAsStateWithLifecycle()
+    val settings by container.settings.collectAsStateWithLifecycle()
     val list = tracks.filter { it.type == type }
+    var searchingOnline by rememberSaveable(type) { mutableStateOf(false) }
+
+    if (type == TrackType.SUBTITLE && searchingOnline && settings.playback.onlineSubtitlesSearch && container.onlineSubtitles != null) {
+        OnlineSubtitlesSearchContent(
+            container = container,
+            onBack = { searchingOnline = false },
+            onAttached = {
+                searchingOnline = false
+                onPicked()
+            },
+            modifier = modifier,
+        )
+        return
+    }
+
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         SheetTitle(if (type == TrackType.AUDIO) "Audio" else "Subtitles")
         if (type == TrackType.SUBTITLE) {
@@ -927,6 +999,187 @@ fun TracksContent(container: AppContainer, type: TrackType, onPicked: () -> Unit
                 container.playlist.addExternalSubtitle(uri, decoded.substringBeforeLast('.'), sidecarLanguage(decoded))
             }
             TrackRow("Open subtitle file", selected = false, onClick = pick)
+            if (settings.playback.onlineSubtitlesSearch && container.onlineSubtitles != null) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { searchingOnline = true }
+                        .padding(horizontal = 8.dp, vertical = 14.dp)
+                        .testTag("subtitles_search_online"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null, tint = AppColors.Accent)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Search online subtitles…", color = AppColors.Accent)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnlineSubtitlesSearchContent(
+    container: AppContainer,
+    onBack: () -> Unit,
+    onAttached: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val subs = container.onlineSubtitles ?: return
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+
+    var baseQuery by remember { mutableStateOf<SubtitleSearchQuery?>(null) }
+    var queryText by remember { mutableStateOf("") }
+    var language by remember { mutableStateOf(settings.playback.onlineSubtitlesLanguage.ifBlank { SubtitleLanguages.DEFAULT }) }
+    var langMenuOpen by remember { mutableStateOf(false) }
+    var results by remember { mutableStateOf<List<SubtitleSearchResult>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var downloadingId by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun runSearch(q: SubtitleSearchQuery) {
+        if (!subs.configured) {
+            error = "Online subtitle search isn't configured in this build."
+            return
+        }
+        loading = true
+        error = null
+        scope.launch {
+            runCatching { subs.search(q) }
+                .onSuccess {
+                    results = it
+                    loading = false
+                    if (it.isEmpty()) error = "No subtitles found."
+                }
+                .onFailure {
+                    loading = false
+                    error = it.message ?: "Search failed"
+                }
+        }
+    }
+
+    LaunchedEffect(nowPlaying?.url) {
+        val initial = subs.defaultQuery(nowPlaying)
+        baseQuery = initial
+        queryText = initial.query
+        language = initial.language
+        if (initial.query.isNotBlank() || initial.movieHash != null) {
+            runSearch(initial)
+        }
+    }
+
+    fun submitSearch() {
+        val prev = baseQuery
+        val q = SubtitleSearchQuery(
+            query = queryText.trim(),
+            language = language,
+            season = prev?.season,
+            episode = prev?.episode,
+            movieHash = if (queryText.trim() == prev?.query) prev.movieHash else null,
+            fileSize = prev?.fileSize,
+            fileName = prev?.fileName,
+        )
+        runSearch(q)
+    }
+
+    Column(
+        modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).testTag("online_subtitles_panel"),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) { Text("← Back") }
+            Text("Online subtitles", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+        }
+        OutlinedTextField(
+            value = queryText,
+            onValueChange = { queryText = it },
+            label = { Text("Title or release") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { submitSearch() }),
+            modifier = Modifier.fillMaxWidth().testTag("online_subtitles_query"),
+        )
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.weight(1f)) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { langMenuOpen = true },
+                    modifier = Modifier.fillMaxWidth().testTag("online_subtitles_lang_btn"),
+                ) {
+                    Text(SubtitleLanguages.labelOf(language), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                DropdownMenu(langMenuOpen, { langMenuOpen = false }) {
+                    SubtitleLanguages.COMMON.forEach { (code, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                langMenuOpen = false
+                                language = code
+                                submitSearch()
+                            },
+                        )
+                    }
+                }
+            }
+            Button(
+                onClick = ::submitSearch,
+                enabled = !loading && queryText.isNotBlank(),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+            ) { Text("Search") }
+        }
+        if (loading) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+                androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp))
+                Text("Searching subtitles…", color = AppColors.TextDim)
+            }
+        }
+        error?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall) }
+        LazyColumn(Modifier.heightIn(max = 320.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(results, key = { it.id }) { item ->
+                val busy = downloadingId == item.id
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(AppColors.SurfaceHigh)
+                        .clickable(enabled = downloadingId == null) {
+                            downloadingId = item.id
+                            error = null
+                            scope.launch {
+                                runCatching { subs.downloadAndAttach(item) }
+                                    .onSuccess {
+                                        downloadingId = null
+                                        onAttached()
+                                    }
+                                    .onFailure {
+                                        downloadingId = null
+                                        error = it.message ?: "Download failed"
+                                    }
+                            }
+                        }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(item.releaseName, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                        val meta = buildList {
+                            if (item.exactHashMatch) add("Exact match")
+                            add(item.provider.label)
+                            add(item.language.uppercase())
+                            if (item.hearingImpaired) add("HI")
+                            if (item.downloads > 0) add("${item.downloads} dl")
+                        }.joinToString(" · ")
+                        Text(meta, color = if (item.exactHashMatch) AppColors.Accent else AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
+                    }
+                    if (busy) androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp))
+                }
+            }
         }
     }
 }

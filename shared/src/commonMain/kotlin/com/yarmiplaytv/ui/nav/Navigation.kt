@@ -35,6 +35,11 @@ sealed interface Screen {
     data object WhatsNew : Screen { override val key = "whats-new" }
     /** A show from the library on MyAnimeList. */
     data class MalEntry(val item: MediaItem) : Screen { override val key = "mal/${item.uniqueKey}" }
+    data object AniListLogin : Screen { override val key = "anilist-login" }
+    /** AniList: the account, your list, matches and settings. */
+    data object AniList : Screen { override val key = "anilist" }
+    /** A show from the library on AniList. */
+    data class AniListEntry(val item: MediaItem) : Screen { override val key = "anilist/${item.uniqueKey}" }
 
     /** [pickFor] is set when the user is choosing a substitute for a playlist entry that wasn't found. */
     data class Search(val initialQuery: String = "", val pickFor: String? = null) : Screen {

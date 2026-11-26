@@ -39,3 +39,10 @@ val APP_VERSION: String = System.getProperty("yarmiplaytv.version") ?: "dev"
 
 /** MyAnimeList's Client ID for this build (empty when the build had none). */
 val MAL_CLIENT_ID: String = System.getProperty("yarmiplaytv.malClientId").orEmpty()
+
+/** AniList's Client ID for this build (empty when the build had none). */
+val ANILIST_CLIENT_ID: String = System.getProperty("yarmiplaytv.anilistClientId").orEmpty()
+
+/** Online subtitle provider keys for this build (empty when the build had none). */
+val OPENSUBTITLES_API_KEY: String = System.getProperty("yarmiplaytv.openSubtitlesApiKey").orEmpty()
+val SUBDL_API_KEY: String = System.getProperty("yarmiplaytv.subdlApiKey").orEmpty()

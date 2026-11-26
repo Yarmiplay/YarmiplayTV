@@ -62,6 +62,9 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.yarmiplaytv.AppContainer
+import com.yarmiplaytv.media.subtitles.SubtitleLanguages
+import com.yarmiplaytv.media.subtitles.SubtitleSearchQuery
+import com.yarmiplaytv.media.subtitles.SubtitleSearchResult
 import com.yarmiplaytv.player.TrackType
 import com.yarmiplaytv.syncplay.ConnectionStatus
 import com.yarmiplaytv.syncplay.Filenames
@@ -90,7 +93,11 @@ import com.yarmiplaytv.ui.shared.roomSkipSubtitle
 import com.yarmiplaytv.ui.shared.roomsOnServer
 import com.yarmiplaytv.ui.shared.savedRoomLabel
 import com.yarmiplaytv.ui.shared.serverStatusLine
+import com.yarmiplaytv.ui.chat.ChatTimestamps
+import com.yarmiplaytv.ui.chat.formatChatTimestamp
+import com.yarmiplaytv.ui.chat.seekToChatTimestamp
 import com.yarmiplaytv.ui.mobile.AudioAdjustments
+import com.yarmiplaytv.ui.mobile.collectStateWithoutClock
 import com.yarmiplaytv.ui.mobile.SubtitleAdjustments
 import com.yarmiplaytv.ui.mobile.SubtitleSizeControls
 import com.yarmiplaytv.ui.mobile.SubtitleTimingControls
@@ -136,6 +143,10 @@ internal fun PlaylistPanel(container: AppContainer, nav: Navigator, focus: Focus
             ActionButton("Add from your libraries", { nav.popTo(Screen.Home) }, if (room.playlist.isEmpty()) Modifier.focusRequester(focus) else Modifier, icon = Icons.Filled.Home)
             if (canAddCurrent && np != null) {
                 ActionButton("Add current", { container.sync.client?.addToPlaylist(np.fileName) }, icon = Icons.Filled.Add)
+            }
+            if (np?.episode != null && !room.followsOperators) {
+                ActionButton("Queue next episode", { container.playlist.queueNextEpisodeForCurrent() }, Modifier.testTag("playlist_queue_next"), icon = Icons.Filled.Add)
+                ActionButton("Queue rest of season", { container.playlist.queueRestOfSeasonForCurrent() }, Modifier.testTag("playlist_queue_season"), icon = Icons.Filled.Add)
             }
             if (room.playlist.size > 1) {
                 ActionButton("Sort A to Z", { container.playlist.shared.sortAlphabetically() }, Modifier.testTag("playlist_sort"), icon = Icons.Filled.SortByAlpha)
@@ -479,21 +490,53 @@ internal fun ChatPanel(container: AppContainer, focus: FocusRequester) {
             )
         }
         if (!showChat) Text(HIDDEN_CHAT_NOTE, color = AppColors.TextDim, modifier = Modifier.padding(bottom = 12.dp))
-        LazyColumn(Modifier.weight(1f), state = listState, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        LazyColumn(Modifier.weight(1f), state = listState, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(feed) { msg ->
-                Row {
-                    if (msg.from != null) Text("${msg.from}: ", color = AppColors.Accent, fontWeight = FontWeight.Bold)
-                    Text(msg.text, color = when {
-                        msg.isError -> AppColors.Error
-                        msg.from == null -> AppColors.TextDim
-                        else -> AppColors.Text
-                    })
+                val timestamps = remember(msg.text, msg.from) {
+                    if (msg.from != null) ChatTimestamps.find(msg.text) else emptyList()
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row {
+                        if (msg.from != null) Text("${msg.from}: ", color = AppColors.Accent, fontWeight = FontWeight.Bold)
+                        Text(msg.text, color = when {
+                            msg.isError -> AppColors.Error
+                            msg.from == null -> AppColors.TextDim
+                            else -> AppColors.Text
+                        })
+                    }
+                    if (timestamps.isNotEmpty()) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
+                        ) {
+                            timestamps.distinctBy { it.seconds }.forEach { ts ->
+                                ActionButton(
+                                    text = "Jump to ${formatChatTimestamp(ts.seconds.toDouble())}",
+                                    onClick = { seekToChatTimestamp(container, ts.seconds) },
+                                    icon = Icons.Filled.PlayArrow,
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
         if (showChat) {
+            val playerState by container.player.collectStateWithoutClock()
             Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TvTextField(message, { message = it.take(500); tvChatDraft = message }, "Message", Modifier.weight(1f).focusRequester(focus), onSubmit = ::send)
+                if (playerState.fileLoaded) {
+                    ActionButton(
+                        text = formatChatTimestamp(container.player.currentPosition()),
+                        onClick = {
+                            val stamp = formatChatTimestamp(container.player.currentPosition())
+                            val sep = if (message.isNotEmpty() && !message.last().isWhitespace()) " " else ""
+                            message = (message + sep + stamp + " ").take(500)
+                            tvChatDraft = message
+                        },
+                    )
+                }
                 IconAction(Icons.AutoMirrored.Filled.Send, "Send", ::send)
             }
         }
@@ -512,7 +555,15 @@ internal fun VideoPanel(container: AppContainer, focus: FocusRequester) {
 @Composable
 internal fun TracksPanel(container: AppContainer, type: TrackType, focus: FocusRequester) {
     val tracks by container.player.tracks.collectAsStateWithLifecycle()
+    val settings by container.settings.collectAsStateWithLifecycle()
     val list = tracks.filter { it.type == type }
+    var searchingOnline by rememberSaveable(type) { mutableStateOf(false) }
+
+    if (type == TrackType.SUBTITLE && searchingOnline && settings.playback.onlineSubtitlesSearch && container.onlineSubtitles != null) {
+        TvOnlineSubtitlesPanel(container, focus = focus, onDone = { searchingOnline = false })
+        return
+    }
+
     Column(Modifier.fillMaxSize().padding(24.dp)) {
         PanelHeader(if (type == TrackType.AUDIO) "Audio" else "Subtitles")
         if (type == TrackType.SUBTITLE) {
@@ -536,11 +587,144 @@ internal fun TracksPanel(container: AppContainer, type: TrackType, focus: FocusR
                     if (track.selected) Modifier.focusRequester(focus) else Modifier,
                 )
             }
+            if (type == TrackType.SUBTITLE && settings.playback.onlineSubtitlesSearch && container.onlineSubtitles != null) {
+                item {
+                    TvTile(
+                        onClick = { searchingOnline = true },
+                        modifier = Modifier.fillMaxWidth().testTag("subtitles_search_online"),
+                        container = AppColors.SurfaceHigh,
+                        focusedScale = 1.02f,
+                    ) {
+                        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Add, contentDescription = null, tint = AppColors.Accent)
+                            Spacer(Modifier.width(12.dp))
+                            Text("Search online subtitles…", color = AppColors.Accent)
+                        }
+                    }
+                }
+            }
             item {
                 if (type == TrackType.SUBTITLE) SubtitleAdjustments(container)
             }
         }
         if (list.isEmpty()) Text("No ${if (type == TrackType.AUDIO) "audio" else "subtitle"} tracks", color = AppColors.TextDim)
+    }
+}
+
+@Composable
+private fun TvOnlineSubtitlesPanel(container: AppContainer, focus: FocusRequester, onDone: () -> Unit) {
+    val subs = container.onlineSubtitles ?: return
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val nowPlaying by container.playlist.nowPlaying.collectAsStateWithLifecycle()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    var baseQuery by remember { mutableStateOf<SubtitleSearchQuery?>(null) }
+    var queryText by remember { mutableStateOf("") }
+    var language by remember { mutableStateOf(settings.playback.onlineSubtitlesLanguage.ifBlank { SubtitleLanguages.DEFAULT }) }
+    var results by remember { mutableStateOf<List<SubtitleSearchResult>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var downloadingId by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun runSearch(q: SubtitleSearchQuery) {
+        if (!subs.configured) {
+            error = "Online subtitle search isn't configured in this build."
+            return
+        }
+        loading = true
+        error = null
+        scope.launch {
+            runCatching { subs.search(q) }
+                .onSuccess {
+                    results = it
+                    loading = false
+                    if (it.isEmpty()) error = "No subtitles found."
+                }
+                .onFailure {
+                    loading = false
+                    error = it.message ?: "Search failed"
+                }
+        }
+    }
+
+    LaunchedEffect(nowPlaying?.url) {
+        val initial = subs.defaultQuery(nowPlaying)
+        baseQuery = initial
+        queryText = initial.query
+        language = initial.language
+        if (initial.query.isNotBlank() || initial.movieHash != null) runSearch(initial)
+    }
+
+    fun submit() {
+        val prev = baseQuery
+        runSearch(
+            SubtitleSearchQuery(
+                query = queryText.trim(),
+                language = language,
+                season = prev?.season,
+                episode = prev?.episode,
+                movieHash = if (queryText.trim() == prev?.query) prev.movieHash else null,
+                fileSize = prev?.fileSize,
+                fileName = prev?.fileName,
+            ),
+        )
+    }
+
+    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ActionButton("Back", onDone, Modifier.focusRequester(focus))
+            Text("Online subtitles", style = MaterialTheme.typography.headlineSmall)
+        }
+        TvTextField(queryText, { queryText = it }, "Title or release", Modifier.fillMaxWidth(), onSubmit = ::submit)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ActionButton(SubtitleLanguages.labelOf(language), {
+                val codes = SubtitleLanguages.COMMON.map { it.first }
+                val idx = codes.indexOf(language).let { if (it < 0) 0 else it }
+                language = codes[(idx + 1) % codes.size]
+                submit()
+            }, Modifier.weight(1f))
+            ActionButton("Search", ::submit, primary = true)
+        }
+        if (loading) Text("Searching subtitles…", color = AppColors.TextDim)
+        error?.let { Text(it, color = AppColors.TextDim) }
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(results, key = { it.id }) { item ->
+                val busy = downloadingId == item.id
+                TvTile(
+                    onClick = {
+                        if (downloadingId != null) return@TvTile
+                        downloadingId = item.id
+                        error = null
+                        scope.launch {
+                            runCatching { subs.downloadAndAttach(item) }
+                                .onSuccess {
+                                    downloadingId = null
+                                    onDone()
+                                }
+                                .onFailure {
+                                    downloadingId = null
+                                    error = it.message ?: "Download failed"
+                                }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    container = AppColors.SurfaceHigh,
+                    focusedScale = 1.02f,
+                ) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        Text(if (busy) "Downloading… ${item.releaseName}" else item.releaseName, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        val meta = buildList {
+                            if (item.exactHashMatch) add("Exact match")
+                            add(item.provider.label)
+                            add(item.language.uppercase())
+                            if (item.hearingImpaired) add("HI")
+                            if (item.downloads > 0) add("${item.downloads} dl")
+                        }.joinToString(" · ")
+                        Text(meta, color = if (item.exactHashMatch) AppColors.Accent else AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
     }
 }
 

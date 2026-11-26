@@ -93,7 +93,7 @@ tasks.test {
     testLogging { events("passed", "skipped", "failed") }
 }
 
-val appVersion = "3.2.9"
+val appVersion = "3.3.0"
 val libmpvDir = project(":player-mpv-desktop").layout.buildDirectory.dir("libmpv")
 
 /** Draws the app logo (the two play triangles of ic_logo.xml on the banner gradient) as png, ico and icns. */
@@ -275,6 +275,12 @@ compose.desktop {
         // MyAnimeList's Client ID: from ~/.gradle/gradle.properties or the CI secret, never the repository.
         val malClientId = ((findProperty("MAL_CLIENT_ID") as String?) ?: System.getenv("MAL_CLIENT_ID") ?: "").filter { it.isLetterOrDigit() }
         if (malClientId.isNotEmpty()) jvmArgs += "-Dyarmiplaytv.malClientId=$malClientId"
+        val anilistClientId = ((findProperty("ANILIST_CLIENT_ID") as String?) ?: System.getenv("ANILIST_CLIENT_ID") ?: "").filter { it.isLetterOrDigit() }
+        if (anilistClientId.isNotEmpty()) jvmArgs += "-Dyarmiplaytv.anilistClientId=$anilistClientId"
+        val openSubtitlesKey = ((findProperty("OPENSUBTITLES_API_KEY") as String?) ?: System.getenv("OPENSUBTITLES_API_KEY") ?: "").filter { it.isLetterOrDigit() || it == '_' || it == '-' }
+        if (openSubtitlesKey.isNotEmpty()) jvmArgs += "-Dyarmiplaytv.openSubtitlesApiKey=$openSubtitlesKey"
+        val subdlKey = ((findProperty("SUBDL_API_KEY") as String?) ?: System.getenv("SUBDL_API_KEY") ?: "").filter { it.isLetterOrDigit() || it == '_' || it == '-' }
+        if (subdlKey.isNotEmpty()) jvmArgs += "-Dyarmiplaytv.subdlApiKey=$subdlKey"
 
         nativeDistributions {
             // The download-page installer is packageSetupExe (branded window), not jpackage's Exe wizard.

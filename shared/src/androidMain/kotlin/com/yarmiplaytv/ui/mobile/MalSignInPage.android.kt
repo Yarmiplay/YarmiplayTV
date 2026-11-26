@@ -49,6 +49,11 @@ actual fun MalSignInPage(url: String, onNavigate: (String) -> Boolean, modifier:
                 settings.setNeedInitialFocus(false)
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = navigate(request.url.toString())
+                    override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                        if (url != null && url.contains("access_token=") && navigate(url)) {
+                            view?.stopLoading()
+                        }
+                    }
                 }
                 loadUrl(url)
             }

@@ -750,7 +750,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                                             )
                                         } else {
                                             PlayerSheet.entries
-                                                .filter { (!roomElsewhere || it.inPlayerWindow) && (it != PlayerSheet.MAL || container.mal.client.configured) }
+                                                .filter { (!roomElsewhere || it.inPlayerWindow) && (it != PlayerSheet.MAL || container.mal.client.configured || container.anilist.client.configured) }
                                                 .forEach { SheetButton(it, tint = AppColors.Text, onVideo = false) { openSheet(it) } }
                                         }
                                     }
@@ -813,7 +813,7 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
 
     sheet?.let { kind ->
         val useMenus = container.deviceKind == DeviceKind.PHONE || container.deviceKind == DeviceKind.TABLET
-        val menuTabs = PlayerSheet.entries.filter { it != PlayerSheet.MAL || container.mal.client.configured }
+        val menuTabs = PlayerSheet.entries.filter { it != PlayerSheet.MAL || container.mal.client.configured || container.anilist.client.configured }
         ModalBottomSheet(
             onDismissRequest = { sheet = null },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -854,10 +854,11 @@ fun MobilePlayerScreen(container: AppContainer, nav: Navigator) {
                     PlayerSheet.SUBTITLES -> TracksContent(container, TrackType.SUBTITLE, onPicked = { sheet = null })
                     PlayerSheet.VIDEO -> VideoAdjustments(container, Modifier.padding(horizontal = 16.dp))
                     PlayerSheet.MAL -> {
-                        val mal by container.mal.state.collectAsStateWithLifecycle()
-                        MalContent(container, mal, onSignIn = { sheet = null; nav.push(Screen.MalLogin) })
-                        Spacer(Modifier.height(16.dp))
-                        MalFindSection(container)
+                        TrackerPanelContent(
+                            container = container,
+                            onSignInMal = { sheet = null; nav.push(Screen.MalLogin) },
+                            onSignInAniList = { sheet = null; nav.push(Screen.AniListLogin) },
+                        )
                     }
                 }
             }
@@ -930,7 +931,7 @@ private fun BottomControls(
                 // The Syncplay-style room window has these; its player window leaves them out.
                 val roomElsewhere = LocalRoomElsewhere.current
                 PlayerSheet.entries
-                    .filter { (!roomElsewhere || it.inPlayerWindow) && (it != PlayerSheet.MAL || container.mal.client.configured) }
+                    .filter { (!roomElsewhere || it.inPlayerWindow) && (it != PlayerSheet.MAL || container.mal.client.configured || container.anilist.client.configured) }
                     .forEach { SheetButton(it) { onSheet(it) } }
             }
         }

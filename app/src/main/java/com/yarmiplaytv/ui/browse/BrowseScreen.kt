@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Bookmarks
@@ -308,6 +309,10 @@ fun BrowseScreen(container: AppContainer, nav: Navigator, parent: MediaItem) {
                 ActionButton("MyAnimeList", { nav.push(Screen.MalEntry(parent)) }, icon = Icons.Filled.Bookmarks)
                 Spacer(Modifier.width(12.dp))
             }
+            if (container.anilist.client.configured && parent.malInfo() != null) {
+                ActionButton("AniList", { nav.push(Screen.AniListEntry(parent)) }, icon = Icons.Filled.Bookmarks)
+                Spacer(Modifier.width(12.dp))
+            }
             ActionButton("Search", { nav.push(Screen.Search()) }, icon = Icons.Filled.Search)
         }
         parent.overview?.takeIf { parent.type == MediaItemType.SERIES && it.isNotBlank() }?.let {
@@ -397,18 +402,34 @@ fun ItemActionsDialog(container: AppContainer, item: MediaItem, onDismiss: () ->
                 .padding(32.dp),
         ) {
             SurfaceInk {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(
+                Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
                 item.seriesName?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.titleMedium) }
                 Text(item.displayTitle, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 item.fileName?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 item.overview?.takeIf { it.isNotBlank() }?.let {
-                    Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 5, overflow = TextOverflow.Ellipsis)
+                    Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
                 }
                 Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (inRoom) {
                         ActionButton("Play for everyone in '${ManagedRooms.label(room.room)}'", {
                             container.playlist.playInRoom(item); onDismiss()
                         }, Modifier.fillMaxWidth().focusRequester(firstFocus), icon = Icons.Filled.Groups, primary = true)
+                        if (item.type == MediaItemType.EPISODE && !room.followsOperators) {
+                            ActionButton("Play & queue rest of season", {
+                                container.playlist.queueRestOfSeason(item, playAnchor = true); onDismiss()
+                            }, Modifier.fillMaxWidth(), icon = Icons.AutoMirrored.Filled.PlaylistAdd)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                ActionButton("Queue next episode", {
+                                    container.playlist.queueNextEpisode(item); onDismiss()
+                                }, Modifier.weight(1f), icon = Icons.AutoMirrored.Filled.PlaylistAdd)
+                                ActionButton("Queue rest of season", {
+                                    container.playlist.queueRestOfSeason(item, playAnchor = false); onDismiss()
+                                }, Modifier.weight(1f), icon = Icons.AutoMirrored.Filled.PlaylistAdd)
+                            }
+                        }
                         ActionButton("Add to room playlist", {
                             container.playlist.addToRoomPlaylist(item); onDismiss()
                         }, Modifier.fillMaxWidth(), icon = Icons.AutoMirrored.Filled.PlaylistAdd)

@@ -1,14 +1,15 @@
 # YarmiplayTV privacy policy
 
-Effective 22 November 2026. This policy covers the YarmiplayTV app for Android TV, Android phones and tablets,
+Effective 26 November 2026. This policy covers the YarmiplayTV app for Android TV, Android phones and tablets,
 desktop (Windows, Linux and macOS), and the browser player.
 
 ## Summary
 
 YarmiplayTV doesn't collect any data. It has no accounts, no analytics, no advertising and no crash reporting,
 and the developer runs no servers that the app talks to. The app connects to the Syncplay, Jellyfin and Plex
-servers you enter or pick, to plex.tv when you sign in to Plex, to MyAnimeList when you sign in to it and,
-unless you turn it off, to GitHub to check for a new version.
+servers you enter or pick, to plex.tv when you sign in to Plex, to MyAnimeList or AniList when you sign in to
+them, to OpenSubtitles.com and Subdl only if you turn on online subtitles search in Settings, and, unless you
+turn it off, to GitHub to check for a new version.
 
 ## What the app sends, and to whom
 
@@ -41,6 +42,11 @@ unless you turn it off, to GitHub to check for a new version.
     list, the shows you look up and the changes you make. Nothing with your account goes through any other server,
     including the rooms you join; you can change the server, or choose none, on the MyAnimeList screen, and **Sign
     out** deletes the account from this browser. The apps for Android and computers talk to MyAnimeList directly.
+  - *Online subtitles search in the browser player, only if you turn it on:* OpenSubtitles.com and Subdl do not
+    accept direct requests from web pages. When you enable **Online subtitles search** in Settings > Playback in
+    the browser player and run a search, the browser sends the subtitle search and download through the room's
+    YarmiplayServerTV (or the last saved server), which passes them on without storing your queries or files.
+    The Android, TV and desktop apps talk to OpenSubtitles.com and Subdl directly.
   - *Voice chat, when the host turned it on:* if you leave **Voice chat** on in Settings, the app can send
     your microphone audio through that Syncplay server to the other people in the same room, and play theirs
     to you. The audio is streamed only while you are in the room; the app does not record it or keep it, and
@@ -71,10 +77,22 @@ unless you turn it off, to GitHub to check for a new version.
   watched, status, score, rewatching and start and finish dates. MyAnimeList handles this under its
   [privacy policy](https://myanimelist.net/about/privacy_policy). Nothing about MyAnimeList goes anywhere else, except
   in the browser player, through the one server you choose for it, as described above.
-- **MyAnimeList and AniSkip, to skip openings and endings:** when an anime episode plays, the app works out
-  which MyAnimeList entry it is, also without a MyAnimeList account: it asks MyAnimeList, with the app's id
+- **AniList, only when you sign in to it:** you sign in on AniList's own page using OAuth (Implicit Grant, so
+  no client secret is embedded in the app). On desktop, a temporary local-only listener on `127.0.0.1` receives
+  the redirect and strips the token from browser history (`history.replaceState`); on Android and TV, an
+  ephemeral in-app web view intercepts the redirect and wipes its cookies and storage when closed; in the browser
+  player, the page captures the token and strips it from the URL immediately. YarmiplayTV never sees or stores
+  your AniList password—only the OAuth access token, kept on your device. On **every** platform, including the
+  browser player, YarmiplayTV talks directly to AniList (`graphql.anilist.co`); your AniList token and list never
+  pass through any Syncplay server. With it, the app reads your profile (username, avatar, score format), searches
+  shows, reads your lists, and sends your episode progress, status, score and rewatch updates. AniList handles
+  this under the [AniList Terms and Privacy Policy](https://anilist.co/terms). Signing out deletes the token and
+  all AniList data kept on your device.
+- **MyAnimeList, AniList and AniSkip, to skip openings and endings:** when an anime episode plays, the app works
+  out which MyAnimeList entry it is, also without a MyAnimeList account: it asks MyAnimeList, with the app's id
   rather than yours, about the show (its title, or the MyAnimeList id your media server has for it) and its
-  seasons. It then asks [AniSkip](https://aniskip.com) (api.aniskip.com) where the episode's opening and ending
+  seasons (or falls back to AniList's public catalog to look up the show's `idMal`). It then asks
+  [AniSkip](https://aniskip.com) (api.aniskip.com) where the episode's opening and ending
   are, sending the MyAnimeList id, the episode number and the file's length, nothing else. When the video plays
   from your Jellyfin or Plex server, the app also asks that server for the episode's intro and credits markers.
   The answers are kept in memory only. In the browser player, these questions to MyAnimeList (and the shows you
@@ -82,6 +100,17 @@ unless you turn it off, to GitHub to check for a new version.
   in, or else of the last room you joined, which passes them on; they carry the app's id and the show, nothing
   about you or your account. In a room on a YarmiplayServerTV server, turning automatic skipping on or off goes to the
   server, which tells the room who changed it.
+- **Online subtitles search (OpenSubtitles.com and Subdl), off by default:** while **Online subtitles search** is
+  off in **Settings > Playback** (the default), YarmiplayTV makes no requests to subtitle providers. When you turn
+  it on and use **Search online subtitles…** in the player's Subtitles menu, the app sends your search title,
+  preferred language (English by default), season and episode numbers when known, and—when playing a local or
+  completely cached file—a 64-bit OpenSubtitles file hash (computed from the file size and its first and last
+  64 KB; it cannot be turned back into the video) to [OpenSubtitles.com](https://www.opensubtitles.com/)
+  (`api.opensubtitles.com`) and [Subdl](https://subdl.com/) (`api.subdl.com`). If you optionally sign in with an
+  OpenSubtitles account in Settings for a higher daily download limit, your username and password are sent once to
+  OpenSubtitles.com to obtain a session token; only your username and token are kept on your device (never your
+  password), and signing out deletes them. Downloaded subtitles stay in your device's temporary cache and are not
+  sent to the room. OpenSubtitles.com and Subdl handle those requests under their own privacy policies.
 - **Listening for openings and endings, on your device:** when nothing above knows where an episode's opening
   and ending are, the app reads the sound of the start and end of the episode and of the episodes before and after
   it, from your device or from your own Jellyfin or Plex server (from a server only on Wi-Fi or Ethernet unless you
@@ -91,8 +120,8 @@ unless you turn it off, to GitHub to check for a new version.
 - **Your local network:** when you look for Jellyfin servers, the app sends a discovery message on the local
   network that Jellyfin servers answer. To connect to a Plex server, the app tries the addresses plex.tv lists
   for it, local ones first. The Syncplay connect screen also sends a discovery message, on Wi-Fi or Ethernet
-  only, that YarmiplayServerTV servers answer. Signing in to MyAnimeList on a computer listens on this device
-  only (`localhost`) for MyAnimeList's page to hand back the sign-in.
+  only, that YarmiplayServerTV servers answer. Signing in to MyAnimeList or AniList on a computer listens on this
+  device only (`127.0.0.1` / `localhost`) for the provider's page to hand back the sign-in.
 - **GitHub, to check for updates:** when it starts, the app from the download page (the APK and the desktop
   apps) reads the latest version number from the download page (tv.yarmiplay.com, hosted on GitHub Pages). The
   request contains nothing about you, your settings or your device; like any web request it reaches GitHub
@@ -114,15 +143,19 @@ certificate it can't verify.
 ## What stays on your device
 
 Your settings (servers, name, room and its password, playback preferences), the sign-in tokens of each Jellyfin and Plex server, saved playlists and the
-folders you add to your local library are stored only on your device. For MyAnimeList, the app keeps on your
-device only: its sign-in tokens, your user name and picture address, the shows you matched to a MyAnimeList entry
-or chose not to track, and list updates that couldn't be sent yet. Details it reads from MyAnimeList (titles,
-episode counts, related seasons) are kept only in memory, for at most 24 hours. **Sign out** of MyAnimeList in
-Settings deletes all of it. Names you block in a room are kept only
+folders you add to your local library are stored only on your device. For MyAnimeList and AniList, the app keeps on your
+device only: their sign-in tokens, your user name and picture address (and AniList score format), the shows you
+matched or chose not to track, and list updates that couldn't be sent yet. Details it reads from MyAnimeList or
+AniList (titles, episode counts, related seasons) are kept only in memory. **Sign out** of MyAnimeList or AniList
+in Settings deletes all data for that service. If you optionally sign in to OpenSubtitles, only your username and
+session token are kept on your device until you sign out. Names you block in a room are kept only
 in memory and forgotten when you leave the room. Video files you play from the device are
 read from the device and are only uploaded through a YarmiplayServerTV file relay, as described above. Parts of
-a file you watch through the relay are kept in the app's cache folder, up to 4 GB, and deleted when you
-leave the room, after 24 hours, or when the app next starts. A copy you save with the player's save button is written
+a file you watch through the relay, upcoming playlist items pre-downloaded in the background (when enabled in
+Settings > Media; on by default for Wi-Fi/Ethernet and off for mobile data), and downloaded online subtitle files
+are kept only in the app's temporary cache folder (or browser OPFS), up to the cache limit you choose (never more
+than half of free space), and are deleted when removed from the playlist, when you leave the room, when you tap
+**Clear cache**, after 24 hours, or when the app next starts. A copy you save with the player's save button is written
 only where you choose, and stays there until you delete it. On Android, uninstalling the app or clearing its storage deletes
 this data. On desktop it is in `%APPDATA%\YarmiplayTV` (Windows; the portable version uses the `data` folder
 next to `YarmiplayTV.exe`), `~/Library/Application Support/YarmiplayTV` (macOS) or `~/.config/yarmiplaytv`
@@ -130,8 +163,10 @@ next to `YarmiplayTV.exe`), `~/Library/Application Support/YarmiplayTV` (macOS) 
 
 ## Permissions (Android)
 
-- **Internet and network state:** to connect to Syncplay, Jellyfin and Plex servers, plex.tv and MyAnimeList,
-  and to look for servers on the local network only over Wi-Fi or Ethernet.
+- **Internet and network state:** to connect to Syncplay, Jellyfin and Plex servers, plex.tv, MyAnimeList,
+  AniList, and (only when enabled) OpenSubtitles.com and Subdl; to look for servers on the local network only over
+  Wi-Fi or Ethernet; and to respect your Wi-Fi vs. mobile-data settings for background playlist pre-downloading
+  and skip detection.
 - **Wi-Fi multicast:** to find Jellyfin and YarmiplayServerTV servers on the local network.
 - **Wake lock:** to keep the screen on during playback.
 - **Microphone:** only when you use voice chat in a room on a YarmiplayServerTV server. The app asks the first

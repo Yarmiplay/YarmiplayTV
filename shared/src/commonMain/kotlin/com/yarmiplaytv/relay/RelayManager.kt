@@ -165,9 +165,16 @@ class RelayManager(
     cacheDir: File,
     /** Whether this device offers its files to the room; viewing relayed files works either way. */
     sharing: Flow<Boolean> = flowOf(true),
+    /** Max cache bytes (e.g. from Settings > Media pre-download cache limit), clamped to half of usable free space. */
+    cacheLimitBytes: () -> Long = { RelayCache.defaultCap(File(cacheDir, "relay")) },
 ) {
     private val http = relayHttpClient()
-    private val cache by lazy { RelayCache(File(cacheDir, "relay")) }
+    private val cache by lazy {
+        val dir = File(cacheDir, "relay")
+        RelayCache(dir, capBytes = {
+            minOf(cacheLimitBytes(), (dir.usableSpace / 2).coerceAtLeast(256L shl 20))
+        })
+    }
     private val proxy = RelayProxy(scope)
     private val offers = RelayOffers(scope, sync, local, sharing)
     private val uploader = RelayUploader(scope, sync, local, offers, http)
@@ -287,11 +294,13 @@ class RelayManager(
 
     /**
      * Fetches the start of [entry] (about a minute of it) and its last few MB into the cache ahead of time, so it opens
-     * at once when the playlist gets to it. For the playlist's next file; one at a time, never the one playing.
+     * at once when the playlist gets to it. With [fullFile] = true, continues downloading the rest of the file at
+     * lowest priority (`mode=prefetch&order=[order]`) so upcoming playlist entries are ready offline.
      */
-    suspend fun prefetch(entry: RelayFile) {
+    suspend fun prefetch(entry: RelayFile, order: Int = 1, fullFile: Boolean = false) {
         val transfer = transferFor(entry)
-        if (transfer === current || transfer === prefetching) return
+        if (transfer === current) return
+        if (transfer === prefetching && (!fullFile || transfer.cache.complete)) return
         prefetching?.stopPrefetch()
         prefetching = transfer
         val media = entry.media
@@ -302,12 +311,39 @@ class RelayManager(
         } else {
             val head = RelayPolicy.prefetchBytes(entry.size, entry.duration)
             val tail = maxOf(head, entry.size - RelayPolicy.PREFETCH_TAIL)
-            listOf(0L until head, tail until entry.size)
+            if (fullFile && head < tail) {
+                listOf(0L until head, tail until entry.size, head until tail)
+            } else {
+                listOf(0L until head, tail until entry.size)
+            }
         }
         val mode = if (sync.room.value.yarmiplay.capabilities.prefetch) "prefetch" else "download"
-        Logger.i(TAG, "Prefetching ${entry.name}: $ranges ($mode)")
-        transfer.prefetch(ranges, mode)
+        Logger.i(TAG, "Prefetching ${entry.name} (order=$order, full=$fullFile): $ranges ($mode)")
+        transfer.prefetch(ranges, mode, order = order)
     }
+
+    /** Pauses active background prefetching without deleting already-cached blocks. */
+    fun pausePrefetch() {
+        prefetching?.stopPrefetch()
+        prefetching = null
+    }
+
+    /** True when the currently playing relay file is still incomplete and needs priority. */
+    fun isCurrentIncomplete(): Boolean {
+        val cur = current ?: return false
+        return !cur.cache.complete
+    }
+
+    /** Cached fraction (`0f..1f`) of [entry], or null if not yet in cache. */
+    fun cachedFraction(entry: RelayFile): Float? {
+        val key = "${entry.quickHash}-${entry.size}"
+        val cached = cache.get(key) ?: return null
+        if (entry.size <= 0L) return null
+        return if (cached.complete) 1f else (cached.cachedBytes.toDouble() / entry.size).toFloat().coerceIn(0f, 1f)
+    }
+
+    /** Total bytes currently held in the relay disk cache. */
+    fun cachedBytes(): Long = cache.totalBytes()
 
     private suspend fun transferFor(entry: RelayFile): RelayTransfer {
         val key = "${entry.quickHash}-${entry.size}"

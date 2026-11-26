@@ -124,8 +124,10 @@ The Room tab shows, in order:
 
 - **Shared playlist**: everyone in the room sees and edits the same list.
 - **Chat**: messages from the others, and yours. **Hide chat** hides it; tap a name to block it (until you
-  leave the room). New messages stay in the chat; turn on **Settings > Syncing > Chat on the video** to have
-  them pop up over the video as they arrive too.
+  leave the room). Timestamps in messages (`M:SS`, `MM:SS`, `H:MM:SS`, or `@MM:SS`) are clickable to seek the
+  room to that moment (on TV, D-pad **Jump to** buttons appear under the message), and the timestamp button next
+  to the message field inserts your current playback position. New messages stay in the chat; turn on
+  **Settings > Syncing > Chat on the video** to have them pop up over the video as they arrive too.
 - **The people in the room**: who's ready, what each one is playing, and warnings when someone's copy of the
   file differs from yours (a different size or name; playback still syncs).
 - **Switching rooms**, managed rooms, **Edit connection** and **Disconnect**.
@@ -173,7 +175,13 @@ takes. When someone selects an entry, every viewer's app finds that file by its 
 2. A media server with exactly that file name (Settings > Preferred server decides when several have it).
 3. A looser match: punctuation and case ignored, then a title search.
 
-While one entry plays, the next one is already looked up, so moving on starts at once. The player's previous
+While one entry plays, the next one is already looked up, so moving on starts at once. **Queue next episode**
+and **Queue rest of season** (available from any episode's action sheet or the shared playlist panel while
+watching an episode) append either the next unqueued episode or all remaining episodes of that season in a single
+undoable edit. Under **Settings > Media**, **Pre-download playlist**
+(on by default for Wi-Fi / Ethernet, off by default for mobile data) quietly downloads upcoming playlist entries
+in the background into a temporary cache while always pausing whenever the currently playing video is loading,
+seeking, buffering, or downloading. The player's previous
 and next buttons move the whole room to the neighbouring entry. If the file isn't anywhere you have it, the
 player says so and lets you pick a file by hand.
 
@@ -240,9 +248,12 @@ Settings > Playback can also stop showing the button.
   playing, or to a video dropped with it, and it is not added to the shared playlist. A file you open or drop is
   selected. One found automatically is selected only when nothing else is, preferring the languages in
   Settings > Playback. Each device loads its own file; it is not sent to the room. The subtitles menu also makes
-  the text smaller or larger (remembered), shifts its timing, and can show a second subtitle. The video menu has
+  the text smaller or larger (remembered), shifts its timing, and can show a second subtitle. Turn on **Online
+  subtitles search** in **Settings > Playback** (off by default, with a preferred language setting defaulting to
+  English) to show **Search online subtitles…** in the Subtitles menu (OpenSubtitles.com and Subdl) and attach
+  matching subtitles directly. The video menu has
   speed, aspect, picture adjustments, chapters, and **Reset**, which puts those adjustments back. Settings >
-  Playback sets the languages chosen automatically. A TV gets the automatic loads and not a file picker.
+  Playback sets the languages chosen automatically. A TV gets the automatic loads and online subtitle search, without a local file picker.
 - **Screenshots:** the camera button in the player's bottom bar saves the current frame, subtitles included, to
   Pictures/YarmiplayTV (or a folder you pick in Settings > Media). On a computer **s** or **F5** does the same, and
   **S** or **F6** saves the frame without the subtitles. On a phone or TV the picture always includes the subtitles.
@@ -313,9 +324,12 @@ Managed rooms work on the official Syncplay servers and on YarmiplayServerTV.
 - Operators can mark others ready or not ready. Passwords are remembered, so you're an operator again whenever
   you rejoin.
 
-## MyAnimeList
+## MyAnimeList and AniList
 
-YarmiplayTV can keep your MyAnimeList list up to date as you watch.
+YarmiplayTV can keep your **MyAnimeList** and/or **AniList** lists up to date as you watch (they work
+independently, so you can use either or both at the same time). AniList connects directly to
+`graphql.anilist.co` on every platform (including the web app, without routing your account through a Syncplay
+server) and also supplies AniSkip IDs when MyAnimeList is not signed in.
 
 ### Signing in
 

@@ -196,6 +196,8 @@ class PlaylistController(
      * the user). False keeps the open error, as for any file that doesn't open.
      */
     var confirmUntrustedCertificate: suspend (host: String) -> Boolean = { false }
+    /** Returns a local cached file path if the given server file was already pre-downloaded in full. */
+    var preloadedFilePath: (fileName: String, sizeBytes: Long) -> String? = { _, _ -> null }
     private var resolveJob: Job? = null
     /** The room's entry whose search last gave up, until something else loads; [retryGivenUp] looks for it again. */
     private var givenUp: String? = null
@@ -530,7 +532,14 @@ class PlaylistController(
             }
             is RoomLocation.Server -> {
                 Logger.i(TAG, "Resolved '$filename' via ${found.matchedBy} -> ${found.playable.sourceKey}/${found.playable.itemId}, copies ${found.copies}")
-                load(found.playable.toNowPlaying(found.copies), resetPosition, fromRoom = true)
+                val np = found.playable.toNowPlaying(found.copies)
+                val cached = preloadedFilePath(np.fileName, np.sizeBytes)
+                if (cached != null) {
+                    Logger.i(TAG, "Playing '$filename' from pre-downloaded cache: $cached")
+                    load(np.copy(url = cached), resetPosition, fromRoom = true)
+                } else {
+                    load(np, resetPosition, fromRoom = true)
+                }
             }
             is RoomLocation.Relay -> {
                 Logger.i(TAG, "Resolved '$filename' via the room's file relay (${found.file.sources} source(s))")
@@ -771,6 +780,190 @@ class PlaylistController(
             remember(playable)
             addFileNameToPlaylist(playable.fileName)
         }
+    }
+
+    /**
+     * Queues [anchor] (when [includeAnchor] or [playAnchor]) and every later episode in the same season
+     * into the room's shared playlist in a single undoable edit.
+     */
+    fun queueRestOfSeason(anchor: MediaItem, playAnchor: Boolean = false, includeAnchor: Boolean = true) {
+        val source = mediaSource.value ?: return
+        if (sync.client == null) {
+            sync.postLocal("Join a Syncplay room to use the shared playlist", isError = true)
+            return
+        }
+        if (addingAll) return
+        addingAll = true
+        scope.launch {
+            try {
+                val targetSource = source.server(anchor.sourceKey) ?: source
+                val seasonList = runCatching { targetSource.seasonEpisodes(anchor.id) }.getOrDefault(emptyList())
+                val anchorPlayable = seasonList.firstOrNull { it.itemId == anchor.id }
+                    ?: runCatching { source.playable(anchor) }.getOrNull()
+                if (anchorPlayable == null) {
+                    sync.postLocal("Can't resolve ${anchor.name}", isError = true)
+                    return@launch
+                }
+                remember(anchorPlayable)
+                val remaining = selectRestOfSeason(seasonList, anchorPlayable, includeAnchor = includeAnchor || playAnchor)
+                remaining.forEach(::remember)
+                val names = remaining.map { it.fileName }
+                if (names.isEmpty()) {
+                    sync.postLocal("No remaining episodes in this season")
+                    return@launch
+                }
+                if (playAnchor) {
+                    shared.add(names)
+                    sync.client?.playInRoom(anchorPlayable.fileName)
+                    val extra = (names.size - 1).coerceAtLeast(0)
+                    if (extra > 0) sync.postLocal("Queued $extra remaining episode${if (extra == 1) "" else "s"} of the season")
+                } else {
+                    reportAdded(names.size, shared.add(names))
+                }
+            } finally {
+                addingAll = false
+            }
+        }
+    }
+
+    /**
+     * Queues the next episode after [anchor] in the same season (skipping episodes already in the playlist,
+     * so pressing it again queues the episode after that).
+     */
+    fun queueNextEpisode(anchor: MediaItem) {
+        val source = mediaSource.value ?: return
+        if (sync.client == null) {
+            sync.postLocal("Join a Syncplay room to use the shared playlist", isError = true)
+            return
+        }
+        if (addingAll) return
+        addingAll = true
+        scope.launch {
+            try {
+                val targetSource = source.server(anchor.sourceKey) ?: source
+                val seasonList = runCatching { targetSource.seasonEpisodes(anchor.id) }.getOrDefault(emptyList())
+                val anchorPlayable = seasonList.firstOrNull { it.itemId == anchor.id }
+                    ?: runCatching { source.playable(anchor) }.getOrNull()
+                if (anchorPlayable == null) {
+                    sync.postLocal("Can't resolve ${anchor.name}", isError = true)
+                    return@launch
+                }
+                val remaining = selectRestOfSeason(seasonList, anchorPlayable, includeAnchor = false)
+                if (remaining.isEmpty()) {
+                    sync.postLocal("No next episode found in this season")
+                    return@launch
+                }
+                val nextName = pickNextEpisode(remaining.map { it.fileName }, sync.room.value.playlist)
+                if (nextName == null) {
+                    sync.postLocal("Remaining episodes of this season are already in the playlist")
+                    return@launch
+                }
+                remaining.firstOrNull { Filenames.same(it.fileName, nextName) }?.let(::remember)
+                reportAdded(1, shared.add(listOf(nextName)))
+            } finally {
+                addingAll = false
+            }
+        }
+    }
+
+    /**
+     * Queues the next episode after the currently playing episode (Jellyfin, Plex, or local media folders).
+     * Repeated presses skip already-queued episodes so you can queue one episode at a time.
+     */
+    fun queueNextEpisodeForCurrent() {
+        val np = _nowPlaying.value ?: return
+        if (sync.client == null) {
+            sync.postLocal("Join a Syncplay room to use the shared playlist", isError = true)
+            return
+        }
+        if (addingAll) return
+        addingAll = true
+        scope.launch {
+            try {
+                val names = resolveRestOfSeasonNames(np)
+                if (names.isEmpty()) {
+                    sync.postLocal("No next episode found in this season")
+                    return@launch
+                }
+                val nextName = pickNextEpisode(names, sync.room.value.playlist)
+                if (nextName == null) {
+                    sync.postLocal("Remaining episodes of this season are already in the playlist")
+                    return@launch
+                }
+                reportAdded(1, shared.add(listOf(nextName)))
+            } finally {
+                addingAll = false
+            }
+        }
+    }
+
+    /**
+     * Queues every remaining episode in the currently playing episode's season (works for Jellyfin, Plex,
+     * and local media folders). Adds them after what's playing in a single undoable playlist edit.
+     */
+    fun queueRestOfSeasonForCurrent() {
+        val np = _nowPlaying.value ?: return
+        if (sync.client == null) {
+            sync.postLocal("Join a Syncplay room to use the shared playlist", isError = true)
+            return
+        }
+        if (addingAll) return
+        addingAll = true
+        scope.launch {
+            try {
+                val names = resolveRestOfSeasonNames(np)
+                if (names.isEmpty()) {
+                    sync.postLocal("No remaining episodes found in this season")
+                } else {
+                    reportAdded(names.size, shared.add(names))
+                }
+            } finally {
+                addingAll = false
+            }
+        }
+    }
+
+    /** Queues remaining local-folder episodes of the same show & season starting from [file]. */
+    fun queueRestOfSeasonLocal(file: LocalFile, includeSelf: Boolean = true) {
+        if (sync.client == null) {
+            sync.postLocal("Join a Syncplay room to use the shared playlist", isError = true)
+            return
+        }
+        val names = localRestOfSeason(file.name, file.directory, local.files.value, includeSelf)
+        if (names.isEmpty()) {
+            sync.postLocal("No remaining episodes found in this folder")
+        } else {
+            reportAdded(names.size, shared.add(names))
+        }
+    }
+
+    private suspend fun resolveRestOfSeasonNames(np: NowPlaying): List<String> {
+        // 1. Media server copy (Jellyfin / Plex)
+        val serverCopy = np.copies.firstOrNull()
+        val source = mediaSource.value
+        if (serverCopy != null && source != null) {
+            val srv = source.server(serverCopy.sourceKey) ?: source
+            val seasonList = runCatching { srv.seasonEpisodes(serverCopy.itemId) }.getOrDefault(emptyList())
+            if (seasonList.isNotEmpty()) {
+                val anchor = seasonList.firstOrNull { it.itemId == serverCopy.itemId || Filenames.same(it.fileName, np.fileName) }
+                val rest = if (anchor != null) {
+                    selectRestOfSeason(seasonList, anchor, includeAnchor = false)
+                } else {
+                    val curEp = np.episode?.episode
+                    if (curEp != null) seasonList.filter { (it.episode?.episode ?: -1) > curEp } else emptyList()
+                }
+                if (rest.isNotEmpty()) {
+                    rest.forEach(::remember)
+                    return rest.map { it.fileName }
+                }
+            }
+        }
+        // 2. Local media folders (matches files in the same folder & season with higher episode numbers)
+        val localMatch = LocalMatcher.find(local.files.value, np.fileName)?.file
+        if (localMatch != null) {
+            return localRestOfSeason(localMatch.name, localMatch.directory, local.files.value, includeSelf = false)
+        }
+        return emptyList()
     }
 
     /** One season's episodes, in the order they are listed, as a single playlist edit. */
@@ -1024,5 +1217,57 @@ class PlaylistController(
             loop && size > 1 -> if (forward) 0 else size - 1
             else -> null
         }
+
+        /**
+         * Slices [seasonEpisodes] from [anchor] to the end of the season. Falls back to [anchor] alone
+         * if [seasonEpisodes] is empty and [includeAnchor] is true.
+         */
+        fun selectRestOfSeason(
+            seasonEpisodes: List<PlayableMedia>,
+            anchor: PlayableMedia,
+            includeAnchor: Boolean,
+        ): List<PlayableMedia> {
+            if (seasonEpisodes.isEmpty()) return if (includeAnchor) listOf(anchor) else emptyList()
+            val idx = seasonEpisodes.indexOfFirst { it.itemId == anchor.itemId || Filenames.same(it.fileName, anchor.fileName) }
+            if (idx >= 0) {
+                val start = if (includeAnchor) idx else idx + 1
+                return if (start < seasonEpisodes.size) seasonEpisodes.subList(start, seasonEpisodes.size) else emptyList()
+            }
+            val anchorEp = anchor.episode?.episode ?: return if (includeAnchor) listOf(anchor) else emptyList()
+            return seasonEpisodes.filter { ep ->
+                val n = ep.episode?.episode ?: return@filter false
+                if (includeAnchor) n >= anchorEp else n > anchorEp
+            }
+        }
+
+        /** Finds sibling files in [allFiles] belonging to the same folder, series, and season at or after [anchorName]. */
+        fun localRestOfSeason(
+            anchorName: String,
+            anchorDirectory: String?,
+            allFiles: List<LocalFile>,
+            includeSelf: Boolean,
+        ): List<String> {
+            val parsed = FileNames.parseEpisode(anchorName, anchorDirectory) ?: return if (includeSelf) listOf(anchorName) else emptyList()
+            val anchorEp = parsed.episode ?: return if (includeSelf) listOf(anchorName) else emptyList()
+            val anchorKey = FileNames.normalize(parsed.title)
+            val siblings = allFiles.mapNotNull { file ->
+                if (anchorDirectory != null && file.directory != anchorDirectory) return@mapNotNull null
+                val ep = FileNames.parseEpisode(file.name, file.directory) ?: return@mapNotNull null
+                val epNum = ep.episode ?: return@mapNotNull null
+                if (FileNames.normalize(ep.title) != anchorKey) return@mapNotNull null
+                if (parsed.season != null && ep.season != null && ep.season != parsed.season) return@mapNotNull null
+                if (includeSelf) {
+                    if (epNum < anchorEp) return@mapNotNull null
+                } else {
+                    if (epNum <= anchorEp) return@mapNotNull null
+                }
+                epNum to file.name
+            }.sortedBy { it.first }.map { it.second }.distinctBy { it.lowercase() }
+            return siblings
+        }
+
+        /** Picks the first episode from [remaining] not already present in [existingPlaylist], or null if all are queued. */
+        fun pickNextEpisode(remaining: List<String>, existingPlaylist: List<String>): String? =
+            remaining.firstOrNull { candidate -> existingPlaylist.none { Filenames.same(it, candidate) } }
     }
 }

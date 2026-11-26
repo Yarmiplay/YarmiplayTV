@@ -12,6 +12,7 @@
   import Home from "./screens/Home.svelte";
   import Library from "./screens/Library.svelte";
   import Mal from "./screens/Mal.svelte";
+  import AniList from "./screens/AniList.svelte";
   import "./app/watching";
   import "./app/sharing";
   import Search from "./screens/Search.svelte";
@@ -86,6 +87,8 @@
         <Search />
       {:else if section === "mal"}
         <Mal />
+      {:else if section === "anilist"}
+        <AniList />
       {:else if section !== "player"}
         <main class="missing">
           <p>There's nothing here.</p>

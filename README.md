@@ -18,10 +18,23 @@ New to it? The [user manual](https://tv.yarmiplay.com/manual/) explains everythi
   servers and loads it automatically. Each file is streamed from one place only: your media folders first, then
   a server with exactly that file name (Settings > Preferred server decides when several have it), and only if
   no server has the exact name, a looser match (punctuation and case ignored, then a title search). While one
-  entry plays, the next is already looked up, so the playlist moves on without waiting for a search. The player's
+  entry plays, the next is already looked up, so the playlist moves on without waiting for a search. **Queue next
+  episode** and **Queue rest of season** add the next episode (or all remaining episodes of the season in a single
+  undoable edit) from episode menus or the shared playlist panel. **Pre-download playlist** (configured in Settings > Media; on by default for Wi-Fi /
+  Ethernet, off for mobile data) quietly downloads upcoming playlist entries in the background while giving strict
+  priority to the video currently playing. The player's
   previous and next buttons (next to the seek buttons; on desktop also B and N or the media keys, on TV also the
   remote's previous and next keys) select the neighbouring entry for everyone, wrapping around when the playlist
   loops; in a managed room only operators can.
+- Clickable chat timestamps: timestamps like `12:34`, `1:02:15`, or `@12:34` in room chat are clickable to jump
+  the room straight to that spot (or selectable via D-pad chips on TV), with an insert-current-time button beside
+  the chat input.
+- Online subtitles search (opt-in in Settings > Playback, off by default, English default language): search
+  OpenSubtitles.com and Subdl from the player's Subtitles menu (with 64-bit moviehash matching on local/cached
+  files and optional OpenSubtitles account sign-in) and attach subtitles with one click.
+- AniList tracking: independent of MyAnimeList (use either or both at once), connects directly to AniList
+  (`graphql.anilist.co`) via OAuth Implicit Grant (`ANILIST_CLIENT_ID`), automatically updates episode progress at
+  90% watched with Undo or Ask-first, matches seasons/sequels, and provides `idMal` fallback to AniSkip.
 - Reports what you watch back to your servers: progress while playing, and "watched" once 90% is played. When
   several servers have the same file, each is told, also when the file plays from your media folders.
   The app never jumps to a server's saved position, since the room decides where playback is. Turn reporting

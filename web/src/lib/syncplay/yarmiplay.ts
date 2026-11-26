@@ -75,6 +75,8 @@ export interface Capabilities {
    * `/yarmiplay/files/<id>/segments`. Without it [RelayFile.media] is ignored.
    */
   growingFiles: boolean;
+  /** The server offers `/yarmiplay/subs/*` passthrough for online subtitle search. */
+  subtitles: boolean;
 }
 
 export const noCapabilities = (): Capabilities => ({
@@ -89,6 +91,7 @@ export const noCapabilities = (): Capabilities => ({
   voice: false,
   voiceDisabled: false,
   growingFiles: false,
+  subtitles: false,
 });
 
 /**

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -315,17 +316,39 @@ internal fun DesktopPlaylist(container: AppContainer, modifier: Modifier) {
             }
         }
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             // Tools wrap onto a second line on a narrow panel instead of squeezing what follows them.
-            FlowRow(Modifier.weight(1f)) {
+            FlowRow(
+                Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
                 ToolButton(Icons.Filled.Add, "Add videos") { addPaths(DesktopDialogs.pickVideos()) }
                 ToolButton(Icons.Filled.CreateNewFolder, "Add the videos in a folder") {
                     DesktopDialogs.pickFolder("Add the videos in a folder")?.let { addPaths(listOf(it)) }
                 }
                 ToolButton(Icons.Filled.Link, "Add URLs") { addingUrls = !addingUrls }
                 ToolButton(Icons.AutoMirrored.Filled.PlaylistAdd, "Add current", enabled = canAddCurrent) { addCurrent() }
+                if (nowPlaying?.episode != null && !room.followsOperators) {
+                    TooltipArea(tooltip = { Tooltip("Queue next episode") }) {
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = { container.playlist.queueNextEpisodeForCurrent() },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(32.dp).testTag("playlist_queue_next"),
+                        ) { Text("Queue next", style = MaterialTheme.typography.labelMedium) }
+                    }
+                    TooltipArea(tooltip = { Tooltip("Queue rest of season") }) {
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = { container.playlist.queueRestOfSeasonForCurrent() },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(32.dp).testTag("playlist_queue_season"),
+                        ) { Text("Queue season", style = MaterialTheme.typography.labelMedium) }
+                    }
+                }
                 Box {
                     var open by remember { mutableStateOf(false) }
                     ToolButton(Icons.Filled.Shuffle, "Shuffle", enabled = playlist.size > 1) { open = true }

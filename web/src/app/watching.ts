@@ -17,6 +17,7 @@ import type { EpisodeInfo as MalEpisode } from "../lib/mal/episode";
 import { MalService } from "../lib/mal/service";
 import { prefixedStorage } from "../lib/mal/storage";
 import { MalTracker } from "../lib/mal/tracker";
+import { WebAniListService } from "../lib/anilist/service";
 import { PlaybackReporter, type EpisodeInfo } from "../lib/media";
 import { decodeMono, mediaDuration } from "../lib/player/audioExtract";
 import { HttpSource } from "../lib/player/bytes";
@@ -24,6 +25,8 @@ import type { PlayerState } from "../lib/player/mediaPlayer";
 import { AniSkipClient } from "../lib/skip/aniskip";
 import { SkipService } from "../lib/skip/skipService";
 import type { SkipSegment as Skip } from "../lib/skip/segment";
+import { WebPlaylistPreloader } from "../lib/relay/preloader";
+import { WebSubtitleSearchClient } from "../lib/subtitles/search";
 import { Store } from "../lib/store";
 import { episodeFromFile, type NowPlaying } from "../lib/sync/room";
 import { followsOperators, type RoomState } from "../lib/syncplay/client";
@@ -110,11 +113,33 @@ export function malServerChoices(): MalServerChoice[] {
 }
 
 export const malClient = new MalClient(buildInfo.malClientId, { passthroughBase, accountBase: () => malServer.value });
+
+/** Where online subtitle requests go in the browser (through YarmiplayServerTV's `/yarmiplay/subs/*` passthrough). */
+function subsPassthroughBase(): string | null {
+  const s = session.value;
+  const room = s?.room.value;
+  if (room?.status === "CONNECTED" && room.yarmiplay.serverKind === "YARMIPLAY") {
+    if (!room.yarmiplay.capabilities.subtitles) return null;
+    const base = s?.syncClient?.session?.baseUrl;
+    if (base) return base;
+  }
+  const last = settings.value.savedRooms[0];
+  if (!last) return null;
+  return roomBase(last.host, last.port);
+}
+
+export const subtitleSearch = new WebSubtitleSearchClient(
+  buildInfo.openSubtitlesApiKey,
+  buildInfo.subdlApiKey,
+  subsPassthroughBase,
+);
 export const mal = new MalService({
   client: malClient,
   storage: prefixedStorage("ytv:"),
   session: prefixedStorage("ytv:", () => sessionStorage),
 });
+export const anilist = new WebAniListService(buildInfo.anilistClientId);
+void anilist.captureHashRedirect();
 // 2.8.7+: rewrite MAL keys still stored as jellyfin:<ServerId> to jellyfin:<url>.
 mal.store.migrateJellyfinKeys(sessions.value.jellyfin);
 const tracker = new MalTracker(mal);
@@ -197,7 +222,7 @@ export const skip = new SkipService({
   },
   settings: () => settings.value.playback,
   notify: (text) => session.value?.postLocal(text),
-  identify: (info) => mal.identify(info),
+  identify: async (info) => (await mal.identify(info)) ?? (await anilist.identifyForSkip(info)),
   aniSkip: new AniSkipClient(),
   markers: async () => {
     const item = current?.item;
@@ -223,6 +248,19 @@ reporter.startHeartbeat();
 
 /** The skip service's settings changed (or the room's): it may skip or prompt differently now. */
 export const skipSettingsChanged = () => skip.settingsChanged();
+
+// --- Priority-aware background playlist pre-downloader ---------------------------------------------------
+
+export const preloader = new WebPlaylistPreloader({
+  getSettings: () => settings.value,
+  getRoom: () => session.value?.room.value ?? ({ status: "DISCONNECTED", room: "", playlist: [], playlistIndex: null, yarmiplay: { capabilities: {} } } as unknown as RoomState),
+  getSession: () => session.value?.syncClient?.session ?? null,
+  getPlayerState: () => state,
+  hasNowPlaying: () => current !== null,
+  getStatusKind: () => session.value?.status.value.kind ?? "idle",
+  locate: (name) => session.value!.locateForPreload(name),
+  isUnmetered: unmetered,
+});
 
 // --- Wiring ----------------------------------------------------------------------------------------------
 
@@ -250,18 +288,28 @@ function onPlayer(s: PlayerState) {
     position: s.position,
     ended: s.ended,
   });
+  anilist.tickPlayback(
+    loaded ? np!.key : null,
+    malEpisode(np?.episode ?? null),
+    s.position,
+    s.duration > 0 ? s.duration : np?.durationHint ?? 0,
+    s.ended,
+  );
   if (loaded && s.chapters !== chaptersSeen) {
     chaptersSeen = s.chapters;
     skip.loaded(s.duration, s.chapters);
   }
   if (loaded) skip.tick(s.position, s.paused, s.buffering);
+  preloader.poke();
 }
 
 function onNowPlaying(np: NowPlaying | null) {
   current = np;
   chaptersSeen = null;
-  mal.playing(malEpisode(np?.episode ?? null));
-  skip.fileChanged(np ? { key: np.key, episode: malEpisode(np.episode) } : null);
+  const ep = malEpisode(np?.episode ?? null);
+  mal.playing(ep);
+  anilist.playing(ep);
+  skip.fileChanged(np ? { key: np.key, episode: ep } : null);
   if (state) onPlayer(state);
 }
 
@@ -270,17 +318,23 @@ session.subscribe((s) => {
   stops.forEach((stop) => stop());
   stops = [];
   if (!s) return;
+  s.openPreloaded = (name, size) => preloader.openComplete(name, size);
   stops.push(
     s.nowPlaying.subscribe(onNowPlaying),
+    s.status.subscribe(() => preloader.poke()),
     s.room.subscribe((r) => {
       const before = room?.yarmiplay.roomSettings;
       room = r;
       if (r.yarmiplay.roomSettings !== before) skip.settingsChanged();
+      preloader.poke();
     }),
   );
 });
 player.subscribe((p) => p?.subscribe(onPlayer));
-settings.subscribe(() => skip.settingsChanged());
+settings.subscribe(() => {
+  skip.settingsChanged();
+  preloader.poke();
+});
 // The skip button and the tracker check the time between the player's updates too.
 setInterval(() => state?.loaded && current && !state.paused && skip.tick(player.value?.position ?? state.position, false), 250);
 

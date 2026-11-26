@@ -1,5 +1,5 @@
-/** One piece of a chat message. [href] is set only for an http(s) link. */
-export type ChatPart = { text: string; href?: string };
+/** One piece of a chat message. [href] is set for an http(s) link; [timestampSeconds] for a clickable timestamp. */
+export type ChatPart = { text: string; href?: string; timestampSeconds?: number };
 
 const TRAILING = new Set([".", ",", ";", ":", "!", "?", ")", "]", "}", "'", '"', "*"]);
 
@@ -29,20 +29,59 @@ function openUrl(trimmed: string): string | null {
   return lower.startsWith("www.") ? `https://${trimmed}` : trimmed;
 }
 
-/** Splits [text] into plain runs and links. Never returns HTML. */
+/** Formats [seconds] as `M:SS` or `H:MM:SS` for chat messages (e.g. `14:22` or `1:05:10`). */
+export function formatChatTimestamp(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+interface Span {
+  start: number;
+  end: number;
+  href?: string;
+  timestampSeconds?: number;
+}
+
+/** Splits [text] into plain runs, http(s) links, and clickable playback timestamps. Never returns HTML. */
 export function chatParts(text: string): ChatPart[] {
-  const finder = /(?<![A-Za-z0-9@/])(?:https?:\/\/|www\.)\S+/gi;
-  const parts: ChatPart[] = [];
-  let cursor = 0;
-  for (const match of text.matchAll(finder)) {
+  const urlFinder = /(?<![A-Za-z0-9@/])(?:https?:\/\/|www\.)\S+/gi;
+  const tsFinder = /(?<![A-Za-z0-9:/._-])@?(?:(\d{1,2}):)?(\d{1,3}):([0-5]\d)(?![A-Za-z0-9:/._-])/g;
+  const urls: Span[] = [];
+  for (const match of text.matchAll(urlFinder)) {
     const raw = match[0];
     const start = match.index ?? 0;
     const trimmed = trimTrailing(raw);
     const href = openUrl(trimmed);
     if (!href) continue;
-    if (start > cursor) parts.push({ text: text.slice(cursor, start) });
-    parts.push({ text: text.slice(start, start + trimmed.length), href });
-    cursor = start + trimmed.length;
+    urls.push({ start, end: start + trimmed.length, href });
+  }
+  const spans: Span[] = [...urls];
+  if (text.includes(":")) {
+    for (const match of text.matchAll(tsFinder)) {
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      if (urls.some((u) => start < u.end && end > u.start)) continue;
+      const hours = match[1] !== undefined ? Number(match[1]) : null;
+      const minutes = Number(match[2]);
+      const seconds = Number(match[3]);
+      if (hours !== null && (hours < 0 || hours > 99 || minutes < 0 || minutes > 59)) continue;
+      if (hours === null && (minutes < 0 || minutes > 599)) continue;
+      spans.push({ start, end, timestampSeconds: (hours ?? 0) * 3600 + minutes * 60 + seconds });
+    }
+  }
+  spans.sort((a, b) => a.start - b.start);
+  const parts: ChatPart[] = [];
+  let cursor = 0;
+  for (const span of spans) {
+    if (span.start < cursor) continue;
+    if (span.start > cursor) parts.push({ text: text.slice(cursor, span.start) });
+    if (span.href) parts.push({ text: text.slice(span.start, span.end), href: span.href });
+    else if (span.timestampSeconds !== undefined) parts.push({ text: text.slice(span.start, span.end), timestampSeconds: span.timestampSeconds });
+    cursor = span.end;
   }
   if (cursor < text.length) parts.push({ text: text.slice(cursor) });
   if (parts.length === 0) parts.push({ text });

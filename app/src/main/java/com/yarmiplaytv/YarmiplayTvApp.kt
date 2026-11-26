@@ -63,6 +63,9 @@ class YarmiplayTvApp : Application() {
             frameGrabber = AndroidFrameGrabber(this),
             seekFrames = AndroidSeekFrames(this),
             malClientId = BuildConfig.MAL_CLIENT_ID,
+            anilistClientId = BuildConfig.ANILIST_CLIENT_ID,
+            openSubtitlesApiKey = BuildConfig.OPENSUBTITLES_API_KEY,
+            subdlApiKey = BuildConfig.SUBDL_API_KEY,
             audioDecoder = AndroidAudioDecoder(this),
             voiceEngine = AndroidVoiceEngine(this, isTv = isTv),
         )

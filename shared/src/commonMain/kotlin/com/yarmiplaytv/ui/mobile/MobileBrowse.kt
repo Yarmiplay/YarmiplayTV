@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -32,6 +34,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -162,6 +165,9 @@ fun MobileBrowseScreen(container: AppContainer, nav: Navigator, parent: MediaIte
             if (container.mal.client.configured && parent.malInfo() != null) {
                 IconButton(onClick = { nav.push(Screen.MalEntry(parent)) }, Modifier.testTag("browse_mal")) { Icon(Icons.Filled.Bookmarks, contentDescription = "MyAnimeList") }
             }
+            if (container.anilist.client.configured && parent.malInfo() != null) {
+                TextButton(onClick = { nav.push(Screen.AniListEntry(parent)) }, Modifier.testTag("browse_anilist")) { Text("AniList") }
+            }
             IconButton(onClick = { nav.push(Screen.Search()) }) { Icon(Icons.Filled.Search, contentDescription = "Search") }
         }
         when {
@@ -219,14 +225,33 @@ fun MobileItemActionsSheet(container: AppContainer, item: MediaItem, onDismiss: 
     val inRoom = room.status == ConnectionStatus.CONNECTED
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = AppColors.Surface, contentColor = AppColors.OnSurface, modifier = Modifier.exposeTestTags()) {
         SurfaceInk {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             item.seriesName?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.titleSmall) }
             Text(item.displayTitle, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             item.fileName?.let { Text(it, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             item.overview?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis) }
+            androidx.compose.foundation.layout.Spacer(Modifier.height(2.dp))
             if (inRoom) {
                 Button({ container.playlist.playInRoom(item); onDismiss() }, Modifier.fillMaxWidth().testTag("action_play_room")) {
                     Icon(Icons.Filled.Groups, contentDescription = null); Text("  Play for everyone in '${ManagedRooms.label(room.room)}'")
+                }
+                if (item.type == MediaItemType.EPISODE && !room.followsOperators) {
+                    FilledTonalButton({ container.playlist.queueRestOfSeason(item, playAnchor = true); onDismiss() }, Modifier.fillMaxWidth().testTag("action_play_queue_season")) {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null); Text("  Play & queue rest of season")
+                    }
+                    FilledTonalButton({ container.playlist.queueNextEpisode(item); onDismiss() }, Modifier.fillMaxWidth().testTag("action_queue_next")) {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null); Text("  Queue next episode")
+                    }
+                    FilledTonalButton({ container.playlist.queueRestOfSeason(item, playAnchor = false); onDismiss() }, Modifier.fillMaxWidth().testTag("action_queue_season")) {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null); Text("  Queue rest of season")
+                    }
                 }
                 FilledTonalButton({ container.playlist.addToRoomPlaylist(item); onDismiss() }, Modifier.fillMaxWidth()) {
                     Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null); Text("  Add to room playlist")

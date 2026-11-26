@@ -177,6 +177,14 @@ export class RoomSession {
   /** Files picked here by name, so the room's echo of a pick needs no lookup. */
   private readonly known = new Map<string, NowPlaying>();
 
+  /** Return a pre-downloaded local ByteSource for (fileName, size) if available in OPFS. */
+  openPreloaded: ((fileName: string, size: number) => Promise<ByteSource | null>) | null = null;
+
+  /** Locates a playlist entry using the room's MediaLocator (used by the background preloader). */
+  locateForPreload(fileName: string): Promise<RoomLocation<RelayFile>> {
+    return this.locate(fileName);
+  }
+
   // Shared playlist history (SharedPlaylist.kt).
   private history: string[][] = [];
   private sent: string[] | null = null;
@@ -651,9 +659,13 @@ export class RoomSession {
       case "local":
         await this.load(localNowPlaying(found.file), resetPosition, true);
         return;
-      case "server":
-        await this.load(playableNowPlaying(found.playable, found.copies), resetPosition, true);
+      case "server": {
+        const np = playableNowPlaying(found.playable, found.copies);
+        const origOpen = np.open;
+        np.open = async () => (await this.openPreloaded?.(np.fileName, np.size)) ?? origOpen();
+        await this.load(np, resetPosition, true);
         return;
+      }
       case "relay": {
         const session = this.client?.session;
         const relayed = found.file;
@@ -671,7 +683,7 @@ export class RoomSession {
             item: null,
             local: null,
             remote: true,
-            open: () => openRelayFile(session, relayed),
+            open: async () => (await this.openPreloaded?.(relayed.name, relayed.size)) ?? openRelayFile(session, relayed),
           },
           resetPosition,
           true,
@@ -876,6 +888,171 @@ export class RoomSession {
       }
       this.reportAdded(names.length, this.add(names));
       if (failed > 0) this.postLocal(`Couldn't add ${failed}`, true);
+    } finally {
+      this.addingItems = false;
+    }
+  }
+
+  /** Queues [item] (when [includeAnchor] or [playAnchor]) and every later episode in the same season in one edit. */
+  async queueRestOfSeason(source: MediaSource, item: MediaItem, opts: { playAnchor?: boolean; includeAnchor?: boolean } = {}) {
+    if (!this.client) {
+      this.postLocal("Join a Syncplay room to use the shared playlist", true);
+      return;
+    }
+    if (this.addingItems) return;
+    this.addingItems = true;
+    try {
+      const seasonList = await source.seasonEpisodes(item.id).catch(() => [] as PlayableMedia[]);
+      const anchor =
+        seasonList.find((p) => p.itemId === item.id) ??
+        (await source.playable(item).catch(() => null));
+      if (!anchor) {
+        this.postLocal(`Can't resolve ${item.name}`, true);
+        return;
+      }
+      const include = opts.includeAnchor ?? true;
+      const play = opts.playAnchor ?? false;
+      const rest = selectRestOfSeason(seasonList, anchor, include || play);
+      for (const p of rest) this.known.set(p.fileName, playableNowPlaying(p));
+      const names = rest.map((p) => p.fileName);
+      if (!names.length) {
+        this.postLocal("No remaining episodes in this season");
+        return;
+      }
+      if (play) {
+        this.add(names);
+        this.client.playInRoom(anchor.fileName);
+        const extra = Math.max(0, names.length - 1);
+        if (extra > 0) this.postLocal(`Queued ${extra} remaining episode${extra === 1 ? "" : "s"} of the season`);
+      } else {
+        this.reportAdded(names.length, this.add(names));
+      }
+    } finally {
+      this.addingItems = false;
+    }
+  }
+
+  /** Queues the next episode after [item] in the same season (skipping episodes already in the playlist). */
+  async queueNextEpisode(source: MediaSource, item: MediaItem) {
+    if (!this.client) {
+      this.postLocal("Join a Syncplay room to use the shared playlist", true);
+      return;
+    }
+    if (this.addingItems) return;
+    this.addingItems = true;
+    try {
+      const seasonList = await source.seasonEpisodes(item.id).catch(() => [] as PlayableMedia[]);
+      const anchor =
+        seasonList.find((p) => p.itemId === item.id) ??
+        (await source.playable(item).catch(() => null));
+      if (!anchor) {
+        this.postLocal(`Can't resolve ${item.name}`, true);
+        return;
+      }
+      const rest = selectRestOfSeason(seasonList, anchor, false);
+      if (!rest.length) {
+        this.postLocal("No next episode found in this season");
+        return;
+      }
+      const nextName = pickNextEpisode(
+        rest.map((p) => p.fileName),
+        this.room.value.playlist,
+      );
+      if (!nextName) {
+        this.postLocal("Remaining episodes of this season are already in the playlist");
+        return;
+      }
+      const picked = rest.find((p) => Filenames.same(p.fileName, nextName));
+      if (picked) this.known.set(picked.fileName, playableNowPlaying(picked));
+      this.reportAdded(1, this.add([nextName]));
+    } finally {
+      this.addingItems = false;
+    }
+  }
+
+  /** Queues the next episode after the currently playing episode (repeated clicks queue subsequent episodes). */
+  async queueNextEpisodeForCurrent() {
+    const np = this.nowPlaying.value;
+    if (!np) return;
+    if (!this.client) {
+      this.postLocal("Join a Syncplay room to use the shared playlist", true);
+      return;
+    }
+    if (this.addingItems) return;
+    this.addingItems = true;
+    try {
+      let names: string[] = [];
+      const copy = np.copies[0] ?? (np.item ? { sourceKey: np.item.sourceKey, itemId: np.item.itemId } : null);
+      if (copy) {
+        const srv = this.servers().find((s) => s.key === copy.sourceKey);
+        if (srv) {
+          const seasonList = await srv.seasonEpisodes(copy.itemId).catch(() => [] as PlayableMedia[]);
+          const anchor = seasonList.find((p) => p.itemId === copy.itemId || Filenames.same(p.fileName, np.fileName));
+          const rest = anchor
+            ? selectRestOfSeason(seasonList, anchor, false)
+            : np.episode?.episode != null
+              ? seasonList.filter((p) => (p.episode?.episode ?? -1) > np.episode!.episode!)
+              : [];
+          for (const p of rest) this.known.set(p.fileName, playableNowPlaying(p));
+          names = rest.map((p) => p.fileName);
+        }
+      }
+      if (!names.length) {
+        const localFile = np.local ?? this.library.files.find((f) => Filenames.same(f.name, np.fileName)) ?? null;
+        if (localFile) {
+          names = localRestOfSeason(localFile.name, localFile.directory, this.library.files, false);
+        }
+      }
+      if (!names.length) {
+        this.postLocal("No next episode found in this season");
+        return;
+      }
+      const nextName = pickNextEpisode(names, this.room.value.playlist);
+      if (!nextName) {
+        this.postLocal("Remaining episodes of this season are already in the playlist");
+        return;
+      }
+      this.reportAdded(1, this.add([nextName]));
+    } finally {
+      this.addingItems = false;
+    }
+  }
+
+  /** Queues every remaining episode in the currently playing episode's season (Jellyfin, Plex, or local folder). */
+  async queueRestOfSeasonForCurrent() {
+    const np = this.nowPlaying.value;
+    if (!np) return;
+    if (!this.client) {
+      this.postLocal("Join a Syncplay room to use the shared playlist", true);
+      return;
+    }
+    if (this.addingItems) return;
+    this.addingItems = true;
+    try {
+      let names: string[] = [];
+      const copy = np.copies[0] ?? (np.item ? { sourceKey: np.item.sourceKey, itemId: np.item.itemId } : null);
+      if (copy) {
+        const srv = this.servers().find((s) => s.key === copy.sourceKey);
+        if (srv) {
+          const seasonList = await srv.seasonEpisodes(copy.itemId).catch(() => [] as PlayableMedia[]);
+          const anchor = seasonList.find((p) => p.itemId === copy.itemId || Filenames.same(p.fileName, np.fileName));
+          const rest = anchor
+            ? selectRestOfSeason(seasonList, anchor, false)
+            : np.episode?.episode != null
+              ? seasonList.filter((p) => (p.episode?.episode ?? -1) > np.episode!.episode!)
+              : [];
+          for (const p of rest) this.known.set(p.fileName, playableNowPlaying(p));
+          names = rest.map((p) => p.fileName);
+        }
+      }
+      if (!names.length) {
+        const localFile = np.local ?? this.library.files.find((f) => Filenames.same(f.name, np.fileName)) ?? null;
+        if (localFile) {
+          names = localRestOfSeason(localFile.name, localFile.directory, this.library.files, false);
+        }
+      }
+      if (!names.length) this.postLocal("No remaining episodes found in this season");
+      else this.reportAdded(names.length, this.add(names));
     } finally {
       this.addingItems = false;
     }
@@ -1135,4 +1312,64 @@ function urlNowPlaying(url: string): NowPlaying {
 /** Whether [lan] is the LAN name the saved room already has (so it came from the server), ignoring case. */
 function sameLanName(lan: string | null, saved: string | null): boolean {
   return !!lan && !!saved && lan.trim().toLowerCase() === saved.trim().toLowerCase();
+}
+
+export function selectRestOfSeason(
+  seasonEpisodes: PlayableMedia[],
+  anchor: PlayableMedia,
+  includeAnchor: boolean,
+): PlayableMedia[] {
+  if (!seasonEpisodes.length) return includeAnchor ? [anchor] : [];
+  const idx = seasonEpisodes.findIndex(
+    (p) => p.itemId === anchor.itemId || Filenames.same(p.fileName, anchor.fileName),
+  );
+  if (idx >= 0) {
+    const start = includeAnchor ? idx : idx + 1;
+    return start < seasonEpisodes.length ? seasonEpisodes.slice(start) : [];
+  }
+  const anchorEp = anchor.episode?.episode;
+  if (anchorEp == null) return includeAnchor ? [anchor] : [];
+  return seasonEpisodes.filter((p) => {
+    const n = p.episode?.episode;
+    if (n == null) return false;
+    return includeAnchor ? n >= anchorEp : n > anchorEp;
+  });
+}
+
+export function localRestOfSeason(
+  anchorName: string,
+  anchorDirectory: string | null,
+  allFiles: LocalFile[],
+  includeSelf: boolean,
+): string[] {
+  const parsed = FileNames.parseEpisode(anchorName, anchorDirectory);
+  if (!parsed || parsed.episode === null) return includeSelf ? [anchorName] : [];
+  const anchorEp = parsed.episode;
+  const anchorKey = FileNames.normalize(parsed.title);
+  const matched: { ep: number; name: string }[] = [];
+  for (const file of allFiles) {
+    if (anchorDirectory !== null && file.directory !== anchorDirectory) continue;
+    const ep = FileNames.parseEpisode(file.name, file.directory || null);
+    if (!ep || ep.episode === null) continue;
+    if (FileNames.normalize(ep.title) !== anchorKey) continue;
+    if (parsed.season !== null && ep.season !== null && ep.season !== parsed.season) continue;
+    if (includeSelf ? ep.episode < anchorEp : ep.episode <= anchorEp) continue;
+    matched.push({ ep: ep.episode, name: file.name });
+  }
+  matched.sort((a, b) => a.ep - b.ep);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of matched) {
+    const k = m.name.toLowerCase();
+    if (!seen.has(k)) {
+      seen.add(k);
+      out.push(m.name);
+    }
+  }
+  return out;
+}
+
+/** Picks the first episode from [remaining] not already present in [existingPlaylist], or null if all are queued. */
+export function pickNextEpisode(remaining: string[], existingPlaylist: string[]): string | null {
+  return remaining.find((candidate) => !existingPlaylist.some((e) => Filenames.same(e, candidate))) ?? null;
 }

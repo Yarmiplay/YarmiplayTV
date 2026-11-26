@@ -78,9 +78,10 @@ class RelayTransfer(
 
     /**
      * Fetches the missing blocks of each byte range in [ranges], in order, with the server's [mode] (`prefetch`, or
-     * `download` on servers without it). Gives up after a few failures: it only saves time, nothing waits for it.
+     * `download` on servers without it). [order] hints playlist distance (`1` = next entry) to the server scheduler.
+     * Gives up after a few failures: it only saves time, nothing waits for it.
      */
-    fun prefetch(ranges: List<LongRange>, mode: String) {
+    fun prefetch(ranges: List<LongRange>, mode: String, order: Int = 0) {
         if (prefetchJob?.isActive == true || cache.complete) return
         prefetchJob = scope.launch(Dispatchers.IO) {
             var failures = 0
@@ -89,7 +90,7 @@ class RelayTransfer(
                 val last = cache.blockOf(range.last.coerceAtMost(size - 1))
                 while (currentCoroutineContext().isActive && !cache.isDeleted) {
                     val first = cache.firstMissing(cache.blockOf(range.first))?.takeIf { it <= last } ?: break
-                    if (fetch(first, runEnd(first, last + 1), mode, measure = false) { false }) continue
+                    if (fetch(first, runEnd(first, last + 1), mode, order = order, measure = false) { false }) continue
                     if (++failures >= MAX_PREFETCH_FAILURES) return@launch
                     delay(2_000L * failures)
                 }
@@ -262,7 +263,7 @@ class RelayTransfer(
      * Fetches blocks `[first, end)` with the server's [mode]; returns false on an error. [abandon] stops early when the
      * player moved away. Only [measure]d fetches count toward [rate].
      */
-    private suspend fun fetch(first: Int, end: Int, mode: String, measure: Boolean = true, abandon: () -> Boolean): Boolean {
+    private suspend fun fetch(first: Int, end: Int, mode: String, order: Int = 0, measure: Boolean = true, abandon: () -> Boolean): Boolean {
         val src = source() ?: run {
             fail("No viewer is sharing this file right now")
             return false
@@ -271,8 +272,9 @@ class RelayTransfer(
         val start = cache.blockStart(first) + if (growing != null) cache.partialOf(first) else 0
         val last = minOf(size, cache.blockStart(end)) - 1
         val t0 = System.nanoTime()
+        val orderParam = if (mode == "prefetch" && order > 0) "&order=$order" else ""
         val request = Request.Builder()
-            .url("${src.session.baseUrl}/yarmiplay/files/${src.fileId}?mode=$mode")
+            .url("${src.session.baseUrl}/yarmiplay/files/${src.fileId}?mode=$mode$orderParam")
             .header("Authorization", src.session.authorization)
             .header("Range", "bytes=$start-$last")
             .build()

@@ -53,6 +53,7 @@ import com.yarmiplaytv.BuildConfig
 import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.data.PlaybackPrefs
 import com.yarmiplaytv.data.VoiceNoiseMode
+import com.yarmiplaytv.media.subtitles.SubtitleLanguages
 import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.UnpauseMode
 import com.yarmiplaytv.ui.components.ActionButton
@@ -120,7 +121,12 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
 
     val s = settings.sync
     val pb = settings.playback
-    val categories = remember(container) { TvSettingsCategory.entries.filter { it != TvSettingsCategory.MAL || container.mal.client.configured } }
+    val categories = remember(container) {
+        TvSettingsCategory.entries.filter {
+            (it != TvSettingsCategory.MAL || container.mal.client.configured) &&
+                (it != TvSettingsCategory.ANILIST || container.anilist.client.configured)
+        }
+    }
     var selected by rememberSaveable { mutableStateOf(TvSettingsCategory.MEDIA) }
     var qr by remember { mutableStateOf<AboutLink?>(null) }
     // The categories on the left, the chosen one's settings beside them, as on wide phone and desktop windows.
@@ -361,6 +367,39 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                     { container.scope.launch { container.settingsStore.saveShareFiles(!settings.shareFiles) } },
                     subtitle = "On YarmiplayServerTV servers, viewers without the playlist's file can stream it from your media folders",
                 )
+                ToggleRow(
+                    "Pre-download playlist on Wi-Fi / Ethernet",
+                    settings.preDownloadPlaylistWifi,
+                    { container.scope.launch { container.settingsStore.savePreDownloadPlaylist(wifi = !settings.preDownloadPlaylistWifi, mobile = settings.preDownloadPlaylistMobile) } },
+                    Modifier.testTag("toggle_predownload_wifi"),
+                    subtitle = "Quietly download upcoming room playlist items in the background; always pauses for the video you're watching",
+                )
+                ToggleRow(
+                    "Pre-download playlist on mobile data",
+                    settings.preDownloadPlaylistMobile,
+                    { container.scope.launch { container.settingsStore.savePreDownloadPlaylist(wifi = settings.preDownloadPlaylistWifi, mobile = !settings.preDownloadPlaylistMobile) } },
+                    Modifier.testTag("toggle_predownload_mobile"),
+                    subtitle = "Allow background pre-downloading over metered connections",
+                )
+                if (settings.preDownloadPlaylistWifi || settings.preDownloadPlaylistMobile) {
+                    TvDropdownRow(
+                        title = "Pre-download cache limit",
+                        selected = settings.preDownloadCacheGb,
+                        options = listOf(2 to "2 GB", 4 to "4 GB (Default)", 8 to "8 GB", 16 to "16 GB"),
+                        modifier = Modifier.testTag("predownload_cache_limit"),
+                        subtitle = "Temporary space used for upcoming playlist files (capped at half of free storage)",
+                    ) { gb -> container.scope.launch { container.settingsStore.savePreDownloadCacheGb(gb) } }
+                    container.preloader?.let { pre ->
+                        val st by pre.state.collectAsStateWithLifecycle()
+                        val mb = st.cachedBytes / (1024L * 1024L)
+                        ValueRow(
+                            "Pre-download cache",
+                            if (st.cachedBytes > 0L) "$mb MB · Clear" else "Empty",
+                            { if (st.cachedBytes > 0L) pre.clearCache() },
+                            subtitle = st.activeFile?.let { "Downloading $it" } ?: if (st.pausedForPlayback) "Paused while watching" else "${st.cachedCount} ready",
+                        )
+                    }
+                }
                 val pickDownloadFolder = rememberDirectoryPicker("Save relayed files to") { uri ->
                     container.scope.launch { container.settingsStore.saveDownloadDirectory(uri) }
                 }
@@ -397,6 +436,14 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                     ValueRow("MyAnimeList", account.userName, { nav.push(Screen.Mal) }, subtitle = "Your list, list updates, matched shows and signing out")
                 }
                 Text(MAL_ATTRIBUTION, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall)
+                    }
+                    TvSettingsCategory.ANILIST -> {
+                val account = settings.anilist
+                if (account == null) {
+                    ValueRow("AniList account", "Sign in", { nav.push(Screen.AniListLogin) }, subtitle = "Update your AniList as you watch")
+                } else {
+                    ValueRow("AniList", account.userName, { nav.push(Screen.AniList) }, subtitle = "Your list, list updates, matched shows and signing out")
+                }
                     }
                     TvSettingsCategory.PLAYBACK -> {
                 ToggleRow("Hardware decoding", pb.hardwareDecoding, { savePlayback(pb.copy(hardwareDecoding = !pb.hardwareDecoding)) }, subtitle = "MediaCodec with software fallback. Takes effect after restarting the app")
@@ -445,6 +492,22 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                     container.scope.launch { container.settingsStore.savePlayback(container.settings.value.playback.copy(subtitleLanguages = text)) }
                 }
                 TvTextField(subtitles, { subtitles = it }, "Preferred subtitle languages (restart to apply)", placeholder = "eng,en")
+                ToggleRow(
+                    "Online subtitles search",
+                    pb.onlineSubtitlesSearch,
+                    { savePlayback(pb.copy(onlineSubtitlesSearch = !pb.onlineSubtitlesSearch)) },
+                    Modifier.testTag("toggle_online_subtitles"),
+                    subtitle = "Search OpenSubtitles.com and Subdl from the player's Subtitles menu. Off makes no requests",
+                )
+                if (pb.onlineSubtitlesSearch) {
+                    TvDropdownRow(
+                        title = "Online subtitles language",
+                        selected = pb.onlineSubtitlesLanguage.ifBlank { SubtitleLanguages.DEFAULT },
+                        options = SubtitleLanguages.COMMON,
+                        modifier = Modifier.testTag("online_subtitles_language"),
+                        subtitle = "Default language used when searching online subtitles",
+                    ) { code -> savePlayback(pb.copy(onlineSubtitlesLanguage = code)) }
+                }
                     }
                     TvSettingsCategory.APPEARANCE -> {
                         val chosen = AppTheme.of(settings.theme)
@@ -480,6 +543,7 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
 private enum class TvSettingsCategory(val title: String, val icon: ImageVector) {
     MEDIA("Media", Icons.Filled.VideoLibrary),
     MAL("MyAnimeList", Icons.Filled.Bookmarks),
+    ANILIST("AniList", Icons.Filled.Bookmarks),
     SYNCING("Syncing", Icons.Filled.Sync),
     VOICE("Voice", Icons.Filled.Mic),
     PLAYBACK("Playback", Icons.Filled.PlayCircle),

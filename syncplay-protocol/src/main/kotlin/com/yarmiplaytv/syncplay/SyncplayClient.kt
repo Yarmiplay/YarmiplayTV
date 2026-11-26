@@ -1480,6 +1480,7 @@ class SyncplayClient(
                 voice = o.bool("voice"),
                 voiceDisabled = o.bool("voiceDisabled"),
                 growingFiles = o.bool("growingFiles"),
+                subtitles = o.bool("subtitles"),
             )
         }
 

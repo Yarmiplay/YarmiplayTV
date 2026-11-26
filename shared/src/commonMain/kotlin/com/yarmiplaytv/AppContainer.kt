@@ -25,14 +25,17 @@ import com.yarmiplaytv.media.jellyfin.JellyfinClient
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
 import com.yarmiplaytv.media.jellyfin.JellyfinSource
 import com.yarmiplaytv.media.aniskip.AniSkipClient
+import com.yarmiplaytv.media.anilist.AniListClient
 import com.yarmiplaytv.playback.PlaybackController
 import com.yarmiplaytv.media.mal.MalClient
 import com.yarmiplaytv.media.plex.PlexClient
 import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
+import com.yarmiplaytv.media.subtitles.SubtitleSearchClient
 import com.yarmiplaytv.player.Player
 import com.yarmiplaytv.player.StreamRoutes
 import com.yarmiplaytv.player.SubtitleScale
+import com.yarmiplaytv.relay.PlaylistPreloader
 import com.yarmiplaytv.relay.RelayManager
 import com.yarmiplaytv.relay.SessionDns
 import com.yarmiplaytv.screenshot.ScreenshotStore
@@ -50,9 +53,12 @@ import com.yarmiplaytv.sync.discoverSyncplayServers
 import com.yarmiplaytv.syncplay.ServerKind
 import com.yarmiplaytv.syncplay.SyncplayEvent
 import com.yarmiplaytv.syncplay.YarmiplayInfo
+import com.yarmiplaytv.tracking.AniListService
+import com.yarmiplaytv.tracking.AniListTracker
 import com.yarmiplaytv.tracking.MalEpisodes
 import com.yarmiplaytv.tracking.MalService
 import com.yarmiplaytv.tracking.MalTracker
+import com.yarmiplaytv.tracking.OnlineSubtitlesService
 import com.yarmiplaytv.tracking.SkipService
 import com.yarmiplaytv.tracking.detect.AudioDecoder
 import com.yarmiplaytv.tracking.detect.EpisodeSiblings
@@ -103,6 +109,12 @@ class AppContainer(
     val seekFrames: SeekFrames? = null,
     /** This build's MyAnimeList Client ID (from the build, never the repository); empty leaves MyAnimeList off. */
     malClientId: String = "",
+    /** This build's AniList Client ID (from the build, never the repository); empty leaves AniList off. */
+    anilistClientId: String = "",
+    /** Optional OpenSubtitles.com REST v1 API key (from the build). */
+    openSubtitlesApiKey: String = "",
+    /** Optional Subdl v1 API key (from the build). */
+    subdlApiKey: String = "",
     /** Reads videos' sound, for finding openings and endings by listening (kept under [cacheDir]); without it, no listening. */
     audioDecoder: AudioDecoder? = null,
     /** Mic/speaker + Opus path for room voice; platforms pass a real engine, tests can omit it. */
@@ -195,12 +207,36 @@ class AppContainer(
         confirmPlainText = ::confirmSyncplayPlainText
     }
     /** The YarmiplayServerTV file relay; idle on other servers. */
-    val relay: RelayManager? = cacheDir?.let { RelayManager(scope, sync, player, local, it, settings.map { s -> s.shareFiles }) }
+    val relay: RelayManager? = cacheDir?.let {
+        RelayManager(
+            scope, sync, player, local, it,
+            sharing = settings.map { s -> s.shareFiles },
+            cacheLimitBytes = { settings.value.preDownloadCacheGb.coerceIn(1, 32).toLong() shl 30 },
+        )
+    }
     private val locator = MediaLocator(local, servers) { name -> relay?.find(name) }.apply { preferredServer = initial.preferredServer }
     val playlist = PlaylistController(scope, sync, player, mediaSource, local, locator, relay, settingsStore, shares).apply {
         confirmUntrustedCertificate = { host ->
             securityPrompts.ask("certificate:${host.lowercase()}", SecurityQuestions.untrustedCertificate(host)) != SecurityAnswer.CANCEL
         }
+    }
+    /** Priority-aware background playlist pre-downloader (relay + Jellyfin/Plex); always yields to active playback. */
+    val preloader: PlaylistPreloader? = cacheDir?.let { dir ->
+        PlaylistPreloader(scope, sync, player, playlist.nowPlaying, playlist.status, locator, relay, settings, dir).also { pre ->
+            playlist.preloadedFilePath = pre::completePath
+        }
+    }
+    /** Online subtitle search (OpenSubtitles.com + Subdl); off by default until enabled in Settings > Playback. */
+    val onlineSubtitles: OnlineSubtitlesService? = cacheDir?.let { dir ->
+        OnlineSubtitlesService(
+            SubtitleSearchClient(openSubtitlesApiKey = openSubtitlesApiKey, subdlApiKey = subdlApiKey),
+            settingsStore,
+            settings,
+            local,
+            relay,
+            playlist,
+            dir,
+        )
     }
     val screenshots: Screenshots? = screenshotStore?.let { store ->
         Screenshots(scope, player, store, folder = { settings.value.screenshotDirectory }) { playlist.nowPlaying.value?.title }
@@ -226,6 +262,9 @@ class AppContainer(
     /** MyAnimeList: the account, the playing episode's entry, and list updates. */
     val mal = MalService(scope, settingsStore, settings, MalClient(malClientId))
     private val malTracker = MalTracker(scope, player, playlist.nowPlaying, mal)
+    /** AniList: independent of MyAnimeList so either or both can be used. */
+    val anilist = AniListService(scope, settingsStore, settings, AniListClient(anilistClientId))
+    private val anilistTracker = AniListTracker(scope, player, playlist.nowPlaying, anilist)
     private val autosave = PlaylistAutosave(scope, sync, playlist.shared, settingsStore).apply { enabled = initial.autosavePlaylists }
     /** The rooms joined, for the Saved and Recent lists. */
     val roomHistory = RoomHistory(scope, sync, settingsStore).also { it.start() }
@@ -241,6 +280,7 @@ class AppContainer(
         scope, player, playlist.nowPlaying, mal, AniSkipClient(), servers, sync.room, roomAutoSkip.state, settings,
         notify = { sync.postLocal(it) },
         detector = skipDetector,
+        anilist = anilist,
     )
     private val jellyfinSharing = HostJellyfinSharing(
         scope, sync, jellyfinClient,

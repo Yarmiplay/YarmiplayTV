@@ -213,6 +213,9 @@ private fun createContainer(configDir: File, store: SettingsStore): AppContainer
         },
         seekFrames = MpvSeekFrames,
         malClientId = MAL_CLIENT_ID,
+        anilistClientId = ANILIST_CLIENT_ID,
+        openSubtitlesApiKey = OPENSUBTITLES_API_KEY,
+        subdlApiKey = SUBDL_API_KEY,
         audioDecoder = MpvAudioDecoder,
         voiceEngine = DesktopVoiceEngine(),
     ).also { it.deviceKind = DeviceKind.DESKTOP }

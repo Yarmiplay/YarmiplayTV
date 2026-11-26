@@ -20,6 +20,7 @@
    */
   const session = $derived($sessionStore);
   let room = $state<RoomState | null>(null);
+  let hasEpisode = $state(false);
   let canUndo = $state(false);
   let selected = $state(new Set<number>());
   let anchor = $state<number | null>(null);
@@ -38,6 +39,7 @@
     if (!session) return;
     const stops = [
       session.room.subscribe((r) => (room = r)),
+      session.nowPlaying.subscribe((np) => (hasEpisode = np?.episode != null)),
       session.canUndo.subscribe((u) => (canUndo = u)),
       savedPlaylistsStore.subscribe((list) => (savedPlaylists = list)),
     ];
@@ -177,6 +179,10 @@
     {/if}
     {#if menu}
       <div class="actions">
+        {#if hasEpisode}
+          <button class="button quiet small" onclick={() => (void session?.queueNextEpisodeForCurrent(), (menu = false))}><Icon name="playlist_add" size={18} />Queue next episode</button>
+          <button class="button quiet small" onclick={() => (void session?.queueRestOfSeasonForCurrent(), (menu = false))}><Icon name="playlist_add" size={18} />Queue rest of season</button>
+        {/if}
         <button class="button quiet small" onclick={() => (session?.shuffle(false), (menu = false))}><Icon name="shuffle" size={18} />Shuffle remaining</button>
         <button class="button quiet small" onclick={() => (session?.shuffle(true), (menu = false))}><Icon name="shuffle" size={18} />Shuffle entire</button>
         <button

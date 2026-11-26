@@ -3,6 +3,7 @@
   import { changeSettings, go, library, route, settings, version } from "../app/context";
   import { keepsFolders, type MediaFolder } from "../lib/local/library";
   import { UnpauseMode } from "../lib/syncplay/models";
+  import { SUBTITLE_LANGUAGES } from "../lib/subtitles/search";
   import { THEME_NOTE, THEMES } from "../lib/ui/theme";
   import { listInputDevices, listOutputDevices, supportsSinkId } from "../lib/voice/devices";
   import type { VoiceAudioDevice } from "../lib/voice/engine";
@@ -16,6 +17,7 @@
     { key: "appearance", label: "Appearance", icon: "palette" },
     { key: "media", label: "Media", icon: "video_library" },
     { key: "myanimelist", label: "MyAnimeList", icon: "bookmarks" },
+    { key: "anilist", label: "AniList", icon: "bookmarks" },
     { key: "syncing", label: "Syncing", icon: "sync" },
     { key: "voice", label: "Voice", icon: "mic" },
     { key: "playback", label: "Playback", icon: "tune" },
@@ -143,6 +145,25 @@
             <input type="checkbox" checked={s.shareFiles} onchange={(e) => set((x) => ({ ...x, shareFiles: (e.target as HTMLInputElement).checked }))} />
             Share my files with the room (YarmiplayServerTV's file relay)
           </label>
+          <h3>Pre-download playlist</h3>
+          <label class="switch" data-testid="toggle_predownload_wifi">
+            <input type="checkbox" checked={s.preDownloadPlaylistWifi} onchange={(e) => set((x) => ({ ...x, preDownloadPlaylistWifi: (e.target as HTMLInputElement).checked }))} />
+            <span>Pre-download playlist on Wi-Fi / Ethernet<br /><span class="dim small">Quietly cache upcoming room playlist items in the background; always pauses for the video you're watching</span></span>
+          </label>
+          <label class="switch" data-testid="toggle_predownload_mobile">
+            <input type="checkbox" checked={s.preDownloadPlaylistMobile} onchange={(e) => set((x) => ({ ...x, preDownloadPlaylistMobile: (e.target as HTMLInputElement).checked }))} />
+            <span>Pre-download playlist on mobile data<br /><span class="dim small">Allow background pre-downloading over metered connections</span></span>
+          </label>
+          {#if s.preDownloadPlaylistWifi || s.preDownloadPlaylistMobile}
+            <label data-testid="predownload_cache_limit">
+              Pre-download cache limit
+              <select value={String(s.preDownloadCacheGb)} onchange={(e) => set((x) => ({ ...x, preDownloadCacheGb: Number((e.target as HTMLSelectElement).value) }))}>
+                <option value="1">1 GB</option>
+                <option value="2">2 GB (Default)</option>
+                <option value="4">4 GB</option>
+              </select>
+            </label>
+          {/if}
         </div>
       {:else if shown === "syncing"}
         <h2>Syncing</h2>
@@ -326,12 +347,36 @@
             Subtitle languages, in order
             <input value={s.playback.subtitleLanguages} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, subtitleLanguages: (e.target as HTMLInputElement).value } }))} />
           </label>
+          <h3>Online subtitles</h3>
+          <label class="switch" data-testid="toggle_online_subtitles">
+            <input type="checkbox" checked={s.playback.onlineSubtitlesSearch} onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, onlineSubtitlesSearch: (e.target as HTMLInputElement).checked } }))} />
+            <span>Online subtitles search<br /><span class="dim small">Search OpenSubtitles.com and Subdl from the player's Subtitles menu. Off makes no requests</span></span>
+          </label>
+          {#if s.playback.onlineSubtitlesSearch}
+            <label data-testid="online_subtitles_language">
+              Online subtitles language
+              <select
+                value={s.playback.onlineSubtitlesLanguage || "en"}
+                onchange={(e) => set((x) => ({ ...x, playback: { ...x.playback, onlineSubtitlesLanguage: (e.target as HTMLSelectElement).value } }))}
+              >
+                {#each SUBTITLE_LANGUAGES as lang (lang.code)}
+                  <option value={lang.code}>{lang.label}</option>
+                {/each}
+              </select>
+            </label>
+          {/if}
         </div>
       {:else if shown === "myanimelist"}
         <h2>MyAnimeList</h2>
         <div class="card group">
           <p>Keep your MyAnimeList list up to date as you watch, and find any show.</p>
           <a class="button quiet" href="#/mal"><Icon name="bookmarks" size={18} />MyAnimeList</a>
+        </div>
+      {:else if shown === "anilist"}
+        <h2>AniList</h2>
+        <div class="card group">
+          <p>Keep your AniList list up to date as you watch, directly from your browser.</p>
+          <a class="button quiet" href="#/anilist"><Icon name="bookmarks" size={18} />AniList</a>
         </div>
       {:else if shown === "whatsnew"}
         <h2>What's new</h2>

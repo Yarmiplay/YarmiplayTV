@@ -10,6 +10,8 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.yarmiplaytv.DevicePlatform
+import com.yarmiplaytv.media.anilist.AniListAccount
+import com.yarmiplaytv.media.anilist.AniListQueued
 import com.yarmiplaytv.media.jellyfin.JellyfinClient
 import com.yarmiplaytv.media.jellyfin.JellyfinSession
 import com.yarmiplaytv.media.jellyfin.JellyfinSource
@@ -18,6 +20,8 @@ import com.yarmiplaytv.media.mal.MalMapping
 import com.yarmiplaytv.media.mal.MalQueued
 import com.yarmiplaytv.media.plex.PlexSession
 import com.yarmiplaytv.media.plex.PlexSource
+import com.yarmiplaytv.media.subtitles.OpenSubtitlesAccount
+import com.yarmiplaytv.media.subtitles.SubtitleLanguages
 import com.yarmiplaytv.player.SubtitleScale
 import com.yarmiplaytv.sync.TrustedDomains
 import com.yarmiplaytv.syncplay.Constants
@@ -220,6 +224,10 @@ data class PlaybackPrefs(
     val lowEndPerformance: Boolean = false,
     /** Desktop: show dropped-frame / A-V offset / display-latency under the seek bar. */
     val showPlaybackStats: Boolean = false,
+    /** Opt-in online subtitle search (OpenSubtitles / Subdl). Off by default. */
+    val onlineSubtitlesSearch: Boolean = false,
+    /** Preferred language code for online subtitle search (default: English `"en"`). */
+    val onlineSubtitlesLanguage: String = SubtitleLanguages.DEFAULT,
 )
 
 data class AppSettings(
@@ -388,6 +396,27 @@ data class AppSettings(
     val malIgnoredNames: Map<String, String> = emptyMap(),
     /** MyAnimeList updates that couldn't be sent yet (offline, or MyAnimeList busy). */
     val malQueue: List<MalQueued> = emptyList(),
+    /** Optional OpenSubtitles.com account token for higher daily subtitle download limits. */
+    val openSubtitlesAccount: OpenSubtitlesAccount? = null,
+    /** Pre-download upcoming playlist entries in the background on Wi-Fi / Ethernet (default: on). */
+    val preDownloadPlaylistWifi: Boolean = true,
+    /** Also pre-download upcoming playlist entries on mobile data / metered networks (default: off). */
+    val preDownloadPlaylistMobile: Boolean = false,
+    /** Pre-download cache cap in GiB (clamped to half of usable free space). */
+    val preDownloadCacheGb: Int = 4,
+    /** The signed-in AniList account; null when signed out. */
+    val anilist: AniListAccount? = null,
+    /** Update AniList automatically when an episode is 90% watched. */
+    val anilistAutoUpdate: Boolean = true,
+    /** Ask before each AniList update instead of updating and offering Undo. */
+    val anilistAskFirst: Boolean = false,
+    /** Shows matched to an AniList entry by hand (or surely). */
+    val anilistMappings: Map<String, MalMapping> = emptyMap(),
+    /** Shows never tracked on AniList. */
+    val anilistIgnored: Set<String> = emptySet(),
+    val anilistIgnoredNames: Map<String, String> = emptyMap(),
+    /** AniList updates waiting to be sent (offline or rate-limited). */
+    val anilistQueue: List<AniListQueued> = emptyList(),
     /** Saved rooms (chosen by the user) first, then the rooms joined recently. */
     val savedRooms: List<SavedRoom> = emptyList(),
 )
@@ -431,6 +460,7 @@ internal object KnownServers {
 
 private val malMappingsSerializer = MapSerializer(String.serializer(), MalMapping.serializer())
 private val malQueueSerializer = ListSerializer(MalQueued.serializer())
+private val anilistQueueSerializer = ListSerializer(AniListQueued.serializer())
 private val voicePeerPrefsSerializer = MapSerializer(String.serializer(), VoicePeerPrefs.serializer())
 
 class SettingsStore(
@@ -515,6 +545,12 @@ class SettingsStore(
         val subScale = doublePreferencesKey("pb_sub_scale")
         val lowEndPerformance = booleanPreferencesKey("pb_low_end")
         val showPlaybackStats = booleanPreferencesKey("pb_show_stats")
+        val onlineSubtitlesSearch = booleanPreferencesKey("pb_online_subs")
+        val onlineSubtitlesLanguage = stringPreferencesKey("pb_online_subs_lang")
+        val openSubtitlesAccount = stringPreferencesKey("opensubtitles_account")
+        val preDownloadWifi = booleanPreferencesKey("predownload_wifi")
+        val preDownloadMobile = booleanPreferencesKey("predownload_mobile")
+        val preDownloadCacheGb = intPreferencesKey("predownload_cache_gb")
 
         /** JSON lists of [JellyfinSession] and [PlexSession]. */
         val jfServers = stringPreferencesKey("jf_servers")
@@ -560,6 +596,14 @@ class SettingsStore(
         val savedRooms = stringPreferencesKey("sp_saved_rooms")
         val savedPlaylists = stringPreferencesKey("saved_playlists")
         val malKeys = listOf(malAccount, malAuto, malAsk, malMappings, malIgnored, malIgnoredNames, malQueue)
+        val anilistAccount = stringPreferencesKey("al_account")
+        val anilistAuto = booleanPreferencesKey("al_auto")
+        val anilistAsk = booleanPreferencesKey("al_ask")
+        val anilistMappings = stringPreferencesKey("al_mappings")
+        val anilistIgnored = stringSetPreferencesKey("al_ignored")
+        val anilistIgnoredNames = stringSetPreferencesKey("al_ignored_names")
+        val anilistQueue = stringPreferencesKey("al_queue")
+        val anilistKeys = listOf(anilistAccount, anilistAuto, anilistAsk, anilistMappings, anilistIgnored, anilistIgnoredNames, anilistQueue)
     }
 
     /**
@@ -626,6 +670,8 @@ class SettingsStore(
                 subtitleScale = p[Keys.subScale] ?: defaults.playback.subtitleScale,
                 lowEndPerformance = p[Keys.lowEndPerformance] ?: false,
                 showPlaybackStats = p[Keys.showPlaybackStats] ?: false,
+                onlineSubtitlesSearch = p[Keys.onlineSubtitlesSearch] ?: false,
+                onlineSubtitlesLanguage = p[Keys.onlineSubtitlesLanguage]?.takeIf { it.isNotBlank() } ?: SubtitleLanguages.DEFAULT,
             ),
             jellyfinServers = jellyfinServers,
             lastJellyfinUrl = p[Keys.jfLastUrl] ?: "",
@@ -712,6 +758,17 @@ class SettingsStore(
             malIgnored = malIgnored,
             malIgnoredNames = malIgnoredNames,
             malQueue = p[Keys.malQueue]?.let { runCatching { json.decodeFromString(malQueueSerializer, it) }.getOrNull() } ?: emptyList(),
+            openSubtitlesAccount = p[Keys.openSubtitlesAccount]?.let { runCatching { json.decodeFromString(OpenSubtitlesAccount.serializer(), it) }.getOrNull() },
+            preDownloadPlaylistWifi = p[Keys.preDownloadWifi] ?: true,
+            preDownloadPlaylistMobile = p[Keys.preDownloadMobile] ?: false,
+            preDownloadCacheGb = (p[Keys.preDownloadCacheGb] ?: 4).coerceIn(1, 32),
+            anilist = p[Keys.anilistAccount]?.let { runCatching { json.decodeFromString(AniListAccount.serializer(), it) }.getOrNull() },
+            anilistAutoUpdate = p[Keys.anilistAuto] ?: true,
+            anilistAskFirst = p[Keys.anilistAsk] ?: false,
+            anilistMappings = p[Keys.anilistMappings]?.let { runCatching { json.decodeFromString(malMappingsSerializer, it) }.getOrNull() } ?: emptyMap(),
+            anilistIgnored = p[Keys.anilistIgnored] ?: emptySet(),
+            anilistIgnoredNames = p[Keys.anilistIgnoredNames]?.associate { it.substringBefore('\t') to it.substringAfter('\t', "") } ?: emptyMap(),
+            anilistQueue = p[Keys.anilistQueue]?.let { runCatching { json.decodeFromString(anilistQueueSerializer, it) }.getOrNull() } ?: emptyList(),
             savedRooms = p[Keys.savedRooms]?.let(SavedRooms::decode) ?: emptyList(),
         )
     }
@@ -782,6 +839,55 @@ class SettingsStore(
 
     /** Signing out of MyAnimeList: deletes every MyAnimeList key (account, choices, matches and queue). */
     suspend fun clearMal() = dataStore.edit { p -> Keys.malKeys.forEach { p.remove(it) } }
+
+    // --- Online subtitles & pre-download playlist -----------------------------------------------
+
+    suspend fun saveOnlineSubtitlesSearch(on: Boolean) = dataStore.edit { it[Keys.onlineSubtitlesSearch] = on }
+
+    suspend fun saveOnlineSubtitlesLanguage(lang: String) = dataStore.edit {
+        it[Keys.onlineSubtitlesLanguage] = lang.trim().lowercase().ifEmpty { SubtitleLanguages.DEFAULT }
+    }
+
+    suspend fun saveOpenSubtitlesAccount(account: OpenSubtitlesAccount?) = dataStore.edit {
+        if (account == null) it.remove(Keys.openSubtitlesAccount)
+        else it[Keys.openSubtitlesAccount] = json.encodeToString(OpenSubtitlesAccount.serializer(), account)
+    }
+
+    suspend fun savePreDownloadPrefs(wifi: Boolean, mobile: Boolean, cacheGb: Int = 4) = dataStore.edit {
+        it[Keys.preDownloadWifi] = wifi
+        it[Keys.preDownloadMobile] = mobile
+        it[Keys.preDownloadCacheGb] = cacheGb.coerceIn(1, 32)
+    }
+
+    // --- AniList: everything under al_*, on this device only ------------------------------------
+
+    suspend fun saveAniListAccount(account: AniListAccount?) = dataStore.edit {
+        if (account == null) it.remove(Keys.anilistAccount)
+        else it[Keys.anilistAccount] = json.encodeToString(AniListAccount.serializer(), account)
+    }
+
+    suspend fun saveAniListPrefs(autoUpdate: Boolean, askFirst: Boolean) = dataStore.edit {
+        it[Keys.anilistAuto] = autoUpdate
+        it[Keys.anilistAsk] = askFirst
+    }
+
+    suspend fun saveAniListMapping(key: String, mapping: MalMapping?) = dataStore.edit {
+        val map = read(it).anilistMappings.toMutableMap()
+        if (mapping == null) map.remove(key) else map[key] = mapping
+        it[Keys.anilistMappings] = json.encodeToString(malMappingsSerializer, map)
+    }
+
+    suspend fun saveAniListIgnored(seriesKeys: Set<String>, names: Map<String, String> = emptyMap()) = dataStore.edit {
+        it[Keys.anilistIgnored] = seriesKeys
+        it[Keys.anilistIgnoredNames] = names.filterKeys { k -> k in seriesKeys }.map { (k, v) -> "$k\t${v.replace('\t', ' ')}" }.toSet()
+    }
+
+    suspend fun saveAniListQueue(queue: List<AniListQueued>) = dataStore.edit {
+        if (queue.isEmpty()) it.remove(Keys.anilistQueue)
+        else it[Keys.anilistQueue] = json.encodeToString(anilistQueueSerializer, queue)
+    }
+
+    suspend fun clearAniList() = dataStore.edit { p -> Keys.anilistKeys.forEach { p.remove(it) } }
 
 
     suspend fun saveDeviceName(name: String) = dataStore.edit { it[Keys.deviceName] = name.take(60) }
@@ -1101,7 +1207,18 @@ class SettingsStore(
             it[Keys.subScale] = prefs.subtitleScale
             it[Keys.lowEndPerformance] = prefs.lowEndPerformance
             it[Keys.showPlaybackStats] = prefs.showPlaybackStats
+            it[Keys.onlineSubtitlesSearch] = prefs.onlineSubtitlesSearch
+            it[Keys.onlineSubtitlesLanguage] = prefs.onlineSubtitlesLanguage.ifBlank { SubtitleLanguages.DEFAULT }
         }
+    }
+
+    suspend fun savePreDownloadPlaylist(wifi: Boolean, mobile: Boolean) = dataStore.edit {
+        it[Keys.preDownloadWifi] = wifi
+        it[Keys.preDownloadMobile] = mobile
+    }
+
+    suspend fun savePreDownloadCacheGb(gb: Int) = dataStore.edit {
+        it[Keys.preDownloadCacheGb] = gb.coerceIn(1, 32)
     }
 
     suspend fun saveSubtitleScale(scale: Double) = dataStore.edit { it[Keys.subScale] = scale }

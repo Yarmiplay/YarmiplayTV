@@ -74,6 +74,7 @@ import com.yarmiplaytv.DeviceKind
 import com.yarmiplaytv.DevicePlatform
 import com.yarmiplaytv.data.PlaybackPrefs
 import com.yarmiplaytv.data.VoiceNoiseMode
+import com.yarmiplaytv.media.subtitles.SubtitleLanguages
 import com.yarmiplaytv.syncplay.SyncSettings
 import com.yarmiplaytv.syncplay.UnpauseMode
 import com.yarmiplaytv.ui.nav.Navigator
@@ -113,8 +114,9 @@ import kotlinx.coroutines.launch
  * chosen one's settings. [summary] says what's in it, on the phone's list.
  */
 internal enum class SettingsCategory(val title: String, val icon: ImageVector, val summary: String) {
-    MEDIA("Media", Icons.Filled.VideoLibrary, "Media servers, media folders, sharing your files, where files are saved"),
+    MEDIA("Media", Icons.Filled.VideoLibrary, "Media servers, media folders, sharing your files, pre-downloading, where files are saved"),
     MAL("MyAnimeList", Icons.Filled.Bookmarks, "Your account and list updates"),
+    ANILIST("AniList", Icons.Filled.Bookmarks, "Your AniList account and list updates"),
     SYNCING("Syncing", Icons.Filled.Sync, "Unpausing, catching up, readiness, playlists, chat, your device's name"),
     VOICE("Voice", Icons.Filled.Mic, "Room voice, auto-join, auto-mute, devices, volume, mic test, join/leave sounds"),
     PLAYBACK("Playback", Icons.Filled.PlayCircle, "Decoding, picture-in-picture, openings and endings, seeking, languages"),
@@ -129,7 +131,10 @@ private val TWO_PANES_WIDTH = 840.dp
 @Composable
 fun MobileSettingsScreen(container: AppContainer, nav: Navigator) {
     val categories = remember(container) {
-        SettingsCategory.entries.filter { it != SettingsCategory.MAL || container.mal.client.configured }
+        SettingsCategory.entries.filter {
+            (it != SettingsCategory.MAL || container.mal.client.configured) &&
+                (it != SettingsCategory.ANILIST || container.anilist.client.configured)
+        }
     }
     var selected by rememberSaveable { mutableStateOf(SettingsCategory.MEDIA.name) }
     /** Phones: the category whose page is open, or null for the list of categories. */
@@ -244,6 +249,7 @@ internal fun ColumnScope.CategorySettings(category: SettingsCategory, container:
     when (category) {
         SettingsCategory.MEDIA -> MediaSettings(container, nav)
         SettingsCategory.MAL -> MalSettings(container, nav)
+        SettingsCategory.ANILIST -> AniListSettings(container, nav)
         SettingsCategory.SYNCING -> SyncingSettings(container)
         SettingsCategory.VOICE -> VoiceSettings(container)
         SettingsCategory.PLAYBACK -> PlaybackSettings(container)
@@ -290,6 +296,51 @@ private fun MediaSettings(container: AppContainer, nav: Navigator) {
         settings.shareFiles,
         Modifier.testTag("toggle_share_files"),
     ) { container.scope.launch { container.settingsStore.saveShareFiles(it) } }
+    SettingsToggle(
+        "Pre-download playlist on Wi-Fi / Ethernet",
+        "Quietly download upcoming room playlist items in the background; always pauses for the video you're watching",
+        settings.preDownloadPlaylistWifi,
+        Modifier.testTag("toggle_predownload_wifi"),
+    ) { container.scope.launch { container.settingsStore.savePreDownloadPlaylist(wifi = it, mobile = settings.preDownloadPlaylistMobile) } }
+    if (container.deviceKind != DeviceKind.DESKTOP) {
+        SettingsToggle(
+            "Pre-download playlist on mobile data",
+            "Allow background pre-downloading over metered connections",
+            settings.preDownloadPlaylistMobile,
+            Modifier.testTag("toggle_predownload_mobile"),
+        ) { container.scope.launch { container.settingsStore.savePreDownloadPlaylist(wifi = settings.preDownloadPlaylistWifi, mobile = it) } }
+    }
+    if (settings.preDownloadPlaylistWifi || settings.preDownloadPlaylistMobile) {
+        SettingsDropdownPicker(
+            title = "Pre-download cache limit",
+            subtitle = "Temporary space used for upcoming playlist files (never more than half of free storage)",
+            selected = settings.preDownloadCacheGb,
+            options = listOf(2 to "2 GB", 4 to "4 GB (Default)", 8 to "8 GB", 16 to "16 GB"),
+            testTag = "predownload_cache_limit",
+        ) { gb -> container.scope.launch { container.settingsStore.savePreDownloadCacheGb(gb) } }
+        container.preloader?.let { pre ->
+            val st by pre.state.collectAsStateWithLifecycle()
+            val mb = st.cachedBytes / (1024L * 1024L)
+            val statusLine = when {
+                st.activeFile != null -> "Pre-downloading ${st.activeFile} · $mb MB cached"
+                st.pausedForPlayback && st.cachedBytes > 0 -> "Paused while watching · $mb MB cached"
+                st.cachedBytes > 0 -> "$mb MB cached (${st.cachedCount} ready)"
+                else -> "Idle · 0 MB cached"
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(statusLine, color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                if (st.cachedBytes > 0L) {
+                    androidx.compose.material3.TextButton(onClick = { pre.clearCache() }, modifier = Modifier.testTag("predownload_clear_cache")) {
+                        Text("Clear cache")
+                    }
+                }
+            }
+        }
+    }
     FolderSetting(container, "Save relayed files to", settings.downloadDirectory, "Ask each time", "Ask each time", "download_folder") { uri ->
         container.scope.launch { container.settingsStore.saveDownloadDirectory(uri) }
     }
@@ -318,6 +369,22 @@ private fun MalSettings(container: AppContainer, nav: Navigator) {
         ) { nav.push(Screen.Mal) }
     }
     Text(MAL_ATTRIBUTION, color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+}
+
+@Composable
+private fun AniListSettings(container: AppContainer, nav: Navigator) {
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val account = settings.anilist
+    if (account == null) {
+        MenuCard("AniList account", "Sign in to update your AniList as you watch", Modifier.testTag("settings_anilist_sign_in")) { nav.push(Screen.AniListLogin) }
+    } else {
+        MenuCard(
+            "AniList",
+            "Signed in as ${account.userName} · your list, list updates and matched shows",
+            Modifier.testTag("settings_anilist_account"),
+        ) { nav.push(Screen.AniList) }
+    }
+    Text("Connects directly to AniList (graphql.anilist.co).", color = AppColors.TextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
 }
 
 @Composable
@@ -833,6 +900,104 @@ private fun PlaybackSettings(container: AppContainer) {
         "Preferred subtitle languages", "eng,en", "Applies after restarting the app",
         Modifier.testTag("subtitle_languages"),
     )
+    SettingsToggle(
+        "Online subtitles search",
+        "Search OpenSubtitles.com and Subdl from the player's Subtitles menu. Off makes no requests",
+        pb.onlineSubtitlesSearch,
+        Modifier.testTag("toggle_online_subtitles"),
+    ) { on -> savePlayback { it.copy(onlineSubtitlesSearch = on) } }
+    if (pb.onlineSubtitlesSearch) {
+        SettingsDropdownPicker(
+            title = "Online subtitles language",
+            subtitle = "Default language used when searching online subtitles",
+            selected = pb.onlineSubtitlesLanguage.ifBlank { SubtitleLanguages.DEFAULT },
+            options = SubtitleLanguages.COMMON,
+            testTag = "online_subtitles_language",
+        ) { code -> savePlayback { it.copy(onlineSubtitlesLanguage = code) } }
+        OpenSubtitlesAccountRow(container)
+    }
+}
+
+@Composable
+private fun OpenSubtitlesAccountRow(container: AppContainer) {
+    val subs = container.onlineSubtitles ?: return
+    val settings by container.settings.collectAsStateWithLifecycle()
+    val account = settings.openSubtitlesAccount
+    var showLogin by remember { mutableStateOf(false) }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    if (account != null) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("OpenSubtitles account", style = MaterialTheme.typography.bodyLarge)
+                Text("Signed in as ${account.username} · higher daily download limit", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+            }
+            androidx.compose.material3.TextButton(
+                onClick = { container.scope.launch { subs.signOutOpenSubtitles() } },
+                modifier = Modifier.testTag("opensubtitles_sign_out"),
+            ) { Text("Sign out") }
+        }
+    } else {
+        ValueSetting(
+            "OpenSubtitles account (optional)",
+            "Sign in for a higher daily download quota",
+            Modifier.testTag("opensubtitles_sign_in"),
+        ) { showLogin = true; error = null }
+    }
+
+    if (showLogin) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { if (!busy) showLogin = false },
+            title = { Text("Sign in to OpenSubtitles") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Only your session token is kept on this device; your password is never saved.", color = AppColors.TextDim, style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(
+                        password,
+                        { password = it },
+                        label = { Text("Password") },
+                        singleLine = true,
+                        enabled = !busy,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    error?.let { Text(it, color = AppColors.Error, style = MaterialTheme.typography.bodySmall) }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.Button(
+                    enabled = !busy && username.isNotBlank() && password.isNotBlank(),
+                    onClick = {
+                        busy = true
+                        error = null
+                        container.scope.launch {
+                            runCatching { subs.signInOpenSubtitles(username.trim(), password) }
+                                .onSuccess {
+                                    busy = false
+                                    password = ""
+                                    showLogin = false
+                                }
+                                .onFailure {
+                                    busy = false
+                                    error = it.message ?: "Sign-in failed"
+                                }
+                        }
+                    },
+                ) { Text(if (busy) "Signing in…" else "Sign in") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(enabled = !busy, onClick = { showLogin = false }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 @Composable

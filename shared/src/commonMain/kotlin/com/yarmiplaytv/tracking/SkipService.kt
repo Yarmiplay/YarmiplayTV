@@ -57,6 +57,8 @@ class SkipService(
     private val now: () -> Long = System::currentTimeMillis,
     /** Listens for the parts no other source knows; null leaves that out. */
     private val detector: SkipDetector? = null,
+    /** Optional AniList fallback for AniSkip when MAL isn't matched (uses `AniListAnime.idMal`). */
+    private val anilist: AniListService? = null,
 ) {
     private val _segments = MutableStateFlow<List<SkipSegment>>(emptyList())
     /** The playing file's opening and ending, when known (also for the seek bar's marks). */
@@ -156,9 +158,16 @@ class SkipService(
         lookup = scope.launch {
             try {
                 val loaded = player.state.first { it.url == fileUrl && it.fileLoaded && it.duration > 0 }
-                val match = mal.identify(info) ?: return@launch
-                val key = "${match.anime.id}/${match.episode}/${loaded.duration.roundToInt()}"
-                val segments = known[key] ?: aniSkip.skipTimes(match.anime.id, match.episode, loaded.duration).also { known[key] = it }
+                val malMatch = mal.identify(info)
+                val (malId, episodeNum) = if (malMatch != null) {
+                    malMatch.anime.id to malMatch.episode
+                } else {
+                    val alMatch = anilist?.identify(info) ?: return@launch
+                    val idMal = alMatch.anime.idMal ?: return@launch
+                    idMal to alMatch.episode
+                }
+                val key = "$malId/$episodeNum/${loaded.duration.roundToInt()}"
+                val segments = known[key] ?: aniSkip.skipTimes(malId, episodeNum, loaded.duration).also { known[key] = it }
                 if (url == fileUrl) {
                     fromAniSkip = segments
                     merge()

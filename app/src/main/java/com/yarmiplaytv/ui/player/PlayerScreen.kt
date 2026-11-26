@@ -130,6 +130,7 @@ import com.yarmiplaytv.ui.components.LabeledIconAction
 import com.yarmiplaytv.ui.components.Panel
 import com.yarmiplaytv.ui.components.ToastHost
 import com.yarmiplaytv.ui.mal.MalPanel
+import com.yarmiplaytv.ui.mal.TrackerPanel
 import com.yarmiplaytv.ui.mobile.PictureInPicture
 import com.yarmiplaytv.ui.mobile.RelayDownloadBar
 import com.yarmiplaytv.ui.mobile.SkipChip
@@ -202,7 +203,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
     val voiceUi by container.voice.ui.collectAsStateWithLifecycle()
     val tabFocus = remember { PanelKind.entries.associateWith { FocusRequester() } }
     val focusManager = LocalFocusManager.current
-    val panels = PanelKind.entries.filter { it != PanelKind.MAL || container.mal.client.configured }
+    val panels = PanelKind.entries.filter { it != PanelKind.MAL || container.mal.client.configured || container.anilist.client.configured }
     // Up opens the panel used last.
     var lastPanel by remember { mutableStateOf(PanelKind.ROOM) }
     fun openPanel(kind: PanelKind, focusContent: Boolean = true) {
@@ -493,7 +494,7 @@ fun PlayerScreen(container: AppContainer, nav: Navigator) {
                                     PanelKind.AUDIO -> TracksPanel(container, TrackType.AUDIO, panelFocus)
                                     PanelKind.SUBTITLES -> TracksPanel(container, TrackType.SUBTITLE, panelFocus)
                                     PanelKind.VIDEO -> VideoPanel(container, panelFocus)
-                                    PanelKind.MAL -> MalPanel(container, panelFocus)
+                                    PanelKind.MAL -> TrackerPanel(container, panelFocus)
                                 }
                             }
                         }

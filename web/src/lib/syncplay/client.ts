@@ -1437,6 +1437,7 @@ export function parseCapabilities(element: unknown): Capabilities | null {
     voice: bool(element, "voice"),
     voiceDisabled: bool(element, "voiceDisabled"),
     growingFiles: bool(element, "growingFiles"),
+    subtitles: bool(element, "subtitles"),
   };
 }
 

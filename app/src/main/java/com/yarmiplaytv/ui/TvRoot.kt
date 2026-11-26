@@ -31,6 +31,9 @@ import com.yarmiplaytv.ui.connect.RoomScreen
 import com.yarmiplaytv.ui.connect.ServersScreen
 import com.yarmiplaytv.ui.connect.SyncplayConnectScreen
 import com.yarmiplaytv.ui.home.HomeScreen
+import com.yarmiplaytv.ui.mal.AniListEntryScreen
+import com.yarmiplaytv.ui.mal.AniListHubScreen
+import com.yarmiplaytv.ui.mal.AniListLoginScreen
 import com.yarmiplaytv.ui.mal.MalEntryScreen
 import com.yarmiplaytv.ui.mal.MalHubScreen
 import com.yarmiplaytv.ui.mal.MalLoginScreen
@@ -85,6 +88,9 @@ fun TvRoot(container: AppContainer, stack: SnapshotStateList<Screen> = remember 
                     Screen.Mal -> MalHubScreen(container, nav)
                     Screen.WhatsNew -> WhatsNewScreen(container)
                     is Screen.MalEntry -> MalEntryScreen(container, nav, screen.item)
+                    Screen.AniListLogin -> AniListLoginScreen(container, nav)
+                    Screen.AniList -> AniListHubScreen(container, nav)
+                    is Screen.AniListEntry -> AniListEntryScreen(container, nav, screen.item)
                     is Screen.Browse -> BrowseScreen(container, nav, screen.item)
                     // Phones, tablets and desktop have a Library tab. TV keeps its libraries on Home.
                     is Screen.Library -> HomeScreen(container, nav)

@@ -23,7 +23,7 @@ import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.AppColors
 
 /** Which home card it is; also its test tag ("card_room", …). */
-enum class HomeCardKind { ROOM, NOW_PLAYING, JELLYFIN, PLEX, LOCAL, PLAYER, MAL, EXIT;
+enum class HomeCardKind { ROOM, NOW_PLAYING, JELLYFIN, PLEX, LOCAL, PLAYER, MAL, ANILIST, EXIT;
     val tag: String get() = "card_${name.lowercase()}"
 }
 
@@ -121,6 +121,22 @@ fun homeCards(container: AppContainer, nav: Navigator, tv: Boolean): List<HomeCa
                     },
                     if (user != null) AppColors.Ready else null,
                     { nav.push(if (user == null) Screen.MalLogin else Screen.Mal) },
+                ),
+            )
+        }
+        if (container.anilist.client.configured) {
+            val user = settings.anilist?.userName
+            add(
+                HomeCard(
+                    HomeCardKind.ANILIST, Icons.Filled.Bookmarks, "AniList",
+                    when {
+                        user != null && tv -> "Signed in as $user"
+                        user != null -> "Signed in as $user · your list follows what you watch"
+                        tv -> "Keep your anime list up to date"
+                        else -> "Keep your anime list up to date as you watch"
+                    },
+                    if (user != null) AppColors.Ready else null,
+                    { nav.push(if (user == null) Screen.AniListLogin else Screen.AniList) },
                 ),
             )
         }

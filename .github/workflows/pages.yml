@@ -201,6 +201,9 @@ jobs:
         working-directory: main/web
         env:
           MAL_CLIENT_ID: ${{ secrets.MAL_CLIENT_ID }}
+          ANILIST_CLIENT_ID: ${{ secrets.ANILIST_CLIENT_ID }}
+          OPENSUBTITLES_API_KEY: ${{ secrets.OPENSUBTITLES_API_KEY }}
+          SUBDL_API_KEY: ${{ secrets.SUBDL_API_KEY }}
         run: |
           npm ci
           npm run build

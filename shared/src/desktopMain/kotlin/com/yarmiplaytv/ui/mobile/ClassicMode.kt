@@ -710,7 +710,12 @@ private fun ClassicJoin(container: AppContainer) {
     val room by container.sync.roomView.collectAsState()
     val showMore = ClassicWindows.showMoreSettings
     var section by remember { mutableStateOf<SettingsCategory?>(null) }
-    val categories = remember(container) { SettingsCategory.entries.filter { it != SettingsCategory.MAL || container.mal.client.configured } }
+    val categories = remember(container) {
+        SettingsCategory.entries.filter {
+            (it != SettingsCategory.MAL || container.mal.client.configured) &&
+                (it != SettingsCategory.ANILIST || container.anilist.client.configured)
+        }
+    }
     var video by remember { mutableStateOf(ClassicWindows.videoAfterJoin) }
     val connecting = room.status == ConnectionStatus.CONNECTING || room.status == ConnectionStatus.RECONNECTING
     fun join() {

@@ -11,7 +11,7 @@
   import * as ManagedRooms from "../lib/syncplay/managedRooms";
   import { chapterBoundaries, chapterTitleAt } from "../lib/player/chapterMarks";
   import { formatTime } from "../lib/syncplay/models";
-  import { mal, skip } from "../app/watching";
+  import { anilist, mal, skip } from "../app/watching";
   import { isQuestion, noticeShowMillis, type MalNotice } from "../lib/mal/service";
   import { saveSeekPosition } from "../lib/data/seekPositions";
   import type { SkipSegment } from "../lib/skip/segment";
@@ -20,8 +20,10 @@
   import ChatPanel from "./ChatPanel.svelte";
   import Icon from "./Icon.svelte";
   import MalPanel from "./MalPanel.svelte";
+  import AniListPanel from "./AniListPanel.svelte";
   import PeoplePanel from "./PeoplePanel.svelte";
   import PlaylistPanel from "./PlaylistPanel.svelte";
+  import SubtitleSearchPanel from "./SubtitleSearchPanel.svelte";
 
   /** The player screen (MobilePlayer.kt for the web): always mounted, shown when [visible]. */
   let { visible }: { visible: boolean } = $props();
@@ -45,11 +47,20 @@
   let malTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => skip.prompt.subscribe((p) => (skipPrompt = p)));
   $effect(() => skip.segments.subscribe((s) => (segments = s)));
+  let trackerTab = $state<"mal" | "anilist">(anilist.signedIn && !mal.signedIn ? "anilist" : "mal");
   $effect(() =>
     mal.notice.subscribe((n) => {
       malNotice = n;
       clearTimeout(malTimer);
       if (n) malTimer = setTimeout(() => (malNotice = null), noticeShowMillis(n));
+    }),
+  );
+  $effect(() =>
+    anilist.notice.subscribe((n) => {
+      if (!n) return;
+      malNotice = n;
+      clearTimeout(malTimer);
+      malTimer = setTimeout(() => (malNotice = null), noticeShowMillis(n));
     }),
   );
   let controlsShown = $state(true);
@@ -61,6 +72,7 @@
   let seekFrames: Promise<SeekFrames | null> | null = null;
   let seekFramesFor: unknown = null;
   let subtitleFile: HTMLInputElement | undefined = $state();
+  let searchingOnlineSubs = $state(false);
   const sheets = new Map<string, Promise<Blob | null>>();
 
   function cachedBlob(url: string): Promise<Blob | null> {
@@ -917,7 +929,17 @@
         {:else if panel === "chat"}
           <ChatPanel bind:input={chatInput} />
         {:else if panel === "mal"}
-          <MalPanel />
+          {#if mal.client.configured && anilist.client.configured}
+            <div class="tracker-tabs">
+              <button class:on={trackerTab === "mal"} onclick={() => (trackerTab = "mal")}>MyAnimeList</button>
+              <button class:on={trackerTab === "anilist"} onclick={() => (trackerTab = "anilist")}>AniList</button>
+            </div>
+          {/if}
+          {#if trackerTab === "anilist" && anilist.client.configured}
+            <AniListPanel />
+          {:else}
+            <MalPanel />
+          {/if}
         {:else if panel === "audio" && s}
           <ul class="tracks">
             {#each s.audioTracks as t (t.id)}
@@ -925,26 +947,35 @@
             {/each}
           </ul>
         {:else if panel === "subtitles" && s}
-          <ul class="tracks">
-            <li><button class:on={s.subtitleTrack === null} onclick={() => player?.selectSubtitle(null)}>Off</button></li>
-            {#each s.subtitleTracks as t (t.id)}
+          {#if searchingOnlineSubs && $settings.playback.onlineSubtitlesSearch}
+            <SubtitleSearchPanel onBack={() => (searchingOnlineSubs = false)} onAttached={() => (searchingOnlineSubs = false)} />
+          {:else}
+            <ul class="tracks">
+              <li><button class:on={s.subtitleTrack === null} onclick={() => player?.selectSubtitle(null)}>Off</button></li>
+              {#each s.subtitleTracks as t (t.id)}
+                <li>
+                  <button class:on={s.subtitleTrack === t.id} disabled={!t.playable} onclick={() => player?.selectSubtitle(t.id)}>
+                    {t.label}{t.playable ? "" : " (not yet)"}
+                  </button>
+                </li>
+              {/each}
               <li>
-                <button class:on={s.subtitleTrack === t.id} disabled={!t.playable} onclick={() => player?.selectSubtitle(t.id)}>
-                  {t.label}{t.playable ? "" : " (not yet)"}
-                </button>
+                <button onclick={() => subtitleFile?.click()}>Open subtitle file</button>
+                <input
+                  bind:this={subtitleFile}
+                  type="file"
+                  accept=".srt,.ass,.ssa,.vtt,text/vtt,application/x-subrip"
+                  hidden
+                  onchange={(event) => void pickedSubtitle(event)}
+                />
               </li>
-            {/each}
-            <li>
-              <button onclick={() => subtitleFile?.click()}>Open subtitle file</button>
-              <input
-                bind:this={subtitleFile}
-                type="file"
-                accept=".srt,.ass,.ssa,.vtt,text/vtt,application/x-subrip"
-                hidden
-                onchange={(event) => void pickedSubtitle(event)}
-              />
-            </li>
-          </ul>
+              {#if $settings.playback.onlineSubtitlesSearch}
+                <li>
+                  <button data-testid="subtitles_search_online" onclick={() => (searchingOnlineSubs = true)}>Search online subtitles…</button>
+                </li>
+              {/if}
+            </ul>
+          {/if}
         {/if}
       </aside>
     {/if}
@@ -1045,6 +1076,25 @@
   }
   .small {
     font-size: 14px;
+  }
+  .tracker-tabs {
+    display: flex;
+    gap: 8px;
+    padding: 4px 16px 12px;
+  }
+  .tracker-tabs button {
+    flex: 1;
+    border: 0;
+    border-radius: 8px;
+    padding: 8px 12px;
+    background: var(--surface-high);
+    color: var(--on-surface, var(--text));
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .tracker-tabs button.on {
+    background: var(--accent);
+    color: #fff;
   }
   .chip {
     display: inline-flex;

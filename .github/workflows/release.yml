@@ -57,9 +57,12 @@ on:
 permissions:
   contents: read
 
-# MyAnimeList's Client ID for the builds (a repository secret, never in the repository); empty leaves MyAnimeList off.
+# Optional third-party API credentials for the builds (repository secrets, never in the repository); empty leaves them off or user-supplied.
 env:
   MAL_CLIENT_ID: ${{ secrets.MAL_CLIENT_ID }}
+  ANILIST_CLIENT_ID: ${{ secrets.ANILIST_CLIENT_ID }}
+  OPENSUBTITLES_API_KEY: ${{ secrets.OPENSUBTITLES_API_KEY }}
+  SUBDL_API_KEY: ${{ secrets.SUBDL_API_KEY }}
 
 jobs:
   bundle:

@@ -14,19 +14,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 
-/** Name plus message, with link annotations on the message body when [openLinks] is true. */
+/** Name plus message, with link and optional clickable-timestamp annotations on the message body. */
 fun chatLineAnnotated(
     sender: String?,
     body: String,
     linkColor: Color,
     openLinks: Boolean,
     italic: Boolean = false,
+    onTimestampClick: ((Int) -> Unit)? = null,
+    timestampColor: Color = linkColor,
 ): AnnotatedString = buildAnnotatedString {
     if (sender != null) {
         withStyle(SpanStyle(color = linkColor, fontWeight = FontWeight.Bold)) { append(sender) }
         append(": ")
     }
-    appendLinked(body, linkColor, openLinks, italic)
+    appendLinked(body, linkColor, openLinks, italic, onTimestampClick, timestampColor)
 }
 
 private fun AnnotatedString.Builder.appendLinked(
@@ -34,32 +36,84 @@ private fun AnnotatedString.Builder.appendLinked(
     linkColor: Color,
     openLinks: Boolean,
     italic: Boolean,
+    onTimestampClick: ((Int) -> Unit)?,
+    timestampColor: Color,
 ) {
-    val links = if (openLinks) ChatLinks.find(body) else emptyList()
-    if (links.isEmpty()) {
+    val spans = ChatSpans.find(body, includeLinks = openLinks, includeTimestamps = onTimestampClick != null)
+    if (spans.isEmpty()) {
         if (italic) withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(body) } else append(body)
         return
     }
     var cursor = 0
-    for (link in links) {
-        appendChunk(body.substring(cursor, link.start), italic)
-        pushLink(
-            LinkAnnotation.Url(
-                link.openUrl,
-                TextLinkStyles(
-                    style = SpanStyle(
-                        color = linkColor,
-                        textDecoration = TextDecoration.Underline,
-                        fontStyle = if (italic) FontStyle.Italic else null,
+    for (span in spans) {
+        appendChunk(body.substring(cursor, span.start), italic)
+        when (span) {
+            is ChatSpan.Url -> {
+                pushLink(
+                    LinkAnnotation.Url(
+                        span.openUrl,
+                        TextLinkStyles(
+                            style = SpanStyle(
+                                color = linkColor,
+                                textDecoration = TextDecoration.Underline,
+                                fontStyle = if (italic) FontStyle.Italic else null,
+                            ),
+                        ),
                     ),
-                ),
-            ),
-        )
-        append(body.substring(link.start, link.end))
-        pop()
-        cursor = link.end
+                )
+                append(body.substring(span.start, span.end))
+                pop()
+            }
+            is ChatSpan.Timestamp -> {
+                val click = onTimestampClick
+                if (click != null) {
+                    pushLink(
+                        LinkAnnotation.Clickable(
+                            tag = "ts:${span.seconds}",
+                            styles = TextLinkStyles(
+                                style = SpanStyle(
+                                    color = timestampColor,
+                                    textDecoration = TextDecoration.Underline,
+                                    fontWeight = FontWeight.Medium,
+                                    fontStyle = if (italic) FontStyle.Italic else null,
+                                ),
+                            ),
+                            linkInteractionListener = { click(span.seconds) },
+                        ),
+                    )
+                    append(body.substring(span.start, span.end))
+                    pop()
+                } else {
+                    appendChunk(body.substring(span.start, span.end), italic)
+                }
+            }
+        }
+        cursor = span.end
     }
     appendChunk(body.substring(cursor), italic)
+}
+
+/**
+ * Seeks the player (and Syncplay room, if connected and allowed) to [seconds] when a chat timestamp is clicked.
+ * Shows a concise room feed notice if no video is loaded, the user cannot seek in a managed room, or the time is past EOF.
+ */
+fun seekToChatTimestamp(container: com.yarmiplaytv.AppContainer, seconds: Int) {
+    val label = formatChatTimestamp(seconds.toDouble())
+    if (!container.player.isFileLoaded) {
+        container.sync.postLocal("Load a video to jump to $label")
+        return
+    }
+    val room = container.sync.room.value
+    if (room.status == com.yarmiplaytv.syncplay.ConnectionStatus.CONNECTED && room.followsOperators) {
+        container.sync.postLocal("Only operators can seek in this managed room")
+        return
+    }
+    val duration = container.player.duration
+    if (duration > 0.0 && seconds > duration) {
+        container.sync.postLocal("Timestamp $label is past the end of this video")
+        return
+    }
+    container.player.seek(seconds.toDouble())
 }
 
 private fun AnnotatedString.Builder.appendChunk(chunk: String, italic: Boolean) {

@@ -63,6 +63,10 @@ export interface PlaybackPrefs {
   detectOnAnyNetwork: boolean;
   /** The browser version's own: names beside the player's icons. */
   playerLabels: boolean;
+  /** Opt-in online subtitle search (off by default). */
+  onlineSubtitlesSearch: boolean;
+  /** Preferred language code for online subtitle search (default: English `"en"`). */
+  onlineSubtitlesLanguage: string;
 }
 
 export interface Settings {
@@ -108,6 +112,12 @@ export interface Settings {
   preferredServer: string;
   /** Tell the media servers how far playback got, and mark episodes watched. */
   reportPlayback: boolean;
+  /** Pre-download upcoming playlist entries in the background on Wi-Fi / Ethernet (default: on). */
+  preDownloadPlaylistWifi: boolean;
+  /** Also pre-download upcoming playlist entries on mobile data / metered networks (default: off). */
+  preDownloadPlaylistMobile: boolean;
+  /** Pre-download cache limit in GiB (browser uses OPFS where supported). */
+  preDownloadCacheGb: number;
   lastSeenVersion: string;
   savedRooms: SavedRoom[];
 }
@@ -187,6 +197,8 @@ export function load(): Settings {
       detectSkips: bool("pb_detect_skips", true),
       detectOnAnyNetwork: bool("pb_detect_any_network", false),
       playerLabels: bool("pb_player_labels", false),
+      onlineSubtitlesSearch: bool("pb_online_subs", false),
+      onlineSubtitlesLanguage: text("pb_online_subs_lang", "en") || "en",
     },
     deviceName: text("device_name", "") || defaultDeviceName(),
     deviceId: deviceId(),
@@ -194,6 +206,9 @@ export function load(): Settings {
     addSharedServers: bool("add_shared_servers", true),
     preferredServer: text("preferred_server", ""),
     reportPlayback: bool("report_playback", true),
+    preDownloadPlaylistWifi: bool("predownload_wifi", true),
+    preDownloadPlaylistMobile: bool("predownload_mobile", false),
+    preDownloadCacheGb: Math.max(1, Math.min(8, int("predownload_cache_gb", 2))),
     lastSeenVersion: text("last_seen_version", ""),
     savedRooms: SavedRooms.normalize(SavedRooms.decode(text("sp_saved_rooms", ""))),
   };
@@ -246,8 +261,13 @@ export function save(settings: Settings) {
   write("pb_detect_skips", String(p.detectSkips));
   write("pb_detect_any_network", String(p.detectOnAnyNetwork));
   write("pb_player_labels", String(p.playerLabels));
+  write("pb_online_subs", String(p.onlineSubtitlesSearch));
+  write("pb_online_subs_lang", p.onlineSubtitlesLanguage || "en");
   write("device_name", settings.deviceName);
   write("share_files", String(settings.shareFiles));
+  write("predownload_wifi", String(settings.preDownloadPlaylistWifi));
+  write("predownload_mobile", String(settings.preDownloadPlaylistMobile));
+  write("predownload_cache_gb", String(settings.preDownloadCacheGb));
   write("add_shared_servers", String(settings.addSharedServers));
   write("preferred_server", settings.preferredServer);
   write("report_playback", String(settings.reportPlayback));
