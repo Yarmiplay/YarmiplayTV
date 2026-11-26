@@ -52,6 +52,7 @@ class YarmiplayTvApp : Application() {
                         hwdec = if (initial.playback.hardwareDecoding) "mediacodec,mediacodec-copy" else "no",
                         audioLanguages = initial.playback.audioLanguages,
                         subtitleLanguages = initial.playback.subtitleLanguages,
+                        hdmiPassthrough = initial.playback.hdmiPassthrough,
                     ),
                 )
             },

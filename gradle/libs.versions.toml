@@ -13,7 +13,6 @@ coil = "3.3.0"
 datastore = "1.1.7"
 coreKtx = "1.16.0"
 coreSplashscreen = "1.0.1"
-libmpv = "1.1.0"
 junit = "4.13.2"
 playAppUpdate = "2.1.0"
 androidxTestExt = "1.3.0"
@@ -69,7 +68,6 @@ tv-material = { module = "androidx.tv:tv-material", version.ref = "tvMaterial" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
-libmpv = { module = "dev.jdtech.mpv:libmpv", version.ref = "libmpv" }
 junit = { module = "junit:junit", version.ref = "junit" }
 play-app-update = { module = "com.google.android.play:app-update", version.ref = "playAppUpdate" }
 concentus = { module = "io.github.jaredmdobson:concentus", version.ref = "concentus" }

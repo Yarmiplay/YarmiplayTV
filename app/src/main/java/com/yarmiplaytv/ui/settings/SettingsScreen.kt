@@ -400,6 +400,13 @@ fun SettingsScreen(container: AppContainer, nav: Navigator) {
                     }
                     TvSettingsCategory.PLAYBACK -> {
                 ToggleRow("Hardware decoding", pb.hardwareDecoding, { savePlayback(pb.copy(hardwareDecoding = !pb.hardwareDecoding)) }, subtitle = "MediaCodec with software fallback. Takes effect after restarting the app")
+                ToggleRow(
+                    "HDMI audio passthrough",
+                    pb.hdmiPassthrough,
+                    { savePlayback(pb.copy(hdmiPassthrough = !pb.hdmiPassthrough)) },
+                    Modifier.testTag("toggle_hdmi_passthrough"),
+                    subtitle = "Send AC-3, E-AC-3, DTS, TrueHD and DTS-HD directly to an HDMI receiver; off decodes to PCM. Takes effect after restarting the app",
+                )
                 ToggleRow(PLAYBACK_DETAILS_TITLE, pb.showPlaybackStats, { savePlayback(pb.copy(showPlaybackStats = !pb.showPlaybackStats)) }, Modifier.testTag("toggle_playback_stats"), subtitle = PLAYBACK_DETAILS_NOTE)
                 ToggleRow(
                     "Picture-in-picture when leaving the app",

@@ -12,7 +12,7 @@ class HdmiAudioTest {
     }
 
     @Test
-    fun iecEnablesTheStockSpdifSet() {
+    fun iecEnablesTheFullSpdifSet() {
         assertEquals(
             listOf("ac3", "eac3", "dts", "truehd", "dts-hd"),
             HdmiAudio.codecsFor(setOf(AudioFormat.ENCODING_IEC61937)),
@@ -20,11 +20,31 @@ class HdmiAudioTest {
     }
 
     @Test
-    fun onlyTheEncodingsTheDeviceReportsAreNamed() {
+    fun rawOnlyEncodingsEnableOnlyUnwrappableCodecs() {
         assertEquals(
-            listOf("ac3", "dts"),
-            HdmiAudio.codecsFor(setOf(AudioFormat.ENCODING_AC3, AudioFormat.ENCODING_DTS, AudioFormat.ENCODING_AC4)),
+            listOf("ac3", "eac3", "dts"),
+            HdmiAudio.codecsFor(
+                setOf(
+                    AudioFormat.ENCODING_AC3,
+                    AudioFormat.ENCODING_E_AC3,
+                    AudioFormat.ENCODING_DTS,
+                    AudioFormat.ENCODING_DOLBY_TRUEHD,
+                    AudioFormat.ENCODING_DTS_HD,
+                    AudioFormat.ENCODING_AC4,
+                ),
+            ),
         )
         assertFalse(HdmiAudio.codecsFor(setOf(AudioFormat.ENCODING_AC4)).contains("ac4"))
+        assertEquals(emptyList<String>(), HdmiAudio.codecsFor(setOf(AudioFormat.ENCODING_DOLBY_TRUEHD)))
+        assertEquals(emptyList<String>(), HdmiAudio.codecsFor(setOf(AudioFormat.ENCODING_DTS_HD)))
+    }
+
+    @Test
+    fun describeFormatsReportedEncodings() {
+        assertEquals("none", HdmiAudio.describe(emptySet()))
+        assertEquals(
+            "AC3,E-AC3,DTS",
+            HdmiAudio.describe(setOf(AudioFormat.ENCODING_AC3, AudioFormat.ENCODING_E_AC3, AudioFormat.ENCODING_DTS)),
+        )
     }
 }

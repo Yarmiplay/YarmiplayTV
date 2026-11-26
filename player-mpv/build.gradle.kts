@@ -1,8 +1,3 @@
-import java.io.FileOutputStream
-import java.util.zip.ZipEntry
-import java.util.zip.ZipFile
-import java.util.zip.ZipOutputStream
-
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -21,95 +16,73 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    // Built from official upstream sources (jarnedemeulemeester/libmpv-android v1.1.0, mpv 0.42.0,
+    // FFmpeg 9.1) by scripts/build-android-libmpv.sh with the visualizer filters enabled and
+    // Android AudioTrack raw bitstream passthrough (AC3/E-AC3/DTS), multichannel IEC 61937,
+    // route-change AO reload, and passthrough playhead smoothing (scripts/patches/mpv/010*.patch).
+    sourceSets["main"].jniLibs.srcDir("src/main/prebuilt-libmpv/jni")
 }
 
 kotlin {
     jvmToolchain(17)
 }
 
-// dev.jdtech.mpv:libmpv 1.1.0 (mpv 0.42.0) builds FFmpeg 9.0.2 with --disable-filters, so
-// showfreqs and showspectrum are absent and a lavfi spectrum cannot run. The prebuilt libraries
-// are that same FFmpeg 9.0.2 libavfilter rebuilt with the desktop graph's filters
-// (scripts/build-android-libavfilter.sh). The rest of the AAR (libmpv and the other FFmpeg
-// libraries) is unchanged. FFmpeg 9.1 is a different libavfilter ABI, so it is not used here.
-val upstreamLibmpv: Configuration by configurations.creating {
-    isCanBeResolved = true
-    isCanBeConsumed = false
-    isTransitive = false
-}
+val prebuiltAbis = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
 
-val filterAbis = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
-
-abstract class PatchLibmpvAarTask : DefaultTask() {
-    @get:InputFile
-    abstract val upstreamAar: RegularFileProperty
+abstract class VerifyPrebuiltLibmpvTask : DefaultTask() {
+    @get:InputFiles
+    abstract val mpvLibs: ConfigurableFileCollection
 
     @get:InputFiles
     abstract val filterLibs: ConfigurableFileCollection
 
+    @get:InputFiles
+    abstract val utilLibs: ConfigurableFileCollection
+
     @get:OutputFile
-    abstract val patchedAar: RegularFileProperty
+    abstract val stamp: RegularFileProperty
 
     @TaskAction
-    fun patch() {
-        val out = patchedAar.get().asFile
-        out.parentFile.mkdirs()
-        val replacements = filterLibs.files.associateBy { file ->
-            "jni/${file.parentFile.name}/libavfilter.so"
+    fun verify() {
+        mpvLibs.files.forEach { file ->
+            check(file.isFile) { "Missing $file; run scripts/build-android-libmpv.sh" }
+            val text = file.readBytes().toString(Charsets.ISO_8859_1)
+            listOf("0.42.0", "raw-passthrough", "route-reload", "using raw passthrough").forEach { marker ->
+                check(text.contains(marker)) { "$file is missing the $marker implementation" }
+            }
         }
-        replacements.values.forEach { file ->
+        filterLibs.files.forEach { file ->
+            check(file.isFile) { "Missing $file; run scripts/build-android-libmpv.sh" }
             val text = file.readBytes().toString(Charsets.ISO_8859_1)
             listOf("showfreqs", "showspectrum", "asplit", "aresample").forEach { name ->
                 check(text.contains("$name\u0000")) { "$file does not contain the $name filter" }
             }
         }
-        val metadata = "META-INF/com/android/build/gradle/aar-metadata.properties"
-        val replaced = HashSet<String>()
-        ZipFile(upstreamAar.get().asFile).use { zip ->
-            ZipOutputStream(FileOutputStream(out)).use { output ->
-                val entries = zip.entries()
-                while (entries.hasMoreElements()) {
-                    val entry = entries.nextElement()
-                    val replacement = replacements[entry.name]
-                    val next = ZipEntry(entry.name)
-                    next.time = entry.time
-                    output.putNextEntry(next)
-                    when {
-                        replacement != null -> {
-                            replaced += entry.name
-                            replacement.inputStream().use { it.copyTo(output) }
-                        }
-                        // 1.1.0 was compiled with SDK 37. Its Java API is Context and Surface, so the app
-                        // stays on compileSdk 36; only the recorded floor is lowered.
-                        entry.name == metadata -> {
-                            val text = zip.getInputStream(entry).bufferedReader().use { it.readText() }
-                            check(text.contains("minCompileSdk=37")) { "libmpv no longer asks for compileSdk 37" }
-                            output.write(text.replace("minCompileSdk=37", "minCompileSdk=36").toByteArray())
-                        }
-                        else -> zip.getInputStream(entry).use { it.copyTo(output) }
-                    }
-                    output.closeEntry()
-                }
-            }
+        utilLibs.files.forEach { file ->
+            check(file.isFile) { "Missing $file; run scripts/build-android-libmpv.sh" }
+            val text = file.readBytes().toString(Charsets.ISO_8859_1)
+            check(text.contains("9.1")) { "$file does not look like FFmpeg 9.1" }
         }
-        check(replaced == replacements.keys) { "AAR is missing ${replacements.keys - replaced}" }
+        stamp.get().asFile.apply {
+            parentFile.mkdirs()
+            writeText("ok\n")
+        }
     }
 }
 
-val patchLibmpvAar = tasks.register<PatchLibmpvAarTask>("patchLibmpvAar") {
-    upstreamAar.set(layout.file(upstreamLibmpv.incoming.files.elements.map { files ->
-        files.map { it.asFile }.single { it.extension == "aar" }
-    }))
-    filterLibs.setFrom(filterAbis.map { abi ->
-        layout.projectDirectory.file("src/main/prebuilt-libavfilter/$abi/libavfilter.so")
-    })
-    patchedAar.set(layout.buildDirectory.file("libmpv/libmpv-visualizer.aar"))
+val verifyPrebuiltLibmpv = tasks.register<VerifyPrebuiltLibmpvTask>("verifyPrebuiltLibmpv") {
+    mpvLibs.setFrom(prebuiltAbis.map { layout.projectDirectory.file("src/main/prebuilt-libmpv/jni/$it/libmpv.so") })
+    filterLibs.setFrom(prebuiltAbis.map { layout.projectDirectory.file("src/main/prebuilt-libmpv/jni/$it/libavfilter.so") })
+    utilLibs.setFrom(prebuiltAbis.map { layout.projectDirectory.file("src/main/prebuilt-libmpv/jni/$it/libavutil.so") })
+    stamp.set(layout.buildDirectory.file("libmpv/verified.txt"))
 }
 
+tasks.named("preBuild") { dependsOn(verifyPrebuiltLibmpv) }
+
 dependencies {
-    add(upstreamLibmpv.name, libs.libmpv)
     api(project(":player-api"))
-    api(files(patchLibmpvAar))
+    api(files("src/main/prebuilt-libmpv/libmpv-classes.jar"))
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.core.ktx)
     testImplementation(libs.junit)

@@ -129,6 +129,18 @@ abstract class LocalLibrary(
      */
     open fun sidecarsBeside(videoUri: String, videoName: String): List<ExternalSubtitle> = emptyList()
 
+    /**
+     * Subtitle files inside the granted folder [folderUri] matching [videoName], used right after the user
+     * picks a folder to find subtitles for a single-file URI opened from another app.
+     */
+    open fun sidecarsInFolder(folderUri: String, videoName: String): List<ExternalSubtitle> = emptyList()
+
+    /**
+     * True when [videoUri] is a single-file URI whose parent folder cannot yet be listed to discover sidecar
+     * subtitles (neither via `/tree/`, nor an already-indexed folder, nor granted storage access).
+     */
+    open fun needsSidecarFolderAccess(videoUri: String, videoName: String): Boolean = false
+
     /** The folder entry (with display name) for a folder URI. */
     abstract fun folderOf(uri: String): LocalFolder
 

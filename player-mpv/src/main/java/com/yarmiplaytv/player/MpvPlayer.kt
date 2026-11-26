@@ -34,6 +34,8 @@ data class MpvOptions(
     val audioLanguages: String = "",
     val subtitleLanguages: String = "eng,en",
     val cacheMegabytes: Int = 128,
+    /** Send AC-3/E-AC-3/DTS/TrueHD/DTS-HD bitstreams to HDMI receivers when supported; false decodes to PCM. */
+    val hdmiPassthrough: Boolean = true,
 )
 
 /**
@@ -137,8 +139,18 @@ class MpvPlayer(context: Context, private val options: MpvOptions = MpvOptions()
             setOptionString("hwdec-codecs", "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
             setOptionString("ao", "audiotrack,opensles")
             setOptionString("audio-channels", "auto")
-            val passthrough = HdmiAudio.codecsFor(HdmiAudio.reportedEncodings(appContext))
-            if (passthrough.isNotEmpty()) setOptionString("audio-spdif", passthrough.joinToString(","))
+            val reportedEncodings = HdmiAudio.reportedEncodings(appContext)
+            val passthrough = if (options.hdmiPassthrough) HdmiAudio.codecsFor(reportedEncodings) else emptyList()
+            if (passthrough.isNotEmpty()) {
+                setOptionString("audio-spdif", passthrough.joinToString(","))
+                setOptionString("audiotrack-raw-passthrough", "yes")
+                setOptionString("audiotrack-route-reload", "yes")
+            }
+            Log.i(
+                TAG,
+                "HDMI audio passthrough=${options.hdmiPassthrough}; encodings=${HdmiAudio.describe(reportedEncodings)}; " +
+                    "audio-spdif=${passthrough.ifEmpty { listOf("off") }.joinToString(",")}",
+            )
             setOptionString("audio-set-media-role", "yes")
             // load() turns it on per file, with the system's certificates (see trustedCertificates).
             setOptionString("tls-verify", "no")

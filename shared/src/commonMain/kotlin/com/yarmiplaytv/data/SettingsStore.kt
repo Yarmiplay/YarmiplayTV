@@ -190,6 +190,8 @@ const val DEFAULT_TV_PLAYER_SCALE: Float = 0.85f
 
 data class PlaybackPrefs(
     val hardwareDecoding: Boolean = true,
+    /** Android: pass supported Dolby/DTS bitstreams through to an HDMI receiver; false decodes to PCM. */
+    val hdmiPassthrough: Boolean = true,
     val audioLanguages: String = "jpn,ja",
     val subtitleLanguages: String = "eng,en",
     val seekStepSeconds: Int = 10,
@@ -498,6 +500,7 @@ class SettingsStore(
         fun seekPosition(fileName: String) = doublePreferencesKey(SEEK_POSITION_PREFIX + fileName.lowercase())
 
         val hwdec = booleanPreferencesKey("pb_hwdec")
+        val hdmiPassthrough = booleanPreferencesKey("pb_hdmi_passthrough")
         val pip = booleanPreferencesKey("pb_pip")
         val stayConnectedMinimized = booleanPreferencesKey("stay_connected_minimized")
         val alang = stringPreferencesKey("pb_alang")
@@ -608,6 +611,7 @@ class SettingsStore(
             autoReadyOnLoad = p[Keys.autoReady] ?: true,
             playback = PlaybackPrefs(
                 hardwareDecoding = p[Keys.hwdec] ?: true,
+                hdmiPassthrough = p[Keys.hdmiPassthrough] ?: true,
                 pictureInPicture = p[Keys.pip] ?: !isTv,
                 stayConnectedMinimized = p[Keys.stayConnectedMinimized] ?: !isTv,
                 audioLanguages = p[Keys.alang] ?: defaults.playback.audioLanguages,
@@ -1082,6 +1086,7 @@ class SettingsStore(
     suspend fun savePlayback(prefs: PlaybackPrefs) {
         dataStore.edit {
             it[Keys.hwdec] = prefs.hardwareDecoding
+            it[Keys.hdmiPassthrough] = prefs.hdmiPassthrough
             it[Keys.pip] = prefs.pictureInPicture
             it[Keys.stayConnectedMinimized] = prefs.stayConnectedMinimized
             it[Keys.alang] = prefs.audioLanguages

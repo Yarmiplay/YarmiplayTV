@@ -598,12 +598,12 @@ class PlaylistController(
         if (player.isFileLoaded) flushSubs()
     }
 
-    /** Subtitles dropped together with the video at [url], selected when that file opens. */
-    fun rememberSidecars(url: String, subs: List<ExternalSubtitle>) {
+    /** Subtitles dropped or discovered beside the video at [url]; [select] picks them over embedded tracks. */
+    fun rememberSidecars(url: String, subs: List<ExternalSubtitle>, select: Boolean = true) {
         if (subs.isEmpty()) return
         val list = sidecarsForUrl.getOrPut(url) { mutableListOf() }
         synchronized(list) { list += subs }
-        forceSelect += subs.map { it.url }
+        if (select) forceSelect += subs.map { it.url }
     }
 
     private fun rememberSeekOffer(media: NowPlaying) {

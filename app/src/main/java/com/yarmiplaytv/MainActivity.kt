@@ -1,6 +1,9 @@
 package com.yarmiplaytv
 
 import com.yarmiplaytv.ui.theme.appIconLabels
+import android.Manifest
+import android.app.AlertDialog
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -8,13 +11,18 @@ import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import android.view.KeyEvent
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
@@ -45,11 +53,15 @@ import com.yarmiplaytv.ui.mobile.appPalette
 import com.yarmiplaytv.ui.mobile.pipParams
 import com.yarmiplaytv.ui.nav.Screen
 import com.yarmiplaytv.ui.theme.YarmiplayTvTheme
+import com.yarmiplaytv.local.SafLocalLibrary
+import com.yarmiplaytv.local.StorageAccessPolicy
 import com.yarmiplaytv.voice.AndroidMicPermissions
 import com.yarmiplaytv.voice.TvVoiceKeys
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val container get() = (application as YarmiplayTvApp).container
@@ -62,6 +74,43 @@ class MainActivity : ComponentActivity() {
 
     /** Attached to the mic-permission bridge in onCreate; results arrive via [onRequestPermissionsResult]. */
     private val androidMicPermissions = AndroidMicPermissions(this)
+
+    private data class PendingExternalVideo(val uri: String, val name: String)
+    private var pendingExternalVideo: PendingExternalVideo? = null
+
+    private val sidecarFolderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { folder ->
+        val pending = pendingExternalVideo ?: return@registerForActivityResult
+        pendingExternalVideo = null
+        lifecycleScope.launch {
+            if (folder != null) {
+                container.local.addFolder(folder.toString())
+                val sidecars = withContext(Dispatchers.IO) {
+                    container.local.sidecarsInFolder(folder.toString(), pending.name)
+                }
+                if (sidecars.isNotEmpty()) {
+                    container.playlist.rememberSidecars(pending.uri, sidecars, select = false)
+                }
+            }
+            container.playlist.playLocal(pending.uri, inRoom = false)
+        }
+    }
+
+    private val allFilesAccessSettings = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        val pending = pendingExternalVideo ?: return@registerForActivityResult
+        pendingExternalVideo = null
+        lifecycleScope.launch {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
+                (container.local as? SafLocalLibrary)?.addMountedStorageRoots()
+                val sidecars = withContext(Dispatchers.IO) {
+                    container.local.sidecarsBeside(pending.uri, pending.name)
+                }
+                if (sidecars.isNotEmpty()) {
+                    container.playlist.rememberSidecars(pending.uri, sidecars, select = false)
+                }
+            }
+            container.playlist.playLocal(pending.uri, inRoom = false)
+        }
+    }
 
     private val pipExitReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -297,12 +346,86 @@ class MainActivity : ComponentActivity() {
         val data = intent?.data?.takeIf { intent.action == Intent.ACTION_VIEW }
         if (data != null && (data.scheme == "content" || data.scheme == "file")) {
             if (data.scheme == "file" && IntentMedia.isPrivateFile(data.path, privateDirs())) return
-            container.playlist.playLocal(data.toString(), inRoom = false)
+            openExternalVideo(data)
             return
         }
         val url = intent?.getStringExtra("url") ?: data?.toString()
         if (!url.isNullOrBlank() && IntentMedia.isStreamUrl(url)) container.playlist.playUrl(url)
     }
+
+    /**
+     * Plays a single video opened from another app ("Open with"). When the app cannot yet see sibling
+     * subtitle files beside it, offers to grant access to its folder (SAF folder picker on Google Play,
+     * all-files access on the website APK) before starting playback.
+     */
+    private fun openExternalVideo(uri: Uri) {
+        val videoUri = uri.toString()
+        if (System.getProperty("yarmiplaytv.noUpdateCheck") != null) {
+            container.playlist.playLocal(videoUri, inRoom = false)
+            return
+        }
+        lifecycleScope.launch {
+            val video = withContext(Dispatchers.IO) { container.local.describe(videoUri) }
+            val needsAccess = withContext(Dispatchers.IO) {
+                container.local.needsSidecarFolderAccess(videoUri, video.name)
+            }
+            if (!needsAccess) {
+                container.playlist.playLocal(videoUri, inRoom = false)
+                return@launch
+            }
+            val pending = PendingExternalVideo(videoUri, video.name)
+            pendingExternalVideo = pending
+            val useAllFiles = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && declaresAllFilesAccess()
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle("Find subtitles beside videos")
+                .setMessage(
+                    if (useAllFiles) {
+                        "Allow YarmiplayTV to access storage so it can find external subtitle files next to this video."
+                    } else {
+                        "Choose the folder containing this video so YarmiplayTV can find external subtitle files next to it."
+                    },
+                )
+                .setPositiveButton(if (useAllFiles) "Allow" else "Choose folder") { _, _ ->
+                    if (useAllFiles) {
+                        val settingsIntent = Intent(
+                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:$packageName"),
+                        )
+                        try {
+                            allFilesAccessSettings.launch(settingsIntent)
+                        } catch (_: ActivityNotFoundException) {
+                            pendingExternalVideo = null
+                            container.playlist.playLocal(videoUri, inRoom = false)
+                        }
+                    } else {
+                        try {
+                            sidecarFolderPicker.launch(null)
+                        } catch (_: ActivityNotFoundException) {
+                            pendingExternalVideo = null
+                            Toast.makeText(this@MainActivity, StorageAccessPolicy.NO_DOCUMENTS_UI, Toast.LENGTH_LONG).show()
+                            container.playlist.playLocal(videoUri, inRoom = false)
+                        }
+                    }
+                }
+                .setNegativeButton("Play without subtitles") { _, _ ->
+                    pendingExternalVideo = null
+                    container.playlist.playLocal(videoUri, inRoom = false)
+                }
+                .setOnCancelListener {
+                    if (pendingExternalVideo == pending) {
+                        pendingExternalVideo = null
+                        container.playlist.playLocal(videoUri, inRoom = false)
+                    }
+                }
+                .show()
+        }
+    }
+
+    /** True only for the website APK, whose debug manifest declares all-files access. The Play bundle does not. */
+    private fun declaresAllFilesAccess(): Boolean = runCatching {
+        val info = packageManager.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS)
+        info.requestedPermissions?.contains(Manifest.permission.MANAGE_EXTERNAL_STORAGE) == true
+    }.getOrDefault(false)
 
     /** This app's own storage: files, cache, no_backup, databases (and their device-protected twin). */
     private fun privateDirs(): List<String> = listOfNotNull(

@@ -768,6 +768,14 @@ private fun PlaybackSettings(container: AppContainer) {
     ) { on ->
         savePlayback { it.copy(hardwareDecoding = on) }
     }
+    if (container.deviceKind != DeviceKind.DESKTOP) {
+        SettingsToggle(
+            "HDMI audio passthrough",
+            "Send AC-3, E-AC-3, DTS, TrueHD and DTS-HD directly to an HDMI receiver; off decodes to PCM. Takes effect after restarting the app",
+            pb.hdmiPassthrough,
+            Modifier.testTag("toggle_hdmi_passthrough"),
+        ) { on -> savePlayback { it.copy(hdmiPassthrough = on) } }
+    }
     if (container.deviceKind == DeviceKind.DESKTOP) {
         SettingsToggle(
             "Low-end performance",

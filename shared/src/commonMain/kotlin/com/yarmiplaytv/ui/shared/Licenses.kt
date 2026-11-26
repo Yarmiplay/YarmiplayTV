@@ -24,6 +24,7 @@ val openSourceComponents = listOf(
     OpenSourceComponent("libxml2", "MIT", "https://gitlab.gnome.org/GNOME/libxml2"),
     OpenSourceComponent("libunibreak", "zlib", "https://github.com/adah1972/libunibreak"),
     OpenSourceComponent("Mbed TLS", "Apache 2.0", "https://www.trustedfirmware.org/projects/mbed-tls"),
+    OpenSourceComponent("curl", "curl License", "https://curl.se"),
     OpenSourceComponent("Lua", "MIT", "https://www.lua.org"),
     OpenSourceComponent("Chromaprint (fingerprint classifiers)", "MIT", "https://github.com/acoustid/chromaprint"),
     OpenSourceComponent(

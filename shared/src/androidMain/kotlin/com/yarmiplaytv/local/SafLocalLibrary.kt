@@ -3,8 +3,11 @@ package com.yarmiplaytv.local
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import com.yarmiplaytv.Logger
 import com.yarmiplaytv.data.SettingsStore
@@ -42,7 +45,13 @@ class SafLocalLibrary(
     }
 
     override fun onFolderRemoved(uri: String) {
+        if (Uri.parse(uri).scheme == "file") return
         runCatching { resolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+    }
+
+    /** Adds all currently readable mounted storage volumes (used after All Files access is granted on the website APK). */
+    fun addMountedStorageRoots() {
+        addFolders(storageFolderUris(app))
     }
 
     /** Name and size of a single content:// or file:// URI. */
@@ -116,31 +125,171 @@ class SafLocalLibrary(
         val parsed = Uri.parse(videoUri)
         if (parsed.scheme == "file") {
             val dir = parsed.path?.let { File(it).parentFile } ?: return emptyList()
-            val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
-            val chosen = subtitleSiblings(videoName, files.map { it.name }).toSet()
-            return files.filter { it.name in chosen }.map { file ->
-                ExternalSubtitle(Uri.fromFile(file).toString(), file.name.substringBeforeLast('.'), sidecarLanguage(file.name))
+            return fileSidecarsIn(dir, videoName)
+        }
+        if (videoUri.contains("/tree/")) {
+            return treeSidecarsBeside(parsed, videoName)
+        }
+        // Single-document content:// URI (e.g. "Open with" or single-file picker):
+        // 1. If All Files access is already granted (website APK), resolve to the underlying File.
+        resolveLocalFile(parsed, videoName)?.parentFile?.let { dir ->
+            return fileSidecarsIn(dir, videoName)
+        }
+        // 2. If the file lives inside a media folder the user already granted (SAF tree or scanned volume),
+        //    list siblings through that folder's URI without needing another permission prompt.
+        indexedMatch(parsed, videoName)?.let { match ->
+            if (match.uri != videoUri && (match.uri.startsWith("file://") || match.uri.contains("/tree/"))) {
+                return sidecarsBeside(match.uri, videoName)
             }
         }
-        if (!videoUri.contains("/tree/")) return emptyList()
+        // 3. Some document providers allow listing siblings directly from the document URI.
+        return nonTreeDocumentSidecars(parsed, videoName)
+    }
+
+    override fun sidecarsInFolder(folderUri: String, videoName: String): List<ExternalSubtitle> {
+        val parsed = Uri.parse(folderUri)
+        if (parsed.scheme == "file") {
+            val dir = parsed.path?.let(::File)?.takeIf { it.isDirectory } ?: return emptyList()
+            return fileSidecarsIn(dir, videoName)
+        }
+        val treeId = runCatching { DocumentsContract.getTreeDocumentId(parsed) }.getOrNull() ?: return emptyList()
+        return treeSidecarsInParent(parsed, treeId, videoName)
+    }
+
+    override fun needsSidecarFolderAccess(videoUri: String, videoName: String): Boolean {
+        val parsed = Uri.parse(videoUri)
+        if (parsed.scheme == "file") {
+            val dir = parsed.path?.let { File(it).parentFile } ?: return false
+            return runCatching { dir.listFiles() == null }.getOrDefault(true)
+        }
+        if (parsed.scheme != "content") return false
+        if (videoUri.contains("/tree/")) return false
+        if (resolveLocalFile(parsed, videoName) != null) return false
+        if (indexedMatch(parsed, videoName) != null) return false
+        if (canListNonTreeParent(parsed)) return false
+        return true
+    }
+
+    private fun fileSidecarsIn(dir: File, videoName: String): List<ExternalSubtitle> {
+        val files = runCatching { dir.listFiles()?.filter { it.isFile } }.getOrNull().orEmpty()
+        val chosen = subtitleSiblings(videoName, files.map { it.name }).toSet()
+        return files.filter { it.name in chosen }.map { file ->
+            ExternalSubtitle(Uri.fromFile(file).toString(), file.name.substringBeforeLast('.'), sidecarLanguage(file.name))
+        }
+    }
+
+    private fun treeSidecarsBeside(parsed: Uri, videoName: String): List<ExternalSubtitle> {
         val docId = runCatching { DocumentsContract.getDocumentId(parsed) }.getOrNull() ?: return emptyList()
         val treeId = runCatching { DocumentsContract.getTreeDocumentId(parsed) }.getOrNull() ?: return emptyList()
         val parentId = if ('/' in docId) docId.substringBeforeLast('/') else treeId
         if (parentId == docId) return emptyList()
-        val children = DocumentsContract.buildChildDocumentsUriUsingTree(parsed, parentId)
+        return treeSidecarsInParent(parsed, parentId, videoName)
+    }
+
+    private fun treeSidecarsInParent(treeUri: Uri, parentId: String, videoName: String): List<ExternalSubtitle> {
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
         val rows = mutableListOf<Pair<String, String>>()
-        resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
-            while (c.moveToNext()) {
-                val name = c.getString(1) ?: continue
-                rows += c.getString(0) to name
+        runCatching {
+            resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    val name = c.getString(1) ?: continue
+                    rows += c.getString(0) to name
+                }
             }
         }
         val chosen = subtitleSiblings(videoName, rows.map { it.second }).toSet()
         return rows.filter { it.second in chosen }.mapNotNull { (id, name) ->
-            val uri = DocumentsContract.buildDocumentUriUsingTree(parsed, id).toString()
-            val playable = if (name.endsWith(".idx", ignoreCase = true)) stageVobSub(uri, name, rows, parsed) else uri
+            val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id).toString()
+            val playable = if (name.endsWith(".idx", ignoreCase = true)) stageVobSub(uri, name, rows, treeUri) else uri
             playable?.let { ExternalSubtitle(it, name.substringBeforeLast('.'), sidecarLanguage(name)) }
         }
+    }
+
+    private fun nonTreeParentChildrenUri(uri: Uri): Uri? {
+        val authority = uri.authority ?: return null
+        val docId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+        val path = runCatching { DocumentsContract.findDocumentPath(resolver, uri)?.path }.getOrNull()
+        val parentId = path?.getOrNull(path.lastIndex - 1)
+            ?: docId?.substringBeforeLast('/', "")?.takeIf { it.isNotEmpty() && it != docId }
+            ?: return null
+        return DocumentsContract.buildChildDocumentsUri(authority, parentId)
+    }
+
+    private fun canListNonTreeParent(uri: Uri): Boolean {
+        val children = nonTreeParentChildrenUri(uri) ?: return false
+        return runCatching {
+            resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)?.use { true } ?: false
+        }.getOrDefault(false)
+    }
+
+    private fun nonTreeDocumentSidecars(uri: Uri, videoName: String): List<ExternalSubtitle> {
+        val authority = uri.authority ?: return emptyList()
+        val children = nonTreeParentChildrenUri(uri) ?: return emptyList()
+        val rows = mutableListOf<Pair<String, String>>()
+        runCatching {
+            resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getString(0) ?: continue
+                    val name = c.getString(1) ?: continue
+                    rows += id to name
+                }
+            }
+        }
+        val chosen = subtitleSiblings(videoName, rows.map { it.second }).toSet()
+        return rows.filter { it.second in chosen }.mapNotNull { (id, name) ->
+            val subUri = DocumentsContract.buildDocumentUri(authority, id).toString()
+            val playable = if (name.endsWith(".idx", ignoreCase = true)) {
+                val subName = name.dropLast(3) + "sub"
+                val subId = rows.firstOrNull { it.second.equals(subName, ignoreCase = true) }?.first
+                subId?.let { stageVobSubUris(subUri, name, DocumentsContract.buildDocumentUri(authority, it).toString(), subName) }
+            } else {
+                subUri
+            }
+            playable?.let { ExternalSubtitle(it, name.substringBeforeLast('.'), sidecarLanguage(name)) }
+        }
+    }
+
+    private fun indexedMatch(uri: Uri, videoName: String): LocalFile? {
+        val named = files.value.filter { it.name.equals(videoName, ignoreCase = true) }
+        if (named.isEmpty()) return null
+        if (named.size == 1) return named.single()
+        val size = runCatching {
+            resolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null
+            }
+        }.getOrNull() ?: return null
+        return named.firstOrNull { it.sizeBytes == size }
+    }
+
+    /**
+     * Resolves a content:// URI to a real [File] when the app already holds All Files access (website APK).
+     * Never asks for permissions; on Play builds `isExternalStorageManager()` is always false.
+     */
+    @Suppress("DEPRECATION")
+    private fun resolveLocalFile(uri: Uri, videoName: String): File? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || !Environment.isExternalStorageManager()) return null
+        if (uri.authority == "com.android.externalstorage.documents") {
+            val docId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+            if (docId != null && ':' in docId) {
+                val volume = docId.substringBefore(':')
+                val rel = docId.substringAfter(':')
+                val base = if (volume.equals("primary", ignoreCase = true)) {
+                    Environment.getExternalStorageDirectory()
+                } else {
+                    File("/storage/$volume")
+                }
+                val candidate = File(base, rel)
+                if (candidate.isFile && candidate.parentFile?.canRead() == true) return candidate
+            }
+        }
+        val dataPath = runCatching {
+            resolver.query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use { c ->
+                val col = c.getColumnIndex(MediaStore.MediaColumns.DATA)
+                if (col >= 0 && c.moveToFirst()) c.getString(col) else null
+            }
+        }.getOrNull()
+        dataPath?.let(::File)?.takeIf { it.isFile && it.name.equals(videoName, ignoreCase = true) && it.parentFile?.canRead() == true }?.let { return it }
+        return null
     }
 
     /**
@@ -151,6 +300,10 @@ class SafLocalLibrary(
         val subName = idxName.dropLast(3) + "sub"
         val subId = rows.firstOrNull { it.second.equals(subName, ignoreCase = true) }?.first ?: return null
         val subUri = DocumentsContract.buildDocumentUriUsingTree(tree, subId).toString()
+        return stageVobSubUris(idxUri, idxName, subUri, subName)
+    }
+
+    private fun stageVobSubUris(idxUri: String, idxName: String, subUri: String, subName: String): String? {
         val idxBytes = readLimited(idxUri) ?: return null
         val subBytes = readLimited(subUri) ?: return null
         val folder = File(app.cacheDir, "vobsub/" + Integer.toHexString((idxUri + subUri).hashCode()))
