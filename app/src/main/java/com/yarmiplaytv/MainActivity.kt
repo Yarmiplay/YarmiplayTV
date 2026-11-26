@@ -2,6 +2,7 @@ package com.yarmiplaytv
 
 import com.yarmiplaytv.ui.theme.appIconLabels
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
@@ -78,6 +79,9 @@ class MainActivity : ComponentActivity() {
     private data class PendingExternalVideo(val uri: String, val name: String)
     private var pendingExternalVideo: PendingExternalVideo? = null
 
+    // MainActivity extends ComponentActivity (no Fragment dependency); androidx.activity's lint check flags
+    // registerForActivityResult whenever androidx.fragment isn't on the classpath.
+    @SuppressLint("InvalidFragmentVersionForActivityResult")
     private val sidecarFolderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { folder ->
         val pending = pendingExternalVideo ?: return@registerForActivityResult
         pendingExternalVideo = null
@@ -95,6 +99,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @SuppressLint("InvalidFragmentVersionForActivityResult")
     private val allFilesAccessSettings = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         val pending = pendingExternalVideo ?: return@registerForActivityResult
         pendingExternalVideo = null
